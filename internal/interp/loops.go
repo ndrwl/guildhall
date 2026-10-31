@@ -37,6 +37,9 @@ const (
 	// attempt was bound: first the index document links-<m> naming each one's source and the Guildmaster's words,
 	// then each linked document as recorded (docs/tasks.md#task-links).
 	LinkedPort = "linked"
+	// BaselinePort carries to a hallmark step the baseline the engine rendered once for the task: the previous
+	// hallmark's head, the current main, the merged tasks between them and each merge's check runs (baselineInput).
+	BaselinePort = "baseline"
 )
 
 // changesRequested is the outcome whose loop rules every looping kind but validate follows (loopOutcome).
@@ -123,7 +126,7 @@ func (r *run) boundInputs(b binding) []render.Input {
 }
 
 // extras returns the inputs the engine adds to attempt n of s: for a hallmark step the repository's previous
-// hallmark report, when there is one; for a review step its previous outcome and
+// hallmark report, when there is one, and the task's baseline; for a review step its previous outcome and
 // the rulings on it, recorded first as document <step>-<n>-rulings, then every loop it has not yet served; for a
 // Director stage a loop went back to, its own latest outputs as previous and the document each loop's blocking result
 // was bound to as reviewed, so the stage resumes from them rather than starting over; then the task's context, when it
@@ -134,6 +137,11 @@ func (r *run) extras(s workflow.Step, n int) ([]render.Input, error) {
 		return nil, err
 	} else if p != nil {
 		out = append(out, *p)
+	}
+	if b, err := r.baselineInput(s, n); err != nil {
+		return nil, err
+	} else if b != nil {
+		out = append(out, *b)
 	}
 	if isReview(s) {
 		if doc, _, err := r.output(s.ID, "outcome"); err == nil {
@@ -211,7 +219,7 @@ func (r *run) want(s workflow.Step, inputs []render.Input) (workflow.Revisions, 
 
 // stale reports whether a finished attempt of s was given other inputs, or for a review other
 // revisions, than s would be given now. The engine-added inputs are left out: a new loop's feedback, rulings,
-// task context or linked documents never make a finished attempt stale. Plan's design is the one engine-added input counted, and only for
+// task context, linked documents or a hallmark's baseline never make a finished attempt stale. Plan's design is the one engine-added input counted, and only for
 // plan: a newly approved design makes its finished attempt stale.
 func (r *run) stale(s workflow.Step, n int) (bool, error) {
 	b, err := r.binding(s.ID, n)
@@ -227,7 +235,7 @@ func (r *run) stale(s workflow.Step, n int) (bool, error) {
 	}
 	var given []render.Input
 	for _, in := range r.boundInputs(b) {
-		if in.Port != FeedbackPort && in.Port != PreviousPort && in.Port != RulingsPort && in.Port != ReviewedPort && in.Port != ResolutionPort && in.Port != LinkedPort && !r.isTaskContext(in) {
+		if in.Port != FeedbackPort && in.Port != PreviousPort && in.Port != RulingsPort && in.Port != ReviewedPort && in.Port != ResolutionPort && in.Port != LinkedPort && in.Port != BaselinePort && !r.isTaskContext(in) {
 			given = append(given, in)
 		}
 	}

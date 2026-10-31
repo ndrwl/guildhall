@@ -41,7 +41,7 @@ func TestHallmarkKind(t *testing.T) {
 	if !ok {
 		t.Fatal("hallmark v1 is not registered")
 	}
-	if !reflect.DeepEqual(k.Inputs, []Port{{Name: "previous", Type: Document, Optional: true}}) {
+	if !reflect.DeepEqual(k.Inputs, []Port{{Name: "previous", Type: Document, Optional: true}, {Name: "baseline", Type: Document, Optional: true}}) {
 		t.Fatalf("inputs = %+v", k.Inputs)
 	}
 	if !reflect.DeepEqual(k.Outputs, []Port{{Name: "report", Type: Document}}) {

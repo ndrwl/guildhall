@@ -249,6 +249,10 @@ func RunWorkspaceContract(t *testing.T, newHarness func(t *testing.T) WorkspaceH
 		if _, err := h.Base(ctx, w.Repository, w.Branch); err == nil {
 			t.Error("Base before the first Ensure succeeded")
 		}
+		def := git.DefaultRef(w.Branch)
+		if _, err := h.Tip(ctx, w.Repository, def); err == nil {
+			t.Error("Tip of the default branch before the first Ensure succeeded")
+		}
 		ensure(t, h, w)
 		if got, err := h.Tip(ctx, w.Repository, w.Branch); err != nil || got != base {
 			t.Errorf("Tip of a new branch = %s, %v; want %s", got, err, base)
@@ -256,6 +260,9 @@ func RunWorkspaceContract(t *testing.T, newHarness func(t *testing.T) WorkspaceH
 		commit := h.Commit(t, w.Dir, "c.txt")
 		if got, err := h.Tip(ctx, w.Repository, w.Branch); err != nil || got != commit {
 			t.Errorf("Tip after a commit = %s, %v; want %s", got, err, commit)
+		}
+		if got, err := h.Tip(ctx, w.Repository, def); err != nil || got != base {
+			t.Errorf("Tip of the recorded default branch = %s, %v; want %s", got, err, base)
 		}
 		if got, err := h.Base(ctx, w.Repository, w.Branch); err != nil || got != base {
 			t.Errorf("Base after a commit = %s, %v; want %s", got, err, base)
@@ -623,14 +630,19 @@ func (f *Workspaces) FastForward(ctx context.Context, w git.Workspace) (string, 
 	return "", nil
 }
 
-// Tip implements git.Program.Tip: the commit the branch is at, an error for a branch that does not exist.
+// Tip implements git.Program.Tip: the commit the branch is at, or for a branch's DefaultRef the default branch
+// Ensure or FastForward last recorded for it, an error for a branch that does not exist.
 func (f *Workspaces) Tip(ctx context.Context, repository, branch string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	tip, ok := f.branches[[2]string{repository, branch}]
+	tips := f.branches
+	if b, ok := strings.CutPrefix(branch, git.DefaultRef("")); ok {
+		tips, branch = f.recorded, b
+	}
+	tip, ok := tips[[2]string{repository, branch}]
 	if !ok {
 		return "", fmt.Errorf("branch %s of %s does not exist", branch, repository)
 	}

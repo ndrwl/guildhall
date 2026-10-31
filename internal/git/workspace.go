@@ -263,13 +263,18 @@ func (p Program) Base(ctx context.Context, repository, branch string) (string, e
 	return strings.TrimSpace(string(out)), nil
 }
 
-// Tip returns the commit refs/heads/<branch> is at in the repository at repository. A branch that does not exist,
-// an invalid branch name and any git failure are errors.
+// Tip returns the commit refs/heads/<branch> is at in the repository at repository, or, for a branch given as
+// DefaultRef(b), the default branch Ensure or FastForward last recorded for b. A branch that does not exist, an
+// invalid branch name and any git failure are errors.
 func (p Program) Tip(ctx context.Context, repository, branch string) (string, error) {
+	ref := "refs/heads/" + branch
+	if b, ok := strings.CutPrefix(branch, DefaultRef("")); ok {
+		branch, ref = b, branch
+	}
 	if err := p.validBranch(ctx, branch); err != nil {
 		return "", err
 	}
-	out, err := p.git(ctx, repository, "show-ref", "--verify", "--hash", "refs/heads/"+branch)
+	out, err := p.git(ctx, repository, "show-ref", "--verify", "--hash", ref)
 	if err != nil {
 		return "", err
 	}

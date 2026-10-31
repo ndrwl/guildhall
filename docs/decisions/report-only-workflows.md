@@ -2,7 +2,7 @@
 
 A hallmark reviews the whole repository and writes ranked, PR-sized follow-ups without changing it ([skill](../../skills/guildhall-hallmark/SKILL.md)).
 It is launched as a `hallmark` [task kind](task-kinds.md), `guildhall task new --kind hallmark`, which runs the shipped `hallmark` workflow, or the workflow a repository names in `[repository.kinds] hallmark`.
-That workflow has one step, `hallmark`, of the new `hallmark` step kind: Artisan-only, an optional single `previous` document input, a `report` document output and the settings `profile`, `skills` and `instructions`.
+That workflow has one step, `hallmark`, of the new `hallmark` step kind: Artisan-only, optional single `previous` and `baseline` document inputs, a `report` document output and the settings `profile`, `skills` and `instructions`.
 The shipped step runs under the `researcher` profile with the `guildhall-hallmark` skill.
 A `research` step could not carry the skill, and widening `research` for every workflow was rejected; a kind of its own also gives the engine a type to key the read-only check and the previous report on.
 
@@ -29,6 +29,8 @@ It matches a hallmark step rather than a workflow name, so a `[repository.kinds]
 Later attempts reuse the copy, and every attempt's binding records it, so a hallmark that finishes later never changes what an earlier attempt was given.
 With no such task the input is absent, and the stage says the report is the repository's first recorded hallmark.
 Hallmarks from before Guildhall recorded them are not imported; the Director may attach one as task context.
+
+Addendum (d81): evidence reaches a hallmark by input, not by grants. The engine renders a `baseline` document once per task, with the previous hallmark's head, the current main, the merges between them and their check runs, and `guildhall ci log` serves the logs of the failed checks it lists ([interpreter](../interpreter.md#report-only-workflows)); no toolchain or CI grant is added to a shipped profile.
 
 ## Authority and overrides
 

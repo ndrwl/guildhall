@@ -39,3 +39,5 @@ The checks the merge queue reads for a rebased head (`<deliver>-<k>-checks-<head
 The reviewer's inputs, the Director's send-back text and other forges are unchanged.
 `gh api` follows the endpoint's redirect to the plain-text log, as a live failed job confirmed on 2026-10-30 ([evidence](../evidence/failed-job-logs-redirect-2026-10-30.txt)), so the `gh run view --job <id> --log` fallback, which prefixes every line with the job and step names, was not needed.
 gh prints that log only with `--allow-escape-sequences`, because it holds colour codes, and it starts with a byte order mark and ends lines with CRLF, so the excerpt removes all three before it matches a line.
+
+Addendum (d81): `guildhall ci log` also serves the failed checks that a hallmark task's `baseline` input lists, read from that digest-checked document's failed-jobs block, with the same refusals, exit codes and cache ([CI logs](../ci-logs.md)).

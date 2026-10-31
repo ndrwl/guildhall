@@ -567,6 +567,14 @@ The first attempt of a `hallmark` step that wires no `previous` input is given, 
 The report is copied once into the task's documents as `previous-<step>`, at `tasks/<repo>/<task>/previous-<step>-<source task>.md`; later attempts reuse the copy and every binding records it, so a hallmark that finishes later never changes what an earlier attempt was given.
 With no such task the input is absent.
 
+Every attempt of a `hallmark` step that wires no `baseline` input is given, as `baseline`, the evidence a hallmark cannot gather under a shipped grant, rendered once for the task as document `baseline-<step>`, at `tasks/<repo>/<task>/baseline-<step>.md` ([decision](decisions/report-only-workflows.md)).
+Whichever attempt is bound first renders it; later attempts reuse it, and a replayed advance reads no forge or git once it is recorded.
+It names the previous hallmark, chosen as `previous` chooses it, at the head of its `finished` document, or else its newest prepared record; the current head, the remote's default branch as `Ensure` fetched it when the attempt was bound (the prepared record, written later at launch, stays the authority, and a later attempt may run on a newer head); and the repository's done tasks with a merge record whose commit (its merge commit, or else its pull request's head) is in the current head and not in the previous one, newest first by close time, at most 20, saying how many more it dropped and naming any whose ancestry could not be read.
+With `Engine.Forge` it lists each merge's checks from `Forge.Checks` on its merge commit, name, state and URL, a failed GitHub Actions job's row naming the [`guildhall ci log`](ci-logs.md) command that serves its log, and ends with a fenced `guildhall.hallmark-baseline-jobs/1` JSON block of those jobs.
+A forge error is recorded under its merge as "checks unavailable: <reason>" and the attempt still launches; only the advance's context ending is returned, so a cancelled advance records no baseline.
+Without `Engine.Workspaces` the current head is unknown and the merges unavailable, and without a forge the checks and the block are absent.
+Like the other engine-added inputs, the baseline never makes a finished attempt stale.
+
 ## Review gate
 
 Before `deliver`, every `review` and `document-review` step earlier in the workflow must have a latest recorded outcome, `<step>-<n>-outcome` or a loop exit's `<step>-x<round>-outcome`, that is neither blocking nor `rejected` and is bound (`ReviewOutcome.BoundTo`) to its current document subject or the head being delivered, the step's applicable accepted-spec digest and the current `Engine.StandardsRevision`; otherwise `deliver` is refused with `ErrReviewGate`.
