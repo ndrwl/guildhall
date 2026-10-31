@@ -39,7 +39,11 @@ func hallmarkDef(t *testing.T) *workflow.Definition {
 }
 
 // hallmarkExp expects attempt n of the hallmark step under the researcher profile with inputs, responding with r.
+// Every hallmark attempt is given a baseline: inputs without one expect it at any digest.
 func hallmarkExp(n int, inputs map[string]string, r interptest.Response) interptest.Expectation {
+	if _, ok := inputs["baseline"]; !ok {
+		inputs["baseline"] = interptest.AnyDigest
+	}
 	return interptest.Expectation{Step: "hallmark", Attempt: n, Profile: "researcher", Inputs: inputs, Standards: []string{"standards/go.md"}, Respond: r}
 }
 

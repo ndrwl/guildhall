@@ -31,8 +31,9 @@ const ciLogHelp = `Usage: guildhall ci log [--copy <dir>] [--tail <lines>] [--ou
   --tail <lines>    print only the log's last lines
   --out <file>      write the log to file and print its path, size and dropped bytes
   --help            show this help
-Serves the full log of a failed GitHub Actions job the task's validate results record, by job id or by check
-name (that check's latest failed job), from the CI log cache or fetched with Guildhall's own gh.
+Serves the full log of a failed GitHub Actions job the task's validate results record, or a hallmark task's
+baseline input lists, by job id or by check name (that check's latest failed job), from the CI log cache or
+fetched with Guildhall's own gh.
 Exit 0: the log was served; 1: the log is unavailable, with the reason; 2: a usage error.
 Examples:
   guildhall ci log guildhall/d45 123456789
@@ -153,7 +154,7 @@ func (a *App) ciCmd(args []string) int {
 	return 0
 }
 
-// ciJob is one failed check a task's validate result records, with the result it is in.
+// ciJob is one failed check a task's validate result or hallmark baseline records, with the document it is in.
 type ciJob struct {
 	Check, Job string
 	// Result names the result; Path is its file; round orders the results of a step.
@@ -165,8 +166,9 @@ type ciJob struct {
 // resultName matches a validate result's document name, <step>-<round>-result.
 var resultName = regexp.MustCompile(`^(.+)-([0-9]+)-result$`)
 
-// recordedJobs lists the failed checks of every failed validate result of the task, the latest round first, read
-// from the documents under docs and checked against their recorded digests.
+// recordedJobs lists the failed checks of every failed validate result of the task, the latest round first, then
+// the failed jobs the failed-jobs block of each of a hallmark task's baselines lists, its merges newest first; each
+// document is read from under docs and checked against its recorded digest.
 func recordedJobs(s *store.Store, docs, repo, task string) ([]ciJob, error) {
 	if _, err := s.Task(repo, task); err != nil {
 		return nil, err
@@ -175,19 +177,40 @@ func recordedJobs(s *store.Store, docs, repo, task string) ([]ciJob, error) {
 	if err != nil {
 		return nil, err
 	}
-	var out []ciJob
+	read := func(d store.DocumentRef) (string, []byte, error) {
+		p := filepath.Join(docs, filepath.FromSlash(d.Path))
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return "", nil, err
+		}
+		if digest.Of(data).Hex() != d.SHA256 {
+			return "", nil, fmt.Errorf("document %s at %s does not match its recorded digest", d.Name, p)
+		}
+		return p, data, nil
+	}
+	var out, baseline []ciJob
 	for _, d := range refs {
+		if interp.IsBaselineDocument(d) {
+			p, data, err := read(d)
+			if err != nil {
+				return nil, err
+			}
+			jobs, err := interp.BaselineJobs(data)
+			if err != nil {
+				return nil, fmt.Errorf("document %s at %s: %w", d.Name, p, err)
+			}
+			for _, j := range jobs {
+				baseline = append(baseline, ciJob{Check: j.Check, Job: j.Job, Result: d.Name, Path: p, Remote: j.Remote, Head: j.Head})
+			}
+			continue
+		}
 		m := resultName.FindStringSubmatch(d.Name)
 		if m == nil || filepath.Base(d.Path) != "result.json" {
 			continue
 		}
-		p := filepath.Join(docs, filepath.FromSlash(d.Path))
-		data, err := os.ReadFile(p)
+		p, data, err := read(d)
 		if err != nil {
 			return nil, err
-		}
-		if digest.Of(data).Hex() != d.SHA256 {
-			return nil, fmt.Errorf("document %s at %s does not match its recorded digest", d.Name, p)
 		}
 		var v struct {
 			Schema  string `json:"schema"`
@@ -208,7 +231,7 @@ func recordedJobs(s *store.Store, docs, repo, task string) ([]ciJob, error) {
 		}
 	}
 	slices.SortStableFunc(out, func(a, b ciJob) int { return cmp.Compare(b.round, a.round) })
-	return out, nil
+	return append(out, baseline...), nil
 }
 
 // matchJob finds arg among jobs: a job id, or else a check name, meaning that check's latest failed Actions job.

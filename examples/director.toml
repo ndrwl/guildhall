@@ -68,8 +68,9 @@ allowed_tools = ["Bash(go test:*)"]
 [repository.profiles.rebaser]
 allowed_tools = ["Bash(go test:*)"]
 
-# A hallmark's read-only stage runs under the researcher profile; to give its report test evidence, grant the
-# researcher the test commands too.
+# A hallmark's read-only stage runs under the researcher profile. Its CI evidence, the merges since the previous
+# hallmark and their check runs, arrives in its baseline input, with guildhall ci log for failed checks' logs. A
+# researcher grant of go test gives it the tests only: not build, vet, gofmt, lint or -race.
 # [repository.profiles.researcher]
 # allowed_tools = ["Bash(go test:*)"]
 

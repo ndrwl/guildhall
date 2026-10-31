@@ -31,7 +31,8 @@ Report findings in terms of locality and leverage, never "cleaner".
 
 ## Steps
 
-1. Baseline: read the previous hallmark report first, your `previous` input, record its commit and the current one, and list the merged pull requests and recent CI runs between them, with their failures and cancellations.
+1. Baseline: read the previous hallmark report first, your `previous` input, with your `baseline` input, which Guildhall rendered for this task: the previous hallmark's commit and the current one, the merged pull requests between them and each merge's check runs.
+   Take the commits, merged pull requests and check runs from it rather than gathering them yourself, and record what it says was unavailable as missing evidence.
    With no previous report, this is the first recorded hallmark: say so, take the repository's recent history as the baseline, and leave the disposition table empty.
    Start a disposition table for every earlier finding: resolved, partly resolved, unchanged or worse.
    Do not report unchanged debt as a fresh discovery.
@@ -51,8 +52,10 @@ Report findings in terms of locality and leverage, never "cleaner".
    Check the side effects before a refusal, not only that the refusal happens.
    Keep probes outside the tracked tree, keep them reproducible, and label a failure against a proposed contract apart from a regression against a current one.
 6. Tests: run the suite fresh twice and with the race detector where it is supported, and list the slowest tests, the named skips, the sleeps and the platform-only files.
-   Record each command's exit code on its own, never just the end of a compound command.
-   Classify each recent CI failure as a code defect, a test portability problem, an infrastructure failure or a demonstrated flake.
+   Run each permitted command on its own line, with no `; echo $?`, no redirection outside the working directory and no chaining of an ungranted command; the command's result reports its exit code.
+   A command the permission policy refuses is missing evidence: record it with the refusal and do not retry it.
+   Classify each failed check in the baseline from its full log, as a code defect, a test portability problem, an infrastructure failure or a demonstrated flake.
+   Read the log with the `guildhall ci log` command the baseline names, with `--out` into your working directory for a long log; a log that is unavailable or expired is missing evidence.
    Find two suites for one contract and test packages that repeat the same cases, and never propose deleting a case until the retained boundary proves it.
    A check you could not run is missing evidence, not a pass.
 7. Docs and build: check every "not yet", "later" and support claim in the documents against the code, compare the contract inventory with the packages, and count decision files awaiting an index entry.

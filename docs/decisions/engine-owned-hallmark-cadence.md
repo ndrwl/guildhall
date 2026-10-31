@@ -12,7 +12,7 @@ This supersedes the deferred part of [report-only workflows](report-only-workflo
 
 - **One selector.**
   A repository's last hallmark is its newest done task, by close receipt and then id, whose bound workflow resolves and has a step of type `hallmark` and that recorded the `finished` document and a report of a hallmark step.
-  `interp.LastHallmark` is the only code that decides it; `newestHallmarkReport` calls it excepting the task itself, and `director status` calls it for each repository.
+  `interp.LastHallmark` is the only code that decides it; `newestHallmark` calls it excepting the task itself, for both the `previous` and `baseline` inputs, and `director status` calls it for each repository.
   It matches the step type, not the task kind or the workflow name, so a `[repository.kinds] hallmark` override still counts.
   Requiring the `finished` document makes "done hallmark" mean a hallmark the engine finished; a hallmark-only workflow always closes through `finish()`, so in practice the tasks are the ones the previous-report lookup already chose.
   A cancelled or failed hallmark is never chosen, so it never resets the cadence.

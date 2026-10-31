@@ -8,12 +8,16 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ndrwl/guildhall/baseline"
 	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/forge"
 	"github.com/ndrwl/guildhall/internal/forge/forgetest"
+	"github.com/ndrwl/guildhall/internal/interp"
+	"github.com/ndrwl/guildhall/internal/store"
 )
 
 // ciLogLines is how many lines the fixture job log has: more than a 64 KiB ci_log_limit keeps.
@@ -182,5 +186,109 @@ func TestCILogRefusals(t *testing.T) {
 	f.SetLogError("123", &forge.LogUnavailableError{Reason: "gh: Forbidden (HTTP 403)"})
 	if code, _, stderr := ciRun(t, d, "", "--copy", dir, "app/t-1", "ci"); code != 1 || stderr != "guildhall: the log of job 123 is unavailable: gh: Forbidden (HTTP 403)\n" {
 		t.Errorf("ci log of a forbidden log = %d, %q", code, stderr)
+	}
+}
+
+// logCommits is a fake forge that records the commit of every log read.
+type logCommits struct {
+	*forgetest.Fake
+	mu      sync.Mutex
+	commits []forge.Commit
+}
+
+func (f *logCommits) CheckLog(ctx context.Context, c forge.Commit, job string, limit int64) (forge.CheckLog, error) {
+	f.mu.Lock()
+	f.commits = append(f.commits, c)
+	f.mu.Unlock()
+	return f.Fake.CheckLog(ctx, c, job, limit)
+}
+
+const (
+	baselineRemote = "git@github.com:example/app-d80.git"
+	baselineMerge  = "89abcdef0123456789abcdef0123456789abcdef"
+)
+
+// hallmarkBaseline is failedValidate's copy with a hallmark task app/h-1 whose recorded baseline-hallmark lists the
+// failed job 7781 of check lint on merge d80's commit, on d80's remote, besides a failed status with no job and a
+// passed check; the forge records each log read's commit. It also returns the baseline document's file.
+func hallmarkBaseline(t *testing.T) (string, runDirector, *forgetest.Fake, *logCommits, string) {
+	t.Helper()
+	dir, d, f := failedValidate(t)
+	rec := &logCommits{Fake: f}
+	d.forge = rec
+	newTask(t, d.store, d.config, "app", "Hallmark", "h-1")
+	block, err := json.Marshal(map[string]any{"schema": interp.BaselineJobsSchema, "jobs": []interp.BaselineJob{
+		{Task: "d80", Remote: baselineRemote, Head: baselineMerge, Check: "lint", Job: "7781"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := "# Hallmark baseline for app/h-1\n\n## Checks\n\n### d80 `" + baselineMerge + "`\n\n| Check | State | URL | Log |\n|---|---|---|---|\n" +
+		"| lint | failed | | `guildhall ci log app/h-1 7781` |\n| status | failed | | |\n| test | passed | | |\n\n## Failed jobs\n\n```json\n" + string(block) + "\n```\n"
+	file := filepath.Join(d.state, "documents", "tasks", "app", "h-1", "baseline-hallmark.md")
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, file, doc)
+	s, err := store.Open(d.store, store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	if _, err := s.PutDocument("doc:h-1:baseline", store.DocumentRef{Repository: "app", TaskID: "h-1", Name: "baseline-hallmark",
+		Path: "tasks/app/h-1/baseline-hallmark.md", SHA256: digest.Of([]byte(doc)).Hex()}); err != nil {
+		t.Fatal(err)
+	}
+	f.SetLog("7781", "lint: unused variable x\n")
+	return dir, d, f, rec, file
+}
+
+// TestCILogBaseline: ci log serves a failed job a hallmark task's baseline lists, by job id or check name, fetched
+// once for the merge commit on the merged task's remote into the hallmark task's own cache, and from that cache
+// afterwards until it is removed.
+func TestCILogBaseline(t *testing.T) {
+	dir, d, f, rec, _ := hallmarkBaseline(t)
+	reads := f.LogCalls()
+	for _, arg := range []string{"7781", "lint"} {
+		if code, out, stderr := ciRun(t, d, "", "--copy", dir, "app/h-1", arg); code != 0 || out != "lint: unused variable x\n" {
+			t.Errorf("ci log %s = %d, %q, %s; want the log", arg, code, out, stderr)
+		}
+	}
+	if n := f.LogCalls(); n != reads+1 {
+		t.Errorf("forge read %d logs, want 1 then the cache", n-reads)
+	}
+	if len(rec.commits) != 1 || rec.commits[0].Head != baselineMerge || rec.commits[0].Remote != baselineRemote || rec.commits[0].Repository != appRepo {
+		t.Errorf("log read commits = %+v, want d80's merge commit on its remote", rec.commits)
+	}
+	cache := filepath.Join(d.state, "app", "h-1", "ci-logs")
+	if data, err := os.ReadFile(filepath.Join(cache, "7781.log")); err != nil || string(data) != "lint: unused variable x\n" {
+		t.Errorf("cached log = %q, %v", data, err)
+	}
+	if err := os.RemoveAll(cache); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, stderr := ciRun(t, d, "", "--copy", dir, "app/h-1", "7781"); code != 0 || f.LogCalls() != reads+2 {
+		t.Errorf("ci log after the cache was removed = %d, %s, %d reads; want the log fetched again", code, stderr, f.LogCalls()-reads)
+	}
+}
+
+// TestCILogBaselineRefusals: a job another task records, a passed check and a failed check with no job are refused
+// with exit 2, listing the task's failed checks, the baseline's among them, and read no log; a baseline whose file
+// does not match its recorded digest is an error.
+func TestCILogBaselineRefusals(t *testing.T) {
+	dir, d, f, _, file := hallmarkBaseline(t)
+	reads := f.LogCalls()
+	for _, arg := range []string{"123", "ci", "test", "status"} {
+		code, out, stderr := ciRun(t, d, "", "--copy", dir, "app/h-1", arg)
+		if code != 2 || out != "" || !strings.Contains(stderr, "7781\tlint\t(baseline-hallmark)") || strings.Contains(stderr, "123\t") {
+			t.Errorf("ci log %s = %d, %q, %s; want exit 2 listing only the baseline's failed check", arg, code, out, stderr)
+		}
+	}
+	if n := f.LogCalls(); n != reads {
+		t.Errorf("refusals read %d logs, want none", n-reads)
+	}
+	writeFile(t, file, "# edited\n")
+	if code, _, stderr := ciRun(t, d, "", "--copy", dir, "app/h-1", "7781"); code != 1 || !strings.Contains(stderr, "does not match its recorded digest") {
+		t.Errorf("ci log over an edited baseline = %d, %s; want the digest error", code, stderr)
 	}
 }

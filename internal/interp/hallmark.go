@@ -100,14 +100,15 @@ func (r *run) previousReport(s workflow.Step, n int) (*render.Input, error) {
 	}
 	name := previousName(s.ID)
 	if r.document(name) == nil && n == 1 {
-		src, from, err := r.newestHallmarkReport()
+		prev, err := r.newestHallmark()
 		if err != nil {
 			return nil, fmt.Errorf("previous hallmark report: %w", err)
 		}
-		if src == nil {
+		if prev == nil {
 			return nil, nil
 		}
-		data, err := r.read(*src)
+		src, from := prev.report, prev.task.ID
+		data, err := r.read(src)
 		if err != nil {
 			return nil, fmt.Errorf("previous hallmark report of %s: %w", from, err)
 		}
@@ -125,22 +126,58 @@ func (r *run) previousReport(s workflow.Step, n int) (*render.Input, error) {
 	return &render.Input{Port: PreviousPort, Name: d.Path, SHA256: d.SHA256, Path: filepath.Join(r.e.DocumentDir, filepath.FromSlash(d.Path))}, nil
 }
 
-// newestHallmarkReport returns the report of the repository's last hallmark other than this task (LastHallmark),
-// with that task's id; nil when there is none.
-func (r *run) newestHallmarkReport() (*store.DocumentRef, string, error) {
+// hallmarkTask is the repository's previous hallmark as newestHallmark chose it: the task, its workflow's hallmark
+// steps, its documents and its latest report.
+type hallmarkTask struct {
+	task   store.Task
+	steps  []string
+	docs   []store.DocumentRef
+	report store.DocumentRef
+}
+
+// doneTasks returns the repository's done tasks other than this one, newest first by close receipt, then by id, with
+// every task's receipts.
+func (r *run) doneTasks() ([]store.Task, map[store.TaskRef]store.TaskClose, error) {
 	tasks, err := r.e.Records.Tasks(r.task.Repository)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 	closes, err := r.e.Records.TaskCloses()
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
+	}
+	tasks = slices.DeleteFunc(tasks, func(t store.Task) bool { return t.State != store.TaskDone || t.ID == r.task.ID })
+	ref := func(t store.Task) store.TaskRef { return store.TaskRef{Repository: t.Repository, ID: t.ID} }
+	slices.SortFunc(tasks, func(a, b store.Task) int {
+		if c := cmp.Compare(closes[ref(b)].Closed, closes[ref(a)].Closed); c != 0 {
+			return c
+		}
+		return cmp.Compare(b.ID, a.ID)
+	})
+	return tasks, closes, nil
+}
+
+// newestHallmark returns the repository's last hallmark other than this task (LastHallmark), with its workflow's
+// hallmark steps, its documents and its latest report; nil when there is none. It is the one choice of previous
+// hallmark: the previous input and the baseline both read it.
+func (r *run) newestHallmark() (*hallmarkTask, error) {
+	tasks, err := r.e.Records.Tasks(r.task.Repository)
+	if err != nil {
+		return nil, err
+	}
+	closes, err := r.e.Records.TaskCloses()
+	if err != nil {
+		return nil, err
 	}
 	h, err := LastHallmark(tasks, closes, r.e.Records.Documents, r.e.Workflow, r.task.ID)
 	if err != nil || h == nil {
-		return nil, "", err
+		return nil, err
 	}
-	return &h.Report, h.Task.ID, nil
+	docs, err := r.e.Records.Documents(h.Task.Repository, h.Task.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &hallmarkTask{task: h.Task, steps: hallmarkSteps(h.Task, r.e.Workflow), docs: docs, report: h.Report}, nil
 }
 
 // Hallmark is a repository's last hallmark: its task, the task's create and close receipts, and the report of its
