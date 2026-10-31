@@ -392,7 +392,8 @@ func TestValidateWithoutLoopRule(t *testing.T) {
 }
 
 // TestValidateNoCI: in a repository configured no_ci, a head the forge reports no checks for passes with a result
-// marked no_ci, while checks the forge does report still count.
+// marked no_ci, on which a required ci_green holds and the merge goes through, while checks the forge does report
+// still count.
 func TestValidateNoCI(t *testing.T) {
 	for _, b := range backends {
 		t.Run(b.name, func(t *testing.T) {
@@ -407,6 +408,13 @@ func TestValidateNoCI(t *testing.T) {
 			if msg := e.messages(t)["app.t7.checks-passed.validate-1"]; !strings.Contains(msg, "no CI") || !strings.Contains(msg, head) {
 				t.Errorf("checks-passed message = %q, want it naming no CI and the head", msg)
 			}
+			// no_ci acts through the validate step wired into deliver: a required ci_green holds on its result and
+			// the Guildmaster's merge merges.
+			if q := e.decision(t, "deliver-1").Question; !strings.Contains(q, "- ci_green: holds\n") {
+				t.Errorf("merge question = %q, want ci_green to hold", q)
+			}
+			e.answer(t, "deliver-1", "merge")
+			want(t, e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "deliver-1"}), done)
 		})
 	}
 	t.Run("reported checks count", func(t *testing.T) {

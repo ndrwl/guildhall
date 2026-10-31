@@ -161,7 +161,7 @@ The reference-run and skill-edit settings are parsed and validated so a copy can
 | `owner_machine` | The Director's one owner machine; every repository of a Director names the same one. |
 | `workflow` | Name of the Director's workflow definition a [feature task](tasks.md#task-kinds) runs; defaults to `default`. |
 | `[repository.kinds]` | The workflow each other [task kind](tasks.md#task-kinds) runs in this repository, such as `bug = "my-bug"`, resolved like `workflow`; a kind it does not name runs the shipped workflow of that name. `bug` and `hallmark` are the only keys: `feature` is refused, because `workflow` names it, and so is any other kind. Omitted, a config's digest is unchanged. |
-| `no_ci` | `true` declares that the repository runs no CI, so [validate](interpreter.md#validate) passes a published head its forge reports no checks for, recording that it had no CI; default `false`, where no checks reported waits as pending. |
+| `no_ci` | `true` declares that the repository runs no CI, so [validate](interpreter.md#validate) passes a published head its forge reports no checks for, recording that it had no CI; default `false`, where no checks reported waits as pending. `no_ci` acts through a validate step and does not stand in for a missing one: a workflow whose deliver step takes no `validation` input still fails a required [`ci_green`](#merge-requirements). |
 | `[repository.workflow_overrides.<step-id>]` | Chooses that step's `actor` for this repository only. |
 | `[repository.merge.requires]` | What a task's pull request needs before Guildhall merges it; see [merge requirements](#merge-requirements). |
 | `[repository.merge]` | How Guildhall classifies a rebase and when a rebased head needs a new merge decision; see [rebase settings](#rebase-settings). |
@@ -188,7 +188,7 @@ nothing_open         = true   # no open findings on the approving reviews and no
 |---|---|
 | `guildmaster_approval` | The Guildmaster answered `merge` on the deliver decision `deliver-<k>` for this head. |
 | `artisan_approval` | Every review and document-review step before deliver has a latest outcome that approves and is bound to the delivered head, the accepted spec digest and the current standards revision. "Artisan" means the independent review Artisan: the review step runs as its own attempt, never the author's build attempt. |
-| `ci_green` | Deliver's `validation` input is a `passed` result for the delivered head. |
+| `ci_green` | Deliver's `validation` input is a `passed` result for the delivered head. A deliver step with no `validation` input fails a required `ci_green` ("deliver step takes no validate result"), so no pull request merges without its checks being read. A repository without CI either keeps a validate step wired into deliver and sets [`no_ci = true`](#repositories), so validate passes with no checks, or sets `ci_green = false`. |
 | `nothing_open` | Those review outcomes have no open finding, and the task has no unanswered decision but the deliver step's own. Every finding is open, unresolved or newly raised, except a `disputed` one the Director has ruled on with a ruling that stands. Suggestions never count; the condition's reason still says "N suggestion(s), not counted". Without `guildmaster_approval`, a merge decision opened because this failed is superseded when it comes to hold before the decision is answered, and Guildhall merges by itself. |
 
 Each key is a TOML boolean; a missing key is `true`, and a missing section requires everything, so by default the Guildmaster approves every merge.

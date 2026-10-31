@@ -238,7 +238,7 @@ A new head, such as a build round after review findings, publishes the next roun
 
 **Deliver** reads the repository's [merge requirements](configuration.md#merge-requirements) from the current configuration, with any the task's [overrides](tasks.md#task-overrides) turn on (`run.repository`, which every gate reads), and evaluates them in order on every advance that has not yet authorized the delivered head, so an override added later never retracts an authorization ([decision](decisions/merge-requires.md)):
 
-1. `artisan_approval` and `ci_green`: when one is required and does not hold, the advance fails with `ErrReviewGate` or `ErrValidationGate`, whatever `guildmaster_approval` says, and no answer merges over it; when one is not required its gate is skipped, but its state is still reported.
+1. `artisan_approval` and `ci_green`: when one is required and does not hold, the advance fails with `ErrReviewGate` or `ErrValidationGate`, whatever `guildmaster_approval` says, and no answer merges over it; a required `ci_green` does not hold when deliver takes no `validation` input ([validation gate](#validate)). When one is not required its gate is skipped, but its state is still reported.
 2. The delivered head: the published head, or the head validate [rebased](#tiered-rebase) it to, followed through validate's rebase documents; the review and CI gates of a rebased head are read as below.
 3. `nothing_open`: the latest outcomes of the review steps before deliver have no open finding, and the task has no unanswered decision but the deliver step's own.
    Every finding is open, unresolved or newly raised, except a `disputed` one with a standing (uncontested) Director ruling of any move on that finding of that document; suggestions never count.
@@ -448,7 +448,9 @@ A forge that gives no run ids cannot show a re-run that failed the same way, whi
 The time of the last read is kept in `<state>/<repo>/<task>/<step>.checks.json`; a new head is read at once, and zero reads at every advance.
 Nothing in the engine reads the checks in the background: an advance does, such as `task start`, or the Director session supervisor's [checks watcher](director.md#checks).
 
-The **validation gate**: when `deliver`'s `validation` input is wired, its document must be a `passed` result for the head being delivered, or `deliver` is refused with `ErrValidationGate`; a head the front rebased is covered instead by the read of its own checks ([review and CI of a rebased head](#review-and-ci-of-a-rebased-head)).
+The **validation gate**: when `deliver`'s `validation` input is wired, its document must be a `passed` result for the head being delivered, or `deliver` is refused with `ErrValidationGate`.
+When it is not wired and `ci_green` is required, `deliver` is refused with `ErrValidationGate: deliver step "<id>" takes no validate result`, the floor's wording, so a workflow that omits deliver's `validation` input never merges without its checks being read; with `ci_green` off, an unwired input holds and the merge question shows `ci_green: not required`.
+A head the front rebased is covered instead by the read of its own checks ([review and CI of a rebased head](#review-and-ci-of-a-rebased-head)).
 Because validate only completes on a passed result for its current head, the gate holds whenever the walk reaches `deliver`; it is kept deliberately as defence in depth, as the review gate is, and guards a workflow and records that disagree.
 
 ## Rounds and loops

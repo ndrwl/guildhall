@@ -56,7 +56,7 @@ func newPublishEnvTask(t *testing.T, b backend, edit func(*store.Task)) (*env, *
 	f.SetBranch(repoRemote, "main", baseHead)
 	f.AddCommit(repoPath, head)
 	e.eng.Forge = f
-	e.eng.Config.Repositories = []config.Repository{{ID: "app", Path: repoPath, Remote: repoRemote}}
+	e.eng.Config.Repositories = []config.Repository{{ID: "app", Path: repoPath, Remote: repoRemote, Merge: noCI}}
 	return e, f
 }
 

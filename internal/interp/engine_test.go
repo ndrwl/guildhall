@@ -63,6 +63,10 @@ var backends = []backend{
 	}},
 }
 
+// noCI turns ci_green off for a repository that runs no CI: the fixtures whose deliver step takes no validation
+// input stand for one, and a required ci_green would fail at their deliver step.
+var noCI = config.MergeOptions{Requires: config.MergeRequires{CIGreen: ptr(false)}}
+
 // env is one engine over one backend with task app/t7 bound to the straight workflow.
 type env struct {
 	eng     *interp.Engine
@@ -130,7 +134,7 @@ func newEnvTasks(t *testing.T, b backend, def *workflow.Definition, edit func(*s
 				"reviewer-opus-strict": {Adapter: interp.MockAdapter},
 				"reviewer-astra":       {Adapter: interp.MockAdapter},
 			},
-			Repositories: []config.Repository{{ID: "app"}},
+			Repositories: []config.Repository{{ID: "app", Merge: noCI}},
 		},
 		StandardsRevision: "standards-1",
 		DocumentDir:       t.TempDir(),

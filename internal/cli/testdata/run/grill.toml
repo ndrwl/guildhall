@@ -16,3 +16,8 @@ path = "/srv/app"
 remote = "git@github.com:example/app.git"
 owner_machine = "workstation"
 workflow = "fake-grill"
+
+# The workflow's deliver step takes no validation input: the repository runs
+# no CI, so ci_green is off.
+[repository.merge.requires]
+ci_green = false
