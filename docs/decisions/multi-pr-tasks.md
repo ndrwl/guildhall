@@ -4,6 +4,7 @@ date: 2026-10-31
 topic: delivery
 tasks: d88
 amends: task-cancel.md
+amended-by: stacked-prs-not-yet.md
 ---
 
 # Large work is one multi-PR task: an accepted spec lists ordered slices, delivered one pull request each
@@ -32,8 +33,7 @@ Slice k from 2 on runs on branch `guildhall/<task>.s<k>` (`interp.SliceBranch`),
 Only the last slice's merge closes the task: deliver, the outside-merge rule and `task reconcile` close a slice before the last by recording its merge, telling the Director, retiring its workspace and leaving the merge queue, and the same advance starts the next slice.
 `task cancel` is refused only while the current slice is merging; otherwise it closes the unmerged slices' pull requests and records the task cancelled, its merged slices standing.
 
-GitHub stacked pull requests are deferred.
-Their general availability was reported on 2026-10-06, but whether they work on this personal-account repository, how the up-to-date branch protection treats them, whether Guildhall's token reaches the Stacks API, and how GitHub's rebase of upper layers races the merge queue's rebaser are all unverified; a follow-up task should probe them live and, only if the evidence supports it, add stacking as an optional forge capability with sequential slices as the fallback.
+Slices do not use GitHub stacked pull requests, for the reasons and re-open conditions in [Slices stay sequential](stacked-prs-not-yet.md).
 
 ## Alternatives rejected
 

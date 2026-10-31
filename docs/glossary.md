@@ -157,4 +157,4 @@ A finished outcome without a readable result is refused, not guessed.
 - A **slice** is one ordered entry of a multi-PR task's accepted spec, delivered as one pull request on its own branch, `guildhall/<task>` for slice 1 and `guildhall/<task>.s<k>` after; the workflow's slice range runs once for it.
   Avoid "part", "phase", "sub-task" and "chunk"; the hallmark skill's "slice", a pull-request-sized part of planned work, means the same.
 - A **cycle**, in contract TDD, is one contract case and its minimal implementation inside a single build (`guildhall-contract-tdd`); it was called a slice there before multi-PR tasks.
-- A **stack** and its **layers** are GitHub's stacked pull requests, named only for how slices might one day be shown on the forge, never in place of "slice"; Guildhall does not stack pull requests yet ([decision](decisions/multi-pr-tasks.md)).
+- A **stack** and its **layers** are GitHub's stacked pull requests, named only for how slices might one day be shown on the forge, never in place of "slice"; Guildhall does not stack pull requests yet ([decision](decisions/stacked-prs-not-yet.md)).

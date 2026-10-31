@@ -239,6 +239,7 @@ Regenerate it with `go test ./internal/doccheck -run TestDecisionIndex -update`,
 - [Guard rails are enforced by the binary: a start over the running cap is queued, and the daily cap may be turned off](decisions/guard-rails.md)
 - [Authorized pull requests wait in a merge queue, and Guildhall rebases the front itself in three tiers](decisions/merge-queue-rebase.md)
 - [Large work is one multi-PR task: an accepted spec lists ordered slices, delivered one pull request each](decisions/multi-pr-tasks.md)
+- [Slices stay sequential: Guildhall does not stack their pull requests until merge-async and GitHub-made heads are designed for](decisions/stacked-prs-not-yet.md)
 - [A task's working directory is a git worktree of its repository](decisions/worktree-custody.md)
 
 ## Tasks and holds
