@@ -120,6 +120,7 @@ A finished outcome without a readable result is refused, not guessed.
 - A task's **ready time** is the commit time of the receipt that first authorized its merge; it survives a major send-back and a hold, and goes only with a merge or a cancellation.
 - A **merge hold** is `task hold-merge`'s recorded hold: the task stays authorized and keeps its ready time, but the queue skips it ([holding a merge](tasks.md#holding-a-merge)).
   The `hold` answer on a merge decision is another thing: it refuses the merge it was asked for, and the task waits for the Director.
+  "A decision holds its task" is another thing again: the decision is open and not a question (`store.Decision.Holds`), so `nothing_open`, the dependency gate and the merge-queue front wait for it.
 - **Priority** is a task's level, `p0 urgent` to `p5 someday`, `p3` by default ([priority](tasks.md#priority)).
 
 ## Clerk

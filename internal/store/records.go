@@ -187,7 +187,8 @@ const (
 // the first line is Note. A question decision is the exception: it takes any
 // non-blank answer, and sets Choice and Note only when the first line names an option.
 // Decisions recorded before typed decisions have no Kind, Subject or Options and
-// accept any non-blank answer.
+// accept any non-blank answer. Decision.Answering is this answer rule's one home,
+// and Decision.Holds says which open decisions hold their task.
 // Answering records the answer only; it never advances a task by itself.
 type Decision struct {
 	Repository string       `json:"repository"`
@@ -212,8 +213,40 @@ type Decision struct {
 	VoidReason string `json:"void_reason,omitempty"`
 }
 
-// Open reports whether the decision still waits for an answer: it is neither answered nor void.
+// Open reports whether the decision still waits for an answer: it is neither answered nor void. Open, not Holds, is
+// the test for voiding, closing and listing, since an open question must be voided on close and shown as well.
 func (d Decision) Open() bool { return !d.Answered && !d.Void }
+
+// Holds reports whether the decision holds its task: it is open and is not a question. A Director's question never
+// holds a task, while a legacy decision (no kind), a grant, an approval and every other kind do. nothing_open, the
+// dependency gate and the merge-queue front read it.
+func (d Decision) Holds() bool { return d.Open() && d.Kind != DecisionQuestion }
+
+// Answering is the one answer rule: it returns d answered with answer, recorded verbatim. When d offers options and
+// the answer's first line, with a single trailing CR removed, names one, that option is Choice and the trimmed text
+// after the first line is Note. A first line naming no option is refused with ErrInvalid unless d is a question,
+// which takes free text and leaves Choice and Note empty. An answered or void decision is refused with ErrInvalid.
+// It does not check the answer's text (blank, size, UTF-8); Store.AnswerDecision does that first.
+func (d Decision) Answering(answer string) (Decision, error) {
+	if d.Answered {
+		return Decision{}, invalid("decision %q of %s/%s is already answered", d.ID, d.Repository, d.TaskID)
+	}
+	if d.Void {
+		return Decision{}, invalid("decision %q of %s/%s is void: %s", d.ID, d.Repository, d.TaskID, d.VoidReason)
+	}
+	if len(d.Options) > 0 {
+		first, rest, _ := strings.Cut(answer, "\n")
+		first = strings.TrimSuffix(first, "\r")
+		switch {
+		case slices.Contains(d.Options, first):
+			d.Choice, d.Note = first, strings.TrimSpace(rest)
+		case d.Kind != DecisionQuestion:
+			return Decision{}, invalid("the first line of the answer to decision %q of %s/%s is %q; it must be one of %q", d.ID, d.Repository, d.TaskID, first, d.Options)
+		}
+	}
+	d.Answered, d.Answer = true, answer
+	return d, nil
+}
 
 // CreateTask records a new open task. A task id is unique within its repository.
 func (s *Store) CreateTask(mutationID string, t Task) (Receipt, error) {
@@ -509,9 +542,9 @@ func (s *Store) OpenDecision(mutationID string, d Decision) (Receipt, error) {
 }
 
 // AnswerDecision records the Guildmaster's exact answer; a decision is answered once.
-// When the decision offers options, an answer whose first line does not name one
-// is refused with ErrInvalid and nothing is written (see Decision), unless the decision is a question,
-// which takes free text and then leaves Choice and Note empty.
+// It refuses a blank, oversized or non-UTF-8 answer, then applies the one answer rule, Decision.Answering: when the
+// decision offers options, an answer whose first line does not name one is refused with ErrInvalid and nothing is
+// written, unless the decision is a question, which takes free text and then leaves Choice and Note empty.
 func (s *Store) AnswerDecision(mutationID, repository, taskID, id, answer string) (Receipt, error) {
 	if err := validateIDs(repository, taskID, id); err != nil {
 		return Receipt{}, err
@@ -528,23 +561,10 @@ func (s *Store) AnswerDecision(mutationID, repository, taskID, id, answer string
 		if err := getJSON(decisions, key, &d); err != nil {
 			return fmt.Errorf("decision %q of %s/%s: %w", id, repository, taskID, err)
 		}
-		if d.Answered {
-			return invalid("decision %q of %s/%s is already answered", id, repository, taskID)
+		d, err := d.Answering(answer)
+		if err != nil {
+			return err
 		}
-		if d.Void {
-			return invalid("decision %q of %s/%s is void: %s", id, repository, taskID, d.VoidReason)
-		}
-		if len(d.Options) > 0 {
-			first, rest, _ := strings.Cut(answer, "\n")
-			first = strings.TrimSuffix(first, "\r")
-			switch {
-			case slices.Contains(d.Options, first):
-				d.Choice, d.Note = first, strings.TrimSpace(rest)
-			case d.Kind != DecisionQuestion:
-				return invalid("the first line of the answer to decision %q of %s/%s is %q; it must be one of %q", id, repository, taskID, first, d.Options)
-			}
-		}
-		d.Answered, d.Answer = true, answer
 		return putJSON(decisions, key, d)
 	})
 }

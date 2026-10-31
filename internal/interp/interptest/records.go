@@ -72,7 +72,7 @@ func (r *Records) CreateTask(mutationID string, t store.Task) (store.Receipt, er
 	})
 }
 
-// AnswerDecision records an answer, as store.AnswerDecision does.
+// AnswerDecision records an answer, as store.AnswerDecision does, by the one answer rule, store.Decision.Answering.
 func (r *Records) AnswerDecision(mutationID, repository, taskID, id, answer string) (store.Receipt, error) {
 	req := store.Decision{Repository: repository, TaskID: taskID, ID: id, Answered: true, Answer: answer}
 	return r.mutate(mutationID, "answer-decision", req, func(rc *store.Receipt) error {
@@ -83,24 +83,11 @@ func (r *Records) AnswerDecision(mutationID, repository, taskID, id, answer stri
 		if i < 0 {
 			return fmt.Errorf("decision %q: %w", id, store.ErrNotFound)
 		}
-		d := &r.decisions[i]
-		if d.Answered {
-			return fmt.Errorf("%w: decision %q is already answered", store.ErrInvalid, id)
+		d, err := r.decisions[i].Answering(answer)
+		if err != nil {
+			return err
 		}
-		if d.Void {
-			return fmt.Errorf("%w: decision %q is void", store.ErrInvalid, id)
-		}
-		if len(d.Options) > 0 {
-			first, rest, _ := strings.Cut(answer, "\n")
-			first = strings.TrimSuffix(first, "\r")
-			switch {
-			case slices.Contains(d.Options, first):
-				d.Choice, d.Note = first, strings.TrimSpace(rest)
-			case d.Kind != store.DecisionQuestion:
-				return fmt.Errorf("%w: answer %q is not one of %q", store.ErrInvalid, first, d.Options)
-			}
-		}
-		d.Answered, d.Answer = true, answer
+		r.decisions[i] = d
 		return nil
 	})
 }

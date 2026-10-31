@@ -104,7 +104,7 @@ func (r *run) dependencyState(d store.TaskRef) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if i := slices.IndexFunc(decisions, func(x store.Decision) bool { return x.Open() && x.Kind != store.DecisionQuestion }); i >= 0 {
+	if i := slices.IndexFunc(decisions, func(x store.Decision) bool { return x.Holds() }); i >= 0 {
 		return fmt.Sprintf("waiting for the Guildmaster: decision %s open", decisions[i].ID), nil
 	}
 	attempts, err := r.e.Records.Attempts(d.Repository, d.ID)
