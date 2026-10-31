@@ -74,7 +74,7 @@ func TestPublishGuardRefusesAReviewThatIsNotApproved(t *testing.T) {
 			}
 			t.Run(name, func(t *testing.T) {
 				e, f := newPublishEnv(t, b)
-				e.requires(config.MergeRequires{ArtisanApproval: ptr(required)})
+				e.requires(config.MergeRequires{ArtisanApproval: ptr(required), CIGreen: ptr(false)})
 				e.advance(t, interp.Event{Kind: interp.TaskCreated})
 				e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1})
 				e.answer(t, "accept-1", "approved")

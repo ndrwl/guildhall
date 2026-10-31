@@ -549,10 +549,11 @@ func (r *run) validationFailed(s workflow.Step, id string, v validationDoc) (don
 	return false, next, false, err
 }
 
-// validated checks, before deliver, that its validation input is a passed result for the delivered head.
+// validated checks, before deliver, that its validation input is a passed result for the delivered head. A deliver
+// step that takes no validation input has no result to check, and fails the gate in the floor's wording.
 func (r *run) validated(deliver workflow.Step, h string) error {
 	if len(deliver.Inputs["validation"]) == 0 {
-		return nil
+		return fmt.Errorf("%w: deliver step %q takes no validate result", ErrValidationGate, deliver.ID)
 	}
 	in, err := r.input(deliver, "validation")
 	if err != nil {

@@ -133,7 +133,7 @@ var (
 	// outcome for every preceding review or document-review step (docs/interpreter.md#review-gate).
 	ErrReviewGate = errors.New("review gate")
 	// ErrValidationGate reports a deliver step whose validation input is not a passed result for the delivered
-	// head (docs/interpreter.md#validate).
+	// head, or, under a required ci_green, a deliver step with no validation input (docs/interpreter.md#validate).
 	ErrValidationGate = errors.New("validation gate")
 )
 

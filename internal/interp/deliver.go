@@ -402,7 +402,8 @@ func (r *run) conditions(s workflow.Step, requires config.MergeRequires, outcome
 		if x.checks.Verdict != validationPassed || x.checks.Head != x.head {
 			green = fmt.Errorf("%w: the checks of rebased head %s are %s", ErrValidationGate, x.head, x.checks.Verdict)
 		}
-	} else {
+	} else if len(s.Inputs["validation"]) > 0 || requires.CI() {
+		// With no validation input, a ci_green that is not required holds as before: there is nothing to check.
 		green = r.validated(s, x.head)
 	}
 	ci, err := gateCondition("ci_green", requires.CI(), ErrValidationGate, green)
