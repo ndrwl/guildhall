@@ -290,6 +290,7 @@ Regenerate it with `go test ./internal/doccheck -run TestDecisionIndex -update`,
 - [A Director runs standalone or managed, and no Director feature requires a Steward](decisions/optional-steward.md) (designed, not built)
 - [Repository paths are absolute in the owner machine's form](decisions/repository-paths-are-absolute.md)
 - [Rollout plans, previews and receipts live in one plan directory](decisions/rollout-plans-previews-and-receipts.md)
+- [The Steward runs only a fixed allow-list of Guildhall commands over ssh](decisions/steward-fixed-remote-commands.md)
 - [Steward rollouts copy files with scp and run no remote command](decisions/steward-rollouts-copy-with-scp.md)
 
 ## Former names

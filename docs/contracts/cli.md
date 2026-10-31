@@ -200,6 +200,19 @@ These commands act on a Director copy, `--copy <dir>` or the copy found from the
 
 A missing `--steward`, an unknown flag and an extra argument are usage errors (exit 2); every other refusal exits 1.
 
+### Config reload
+
+`guildhall config reload [--copy <dir>]` acts on a Director copy as the [director modes](#director-modes) commands do, and is what a Steward rollout runs over SSH on each copy it wrote ([remote commands](../steward.md#remote-commands)); the Guildmaster may run it by hand.
+
+- It reads `config.toml` and `managed.toml` once, refuses an inline `[managed]` as the boundary does, and refuses a copy that is not `managed`: a standalone copy names `guildhall director enrol`, and a refused one gives the mode table's refusal.
+- It loads and validates the two files together, refusing a `managed.toml` that does not load with the config, such as a corrupt checksum or a local value for a non-overridable key, and a config that is not a director's.
+- It then records a `managed-revision` event with source `reload`, the `managed.toml` digest and, as `previous`, the newest digest the current enrolment authorized before, if it is another, and prints `managed.toml <digest> authorized by reload (event <n>[, previous <digest>]); …`.
+  Its mutation id is `managed-revision:<enrolment>:reload:<digest hex>`, so a reload of a digest already authorized by reload replays the event, records nothing new and prints the same line.
+- It changes no task: active tasks keep their bound config, and new tasks get the authorized revision (R1.62).
+
+Every refusal exits 1 and records nothing; `config` without `reload`, an unknown flag and an extra argument are usage errors (exit 2).
+`steward rollout` finds `ssh` through `App.Runner`, `steward.SSH` over `ssh` found with `App.LookPath` when nil, beside `App.Copier`.
+
 ### Version
 
 `guildhall version [--startup | --json] [--copy <dir>]` says which revision the binary is, which pull request it ends at and how far it is behind the repository's main ([decision](../decisions/version-from-build-info.md)).

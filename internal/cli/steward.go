@@ -38,6 +38,9 @@ decision, which approval request opens.
 // scpTimeout bounds each scp run during a rollout.
 const scpTimeout = 2 * time.Minute
 
+// sshTimeout bounds each remote command a rollout runs over ssh, such as config reload.
+const sshTimeout = 2 * time.Minute
+
 type labels []string
 
 func (l *labels) String() string     { return strings.Join(*l, ",") }
@@ -170,14 +173,22 @@ func (a *App) loadRollout(cfgPath string) (*steward.Rollout, error) {
 	if info, err := os.Stat(private); !filepath.IsAbs(private) || err != nil || !info.IsDir() {
 		return nil, fmt.Errorf("private_config.location %q must be a local directory holding the private config; clone it first", private)
 	}
-	if a.Copier != nil {
-		return steward.LoadRollout(private, a.Copier)
+	copier, runner := a.Copier, a.Runner
+	if copier == nil {
+		scp, err := a.LookPath("scp")
+		if err != nil {
+			return nil, fmt.Errorf("scp is needed for rollouts: %w", err)
+		}
+		copier = steward.Transport{Path: scp, Timeout: scpTimeout}
 	}
-	scp, err := a.LookPath("scp")
-	if err != nil {
-		return nil, fmt.Errorf("scp is needed for rollouts: %w", err)
+	if runner == nil {
+		ssh, err := a.LookPath("ssh")
+		if err != nil {
+			return nil, fmt.Errorf("ssh is needed for rollouts, which run config reload on each copy they write: %w", err)
+		}
+		runner = steward.SSH{Path: ssh, Timeout: sshTimeout}
 	}
-	return steward.LoadRollout(private, steward.Transport{Path: scp, Timeout: scpTimeout})
+	return steward.LoadRollout(private, copier, runner)
 }
 
 // renderPlan describes a dry-run plan: each copy's changes, diff and planned commands.
