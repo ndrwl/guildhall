@@ -8,6 +8,7 @@ import (
 	"errors"
 	"html/template"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -49,6 +50,9 @@ type Options struct {
 	Location *time.Location
 	// Log receives one line for each request that failed for a reason the page does not show; nil discards it.
 	Log func(string)
+	// Host is the host and port the server is visited by, the [web] address; a request for any other Host is
+	// refused, and an empty Host refuses every request.
+	Host string
 }
 
 // Server serves the task pages and reader pages from its Source. Its routes are:
@@ -59,6 +63,7 @@ type Options struct {
 //	GET /<repo>/<task>/doc/<name>/frame an HTML document, sandboxed, for the reader page's frame
 //
 // Each path segment is path-escaped. Anything else, including any other method, is 404.
+// Any request whose Host is not Options.Host is 421, before routing.
 type Server struct {
 	o Options
 }
@@ -78,6 +83,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Referrer-Policy", "no-referrer")
 	h.Set("Cache-Control", "no-store")
+	if !sameHost(r.Host, s.o.Host) {
+		s.refuse(w, http.StatusMisdirectedRequest, "Wrong address", "Open this page by its [web] address, "+s.o.Host+".")
+		return
+	}
 	segs, ok := segments(r.URL.EscapedPath())
 	if !ok || (r.Method != http.MethodGet && r.Method != http.MethodHead) {
 		s.refuse(w, http.StatusNotFound, "Not found", "There is no page here. A task page is /<repo>/<task>.")
@@ -93,6 +102,21 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		s.refuse(w, http.StatusNotFound, "Not found", "There is no page here. A task page is /<repo>/<task>.")
 	}
+}
+
+// sameHost reports whether the request's Host names the server's host and port: the host part in any letter case,
+// the port exactly. A Host or server address that does not split into host and port, a trailing-dot name, and a
+// bare name for an address on port 80 are all refused.
+func sameHost(host, want string) bool {
+	h, p, err := net.SplitHostPort(host)
+	if err != nil {
+		return false
+	}
+	wh, wp, err := net.SplitHostPort(want)
+	if err != nil || wh == "" {
+		return false
+	}
+	return strings.EqualFold(h, wh) && p == wp
 }
 
 // segments splits an escaped path into its unescaped segments; an empty segment, a trailing slash or a segment
