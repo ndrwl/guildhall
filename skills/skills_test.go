@@ -979,3 +979,48 @@ func TestDirectorSkillsNameEveryReadmeCommand(t *testing.T) {
 		}
 	}
 }
+
+// TestStewardHandoffSkillRoutesTheWake checks that a Steward's "handoff due" wake leads to its own handoff skill,
+// which runs guildhall steward handoff, and that every skill claiming the wake says which role it is for.
+func TestStewardHandoffSkillRoutesTheWake(t *testing.T) {
+	read := func(name string) (description, body string) {
+		t.Helper()
+		data, err := fs.ReadFile(skills.Release(), name+"/SKILL.md")
+		if err != nil {
+			t.Fatal(err)
+		}
+		fields, err := frontmatter(string(data))
+		if err != nil {
+			t.Fatalf("%s: SKILL.md frontmatter %v", name, err)
+		}
+		_, body, _ = strings.Cut(strings.TrimPrefix(string(data), "---\n"), "\n---\n")
+		return fields["description"], body
+	}
+
+	description, body := read("guildhall-steward-handoff")
+	for _, want := range []string{"as the Steward", "handoff due"} {
+		if !strings.Contains(description, want) {
+			t.Errorf("guildhall-steward-handoff description does not say %q: %q", want, description)
+		}
+	}
+	if !strings.Contains(body, "guildhall steward handoff") {
+		t.Error("guildhall-steward-handoff does not name `guildhall steward handoff`")
+	}
+	for _, director := range []string{"director reload", "director maintenance record"} {
+		if strings.Contains(body, director) {
+			t.Errorf("guildhall-steward-handoff names `%s`, which is the Director's", director)
+		}
+	}
+
+	if _, body := read("guildhall-handoff"); !strings.Contains(body, "guildhall-steward-handoff") {
+		t.Error("guildhall-handoff does not send the Steward to guildhall-steward-handoff")
+	}
+
+	for _, name := range shipped(t) {
+		description, _ := read(name)
+		if strings.Contains(description, "handoff due") &&
+			!strings.Contains(description, "as the Director") && !strings.Contains(description, "as the Steward") {
+			t.Errorf("%s claims the handoff due wake without saying as the Director or as the Steward", name)
+		}
+	}
+}

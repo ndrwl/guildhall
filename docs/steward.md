@@ -77,6 +77,7 @@ guildhall steward handoff [--copy <dir>]
 Each runs the Director's command of the same name, [ready](director.md#ready), [pause and resume](director.md#pause-and-resume), [stop](director.md#stop) and [reload](director.md#reload), on the Steward copy's `steward.store`, and refuses any copy whose store is not a `steward.store`.
 `steward handoff` is `steward reload --now`: a fresh session picks up from this one, with every live note in its `startup.md`.
 The automatic handoff triggers of a Director's session, such as the context trigger, apply to the Steward's too.
+A wake line ending `; handoff due (<reason>)` is answered by the `guildhall-steward-handoff` skill, which runs `steward handoff`.
 
 ### Inbox
 
