@@ -1,5 +1,5 @@
 ---
-description: Show the open tasks by priority, what needs you, the open pull requests and the merge queue (read-only)
+description: Show the open tasks by priority, what needs you, what waits on the Director, the open pull requests and the merge queue (read-only)
 argument-hint: "[--all]"
 allowed-tools: Bash(guildhall clerk guild:*)
 ---

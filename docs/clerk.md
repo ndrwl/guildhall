@@ -5,7 +5,7 @@ Its five slash commands answer from the local copy, in the Director's session or
 
 | Command | What it shows |
 |---|---|
-| `/guild [--all]` | the open tasks by priority, with where each stands; what needs you; the open pull requests; the merge queue in short. `--all` adds the tasks closed in the last 7 days. |
+| `/guild [--all]` | the open tasks by priority, with where each stands; what needs you (open decisions, a pending install, and a Director stage such as the grill, which interviews you); what waits on the Director; the open pull requests; the merge queue in short. `--all` adds the tasks closed in the last 7 days. |
 | `/decisions` | every open decision, with its question and numbered options, and whether it is deferred |
 | `/task <id>` | one task's state, priority, kind and title, where it stands, its pull request and its steps |
 | `/inspect <id>` | everything `/task` shows, then the timeline (attempts, decision waits, findings, rulings, priority changes, merge holds), attempt summaries, documents and spend |
@@ -50,9 +50,16 @@ d31   p0   feature  Rebase-aware review            in merge queue 1/3, rebasing
 d35   p1   feature  Clerk                          build running
 d40   p2   bug      Fix the crash on reload        CI pending, PR #212
 d36   p3   feature  Steward views                  not started
+d42   p3   feature  Spend report                   waiting for the Director
 
 Needs you
 - decision d41 accept-plan: Accept the plan?
+- director-stage d42 grill: the Director runs grill with you in its session
+
+Waiting on the Director
+- checks d40 validate: step validate waits for the checks of its published head; the session
+  supervisor reads them again every checks_refresh, never more often than every 30 seconds, and
+  wakes you when they finish
 
 Pull requests
 PR    TASK  CHECKS
@@ -74,7 +81,8 @@ Each task's position is one plain phrase:
 | no `next.json` | `not started` |
 | `wait: attempt` with a running attempt | `<step> running` (for example `build running`) |
 | `wait: attempt`, not yet running | `<step> starting` |
-| `wait: decision` | `waiting for your approval` (or `waiting for your answer` for a question) |
+| `wait: decision`, the decision still open | `waiting for your approval` (or `waiting for your answer` for a question) |
+| `wait: decision`, the decision answered but the task not yet continued | `waiting for the Director` |
 | `wait: director` / `director-stage` | `waiting for the Director` |
 | `wait: checks` | `CI pending, PR #<n>` |
 | `wait: merge-queue` | `in merge queue <pos>/<len>`, plus `rebasing`, `CI pending` or `waiting for your answer` when the front waits on one (for example `in merge queue 1/3, rebasing`) |

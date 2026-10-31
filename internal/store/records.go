@@ -203,8 +203,8 @@ type Decision struct {
 	Choice string `json:"choice,omitempty"`
 	// Note is the trimmed text after the first line of an answer to a decision with options.
 	Note string `json:"note,omitempty"`
-	// Void marks an unanswered decision of a cancelled task (VoidDecision), with the cancel's reason: nobody waits
-	// for it, and it can no longer be answered.
+	// Void marks an unanswered decision (VoidDecision) with its reason: one of a cancelled task, or an acceptance the
+	// engine superseded because its spec changed. Nobody waits for it, and it can no longer be answered.
 	Void       bool   `json:"void,omitempty"`
 	VoidReason string `json:"void_reason,omitempty"`
 }
@@ -533,7 +533,8 @@ func (s *Store) AnswerDecision(mutationID, repository, taskID, id, answer string
 	})
 }
 
-// VoidDecision marks an unanswered decision void with a nonempty reason, as cancelling its task does: it leaves
+// VoidDecision marks an unanswered decision void with a nonempty reason, as cancelling its task, or the engine
+// superseding an acceptance whose spec changed, does: it leaves
 // every list of open decisions and AnswerDecision refuses it. Voiding a void decision again with the same reason
 // under another mutation id changes nothing and returns the first void's receipt; another reason, or an answered
 // decision, is ErrInvalid, and an unknown decision ErrNotFound.

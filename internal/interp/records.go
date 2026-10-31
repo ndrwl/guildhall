@@ -73,8 +73,9 @@ type Records interface {
 	FullReviews(repository, taskID string) ([]store.FullReview, error)
 	ConsumeFullReview(mutationID, repository, taskID string, number int, by string) (store.Receipt, error)
 	SetTaskState(mutationID, repository, taskID string, state store.TaskState) (store.Receipt, error)
-	// VoidDecision voids an open decision with a nonempty reason, as closing its task without answering it does: the
-	// cancel's reason, or the outside-merge rule's (docs/tasks.md#merged-outside-guildhall).
+	// VoidDecision voids an open decision with a nonempty reason, as closing its task without answering it does (the
+	// cancel's reason, or the outside-merge rule's, docs/tasks.md#merged-outside-guildhall), or as the engine does to an
+	// acceptance still open on a spec that changed (docs/interpreter.md, design rounds).
 	VoidDecision(mutationID, repository, taskID, id, reason string) (store.Receipt, error)
 	// DependencyOverride returns the Director's dependency override of a task, or store.ErrNotFound when it has
 	// none; the Director records it (guildhall task start --ignore-deps), never the engine.

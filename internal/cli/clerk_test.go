@@ -26,7 +26,8 @@ var clerkTOML = strings.Replace(directorTOML, "\n[[repository]]\nid = \"lib\"", 
 // clerkFixture is a marked copy with a store whose clock is set per step, holding, in app: a-new never started;
 // a-build running build attempt 1 under a live launcher; a-approve waiting on an approval; a-checks waiting on the
 // checks of PR #212; a merge queue of three, a-q1 the front rebasing, a-q2 held with passed checks and a-q3; a-queued
-// second in the start queue; a-deps waiting on a-new; a-odd with a wait Clerk does not know; a-bug bound to the
+// second in the start queue; a-deps waiting on a-new; a-grill handed to the Director's grill stage; a-odd with a
+// wait Clerk does not know; a-bug bound to the
 // custom bug workflow; a-long with a title too long to show whole; a-merged2 merged two days ago and a-merged9 nine.
 // lib has its own a-new, and a merge queue whose front l-front waits on CI. Priorities are mixed, with ties.
 func clerkFixture(t *testing.T) string {
@@ -106,6 +107,7 @@ func clerkFixture(t *testing.T) string {
 	task("app", "a-q3", "Last in the queue", store.PriorityNormal)
 	task("app", "a-queued", "Queued start", store.PriorityLow)
 	task("app", "a-deps", "Depends on a-new", store.PriorityNormal, store.TaskRef{Repository: "app", ID: "a-new"})
+	task("app", "a-grill", "Grill the Guildmaster", store.PriorityNormal)
 	task("app", "a-odd", "Unknown wait", store.PriorityNormal)
 	task("app", "a-long", "A title far too long to show whole in a hundred columns, so Clerk cuts it with an ellipsis", store.PriorityNormal)
 	task("lib", "l-front", "Lib front", store.PriorityNormal)
@@ -174,6 +176,7 @@ func clerkFixture(t *testing.T) string {
 
 	next("app", "a-queued", `{"wait":"queued","step":"build","attempt":1,"position":2}`)
 	next("app", "a-deps", `{"wait":"dependencies","step":"research"}`)
+	next("app", "a-grill", `{"wait":"director-stage","step":"grill"}`)
 	next("app", "a-odd", `{"wait":"mystery","step":"build"}`)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -246,6 +249,7 @@ func TestClerkWhereItStands(t *testing.T) {
 		"app/a-q3":      "in merge queue 3/3",
 		"app/a-queued":  "queued 2",
 		"app/a-deps":    "waiting on app/a-new",
+		"app/a-grill":   "waiting for the Director",
 		"app/a-odd":     "waiting (mystery)",
 		"app/a-merged2": "merged",
 		"lib/l-front":   "in merge queue 1/1, CI pending",
@@ -273,12 +277,86 @@ func TestClerkWhereItStands(t *testing.T) {
 		}
 	}
 	want := []string{"app/a-bug", "app/a-q1", "app/a-build", "app/a-q2", "app/a-approve", "app/a-checks", "app/a-merged2",
-		"app/a-deps", "app/a-long", "app/a-new", "app/a-odd", "app/a-q3", "lib/l-front", "lib/a-new", "app/a-queued"}
+		"app/a-deps", "app/a-grill", "app/a-long", "app/a-new", "app/a-odd", "app/a-q3", "lib/l-front", "lib/a-new", "app/a-queued"}
 	if !slices.Equal(order, want) {
 		t.Errorf("order %v, want %v", order, want)
 	}
 	if line := clerkLine(tasks, "app/a-long"); !strings.Contains(line, "…") {
 		t.Errorf("long title not cut: %q", line)
+	}
+
+	// Once accept-plan is answered, a-approve waits for the Director to continue it, not for the Guildmaster.
+	answerClerkDecision(t, dir, "app", "a-approve", "accept-plan", "approve")
+	code, out, stderr = runClerk(t, dir, "guild")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, stderr)
+	}
+	tasks, _, _ = strings.Cut(out, "\nNeeds you\n")
+	if line := clerkLine(tasks, "app/a-approve"); !strings.HasSuffix(line, "  waiting for the Director") {
+		t.Errorf("answered accept-plan: line %q, want it to end %q", line, "waiting for the Director")
+	}
+}
+
+// answerClerkDecision answers decision id of repo/task in the copy dir's store.
+func answerClerkDecision(t *testing.T, dir, repo, task, id, answer string) {
+	t.Helper()
+	s, err := store.Open(filepath.Join(dir, "director.store"), store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AnswerDecision("answer:"+id, repo, task, id, answer); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// clerkSection is the body of out's section named heading, up to the next blank line.
+func clerkSection(out, heading string) string {
+	_, rest, ok := strings.Cut(out, "\n"+heading+"\n")
+	if !ok {
+		return ""
+	}
+	body, _, _ := strings.Cut(rest, "\n\n")
+	return body + "\n"
+}
+
+// TestClerkNeedsYou: Needs you lists only the Guildmaster's asks, open decisions and Director stages in the Tasks
+// table's order, and every other needs_me item is under Waiting on the Director; with only Director items left,
+// Needs you says nothing needs you.
+func TestClerkNeedsYou(t *testing.T) {
+	dir := clerkFixture(t)
+	code, out, stderr := runClerk(t, dir, "guild")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, stderr)
+	}
+	if got, want := clerkSection(out, "Needs you"), "- decision app/a-approve accept-plan: Accept the plan?\n"+
+		"- director-stage app/a-grill grill: the Director runs grill with you in its session\n"; got != want {
+		t.Errorf("Needs you =\n%s\nwant\n%s", got, want)
+	}
+	director := clerkSection(out, "Waiting on the Director")
+	for _, want := range []string{"- advance app/a-queued build:", "- messages:", "- checks app/a-checks validate:", "- dependencies app/a-deps research:",
+		"- merge-queue app/a-q1 deliver:", "- merge-queue lib/l-front deliver:"} {
+		if !strings.Contains(director, want) {
+			t.Errorf("Waiting on the Director has no %q:\n%s", want, director)
+		}
+	}
+	if strings.Contains(director, "decision") || strings.Contains(director, "director-stage") {
+		t.Errorf("Waiting on the Director holds a Guildmaster ask:\n%s", director)
+	}
+
+	answerClerkDecision(t, dir, "app", "a-approve", "accept-plan", "approve")
+	writeFile(t, filepath.Join(dir, "state", "app", "a-grill", "next.json"), `{"wait":"director","step":"grill"}`)
+	code, out, stderr = runClerk(t, dir, "guild")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, stderr)
+	}
+	if got := clerkSection(out, "Needs you"); got != "Nothing needs you.\n" {
+		t.Errorf("only Director items: Needs you =\n%s", got)
+	}
+	if !strings.Contains(clerkSection(out, "Waiting on the Director"), "- checks app/a-checks validate:") {
+		t.Errorf("only Director items: Waiting on the Director lost its items:\n%s", out)
 	}
 }
 

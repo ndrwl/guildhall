@@ -1150,6 +1150,15 @@ func (r *run) guildmaster(s workflow.Step) (bool, Next, error) {
 		next, err := r.ask(s)
 		return false, next, err
 	}
+	if s.Type == "guildmaster-approval" {
+		if superseded, err := r.supersede(s, d); err != nil || superseded {
+			if err != nil {
+				return false, Next{}, err
+			}
+			next, err := r.ask(s)
+			return false, next, err
+		}
+	}
 	if !d.Answered {
 		return false, Next{Wait: WaitDecision, Step: s.ID, Decision: d.ID}, r.notifyDecision(*d, s.ID)
 	}
@@ -1180,6 +1189,35 @@ func (r *run) guildmaster(s workflow.Step) (bool, Next, error) {
 		return true, Next{}, r.humanOutcome(*d)
 	}
 	return true, Next{}, nil
+}
+
+// supersede reports whether an acceptance round d no longer stands, so the next round must be asked: d is void, or
+// it is still open but bound to a spec other than the current one (an approved design ran plan again), in which
+// case it is voided first, under a replay-stable mutation id and a fixed reason naming the new digest.
+func (r *run) supersede(s workflow.Step, d *store.Decision) (bool, error) {
+	if d.Void {
+		return true, nil
+	}
+	if !d.Open() {
+		return false, nil
+	}
+	inputs, err := r.inputs(s)
+	if err != nil {
+		return false, err
+	}
+	subject, err := r.subject(s, inputs)
+	if err != nil {
+		return false, err
+	}
+	if d.Subject != nil && *d.Subject == *subject {
+		return false, nil
+	}
+	reason := fmt.Sprintf("Superseded: the spec changed to %s; asked again as %s", subject.Digest, decisionID(s.ID, r.nextRound(s.ID), false))
+	if _, err := r.e.Records.VoidDecision(r.mutation("void", d.ID), r.task.Repository, r.task.ID, d.ID, reason); err != nil {
+		return false, err
+	}
+	d.Void, d.VoidReason = true, reason
+	return true, nil
 }
 
 func (r *run) humanOutcome(d store.Decision) error {

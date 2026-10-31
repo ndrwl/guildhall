@@ -394,12 +394,16 @@ func (d clerkData) stands(ct clerkTask) string {
 		}
 		return n.Step + " starting"
 	case interp.WaitDecision:
+		// next.json keeps naming the decision after it is answered, until the Director continues the task.
 		for _, dec := range d.status.Decisions {
-			if dec.Repository == t.Repository && dec.TaskID == t.ID && dec.ID == n.Decision && dec.Kind == store.DecisionQuestion {
-				return "waiting for your answer"
+			if dec.Repository == t.Repository && dec.TaskID == t.ID && dec.ID == n.Decision {
+				if dec.Kind == store.DecisionQuestion {
+					return "waiting for your answer"
+				}
+				return "waiting for your approval"
 			}
 		}
-		return "waiting for your approval"
+		return "waiting for the Director"
 	case interp.WaitDirector, interp.WaitDirectorStage:
 		return "waiting for the Director"
 	case interp.WaitChecks:
@@ -525,25 +529,37 @@ func (d clerkData) guild(all bool) string {
 		clerkTable(&b, []string{"TASK", "PRI", "KIND", "TITLE", "WHERE IT STANDS"}, rows, 3)
 	}
 
+	// Needs you holds only the Guildmaster's asks: open decisions, a pending install, and the open tasks handed to a
+	// Director stage, which interviews the Guildmaster. Every other needs_me item is the Director's.
+	var mine, director []needsMeItem
+	for _, it := range d.status.NeedsMe {
+		if it.Kind == decisionKind || it.Kind == installKind {
+			mine = append(mine, it)
+		} else {
+			director = append(director, it)
+		}
+	}
+	for _, ct := range shown {
+		if ct.view.State != store.TaskOpen || ct.status.Next == nil {
+			continue
+		}
+		var n clerkNext
+		if err := json.Unmarshal(ct.status.Next, &n); err != nil || interp.Wait(n.Wait) != interp.WaitDirectorStage {
+			continue
+		}
+		mine = append(mine, needsMeItem{Kind: clerkDirectorStageKind, Repository: ct.view.Repository, TaskID: ct.view.ID, Step: n.Step,
+			Reason: "the Director runs " + n.Step + " with you in its session"})
+	}
 	b.WriteString("\nNeeds you\n")
-	if len(d.status.NeedsMe) == 0 {
+	if len(mine) == 0 {
 		b.WriteString("Nothing needs you.\n")
 	}
-	for _, it := range d.status.NeedsMe {
-		head := it.Kind
-		if it.TaskID != "" {
-			head += " " + d.name(it.Repository, it.TaskID)
-		} else if it.Repository != "" {
-			head += " " + it.Repository
-		}
-		if it.Step != "" {
-			head += " " + it.Step
-		}
-		if it.Decision != "" {
-			head += " " + it.Decision
-		}
-		b.WriteString(clerkWrap("- "+head+": "+oneLine(it.Reason), "  "))
+	d.needsMeLines(&b, mine)
+	b.WriteString("\nWaiting on the Director\n")
+	if len(director) == 0 {
+		b.WriteString("Nothing waits on the Director.\n")
 	}
+	d.needsMeLines(&b, director)
 
 	b.WriteString("\nPull requests\n")
 	var prs [][]string
@@ -581,6 +597,29 @@ func (d clerkData) guild(all bool) string {
 
 // decisions is `clerk decisions`: every open decision, its question and numbered options, and whether it is
 // deferred.
+// clerkDirectorStageKind is the kind of Clerk's Needs you line for an open task handed to a Director stage, such as
+// the grill; it is derived from the task's next.json and is never a needs_me item.
+const clerkDirectorStageKind = "director-stage"
+
+// needsMeLines writes each item as `- <kind>[ <task>][ <step>][ <decision>]: <reason>`.
+func (d clerkData) needsMeLines(b *strings.Builder, items []needsMeItem) {
+	for _, it := range items {
+		head := it.Kind
+		if it.TaskID != "" {
+			head += " " + d.name(it.Repository, it.TaskID)
+		} else if it.Repository != "" {
+			head += " " + it.Repository
+		}
+		if it.Step != "" {
+			head += " " + it.Step
+		}
+		if it.Decision != "" {
+			head += " " + it.Decision
+		}
+		b.WriteString(clerkWrap("- "+head+": "+oneLine(it.Reason), "  "))
+	}
+}
+
 func (d clerkData) decisions() string {
 	var b strings.Builder
 	b.WriteString(d.heading("Decisions"))
