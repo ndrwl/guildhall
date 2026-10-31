@@ -607,3 +607,32 @@ func TestDirectorStatusSlices(t *testing.T) {
 		t.Error("a-sliced is not in the status")
 	}
 }
+
+// TestClerkKindRenamedHallmark: a task bound to the shipped hallmark workflow still reads hallmark once its
+// repository's [repository.kinds] hallmark names another workflow, since Clerk reads the kind with interp.TaskKindOf
+// (hallmark d90 H13).
+func TestClerkKindRenamedHallmark(t *testing.T) {
+	toml := strings.Replace(directorTOML, "\n[[repository]]\nid = \"lib\"", "\n[repository.kinds]\nhallmark = \"audit-v2\"\n\n[[repository]]\nid = \"lib\"", 1)
+	dir := markCopy(t, filepath.Dir(writeDirector(t, toml)))
+	s, err := store.Open(filepath.Join(dir, "director.store"), store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	def, err := workflow.Hallmark()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateTask("m-1", store.Task{Repository: "app", ID: "h1", Title: "Review the whole", Workflow: def.Revision(), ConfigDigest: "sha256:" + strings.Repeat("c", 64)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	code, out, stderr := runClerk(t, filepath.Join(dir, "director"), "task", "h1")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, stderr)
+	}
+	if !strings.Contains(out, "\nKind:             hallmark\n") {
+		t.Fatalf("clerk task does not show Kind: hallmark:\n%s", out)
+	}
+}

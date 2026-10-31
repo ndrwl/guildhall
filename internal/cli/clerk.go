@@ -24,6 +24,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/reconcile"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
 const clerkUsage = `usage:
@@ -191,6 +192,22 @@ type clerkData struct {
 	multi bool
 	// cfg is the copy's config, nil when it cannot be read.
 	cfg *config.Config
+	// resolver returns repository repo's bound-workflow resolver, made once per repository and memoised per
+	// revision, so each revision resolves at most once per Clerk read; nil before clerkRead sets it.
+	resolver func(repo string) func(workflow.Revision) (*workflow.Definition, error)
+}
+
+// clerkResolvers wraps byRepo so each repository's resolver, with its per-revision memo, is made once.
+func clerkResolvers(byRepo func(repo string) func(workflow.Revision) (*workflow.Definition, error)) func(repo string) func(workflow.Revision) (*workflow.Definition, error) {
+	made := map[string]func(workflow.Revision) (*workflow.Definition, error){}
+	return func(repo string) func(workflow.Revision) (*workflow.Definition, error) {
+		if r, ok := made[repo]; ok {
+			return r
+		}
+		r := byRepo(repo)
+		made[repo] = r
+		return r
+	}
 }
 
 // clerkTask is one task's facts: its view and status, its latest recorded pull request, whether it merged or is
@@ -221,6 +238,7 @@ func (a *App) clerkRead(ctx context.Context, c clerkPaths) (clerkData, error) {
 	if cfg, err := config.Load(c.config); err == nil {
 		d.cfg = cfg
 	}
+	d.resolver = clerkResolvers(statusWorkflows(c.config))
 	documents := filepath.Join(c.state, "documents")
 	_, err = withRecords(records, true, a.Now, func(s *store.Store) (struct{}, error) {
 		tasks, err := listTasks(s, "")
@@ -336,28 +354,20 @@ func (d clerkData) resolve(arg string) (store.TaskRef, error) {
 	return store.TaskRef{}, fmt.Errorf("task %s is in more than one repository; name one of %s", arg, strings.Join(found, ", "))
 }
 
-// kind is the task kind its bound workflow's name says it was created as (docs/decisions/task-kinds.md), with the
-// copy's [repository.kinds]; the shipped names when the config does not list the repository.
+// kind is the task kind t was created as, read by interp.TaskKindOf (docs/decisions/task-kinds.md) with the copy's
+// repository, a zero one when the config does not list it.
 func (d clerkData) kind(t store.Task) string {
-	name := t.Workflow.Name
 	var r config.Repository
 	if d.cfg != nil {
 		if found, ok := d.cfg.Repository(t.Repository); ok {
 			r = found
 		}
 	}
-	if r.ID != "" && name == r.Workflow {
-		return config.TaskKindFeature
+	var resolve func(workflow.Revision) (*workflow.Definition, error)
+	if d.resolver != nil {
+		resolve = d.resolver(t.Repository)
 	}
-	for _, k := range config.TaskKinds {
-		if k == config.TaskKindFeature {
-			continue
-		}
-		if w, ok := r.TaskKindWorkflow(k); ok && w == name {
-			return k
-		}
-	}
-	return config.TaskKindFeature
+	return interp.TaskKindOf(t, r, resolve)
 }
 
 // next is a task's next.json as Clerk reads it.

@@ -146,22 +146,80 @@ const (
 	TaskKindHallmark = "hallmark"
 )
 
-// TaskKinds lists every task kind, the default first.
-var TaskKinds = []string{TaskKindFeature, TaskKindBug, TaskKindHallmark}
+// TaskKindRow is one task kind: its name, its description for task new's help and the Director's tasks skill,
+// and the workflow it runs when the repository names none.
+type TaskKindRow struct {
+	Name            string
+	Description     string
+	DefaultWorkflow string
+	FeatureWorkflow bool // runs Repository.Workflow; kinds.<name> is refused
+}
+
+// TaskKindTable is the one table of task kinds, the default first. The descriptions live here rather than in a
+// workflow's description so that rewording them never changes a digest.
+var TaskKindTable = []TaskKindRow{
+	{TaskKindFeature, "New or changed behaviour, and the default: it runs the repository's workflow setting, the " +
+		"shipped default when it names none, with grill, research, plan, the Guildmaster's acceptance, build, review, " +
+		"publish, validate and deliver.", DefaultWorkflow, true},
+	{TaskKindBug, "A fix for a defect in behaviour that should already work: it runs the repository's " +
+		"[repository.kinds] bug workflow, the shipped bug workflow when it names none, which has the default's steps " +
+		"without grill and the Guildmaster's acceptance, so research, plan, build, review, publish, validate and " +
+		"deliver, and merges under the repository's merge requirements: research reproduces the defect from the title " +
+		"and detail and finds its cause, plan's spec goes straight to build, build writes a regression test that fails " +
+		"before the fix and passes after it, and review checks that test.", "bug", false},
+	{TaskKindHallmark, "A report-only review of the whole repository, launched when guildhall director status " +
+		"lists a hallmark due: it runs the repository's [repository.kinds] hallmark workflow, the shipped hallmark " +
+		"workflow when it names none, whose one read-only hallmark stage uses the guildhall-hallmark skill, starts from " +
+		"the repository's previous hallmark report and writes ranked, PR-sized follow-ups; Guildhall fails the stage if " +
+		"it changes the project, and the task finishes as done with no pull request.", "hallmark", false},
+}
+
+// TaskKinds lists every task kind's name, in TaskKindTable's order, the default first.
+var TaskKinds = func() []string {
+	names := make([]string, len(TaskKindTable))
+	for i, row := range TaskKindTable {
+		names[i] = row.Name
+	}
+	return names
+}()
+
+// TaskKindRowOf returns TaskKindTable's row for the kind named name, and whether there is one.
+func TaskKindRowOf(name string) (TaskKindRow, bool) {
+	for _, row := range TaskKindTable {
+		if row.Name == name {
+			return row, true
+		}
+	}
+	return TaskKindRow{}, false
+}
 
 // TaskKindWorkflow returns the workflow name repository r runs for a task of kind taskKind, and whether the kind is
 // known.
 func (r Repository) TaskKindWorkflow(taskKind string) (string, bool) {
-	switch taskKind {
-	case TaskKindFeature:
+	row, ok := TaskKindRowOf(taskKind)
+	switch {
+	case !ok:
+		return "", false
+	case row.FeatureWorkflow:
 		return r.Workflow, true
-	case TaskKindBug, TaskKindHallmark:
-		if name := r.Kinds[taskKind]; name != "" {
-			return name, true
-		}
-		return taskKind, true
+	case r.Kinds[taskKind] != "":
+		return r.Kinds[taskKind], true
 	}
-	return "", false
+	return row.DefaultWorkflow, true
+}
+
+// kindsChoice lists the task kinds a [repository.kinds] table accepts, joined as "a, b and c".
+func kindsChoice() string {
+	var names []string
+	for _, row := range TaskKindTable {
+		if !row.FeatureWorkflow {
+			names = append(names, row.Name)
+		}
+	}
+	if len(names) < 2 {
+		return strings.Join(names, "")
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
 }
 
 // StallIntervalKey is the setting that sets the interpreter's worker-stalled interval (docs/configuration.md#settings).
@@ -393,7 +451,7 @@ type Repository struct {
 	Merge MergeOptions `toml:"merge"`
 	// Workflow names the Director's workflow definition this repository runs for a feature task.
 	Workflow string `toml:"workflow"`
-	// Kinds names the workflow this repository runs for each other task kind, keyed by kind (TaskKindBug or TaskKindHallmark); a kind
+	// Kinds names the workflow this repository runs for each other task kind, keyed by a TaskKindTable kind that does not run Workflow; a kind
 	// it does not name runs the shipped workflow of that name. It is omitted from JSON when unset, so the config
 	// digest of a config without it is unchanged.
 	Kinds map[string]string `toml:"kinds" json:",omitempty"`
@@ -686,11 +744,12 @@ func (c *Config) validate() []string {
 			add("%s: invalid workflow name %q", name, r.Workflow)
 		}
 		for _, k := range slices.Sorted(maps.Keys(r.Kinds)) {
+			row, known := TaskKindRowOf(k)
 			switch {
-			case k == TaskKindFeature:
-				add("%s: kinds.feature is not accepted; the repository's workflow setting is the feature kind's workflow", name)
-			case k != TaskKindBug && k != TaskKindHallmark:
-				add("%s: unknown task kind %q in kinds; the only ones are %s and %s", name, k, TaskKindBug, TaskKindHallmark)
+			case known && row.FeatureWorkflow:
+				add("%s: kinds.%s is not accepted; the repository's workflow setting is the %s kind's workflow", name, k, k)
+			case !known:
+				add("%s: unknown task kind %q in kinds; the only ones are %s", name, k, kindsChoice())
 			case !workflow.ValidID(r.Kinds[k]):
 				add("%s: kinds.%s: invalid workflow name %q", name, k, r.Kinds[k])
 			}
