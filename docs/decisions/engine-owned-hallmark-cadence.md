@@ -1,8 +1,8 @@
 ---
 status: accepted
-date: 2026-10-30
+date: 2026-10-31
 topic: maintenance
-tasks: d80, d78
+tasks: d80, d78, d119
 amends: director-maintenance.md, report-only-workflows.md
 ---
 
@@ -25,11 +25,16 @@ This replaces the rule in [Director maintenance](director-maintenance.md) that a
   `interp.LastHallmark` is the only code that decides it, for the `previous` and `baseline` inputs and for `director status`.
   It matches the step type, not the task kind or workflow name, so a `[repository.kinds] hallmark` override still counts; a cancelled or failed hallmark is never chosen, so it never resets the cadence.
   `store.TaskCloses` gives each task's create receipt and first close; it is a pure read, and nothing new is stored.
-- **The count starts at the hallmark's launch.**
-  Merges counted toward the next hallmark are those sent after the chosen task's create receipt, or after the baseline when that is later, so merges made while a hallmark runs still count toward the next one.
+- **The count starts at the answer to the hallmark's follow-ups (d119).**
+  Merges counted toward the next hallmark are those sent after the receipt answering the chosen task's `follow-ups` decision, `pick` or `none` alike, or after the baseline when that is later, so merges made during the run or before the answer do not count.
+  A chosen task with no `follow-ups` decision (finished before it existed, or whose report could not be read back) counts from its create receipt, its launch, as before; so does a void one, so it cannot hold the item forever.
+  While the decision is open `merged_since` counts from the launch for display only, and drops when the answer is recorded.
 - **A running hallmark holds the item back.**
   While a hallmark task of the repository is open (`interp.OpenHallmark`), status names it as `running_task` and lists no `hallmark due` item, so the Director cannot launch a duplicate.
   The item's command is now `guildhall task new --repo <r> --kind hallmark --title <text> <id>`.
+- **Unanswered follow-ups hold the item back (d119).**
+  While the chosen task's `follow-ups` decision is open, deferred or not, status names the task as `awaiting_follow_ups` and lists no `hallmark due` item, so a new hallmark is not queued before the Guildmaster has given feedback on the last one.
+  Both facts come from the Director view's open decisions and receipts, with no new record or read.
 - **Old runs are the fallback only for a repository with no selected hallmark.**
   Hallmark runs recorded before still decode, list and count, but only for a repository with no done hallmark task; a run newer than the newest done hallmark task is then ignored.
 - **With no config, status resolves against the shipped workflows by digest.**
@@ -41,6 +46,8 @@ This replaces the rule in [Director maintenance](director-maintenance.md) that a
 ## Alternatives rejected
 
 - Counting from the hallmark's close, as the report worded it: it would silently drop the merges made during a run.
+  d119 drops them on purpose, and more: the Guildmaster saw hallmark reports overlap (d107, then d118) and wants the cadence paced by feedback, not by launch, so merges count only after the follow-ups answer.
+- Letting a deferred follow-ups decision release the item: a deferral does not answer it, so a deferred decision can hold hallmarks indefinitely; that is chosen, since a hallmark nobody has read the last report of is wasted.
 - Keeping `record --hallmark`: every repository with a done hallmark would ignore it, a dead third ledger.
 - The report's two-step deletion gate: old runs remain as the fallback, so it buys nothing.
 
