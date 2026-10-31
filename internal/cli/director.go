@@ -23,6 +23,8 @@ import (
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/herdr"
+	"github.com/ndrwl/guildhall/internal/launch"
+	"github.com/ndrwl/guildhall/internal/release"
 	"github.com/ndrwl/guildhall/internal/session"
 	"github.com/ndrwl/guildhall/internal/store"
 )
@@ -615,6 +617,11 @@ func (a *App) openDirectorTab(host adapter.TabHost, p startPlan, copyDir, storeP
 		return a.fail(fmt.Errorf("%s%w", start, err))
 	}
 	argv := []string{exe, role.command, "start"}
+	if release.HasPin(copyDir) {
+		// An adopted copy's session starts through the PATH launcher, which runs the copy's pinned release, so a
+		// restart in this tab follows the pin rather than this binary (docs/releases.md#the-path-launcher).
+		argv[0] = launch.ResumeCommand
+	}
 	if runtime != "" {
 		argv = append(argv, runtime)
 	}

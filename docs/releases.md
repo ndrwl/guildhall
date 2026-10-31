@@ -28,12 +28,24 @@ Task d127 builds this page in five slices; slice 1 is built and changes nothing 
 - **The Guildhall home** is `$GUILDHALL_HOME` when set; else, for an installed release, the home it is installed under (`<home>/releases/<version>/guildhall`); else `$XDG_DATA_HOME/guildhall`, or `~/.local/share/guildhall` without it, on Linux, WSL and a VDS alike, and `%LOCALAPPDATA%\Guildhall` on Windows.
 - **What counts as a release**: a binary whose `guildhall version --json` reports a version other than `dev`, `modified: false` and a `release_contract`, tagged (`v1.4.0`) or a main pseudo-version (`v0.0.0-20261031162214-d385b331abcd`). A plain `go build` reports `dev` and a build from a tree with local changes is modified; both are refused, since two of them would share a directory.
 - **`guildhall release install <version> --from <file> --sha256 <hex>`** installs one as the [layout](#layout) says: copy into `.incoming/`, verify the sha256, run the verified copy's `version --json` to check the version, then rename into `releases/<version>/` under the home lock. Beside `SHA256` it records `release.json`: the binary's `store_schema` and `release_contract`, which `version --json` now reports, and the install time. Installing the same binary again changes nothing; another binary under an installed version is refused.
-- **`guildhall release status [--json]`** prints the home, each installed release with any damage, and the inventoried copies.
-- The `copies` inventory and the home lock exist; nothing registers a copy yet.
+- **`guildhall release status [--json] [--copy <dir>]`** prints the home, each installed release with any damage and the copies pinning it, the inventoried copies, and the selected copy's pin with any disagreement between its file and its store.
+- The `copies` inventory and the home lock exist; `release use` and `release adopt` register their copy under the lock.
 
-The contracts are [`internal/release`](contracts/release.md) and [the CLI's release commands](contracts/cli.md#release).
-Slice 2 adds the pin, `release use`, the launcher and `release adopt`; slice 3 tasks recording their release; slice 4 rollback and prune; slice 5 the managed pin through `config reload`.
+Slice 2 is built too: the pin, `release use`, the launcher and `release adopt`.
+
+- **The pin**: each pin change is a `release-pin` event in the copy's store ([store](store.md#release-pins)) with source `adopt` or `use`, then `release.pin` is written by rename; a copy whose file and newest event disagree is refused by the configuration-admission boundary, naming `guildhall release use`, and `release status` shows it (the system alert is not built yet).
+- **`guildhall release use <version>`** pins a standalone copy to an installed, intact release; a managed copy is refused, naming the rollout.
+- **The PATH launcher** is its own small program, `cmd/guildhall-launcher`, built by `go install github.com/ndrwl/guildhall/cmd/guildhall-launcher@<version>` beside `guildhall` ([decision](decisions/release-launcher-program.md)); it behaves as [below](#the-path-launcher), except that task-aware dispatch waits for slice 3, so until then every command of a copy runs on its pin, as an unrecorded task does, and recovery dispatch also runs `help` and `version` when no copy is selected.
+  Every release refuses a `GUILDHALL_RELEASE` naming another version.
+- **`guildhall release adopt`** installs the `guildhall` on `PATH` as the copy's first release, pins and registers the copy, installs the launcher into `<home>/bin/` and replaces the `PATH` binary with it by rename, keeping the old one as `guildhall.pre-adopt` (`.exe` on Windows); on Windows it refuses while another Guildhall process runs from that path. A second run reports what is in place.
+  The launcher on `PATH` serves every copy on the machine, and a copy with no pin is refused, naming `guildhall release adopt`, so each other copy there adopts too: on a machine already adopted, adopt pins the copy to the release the launcher's recovery dispatch ran it on.
+- **`guildhall release install --launcher [--from <file>]`** replaces the launcher.
+- **On an adopted copy**, one with a `release.pin`, the supervisor's reload binary check, `supervisor_binary` in status and the `install` item compare with the pinned release, not the `PATH` launcher, and `director start` types plain `guildhall` with the explicit `--copy`; on any other copy they behave as before.
+
+The contracts are [`internal/release`](contracts/release.md), [`internal/launcher`](contracts/launcher.md), [`internal/copydir`](contracts/copydir.md), [the store's release pins](contracts/store.md) and [the CLI's release commands](contracts/cli.md#release).
+Slice 3 adds tasks recording their release; slice 4 rollback and prune; slice 5 the managed pin through `config reload`.
 Until a copy adopts, the install-each-merge routine (`go install …@<pseudo-version>` onto `PATH`) is unchanged.
+After it adopts, an upgrade is `guildhall release install <version> --from <file> --sha256 <hex>`, `guildhall release use <version>` and `guildhall director reload`.
 
 ## Layout
 

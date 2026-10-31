@@ -56,6 +56,7 @@ guildhall messages ack director app.t-1.attempt-failed.build-1
 
 A wake gets a reply of its own only when something needs the Guildmaster, merges, fails or is stuck: `merged`, `decision`, a `question` whose answer is theirs, an `attempt-failed` that retrying will not help, `rebase-stuck`, `merge-refused`, `pr-blocked`, `merge-held`, failed checks and a new or changed `install` item.
 Everything else you handle quietly, and it shows as a line in the Routine box of your next reply.
+An `install` item never starts an upgrade by itself: a standalone Director runs `guildhall release install`, `guildhall release use` and `guildhall director reload` only on the Guildmaster's word for that upgrade, and a managed one leaves upgrades to the Steward.
 
 `director resume` wakes you with `guildhall: resumed, <n> waiting (...)` after a pause: run the loop as for any wake line, following the recovery command each held `paused` item names.
 

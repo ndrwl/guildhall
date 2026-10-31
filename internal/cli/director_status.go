@@ -92,28 +92,30 @@ type supervisorBinaryStatus struct {
 	Summary    string `json:"summary"`
 }
 
-// supervisorBinaryStatus compares session d's supervisor binary with the guildhall on PATH.
-func (a *App) supervisorBinaryStatus(d statusSession) *supervisorBinaryStatus {
+// supervisorBinaryStatus compares session d's supervisor binary with the binary a reload would move it onto: the
+// copy's pinned release once copyDir has adopted releases, else the guildhall on PATH (targetBinary).
+func (a *App) supervisorBinaryStatus(d statusSession, copyDir string) *supervisorBinaryStatus {
 	if d.Number == 0 {
 		return nil
 	}
 	out := &supervisorBinaryStatus{SHA256: d.BinarySHA256}
-	bin, err := a.lookPathBinary()
+	bin, pinned, err := a.targetBinary(copyDir)
 	out.Path, out.PathSHA256 = bin.Path, bin.SHA256
+	target := targetName(pinned)
 	switch {
 	case err != nil:
-		out.Summary = fmt.Sprintf("cannot compare session %d's supervisor binary with the guildhall on PATH: %s", d.Number, oneLine(err.Error()))
+		out.Summary = fmt.Sprintf("cannot compare session %d's supervisor binary with %s: %s", d.Number, target, oneLine(err.Error()))
 	case d.BinarySHA256 == "":
 		// A supervisor from before reloads moved binaries records no sha256, and a reload never moves it.
 		out.Differs = true
 		out.Summary = fmt.Sprintf("session %d's supervisor predates moving binaries at a reload, so a director reload keeps it on its own binary; "+
-			"run director stop, then director start, to move it onto the guildhall on PATH", d.Number)
+			"run director stop, then director start, to move it onto %s", d.Number, target)
 	case d.BinarySHA256 != bin.SHA256:
 		out.Differs = true
-		out.Summary = fmt.Sprintf("session %d's supervisor runs guildhall %s, not the guildhall on PATH %s %s; a director reload moves it onto that one",
-			d.Number, shortSHA(d.BinarySHA256), bin.Path, shortSHA(bin.SHA256))
+		out.Summary = fmt.Sprintf("session %d's supervisor runs guildhall %s, not %s %s %s; a director reload moves it onto that one",
+			d.Number, shortSHA(d.BinarySHA256), target, bin.Path, shortSHA(bin.SHA256))
 	default:
-		out.Summary = fmt.Sprintf("session %d's supervisor runs the guildhall on PATH (%s)", d.Number, shortSHA(bin.SHA256))
+		out.Summary = fmt.Sprintf("session %d's supervisor runs %s (%s)", d.Number, target, shortSHA(bin.SHA256))
 	}
 	return out
 }
@@ -527,7 +529,7 @@ func (a *App) directorStatusCmd(args []string) int {
 	if it, ok := v.installItem(); ok {
 		out.NeedsMe = append(out.NeedsMe, it)
 	}
-	out.SupervisorBinary = a.supervisorBinaryStatus(out.Session)
+	out.SupervisorBinary = a.supervisorBinaryStatus(out.Session, out.Copy)
 	out.Web = readWebStatus(*cfg, *state, out.Session)
 	return a.printJSON(out)
 }

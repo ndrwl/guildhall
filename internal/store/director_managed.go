@@ -117,6 +117,9 @@ type ManagedRevision struct {
 type ManagedView struct {
 	Enrolment *Enrolment        `json:"enrolment,omitempty"`
 	Revisions []ManagedRevision `json:"revisions"`
+	// ReleasePin is the copy's newest release-pin event, nil for none, which the configuration-admission boundary
+	// compares with the copy's release.pin (docs/releases.md#the-pin); ManagedView alone reads it.
+	ReleasePin *ReleasePin `json:"-"`
 }
 
 // Authorization is the newest revision event of the newest enrolment, when that is an enrolled event, that
@@ -147,8 +150,17 @@ func (s *Store) ManagedView() (ManagedView, error) {
 	var v ManagedView
 	err := s.view(func(tx *bolt.Tx) error {
 		var err error
-		v, err = managedView(tx)
-		return err
+		if v, err = managedView(tx); err != nil {
+			return err
+		}
+		var p ReleasePin
+		switch err := lastJSON(directorBucket(tx, bucketReleasePins), &p); {
+		case err == nil:
+			v.ReleasePin = &p
+		case !errors.Is(err, ErrNotFound):
+			return err
+		}
+		return nil
 	})
 	if err != nil {
 		return ManagedView{}, fmt.Errorf("store: managed view: %w", err)

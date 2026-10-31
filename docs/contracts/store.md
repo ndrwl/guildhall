@@ -45,7 +45,11 @@ The engine-origin `pr-blocked` message type is registered for Director inbox cou
 Its head/state replay identity and observation document are owned by the interpreter; no new store mutation or schema is introduced.
 `SendMessage` keeps its semantics: the same request replays its receipt and a different request under the same id is `ErrMutationConflict`. The interpreter treats that conflict, or `ErrExists`, on a Director message as already reported, so a re-sent message whose text changed never fails an advance ([interpreter](../interpreter.md)).
 
+`RecordReleasePin`, `LatestReleasePin` and `ReleasePins` keep a copy's [release-pin events](../store.md#release-pins) in the `director` bucket's nested `release-pins`, and `ManagedView.ReleasePin` reads the newest for the configuration-admission boundary; the bucket is additive and `SchemaVersion` is unchanged (d127 slice 2).
+
 ## Tests
+
+`release_pin_test.go` was written with the release-pin events and not run red: `TestReleasePins` records an adopt pin and a use pin, sees the previous version and sha256 set, refuses the newest again, `dev`, a non-version, a path, an upper-case sha256, an unknown source and a store-set time with `ErrInvalid` and a stale previous with `ErrMutationConflict`, lists both, reads the newest through `ManagedView` and gets a clean `store doctor`.
 
 `TestRejectionPreservesLauncherHistory` pins the explicit [intake-rejection contract](../store.md#attempts): separate finish and rejection receipts, a failed current outcome with a durable reason, and launcher replay that cannot undo rejection.
 The shared Records suite runs the new rejection cases against the store, its in-memory double and the CLI's per-operation store wrapper: unfinished and succeeded rejection, failed/stopped refusal, mutation replay and conflict, unknown attempts, blank reasons and retry numbering.

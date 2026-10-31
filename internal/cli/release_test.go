@@ -123,7 +123,7 @@ func TestReleaseStatusOfAnEmptyHome(t *testing.T) {
 		t.Fatalf("release status --json = %d, %q", code, stderr)
 	}
 	homeJSON, _ := json.Marshal(home)
-	if want := `{"home":` + string(homeJSON) + `,"releases":[],"copies":[]}` + "\n"; stdout.String() != want {
+	if want := `{"home":` + string(homeJSON) + `,"releases":[],"copies":[],"copy":null}` + "\n"; stdout.String() != want {
 		t.Errorf("release status --json = %q, want %q", stdout, want)
 	}
 	// Status reads only: it never creates the home.

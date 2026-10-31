@@ -32,6 +32,8 @@ The binary refuses `guildhall task new`, and `guildhall task start` of a task wi
      When it appears or its count changes, tell the Guildmaster how many merges behind it is and which pull requests it is missing, and that it is time to install.
      If tasks in flight are worth waiting for before installing, name them; that is your judgement.
      Never keep a note about installs: the item stays until the installed binary catches up.
+     On a copy that has adopted releases the item compares the copy's release pin with main and names the fix: `guildhall release install`, `guildhall release use`, then `guildhall director reload`.
+     Standalone, you may run those three only on the Guildmaster's word for that upgrade, never on your own; managed, you leave upgrades to the Steward's rollout and never run `guildhall release use`.
 
    The `## Running` section in `startup.md`, and `running` in the status, list every attempt in flight with its state and its last heartbeat and output; read it and confirm each attempt is `running` before `guildhall director ready`, as anything that is not healthy is already a `resume` or `stalled` item.
    Parked attempts, listed under `Parked` in `startup.md` and `parked` in the status, are held on purpose with the reason shown; they are information, not work, so leave them parked unless their hold has ended.

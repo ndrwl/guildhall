@@ -455,7 +455,7 @@ At a reload on Unix it resolves `guildhall` on `PATH` and hashes it:
 - A refused binary, one that fails its pre-flight, cannot be found or hashed, or whose `exec` itself fails, is never moved onto: the supervisor stays on its own binary, reloads in the same process, prints one line naming the refused binary and the reason to its pane, and records the reload `applied` with `refused_sha256` and `refused_reason`.
   [`director status`](#status) shows the refusal on the session's `reload`, and the new session's `guildhall version --startup` warns of it, so the Director tells the Guildmaster at its first turn.
 
-Running Artisans are never touched by a reload; they and their resume commands run whichever `guildhall` they run, from `PATH`, until release pins exist.
+Running Artisans are never touched by a reload; they and their resume commands run whichever `guildhall` they run, from `PATH`, which on an adopted copy is the launcher running the copy's pin until tasks record their release (d127 slice 3).
 A new binary that passes its pre-flight and then fails after the `exec`, or a signal that arrives between the `exec` and the new image's handling of it, ends the supervisor and gives the pane back to its shell with session `<n>` `stopped` and the reload still requested; the next `director start` applies it.
 On Windows there is no `exec`: a reload always stays on the supervisor's binary.
 
@@ -465,6 +465,9 @@ The status feed's `supervisor_binary` reports such a session with `differs` true
 
 `guildhall version --startup` compares its own binary's sha256 with the one the session's supervisor recorded and warns when they differ, even for two `dev` builds; for a supervisor that recorded none it compares releases.
 The status feed's `supervisor_binary` compares the newest session's `binary_sha256` with the `guildhall` on `PATH`: `sha256`, `path`, `path_sha256`, `differs` and a one-line `summary` saying whether a reload would move the supervisor onto another binary.
+
+On a copy that has [adopted releases](releases.md#built-so-far), one with a `release.pin`, the `guildhall` on `PATH` is the launcher, so the reload and the feed use the copy's pinned release, `<home>/releases/<pin>/guildhall`, wherever this section says the `guildhall` on `PATH`: the reload pre-flights and moves onto the pinned release, refusing one that is missing, damaged or reports another version, and execs it with `GUILDHALL_RELEASE` set to the pin; `supervisor_binary` names the pinned release; and `director start` types plain `guildhall` with the explicit `--copy` into the Director's tab, so a restart there goes through the launcher.
+The config digest on the applied reload lands with rollback (d127 slice 4).
 
 ## The end of a turn
 

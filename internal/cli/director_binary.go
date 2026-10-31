@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/launcher"
+	"github.com/ndrwl/guildhall/internal/release"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
@@ -74,6 +76,38 @@ func (a *App) lookPathBinary() (pathBinary, error) {
 	return pathBinary{Path: path, SHA256: sum}, err
 }
 
+// targetBinary is the binary a Director of the copy in copyDir runs on: on a copy that has adopted releases, one
+// with a release.pin, the pinned release, which must be installed and intact, with pinned naming its version; on
+// any other copy the guildhall on PATH, as before releases (docs/releases.md#how-a-running-director-picks-up-a-new-release).
+// The PATH launcher of an adopted copy runs the pin too, so comparing with it would compare with the launcher.
+func (a *App) targetBinary(copyDir string) (bin pathBinary, pinned string, err error) {
+	if copyDir == "" || !release.HasPin(copyDir) {
+		bin, err = a.lookPathBinary()
+		return bin, "", err
+	}
+	pinned, err = release.ReadPin(copyDir)
+	if err != nil {
+		return pathBinary{}, "", err
+	}
+	h, err := a.releaseHome()
+	if err != nil {
+		return pathBinary{}, pinned, err
+	}
+	r, err := h.Runnable(pinned)
+	if err != nil {
+		return pathBinary{Path: h.Binary(pinned)}, pinned, err
+	}
+	return pathBinary{Path: h.Binary(pinned), SHA256: r.SHA256}, pinned, nil
+}
+
+// targetName names a target binary in messages: the copy's pinned release, or the guildhall on PATH.
+func targetName(pinned string) string {
+	if pinned != "" {
+		return "the pinned release " + pinned
+	}
+	return "the guildhall on PATH"
+}
+
 // reexecDecision is what a supervisor does at a reload about the guildhall binary on PATH, Binary: Move is set for
 // one that differs from its own image and passed the pre-flight, Version naming its release, and Refused for one it
 // refused; neither means the same binary, which it reloads on in-process as before.
@@ -82,6 +116,8 @@ type reexecDecision struct {
 	Version string
 	Move    bool
 	Refused store.ReloadRefusal
+	// Pinned is the copy's pinned release when the target is the pin rather than the guildhall on PATH.
+	Pinned string
 }
 
 // decideReexec resolves the guildhall binary on PATH at a reload of a supervisor whose own image hashes to own
@@ -91,15 +127,18 @@ type reexecDecision struct {
 //
 // command is the session's command family, so a Steward supervisor pre-flights with `steward start --check`.
 func (a *App) decideReexec(command, own, copyDir, positional string) reexecDecision {
-	bin, err := a.lookPathBinary()
+	bin, pinned, err := a.targetBinary(copyDir)
 	refuse := func(what string, err error, out []byte) reexecDecision {
-		return reexecDecision{Binary: bin, Refused: store.ReloadRefusal{SHA256: bin.SHA256, Reason: refusalReason(what, err, out)}}
+		return reexecDecision{Binary: bin, Pinned: pinned, Refused: store.ReloadRefusal{SHA256: bin.SHA256, Reason: refusalReason(what, err, out)}}
 	}
 	if err != nil {
+		if pinned != "" {
+			return refuse("pinned release "+pinned, err, nil)
+		}
 		return refuse("guildhall on PATH", err, nil)
 	}
 	if own != "" && bin.SHA256 == own {
-		return reexecDecision{Binary: bin}
+		return reexecDecision{Binary: bin, Pinned: pinned}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), binaryPreflightTimeout)
 	defer cancel()
@@ -111,6 +150,9 @@ func (a *App) decideReexec(command, own, copyDir, positional string) reexecDecis
 	if err := json.NewDecoder(strings.NewReader(string(out))).Decode(&v); err != nil || v.Version == "" {
 		return refuse("version --json", errors.Join(errors.New("no version reported"), err), out)
 	}
+	if pinned != "" && v.Version != pinned {
+		return refuse("version --json", fmt.Errorf("the pinned release %s reports version %s", pinned, v.Version), nil)
+	}
 	args := []string{command, "start", "--check", "--copy", copyDir}
 	if positional != "" {
 		args = append(args, positional)
@@ -118,7 +160,7 @@ func (a *App) decideReexec(command, own, copyDir, positional string) reexecDecis
 	if out, err := a.Output(ctx, bin.Path, args...); err != nil {
 		return refuse(command+" start --check", err, out)
 	}
-	return reexecDecision{Binary: bin, Version: v.Version, Move: true}
+	return reexecDecision{Binary: bin, Version: v.Version, Move: true, Pinned: pinned}
 }
 
 // refusalReason is a refusal's one-line reason: what failed, the error and the last line of its output, bounded to
@@ -149,7 +191,12 @@ func (a *App) reexec(p startPlan, n int, own, copyDir string, signals chan<- os.
 			p.cleanup()
 		}
 		signal.Stop(signals)
-		err := a.execImage(d.Binary.Path, argv)
+		env := os.Environ()
+		if d.Pinned != "" {
+			// As the launcher would: the new image is told the release it was chosen as.
+			env = launcher.ChildEnv(env, d.Pinned)
+		}
+		err := a.execImageEnv(d.Binary.Path, argv, env)
 		if err == nil {
 			return store.ReloadRefusal{}, true, nil
 		}
@@ -163,7 +210,10 @@ func (a *App) reexec(p startPlan, n int, own, copyDir string, signals chan<- os.
 		return d.Refused, false, nil
 	}
 	path := d.Binary.Path
-	if path == "" {
+	switch {
+	case d.Pinned != "" && path == "":
+		path = "pinned " + d.Pinned
+	case path == "":
 		path = "on PATH"
 	}
 	_, _ = fmt.Fprintf(a.Stdout, "session: %d reloads on this binary, refusing guildhall %s %s: %s\n", n, path, shortSHA(d.Refused.SHA256), d.Refused.Reason)
@@ -178,14 +228,14 @@ func shortSHA(sum string) string {
 	return "sha256:" + sum[:min(12, len(sum))]
 }
 
-// execImage replaces this process's image with the binary at path, run with argv after its own name and this
-// process's environment; a real exec returns only on failure.
-func (a *App) execImage(path string, argv []string) error {
+// execImageEnv replaces this process's image with the binary at path, run with argv after its own name and the
+// environment env; a real exec returns only on failure.
+func (a *App) execImageEnv(path string, argv, env []string) error {
 	run := a.Exec
 	if run == nil {
 		run = syscall.Exec
 	}
-	if err := run(path, append([]string{path}, argv...), os.Environ()); err != nil {
+	if err := run(path, append([]string{path}, argv...), env); err != nil {
 		return fmt.Errorf("exec %s: %w", path, err)
 	}
 	return nil

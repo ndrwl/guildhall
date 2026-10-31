@@ -248,25 +248,52 @@ Warnings never change the exit code.
 
 ### Release
 
-`guildhall release install|status` manages the Guildhall home of [release upgrades](../releases.md) through [`internal/release`](release.md); they select no copy and read no config or store.
+`guildhall release install|adopt|use|status` manages the Guildhall home of [release upgrades](../releases.md) through [`internal/release`](release.md); `install` selects no copy and reads no config or store.
 The home is `release.Locate` over `App.Getenv`, the path `App.Executable` returns and `Version()`.
-`release use`, `adopt`, `rollback`, `prune` and `install --launcher` are designed, not built, and are usage errors.
+`release rollback` and `prune` are designed, not built (slice 4), and are usage errors.
+
+**Every release** refuses to run when `GUILDHALL_RELEASE` names a version other than its own `Version()`: `cmd/guildhall` calls `cli.CheckReleaseEnv` before anything else, printing `guildhall: GUILDHALL_RELEASE=<v>, but this binary is release <own>; …` and exiting 1, and with the variable unset or its own version removes it from its environment, so what it starts by path, such as a supervisor's pre-flight of a newer release, does not inherit a version that is not its own.
+
+`release adopt [--copy <dir>] [--launcher <file>]` needs a copy with a store.
+On a machine whose `guildhall` on `PATH` (`App.LookPath`) is not yet the home's launcher, by sha256, it probes it with `version --json`, installs it with `release.Home.Install` under the version it reports, so `dev`, modified and contract-less builds are refused as `release install` refuses them, and pins the copy to it as below with source `adopt`.
+Before that pin it installs the launcher, so an adopt refused for its launcher leaves the copy unpinned: `--launcher`, else `guildhall-launcher` beside the `PATH` binary, else on `PATH`, which `App.ProbeLauncher` (nil: run under `GUILDHALL_LAUNCHER_PROBE=1` and read its report) must confirm, copied to `<home>/bin/guildhall`; after the pin it replaces the `PATH` binary with a copy of it by rename, keeping the old one beside it as `guildhall.pre-adopt` (`guildhall.pre-adopt.exe` on Windows), refusing when that backup already exists and, on Windows, while another Guildhall process runs from that path, naming its process ids.
+On a machine already adopted it installs nothing: a copy that already pins keeps its pin and is registered, and one with no pin gets the running release, the one the launcher's recovery dispatch ran, as its first pin.
+It prints one line per step, or what is already in place, and exits 0.
+
+`release use <version> [--copy <dir>]` needs a standalone copy with a store: a copy with a `managed.toml` is refused, naming its `release` and `release_sha256` managed keys and the rollout, and a version not installed and intact is refused, naming `guildhall release install`.
+Both commands pin through one path: under the home lock they register the copy in the inventory, record a `release-pin` event (`store.RecordReleasePin`) unless the newest already names that version and sha256, and then write `release.pin` by rename, so the cache always follows its event.
+`use` prints `copy <dir> pins <version> (sha256:<12>), was <previous>; …`, its first pin without `was`, or `copy <dir> already pins <version> (…); nothing changed`.
+Pruning after a pin change lands with prune in slice 4, and the store-schema rule with task release records in slice 3.
+
+`release install --launcher [--from <file>]` probes the launcher, `--from` or `guildhall-launcher` on `PATH`, and replaces `<home>/bin/guildhall` with it by rename, moving the old one aside first, as a running Windows executable allows; the `guildhall` on `PATH`, when it is a copy of the launcher it replaces, is replaced too.
 
 `release install <version> --from <file> --sha256 <hex>` (flags before or after the version) runs `release.Home.Install` with the home lock waited for up to ten seconds.
 Its probe runs the verified `.incoming` copy as `<copy> version --json` through `App.Output`, bounded by two minutes like the supervisor's pre-flight, and takes `version`, `modified`, `store_schema` and `release_contract` from the first JSON value printed; a run that fails or prints no version is refused, naming the error and the last line of output.
 It prints `installed <version> (sha256 <hex>) at <dir>`, or `<version> is already installed (sha256 <hex>) at <dir>; nothing changed`, and exits 0; every refusal, such as `dev`, a modified build, a sha256 mismatch or another binary under an installed version, prints `guildhall: release install: <reason>` and exits 1.
 
-`release status [--json]` reads only and never creates the home.
-Plain prints `home: <dir>`, then `releases:` with one line per release, newest install first, `  <version>  sha256:<first 12>  installed <time>  store schema <n>  release contract <n>`, or `  <version>  damaged, never run: <reason>`, or `releases: none`, then `copies:` with one inventoried copy per line, or `copies: none`.
-`--json` prints `{"home", "releases", "copies"}`, each release with `version`, `sha256`, `store_schema`, `release_contract`, `installed_at` and `damage` (`""` when intact), and both lists `[]` when empty.
-Damage does not change the exit code; a home that cannot be located or read exits 1.
-The copy's pin and which copies and tasks hold each release join the report with the slices that record them.
+`release status [--json] [--copy <dir>]` reads only and never creates the home; it selects a copy with `--copy` or copy discovery, and none outside a copy.
+Plain prints `home: <dir>`, then `releases:` with one line per release, newest install first, `  <version>  sha256:<first 12>  installed <time>  store schema <n>  release contract <n>`, then `    pinned by <copy>` for each inventoried copy whose `release.pin` names it, or `  <version>  damaged, never run: <reason>`, or `releases: none`, then `copies:` with one inventoried copy per line, or `copies: none`, then, with a copy selected, `copy: <dir> pins <version>` or `copy: <dir> has no release pin`, and `  problem: <reason>` when its pin file and newest pin event disagree.
+`--json` prints `{"home", "releases", "copies", "copy"}`, each release with `version`, `sha256`, `store_schema`, `release_contract`, `installed_at`, `damage` (`""` when intact) and `pinned_by`, both lists `[]` when empty, and `copy` null or `{"dir", "pin", "event_version", "event_sha256", "problem"}`.
+Damage and a pin problem do not change the exit code; a home that cannot be located or read exits 1.
+Which tasks hold each release joins the report with the slice that records them.
 
-Both commands exit 2 with the usage text for a missing or unknown subcommand, a missing version, `--from` or `--sha256`, a second version, an unknown flag or an argument to `status`, and 1 when stdout cannot be written.
+**The configuration-admission boundary** (`admit.Judge`) refuses a copy whose `release.pin` and newest `release-pin` event disagree, either present without the other, another version or an unreadable pin file (`admit.PinRefusal`), naming `guildhall release use <version>` to repair it; a copy with neither, one that has not adopted, is admitted as before.
+The system alert the design raises for it is not built yet.
+
+**Retargeting to the pin.** On a copy with a `release.pin` the binary a Director runs on is the pinned release (`targetBinary`), not the `guildhall` on `PATH`, which is then the launcher: the supervisor's reload decision pre-flights `releases/<pin>/guildhall`, refusing a pinned release that is missing, damaged or reports another version, and execs it with `GUILDHALL_RELEASE` set to the pin; `director status`'s `supervisor_binary` compares the session's binary with it, saying `the pinned release <v>` where it said `the guildhall on PATH`; `director start` types plain `guildhall` with the explicit `--copy` into the Director's tab, so the session and its restarts there go through the launcher; and the `install` item compares the pin, by its pseudo-version's commit or, when the pin is this binary, this binary's, with main, naming `guildhall release install`, `guildhall release use` and `guildhall director reload` (command `guildhall release install`).
+`version --startup` already compares the image of the binary running it, which under the launcher is the pin, with the session's supervisor.
+Task children (`task advance`, `quality`, `artisan start`) keep `os.Executable`.
+On a copy with no `release.pin` every one of these behaves as before.
+
+The commands exit 2 with the usage text for a missing or unknown subcommand, a missing version, `--from` or `--sha256`, a second version, `--launcher` with a version or `--sha256`, an unknown flag or an argument to `status` or `adopt`, and 1 when stdout cannot be written.
 
 ## Tests
 
 `release_test.go` was written with the commands and not run red: `TestReleaseInstallAndStatus` installs through an `App.Output` double that answers `version --json`, run only on the `.incoming` copy, installs again with the flags reordered as already installed, and reads the plain status, then damages the binary and reads the damage in plain and `--json`; `TestReleaseStatusOfAnEmptyHome` the empty forms, leaving no home behind; `TestReleaseInstallRefusals` each refusal, exit 1 with nothing installed, and a wrong sha256 refused with nothing run; `TestReleaseUsage` the usage errors and an unwritable stdout.
+Slice 2's tests were written with the commands and not run red, except `TestReleaseStatusOfAnEmptyHome`, which failed on the new `copy` field and gained it.
+`release_pin_test.go`: `TestReleaseAdopt` adopts a fresh copy, installing the `PATH` binary, recording one `adopt` pin, writing `release.pin`, registering the copy, installing the launcher in the home and on `PATH` and keeping the backup, then adopts again with nothing run or recorded; `TestReleaseAdoptRefusals` a `dev` and a modified `PATH` binary and no launcher, leaving `PATH` unchanged; `TestReleaseUse` a move with its previous version and sha256, the same pin again, a release not installed and a managed copy; `TestReleaseStatusShowsThePin` `pinned_by` and the copy's pin, then a disagreeing `release.pin` reported as a problem and refused by `admitDirector` until `release use` repairs it; `TestCheckReleaseEnv` the variable's three cases; `TestCopySelectionIsShared` one selection table through the CLI and the launcher.
+`director_binary_pin_test.go`: `TestAdoptedCopyComparesThePin` `supervisor_binary` against the pin and the reload decision moving onto, pre-flighting and refusing a mislabelled or missing pinned release; `TestDirectorStatusInstallOnAnAdoptedCopy` the install item from the pin's commit; `TestDirectorStartTypesThePlainCommandOnAnAdoptedCopy` the typed plain `guildhall`.
+The un-adopted behaviour is pinned by the unchanged `TestDirectorStatusComparesTheSupervisorBinary`, `TestDirectorStatusInstall`, `TestDirectorStartOpensTheDirectorTab` and the reload binary tests.
 `TestVersionForms`, `TestDirectorStatusOfAnEmptyCopy` and the `director-status.json` golden failed when `store_schema` and `release_contract` were added to `version --json`, and gained the two fields.
 
 `version_test.go` was written red first against the one-line `version` ([red run](../evidence/version-from-build-info-2026-10-28-red.txt)).

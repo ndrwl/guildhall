@@ -9,23 +9,24 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
-	"strings"
+
+	"github.com/ndrwl/guildhall/internal/copydir"
 )
 
-// copyMarkerFile is the copy marker, the file at a copy's root that copy discovery looks for (docs/running.md#copies).
-const copyMarkerFile = ".guildhall-copy"
-
-// copyMarker is the copy marker's one JSON object.
-type copyMarker struct {
-	Schema  string `json:"schema"`
-	Version int    `json:"version"`
-	Name    string `json:"name"`
-}
-
+// Copy discovery and the copy marker (docs/running.md#copies) live in internal/copydir, which the PATH launcher
+// shares (docs/releases.md#the-path-launcher); these names keep the CLI's callers short.
 const (
-	copyMarkerSchema  = "guildhall.copy"
-	copyMarkerVersion = 1
+	copyMarkerFile    = copydir.MarkerFile
+	copyMarkerSchema  = copydir.MarkerSchema
+	copyMarkerVersion = copydir.MarkerVersion
+)
+
+type copyMarker = copydir.Marker
+
+var (
+	discoverCopy   = copydir.Discover
+	readCopyMarker = copydir.ReadMarker
+	samePath       = copydir.SamePath
 )
 
 // copyFlags is the --copy flag every store-taking command shares (docs/running.md#copies). A copy directory holds
@@ -116,61 +117,6 @@ func (c *copyFlags) missing(a *App) error {
 	return fmt.Errorf("no Guildhall copy found from %s; pass --copy <dir> or cd into a copy", from)
 }
 
-// discoverCopy is copy discovery: it searches upward from the working directory getwd returns, one parent at a time
-// to the filesystem root, for the nearest directory holding a copy marker, and returns it with ok true. A start
-// under that copy's state/ finds no copy, and so does a nil getwd; with no copy found, the directory returned is
-// the start. A marker that cannot be read is an error naming it.
-func discoverCopy(getwd func() (string, error)) (dir string, ok bool, err error) {
-	if getwd == nil {
-		return "", false, nil
-	}
-	wd, err := getwd()
-	if err != nil {
-		return "", false, fmt.Errorf("copy discovery: %w", err)
-	}
-	start, err := filepath.Abs(wd)
-	if err != nil {
-		return "", false, fmt.Errorf("copy discovery: %w", err)
-	}
-	for d := start; ; {
-		path := filepath.Join(d, copyMarkerFile)
-		switch _, err := os.Lstat(path); {
-		case err == nil:
-			// Artisan working and attempt directories lie under the copy's state/, and must not reach its store.
-			if within(filepath.Join(d, "state"), start) {
-				return start, false, nil
-			}
-			if err := readCopyMarker(path); err != nil {
-				return "", false, err
-			}
-			return d, true, nil
-		case !errors.Is(err, fs.ErrNotExist):
-			return "", false, fmt.Errorf("copy marker %s: %w", path, err)
-		}
-		parent := filepath.Dir(d)
-		if parent == d {
-			return start, false, nil
-		}
-		d = parent
-	}
-}
-
-// readCopyMarker refuses a marker that is unreadable, is not JSON, or has an unknown schema or version.
-func readCopyMarker(path string) error {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("copy marker %s: %w", path, err)
-	}
-	var m copyMarker
-	if err := json.Unmarshal(b, &m); err != nil {
-		return fmt.Errorf("copy marker %s is not valid JSON: %w", path, err)
-	}
-	if m.Schema != copyMarkerSchema || m.Version != copyMarkerVersion {
-		return fmt.Errorf("copy marker %s has schema %q version %d, want %q version %d", path, m.Schema, m.Version, copyMarkerSchema, copyMarkerVersion)
-	}
-	return nil
-}
-
 // writeCopyMarker gives dir a copy marker named for its base name unless it has one. The marker is created
 // exclusively, so concurrent first uses cannot race and an existing marker is never rewritten. A copy that cannot
 // be written gets one warning line on stderr, so a read-only command still runs.
@@ -211,32 +157,6 @@ func anyGiven(paths ...*string) bool {
 		}
 	}
 	return false
-}
-
-// samePath reports whether a and b name the same path, compared absolute and cleaned, ignoring case on Windows.
-func samePath(a, b string) bool {
-	a, errA := filepath.Abs(a)
-	b, errB := filepath.Abs(b)
-	if errA != nil || errB != nil {
-		return false
-	}
-	if runtime.GOOS == "windows" {
-		return strings.EqualFold(a, b)
-	}
-	return a == b
-}
-
-// within reports whether p is base or lies under it, compared as samePath compares.
-func within(base, p string) bool {
-	base, errB := filepath.Abs(base)
-	p, errP := filepath.Abs(p)
-	if errB != nil || errP != nil {
-		return false
-	}
-	if runtime.GOOS == "windows" {
-		base, p = strings.ToLower(base), strings.ToLower(p)
-	}
-	return p == base || strings.HasPrefix(p, strings.TrimSuffix(base, string(filepath.Separator))+string(filepath.Separator))
 }
 
 // noStore is the refusal for a store path with no file: store init makes one.

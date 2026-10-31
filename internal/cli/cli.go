@@ -35,8 +35,15 @@ Commands:
                  print the guildhall version, revision, latest merge and how far it is behind main
   release install <version> --from <file> --sha256 <hex>
                  verify a release binary and install it side by side under the Guildhall home
-  release status [--json]
-                 print the Guildhall home, its installed releases with any damage, and its copies
+  release install --launcher [--from <file>]
+                 replace the Guildhall home's PATH launcher with a guildhall-launcher build
+  release adopt [--copy <dir>] [--launcher <file>]
+                 install the guildhall on PATH as the copy's first release, pin it, and put the launcher on PATH
+  release use <version> [--copy <dir>]
+                 pin a standalone copy to an installed release for new work
+  release status [--json] [--copy <dir>]
+                 print the Guildhall home, its installed releases with any damage and the copies pinning them,
+                 its copies, and the selected copy's pin
   doctor         report the platform and the tools guildhall uses
   store init <path>
                  create and initialize an empty store file
@@ -205,6 +212,9 @@ type App struct {
 	// Exec replaces the process image with the program at argv0, run with argv and envv, as a session supervisor
 	// moves onto a new guildhall binary at a reload; it returns only on failure. nil means syscall.Exec.
 	Exec func(argv0 string, argv, envv []string) error
+	// ProbeLauncher refuses a file that is not the PATH launcher, as release adopt and release install --launcher
+	// check the launcher they install; nil means running it under release.LauncherProbeEnv.
+	ProbeLauncher func(ctx context.Context, path string) error
 	// Copier reaches enrolled machines for steward rollouts; nil means scp, found with LookPath.
 	Copier steward.Copier
 	// Runner runs the fixed remote commands on enrolled machines, such as config reload after a rollout writes a

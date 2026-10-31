@@ -100,6 +100,7 @@ func (s *Store) Doctor() (Report, error) {
 			{bucketMaintenance, nil, func() any { return new(MaintenanceRun) }},
 			{bucketEnrolments, nil, func() any { return new(Enrolment) }},
 			{bucketManagedRevisions, nil, func() any { return new(ManagedRevision) }},
+			{bucketReleasePins, nil, func() any { return new(ReleasePin) }},
 		} {
 			if b := directorBucket(tx, d.name); b != nil {
 				_ = b.ForEach(func(k, v []byte) error {
