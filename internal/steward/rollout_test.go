@@ -57,7 +57,7 @@ owner_machine = "workstation"
 		s.put(c.alias, c.path, c.local)
 		s.put(c.alias, managedPath(c.path), string(managed))
 	}
-	r, err := LoadRollout(private, s.transport())
+	r, err := LoadRollout(private, s.transport(), s.runner())
 	if err != nil {
 		t.Fatal(err)
 	}

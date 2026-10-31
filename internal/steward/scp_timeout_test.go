@@ -12,8 +12,10 @@ import (
 	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
+// TestTransportTimeoutWithChild covers cancelling an scp or ssh run whose child holds its output pipes: the shared
+// cancellation kills the whole process group on Unix, and the direct process plus WaitDelay elsewhere.
 func TestTransportTimeoutWithChild(t *testing.T) {
-	for _, operation := range []string{"fetch", "put"} {
+	for _, operation := range []string{"fetch", "put", "ssh run"} {
 		t.Run(operation, func(t *testing.T) {
 			s := newStub(t)
 			executable, err := os.Executable()
@@ -29,10 +31,14 @@ func TestTransportTimeoutWithChild(t *testing.T) {
 			local := filepath.Join(t.TempDir(), "file")
 			done := make(chan error, 1)
 			go func() {
-				if operation == "fetch" {
+				switch operation {
+				case "fetch":
 					done <- transport.Fetch(ctx, remote, local)
-				} else {
+				case "put":
 					done <- transport.Put(ctx, local, remote)
+				default:
+					_, err := s.runner().Run(ctx, remote.Alias, ReloadCommand(DefaultGuildhall, "/home/guild/directors/tools"))
+					done <- err
 				}
 			}()
 			readyTimeout := time.NewTimer(testenv.Ceiling(10 * time.Second))

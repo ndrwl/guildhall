@@ -159,6 +159,7 @@ repositories = ["cli", "docs-site"]
 | `ssh_alias` | A `Host` entry in the Steward user's SSH config. The alias, not the roster, holds the address, user and key. Letters, digits, `.`, `_` and `-` only, so no user, option or shell syntax can be passed. |
 | `os` | `linux`, `windows` or `darwin`; it decides the path form. |
 | `roles` | `steward` and/or `director`. A machine that lists Directors needs `director`. |
+| `guildhall_path` | Optional. The absolute path of the `guildhall` program the [remote commands](#remote-commands) run on the machine, in its `os` path form with the same characters as `copy_dir`, such as `C:/Users/guild/bin/guildhall.exe`. Without it, `guildhall` on the `PATH` of the machine's Guildhall account is run. |
 | `[[machine.director]] name` | The Director's name, which its copy's config must match. |
 | `copy_dir` | Absolute path of the Director copy's directory, holding `config.toml` and the published `managed.toml`. Windows paths use a drive letter and forward slashes, such as `C:/Users/guild/directors/tools`. Only letters, digits, `.`, `_`, `-` and `/` are allowed, with no `.` or `..` segments. |
 | `repositories` | The repository ids the copy must have. |
@@ -197,7 +198,7 @@ It writes `plan.json` and, for each copy that would change, `files/<machine>/<di
 - each copy's status: `change`, `unchanged` or `refused` with the reason;
 - each managed key added, changed or removed, and whether it needs approval;
 - a line diff of the published managed file;
-- the planned `scp` commands, with preview source paths replaced by private temporary inputs during [apply](#apply);
+- the planned `scp` commands, with preview source paths replaced by private temporary inputs during [apply](#apply), and the `ssh` command that runs `config reload` on the copy, all part of what the plan digest covers;
 - the plan digest and the apply command.
 
 It does not update remote Director copies; its writes are local plan files and temporary downloads.
@@ -226,17 +227,20 @@ It then refuses a requested machine set that differs from the saved plan, before
 It plans again and refuses unless the result has the same digest as the dry run and the staged previews are unchanged, so a change observed during revalidation stops it.
 Validated managed inputs are copied into private temporary input files for transport; receipts record those actual command paths rather than the preview source paths.
 Local changes after revalidation remain untouched; readers validate overrides against the currently published managed settings.
-For each copy that changes, it then runs the three planned commands:
+For each copy that changes, it then runs the four planned commands:
 
 1. copy the previous managed file to `managed.toml.rev-<first 16 hex digits of its sha256>` next to it, keeping the old revision;
 2. copy the new managed file over `managed.toml`;
-3. read `managed.toml` back and compare its sha256 with the plan.
+3. read `managed.toml` back and compare its sha256 with the plan;
+4. once it matches, run `guildhall config reload --copy <copy_dir>` on the copy over SSH, which records the new digest as authorized in the copy's own store ([how the Steward acts](director-modes.md#how-the-steward-acts)).
 
+Every apply that writes a copy runs the reload, whether or not the plan needed approval, so a routine rollout is never an unauthorized revision on the Director.
 A failure on one copy does not stop the others.
-The receipt `receipt-<UTC time>.json` in the plan directory records each copy's status (`applied`, `unchanged`, `failed` or `verify_failed`), its before and after digests, its read-back digest when verification reaches digest comparison, the revision file and every attempted command with its error.
+The receipt `receipt-<UTC time>.json` in the plan directory records each copy's status (`applied`, `unchanged`, `failed`, `verify_failed` or `reload_failed`), its before and after digests, its read-back digest when verification reaches digest comparison, the revision file and every attempted command with its error, and, for the reload, what it printed.
 Read-back follows successful uploads only; failed transfers are recorded as failed and may leave partial remote files without a read-back digest.
+A `reload_failed` copy has the new managed file, published and verified, but its reload failed, for example because the machine's `guildhall` predates `config reload` and says it does not know the command; the copy is not undone, and its Director refuses the new revision until a reload authorizes it, which the Guildmaster can run by hand on that machine.
 Apply exits 1 unless every copy is applied or unchanged; a plan that is no longer current needs a new dry run.
-Applying an unchanged plan performs no remote writes, but still writes a local receipt.
+Applying an unchanged plan performs no remote writes and runs no remote command, but still writes a local receipt.
 
 ### Publication and writer containment
 
@@ -264,9 +268,37 @@ New machines, accounts, privileges, host-key trust and credentials are never par
 
 Rollouts run `scp` from `PATH` with fixed argument lists, never through a local shell: `scp -q -B -o BatchMode=yes -- <source> <destination>`.
 SSH's own config, agent, keys and host-key checking decide access; Guildhall adds no options that weaken them, and batch mode makes `scp` fail instead of prompting.
-No remote command is run.
 Roster values that reach the command line are restricted to characters that no remote shell or `scp` interprets.
 Each `scp` run is bounded by a two-minute timeout; a run stopped by its timeout is reported as a timeout, and one that fails before transferring leaves its destination unchanged.
+
+### Remote commands
+
+Besides the copies, the Steward runs only fixed Guildhall commands on a machine, never a shell of its own: `ssh -o BatchMode=yes -- <ssh_alias> <guildhall> <command> --copy <copy_dir>`, run from `PATH` as an argument list, where `<guildhall>` is the machine's `guildhall_path` or `guildhall`.
+The allow-list is exactly ([decision](decisions/steward-fixed-remote-commands.md)):
+
+- `config reload --copy <copy_dir>`, which [apply](#apply) runs on each copy it wrote;
+- `director mode --json --copy <copy_dir>`, which only reads the copy's mode and managed digest;
+- `director reload --copy <copy_dir>`, reserved for [release upgrades](releases.md#guildhall-director-reload) and refused until that is built.
+
+Any other command, flag or argument is refused before `ssh` runs, and so is an alias that is not a plain roster alias.
+`ssh` joins the arguments with spaces for the remote side, which then parses them again, through `cmd.exe` or PowerShell on a Windows OpenSSH server and a POSIX shell elsewhere; every value is restricted to letters, digits, `.`, `_`, `-`, `/` and a drive's `:`, which all of them read the same way, so nothing is quoted.
+Each `ssh` run is bounded by a two-minute timeout and is cancelled as `scp` is, killing its process group on Unix and its process elsewhere.
+A command that exits non-zero, a refusing machine and a timeout are each reported with their diagnostic.
+
+## Managing a Director copy
+
+A Director copy is standalone until the Guildmaster enrols it; a rollout reaches only its `managed.toml` and never enrols it ([standalone and managed Directors](director-modes.md)).
+To bring a copy under this Steward:
+
+1. Add the machine and the copy to `roster.toml`, with `guildhall_path` if `guildhall` is not on the account's `PATH`.
+2. On the Director's machine, copy [`examples/managed.toml`](../examples/managed.toml) beside the copy's `config.toml`, as its first `managed.toml`.
+3. There, run `guildhall director enrol --steward <label>` on the Guildmaster's word.
+   Enrolment never authorizes that first digest, so the copy refuses every command that needs its settings until it is authorized.
+4. Authorize it: run a rollout to the machine, whose apply runs `config reload` on each copy it writes, or run `guildhall config reload --copy <dir>` there by hand.
+   A rollout that leaves the copy unchanged writes nothing and runs no reload, so the hand reload is the way when the Steward's settings already match.
+5. Check with `guildhall director mode` on the copy: it shows `managed`, the Steward's label and the digest, authorized.
+
+`guildhall director leave`, run on the Director's machine on the Guildmaster's word, returns the copy to standalone; then remove it from the roster.
 
 ## Revisions and active tasks
 
@@ -281,8 +313,7 @@ Release binding and execution enforcement of R1.31 remain future work.
 - `rollback`, which will restore a preserved revision for new tasks.
 - Tool installs (`guildhall steward install`, R1.7, R1.50), audits and learnings (R1.32).
 - Enrolment through the setup wizard (R1.43-R1.51).
-- The Steward is optional: [standalone and managed Directors](director-modes.md), including `guildhall config reload` and recorded enrolment, are designed, not built.
-- Platform support: tests replace `scp` with a stub on Linux, Windows and macOS, and no platform is claimed as supported for rollouts until acceptance passes there (R1.27).
+- Platform support: tests replace `scp` and `ssh` with stubs on Linux, Windows and macOS, and no platform is claimed as supported for rollouts until acceptance passes there (R1.27).
 - The Steward session's live acceptance: CI runs it against a stand-in runtime only, so it is not claimed until the Guildmaster has run it once with three Director hosts (R1.27, R1.30).
-- Managed mode for the Steward session ([optional Steward](decisions/optional-steward.md)): enrolment, `config reload` over SSH after an approved rollout, observed-untrusted alerts and the mode fields in the status feeds, follow-up `guildhall/d102`.
+- The rest of managed mode ([standalone and managed Directors](director-modes.md#what-is-missing)): observed-untrusted alerts on the Director, and `steward status` reading each copy's mode with `director mode --json`, follow-up `guildhall/d123` slice 3.
 - Collection of lessons and maintenance tickets from Directors, and their triage, follow-up `guildhall/d103`.

@@ -62,7 +62,7 @@ func stewardApp(t *testing.T, managed string) (app *App, stdout, stderr *bytes.B
 	}
 	fleet.Write(cliManaged, managedCopy)
 	app, stdout, stderr = newTestApp(nil, nil)
-	app.Copier = fleet
+	app.Copier, app.Runner = fleet, fleet
 	return app, stdout, stderr, stewardConfig, fleet
 }
 
@@ -98,6 +98,7 @@ func TestStewardRolloutDryRunThenApply(t *testing.T) {
 		`added standards_revision = "standards-2"`,
 		"+[managed.standards_revision]",
 		"scp -q -B -o BatchMode=yes -- " + filepath.Join(plan, "files", "workstation", "tools", "managed.toml") + " " + cliManaged.String(),
+		"ssh -o BatchMode=yes -- guild-ws guildhall config reload --copy /home/guild/tools\n",
 		"--apply",
 	} {
 		if !strings.Contains(out, want) {
@@ -114,6 +115,9 @@ func TestStewardRolloutDryRunThenApply(t *testing.T) {
 	if code := app.Run(append(args, "--apply")); code != 0 {
 		t.Fatalf("apply exit %d; stderr: %s", code, stderr)
 	}
+	if ran := fleet.Ran("guild-ws"); len(ran) != 1 || strings.Join(ran[0], " ") != "guildhall config reload --copy /home/guild/tools" {
+		t.Errorf("apply ran %q on the copy, want one config reload", ran)
+	}
 	if out := stdout.String(); !strings.Contains(out, "workstation/tools: applied") || !strings.Contains(out, "receipt: "+plan) {
 		t.Errorf("apply output:\n%s", out)
 	}
@@ -128,6 +132,30 @@ func TestStewardRolloutDryRunThenApply(t *testing.T) {
 	}
 	if value, _ := combined.Setting("standards_revision"); value != "standards-2" {
 		t.Fatal(value)
+	}
+}
+
+// TestStewardApplyReportsAFailedReload: a copy whose guildhall does not know config reload is reported per copy,
+// with the remote diagnostic, and apply exits 1 without undoing the published file.
+func TestStewardApplyReportsAFailedReload(t *testing.T) {
+	app, stdout, stderr, cfg, fleet := stewardApp(t, "schema_version = 1\n[managed.standards_revision]\nvalue = \"standards-2\"\n")
+	const old = `guildhall: unknown command "config"`
+	fleet.Answer("guild-ws", nil, old)
+	plan := filepath.Join(t.TempDir(), "plan")
+	args := []string{"steward", "rollout", "--config", cfg, "--machine", "workstation", "--plan", plan}
+	if code := app.Run(append(args, "--dry-run")); code != 0 {
+		t.Fatalf("dry run exit %d; stderr: %s", code, stderr)
+	}
+	stdout.Reset()
+	if code := app.Run(append(args, "--apply")); code != 1 || !strings.Contains(stderr.String(), "did not complete") {
+		t.Fatalf("apply exit %d, want 1; stderr: %s", code, stderr)
+	}
+	if out := stdout.String(); !strings.Contains(out, "workstation/tools: reload_failed: ") || !strings.Contains(out, old) {
+		t.Errorf("apply output does not report the failed reload:\n%s", out)
+	}
+	published, _ := fleet.Read(cliManaged)
+	if !strings.Contains(string(published), "standards-2") {
+		t.Error("a failed reload undid the published managed file")
 	}
 }
 
@@ -222,11 +250,21 @@ func TestStewardRolloutRefusals(t *testing.T) {
 			}
 		})
 	}
-	app.Copier = nil
+	app.Copier, app.Runner = nil, nil
 	app.LookPath = func(string) (string, error) { return "", exec.ErrNotFound }
 	stderr.Reset()
 	if code := app.Run([]string{"steward", "rollout", "--config", cfg, "--machine", "workstation", "--plan", plan, "--dry-run"}); code != 1 || !strings.Contains(stderr.String(), "scp") {
 		t.Fatalf("missing scp: exit %d; stderr: %s", code, stderr)
+	}
+	app.LookPath = func(name string) (string, error) {
+		if name == "scp" {
+			return name, nil
+		}
+		return "", exec.ErrNotFound
+	}
+	stderr.Reset()
+	if code := app.Run([]string{"steward", "rollout", "--config", cfg, "--machine", "workstation", "--plan", plan, "--dry-run"}); code != 1 || !strings.Contains(stderr.String(), "ssh is needed for rollouts") {
+		t.Fatalf("missing ssh: exit %d; stderr: %s", code, stderr)
 	}
 }
 
@@ -273,11 +311,12 @@ func TestStewardRolloutRunsSCPFromPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	bin := t.TempDir()
-	name := "scp"
-	if runtime.GOOS == "windows" {
-		name += ".exe"
+	for _, name := range []string{"scp", "ssh"} {
+		if runtime.GOOS == "windows" {
+			name += ".exe"
+		}
+		copyFile(t, self, filepath.Join(bin, name))
 	}
-	copyFile(t, self, filepath.Join(bin, name))
 	log := filepath.Join(t.TempDir(), "scp.log")
 	t.Setenv("PATH", bin)
 	t.Setenv(scpStubEnv, log)

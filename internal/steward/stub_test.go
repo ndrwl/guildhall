@@ -2,12 +2,17 @@ package steward
 
 import (
 	"bytes"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -40,6 +45,9 @@ func TestMain(m *testing.M) {
 		os.Exit(lockOwner(private, os.Getenv(ownerPlanEnv)))
 	}
 	if root := os.Getenv(stubRootEnv); root != "" {
+		if strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe") == "ssh" {
+			os.Exit(stubSSH(root, os.Args[1:]))
+		}
 		os.Exit(stubSCP(root, os.Args[1:]))
 	}
 	os.Exit(m.Run())
@@ -71,16 +79,7 @@ func stubSCP(root string, args []string) int {
 		return 1
 	}
 	if h := os.Getenv(stubHangEnv); h != "" && strings.Contains(joined, h) {
-		if executable := os.Getenv("GUILDHALL_STUB_SCP_CHILD"); executable != "" {
-			child := exec.Command(executable)
-			child.Env = append(os.Environ(), "GUILDHALL_STUB_SSH_CHILD="+filepath.Join(root, "child-ready"))
-			child.Stdout, child.Stderr = os.Stdout, os.Stderr
-			if err := child.Start(); err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				return 1
-			}
-		}
-		time.Sleep(time.Hour) // timing:allow deliberately hung scp subprocess until the caller kills it.
+		return stubHang(root)
 	}
 	data, err := os.ReadFile(stubPath(root, src))
 	if err != nil {
@@ -97,6 +96,84 @@ func stubSCP(root string, args []string) int {
 	return 0
 }
 
+// stubHang waits, as a hung scp or ssh does, until the caller kills it, first starting a child that holds the
+// stub's output pipes when the kill test asks for one.
+func stubHang(root string) int {
+	if executable := os.Getenv("GUILDHALL_STUB_SCP_CHILD"); executable != "" {
+		child := exec.Command(executable)
+		child.Env = append(os.Environ(), "GUILDHALL_STUB_SSH_CHILD="+filepath.Join(root, "child-ready"))
+		child.Stdout, child.Stderr = os.Stdout, os.Stderr
+		if err := child.Start(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+	}
+	time.Sleep(time.Hour) // timing:allow deliberately hung scp or ssh subprocess until the caller kills it.
+	return 1
+}
+
+// stubAnswer is how a fake machine answers every remote command the stub ssh runs on it.
+type stubAnswer struct {
+	Output  string `json:"output"`
+	Failure string `json:"failure"`
+}
+
+// stubSSH plays ssh: it checks the fixed options, records the remote command the machine received, one JSON
+// argument list per line of ssh/<alias>.log, and answers as ssh/<alias>.answer.json says.
+func stubSSH(root string, args []string) int {
+	want := []string{"-o", "BatchMode=yes", "--"}
+	if len(args) < len(want)+2 || !slices.Equal(args[:len(want)], want) {
+		fmt.Fprintf(os.Stderr, "stub ssh: unexpected arguments %q\n", args)
+		return 255
+	}
+	alias, argv := args[len(want)], args[len(want)+1:]
+	joined := alias + ": " + strings.Join(argv, " ")
+	if f := os.Getenv(stubFailEnv); f != "" && strings.Contains(joined, f) {
+		fmt.Fprintf(os.Stderr, "ssh: connect to host %s port 22: Connection refused\n", alias)
+		return 255
+	}
+	if h := os.Getenv(stubHangEnv); h != "" && strings.Contains(joined, h) {
+		return stubHang(root)
+	}
+	dir := filepath.Join(root, "ssh")
+	line, err := json.Marshal(argv)
+	if err == nil {
+		err = os.MkdirAll(dir, 0o700)
+	}
+	if err == nil {
+		var log *os.File
+		if log, err = os.OpenFile(filepath.Join(dir, alias+".log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
+			_, err = log.Write(append(line, '\n'))
+			if cerr := log.Close(); err == nil {
+				err = cerr
+			}
+		}
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "stub ssh:", err)
+		return 255
+	}
+	var a stubAnswer
+	switch data, err := os.ReadFile(filepath.Join(dir, alias+".answer.json")); {
+	case err == nil:
+		if err := json.Unmarshal(data, &a); err != nil {
+			fmt.Fprintln(os.Stderr, "stub ssh:", err)
+			return 255
+		}
+	case !errors.Is(err, fs.ErrNotExist):
+		fmt.Fprintln(os.Stderr, "stub ssh:", err)
+		return 255
+	}
+	if _, err := io.WriteString(os.Stdout, a.Output); err != nil {
+		return 255
+	}
+	if a.Failure != "" {
+		fmt.Fprintln(os.Stderr, a.Failure)
+		return 2
+	}
+	return 0
+}
+
 // stubPath maps alias:path operands into the fake remote tree and leaves local paths alone.
 func stubPath(root, operand string) string {
 	m := remoteOperand.FindStringSubmatch(operand)
@@ -108,9 +185,9 @@ func stubPath(root, operand string) string {
 
 // stub is a fake fleet reached through the stub scp.
 type stub struct {
-	t    *testing.T
-	root string
-	scp  string
+	t        *testing.T
+	root     string
+	scp, ssh string
 }
 
 func newStub(t *testing.T) *stub {
@@ -120,23 +197,27 @@ func newStub(t *testing.T) *stub {
 		t.Fatal(err)
 	}
 	root := t.TempDir()
-	name := "scp"
-	if runtime.GOOS == "windows" {
-		name += ".exe"
-	}
-	scp := filepath.Join(t.TempDir(), name)
 	data, err := os.ReadFile(exe)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(scp, data, 0o755); err != nil {
-		t.Fatal(err)
+	bin := t.TempDir()
+	programs := map[string]string{}
+	for _, name := range []string{"scp", "ssh"} {
+		path := filepath.Join(bin, name)
+		if runtime.GOOS == "windows" {
+			path += ".exe"
+		}
+		if err := os.WriteFile(path, data, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		programs[name] = path
 	}
 	t.Setenv(stubRootEnv, root)
 	t.Setenv(stubFailEnv, "")
 	t.Setenv(stubCorruptEnv, "")
 	t.Setenv(stubHangEnv, "")
-	return &stub{t: t, root: root, scp: scp}
+	return &stub{t: t, root: root, scp: programs["scp"], ssh: programs["ssh"]}
 }
 
 func (s *stub) transport() Transport {
@@ -144,6 +225,47 @@ func (s *stub) transport() Transport {
 		Path:    s.scp,
 		Timeout: time.Minute,
 	}
+}
+
+func (s *stub) runner() SSH {
+	return SSH{Path: s.ssh, Timeout: time.Minute}
+}
+
+// answer makes every later remote command on the machine with alias print output and succeed, or fail with
+// failure as its diagnostic when failure is not empty.
+func (s *stub) answer(alias, output, failure string) {
+	s.t.Helper()
+	data, err := json.Marshal(stubAnswer{Output: output, Failure: failure})
+	if err == nil {
+		err = os.MkdirAll(filepath.Join(s.root, "ssh"), 0o700)
+	}
+	if err == nil {
+		err = os.WriteFile(filepath.Join(s.root, "ssh", alias+".answer.json"), data, 0o600)
+	}
+	if err != nil {
+		s.t.Fatal(err)
+	}
+}
+
+// ran returns the remote commands the machine with alias has received through the stub ssh, oldest first.
+func (s *stub) ran(alias string) [][]string {
+	s.t.Helper()
+	data, err := os.ReadFile(filepath.Join(s.root, "ssh", alias+".log"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	var out [][]string
+	for line := range bytes.Lines(data) {
+		var argv []string
+		if err := json.Unmarshal(line, &argv); err != nil {
+			s.t.Fatal(err)
+		}
+		out = append(out, argv)
+	}
+	return out
 }
 
 // put writes a file on a fake remote machine.
@@ -205,8 +327,21 @@ func (f StubFleet) Read(file Remote) ([]byte, bool) {
 	return data, err == nil
 }
 
-// Refuse makes the stub fail every copy naming the machine with alias.
+// Refuse makes the stub fail every copy and command naming the machine with alias.
 func (f StubFleet) Refuse(alias string) { f.s.t.Setenv(stubFailEnv, alias+":") }
 
-// Hang makes the stub wait, without copying, on every copy naming the machine with alias.
+// Hang makes the stub wait, without copying or running, on every copy and command naming the machine with alias.
 func (f StubFleet) Hang(alias string) { f.s.t.Setenv(stubHangEnv, alias+":") }
+
+// Runner returns the ssh Runner that runs the stub.
+func (f StubFleet) Runner() SSH { return f.s.runner() }
+
+// Answer makes every later remote command on the machine with alias print output and succeed, or fail with
+// failure as its diagnostic.
+func (f StubFleet) Answer(alias string, output []byte, failure string) {
+	f.s.t.Helper()
+	f.s.answer(alias, string(output), failure)
+}
+
+// Ran returns the remote commands the machine with alias has received, oldest first.
+func (f StubFleet) Ran(alias string) [][]string { return f.s.ran(alias) }

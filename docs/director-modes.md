@@ -4,8 +4,8 @@ This page is partly built: [what already holds](#what-already-holds) says what i
 Later slices build the rest red-first, as [contracts](contracts.md#method) describes.
 The decision is recorded in [optional Steward](decisions/optional-steward.md).
 
-Nothing can authorize a managed revision yet: `guildhall config reload` and the Guildmaster's approval decision are not built, and enrolment never authorizes one.
-So a copy enrolled now refuses every command that needs effective settings; no live copy should be enrolled until reload is built.
+Only `guildhall config reload` authorizes a managed revision yet: the Guildmaster's approval decision is not built, and enrolment never authorizes one.
+So an enrolled copy refuses every command that needs effective settings until a rollout or a hand-run `config reload` authorizes its `managed.toml`, and a hand edit of `managed.toml` is refused without an alert until the next reload.
 
 A Director runs in one of two modes:
 
@@ -33,12 +33,13 @@ On `main` today:
   These only report: `director status`, `director mode`, the messaging commands, `prune` and `version`.
   A manual `prune` acts on settings but never refuses: when the boundary refuses the copy, it applies `config.toml` alone, with no managed settings, and says so, so an unauthorized `prune_after` or `lock_wait` never decides what it removes.
 - `guildhall director enrol`, `director leave` and `director mode` are built ([CLI contract](contracts/cli.md#director-modes)), and `director status` names the mode the boundary finds.
+- `guildhall config reload --copy <dir>` is built ([CLI contract](contracts/cli.md#config-reload)): it validates the managed copy's combined config and records a `managed-revision` event with source `reload`, the digest and the previous one, once per digest.
+  A rollout's apply runs it over SSH on each copy it wrote, as one of the Steward's fixed [remote commands](steward.md#remote-commands), with the roster's per-machine `guildhall_path`, and records it in the receipt.
 - The Director suites in `internal/cli` run in both modes: `go test ./internal/cli -director-mode=managed`, or `GUILDHALL_TEST_DIRECTOR_MODE=managed`, makes each copy the shared test helpers return a managed copy with the same effective settings.
 
 ## What is missing
 
-- `guildhall config reload` and the SSH command a rollout runs it with, so nothing authorizes a managed revision yet.
-- Observed-untrusted alerts: an unauthorized digest is refused, but not yet recorded or raised to the Guildmaster as a decision, so there is no approval either.
+- Observed-untrusted alerts: an unauthorized digest is refused, but not yet recorded or raised to the Guildmaster as a decision, so there is no approval either, and only a reload authorizes.
 - The status feed's other mode fields: refusal, Steward label, applied digest and time, and a pending untrusted digest; and `steward status` reading each copy's mode.
 - Managed settings are flat string keys, so repositories and merge requirements cannot be managed today: they are local in both modes, and a Director copy's own files are the only record of them.
 
@@ -76,7 +77,7 @@ The binary's enforcement is described in [the Director's guard rails](director.m
 
 In managed mode the Director binary never writes `managed.toml`, and no Director command sets a managed key.
 Each managed revision the binary applies is recorded with its digest.
-At the shared configuration-admission boundary, a digest without a rollout, reload or explicit Guildmaster approval authorization recorded in the receiving store is recorded as `observed-untrusted` and raises a system alert for the Guildmaster.
+At the shared configuration-admission boundary, a digest without a reload or explicit Guildmaster approval authorization recorded in the receiving store is recorded as `observed-untrusted` and raises a system alert for the Guildmaster.
 A checksum or a receipt held only on the Steward is not authorization.
 An observed-untrusted revision is not applied until the recorded reload command authorizes that exact digest or the Guildmaster explicitly approves that digest through the alert decision.
 Observation and enrolment alone never authorize it.
@@ -140,7 +141,7 @@ CI makes no model calls and uses no SSH: the Steward's commands are replaced by 
 | Store record | Contract |
 |---|---|
 | Enrolment event | `enrolled` with the Steward label and managed digest, or `left` with the preserved revision name; ordered by sequence, never changed. |
-| Managed revision event | New and previous digest, source `rollout`, `reload`, `observed-untrusted` or `guildmaster-approved`, and the time; never changed. Authorization must be recorded in the receiving store; observation records no authorization. Approval names the alert decision and exact approved digest. |
+| Managed revision event | New and previous digest, source `reload`, `observed-untrusted` or `guildmaster-approved`, and the time; never changed. A rollout authorizes through the `reload` it runs, since the Steward never writes a Director's store. Authorization must be recorded in the receiving store; observation records no authorization. Approval names the alert decision and exact approved digest. |
 | Lesson | A document reference with evidence and limits, and a state `proposed`, `collected`, `adopted` or `declined`. |
 
 ## Conflicts resolved

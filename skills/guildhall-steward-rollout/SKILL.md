@@ -6,7 +6,7 @@ description: Use as the Steward when the Guildmaster asks to roll out shared set
 # Steward rollout and roster
 
 The roster and the shared managed settings live in the private config checkout your config names in `[private_config] location`: `roster.toml` and `managed.toml`.
-A rollout copies the managed settings to the Director copies on the machines you name, over SSH, and never writes a copy's `config.toml` or creates a copy.
+A rollout copies the managed settings to the Director copies on the machines you name, over SSH, then runs the fixed `guildhall config reload` on each copy it wrote; it never writes a copy's `config.toml` or creates a copy.
 Keep every plan under your copy's `rollouts/` directory, one new directory per dry run, so `guildhall steward status` finds its receipts.
 
 ## The roster
@@ -38,8 +38,10 @@ The roster is edited in the private checkout only on the Guildmaster's word; a r
    guildhall steward rollout --config <your copy>/config.toml --machine <label> --plan <your copy>/rollouts/<name> --apply
    ```
 
+   Apply runs `guildhall config reload` over SSH on each copy it wrote, which is how that Director accepts the new settings.
 5. Tell the Guildmaster each copy's result from the receipt.
    A copy that failed is reported, never retried behind their back; a plan that is no longer current needs a new dry run.
+   A copy that is `reload_failed` has the new file, but its Director refuses it until it is reloaded: give the Guildmaster the error from the receipt, such as an older `guildhall` that does not know `config reload`, and tell them they can run `guildhall config reload --copy <dir>` on that machine once it is fixed.
 
 ## Rules
 
