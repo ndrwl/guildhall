@@ -478,7 +478,9 @@ func TestGitHubMergeUnreachable(t *testing.T) {
 }
 
 // TestGitHubMergeTimeout: a gh run that outlasts the forge's timeout is ended and is a plain error naming gh
-// and the timeout, never ErrRefused, and nothing is merged.
+// and the timeout, never ErrRefused, and nothing is merged. The timeout applies to each gh run, so the pr view
+// before the merge must also finish within it; the test tries a ladder of rising timeouts and asserts on the
+// first rung where that view answered, so a slow runner moves up the ladder instead of failing.
 func TestGitHubMergeTimeout(t *testing.T) {
 	g := newGitHub(t)
 	h := g.harness
@@ -491,14 +493,28 @@ func TestGitHubMergeTimeout(t *testing.T) {
 	s.HangMerge = true
 	g.writeState(t, s)
 	f := h.Forge.(forge.GitHub)
-	f.Timeout = 500 * time.Millisecond // timing:allow intentional timeout of a tool that never answers; no readiness assertion.
-	began := time.Now()
-	_, err = f.Merge(ctx, forge.Merge{Repository: h.Repository, Remote: remote, Number: pr.Number, Head: h.Heads[0]})
-	if took := time.Since(began); took > 30*time.Second {
-		t.Fatalf("Merge took %v past a %v timeout", took, f.Timeout)
+	// timing:allow the shortest rung deliberately expires a gh run that never answers (HangMerge); a rung whose
+	// preceding pr view misses its budget changes nothing and is retried at a larger rung; the last rung is policy-sized.
+	rungs := []time.Duration{500 * time.Millisecond, 2 * time.Second, 10 * time.Second}
+	missed := true
+	for _, f.Timeout = range rungs {
+		calls := len(g.readState(t).Calls)
+		began := time.Now()
+		_, err = f.Merge(ctx, forge.Merge{Repository: h.Repository, Remote: remote, Number: pr.Number, Head: h.Heads[0]})
+		if took := time.Since(began); took > f.Timeout+30*time.Second {
+			t.Fatalf("Merge took %v past a %v timeout", took, f.Timeout)
+		}
+		merged := slices.ContainsFunc(g.readState(t).Calls[calls:], func(c []string) bool { return len(c) > 1 && c[0] == "pr" && c[1] == "merge" })
+		if err == nil || merged || !strings.Contains(err.Error(), f.GH+" pr view") || !strings.Contains(err.Error(), "no answer within") {
+			missed = false
+			break
+		}
 	}
-	if err == nil || errors.Is(err, forge.ErrRefused) || !strings.Contains(err.Error(), f.GH+" pr merge") || !strings.Contains(err.Error(), "500ms") {
-		t.Errorf("Merge hung = %v, want a plain error naming gh and the timeout", err)
+	if missed {
+		t.Fatalf("pr view never finished within the largest rung, %v: %v", f.Timeout, err)
+	}
+	if err == nil || errors.Is(err, forge.ErrRefused) || !strings.Contains(err.Error(), f.GH+" pr merge") || !strings.Contains(err.Error(), f.Timeout.String()) {
+		t.Errorf("Merge hung = %v, want a plain error naming gh and the %v timeout", err, f.Timeout)
 	}
 	if head := remoteBranch(g.bare, "main"); head != h.BaseHead {
 		t.Errorf("main = %s, want it unmoved at %s", head, h.BaseHead)
