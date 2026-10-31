@@ -9,8 +9,9 @@ import (
 	"syscall"
 )
 
-func configureSCPCancellation(cmd *exec.Cmd) {
-	// scp launches ssh. Kill both on cancellation, not just the scp parent.
+// configureCancellation makes cancelling cmd, an scp or ssh run, kill its whole process group: scp launches ssh,
+// and ssh may launch a proxy command, so killing only the parent could leave them holding its pipes.
+func configureCancellation(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
 		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)

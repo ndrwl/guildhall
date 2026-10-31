@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/config"
@@ -37,6 +38,9 @@ const (
 	StatusApplied      = "applied"
 	StatusFailed       = "failed"
 	StatusVerifyFailed = "verify_failed"
+	// StatusReloadFailed is a copy whose new managed file was published and verified but whose config reload
+	// failed, so the Director has not authorized it; the copy is not undone.
+	StatusReloadFailed = "reload_failed"
 )
 
 var (
@@ -69,7 +73,7 @@ func (r Remote) String() string { return r.Alias + ":" + r.Path }
 // A copy interrupted mid-transfer may leave the destination partial. A Rollout reads back only after successful puts;
 // failed transfers are recorded as failed and may leave partial remote files without a read-back digest.
 // Checksum-framed managed-file loading subsequently detects incomplete or corrupt transfers; no rollback is promised.
-// A Copier adds no credentials of its own and runs no remote command.
+// A Copier adds no credentials of its own and runs no remote command; a Runner runs the fixed remote commands.
 type Copier interface {
 	// Fetch copies src on a machine to the local file dst.
 	Fetch(ctx context.Context, src Remote, dst string) error
@@ -86,12 +90,15 @@ type Rollout struct {
 	privateDir    string
 	// Transport reaches the enrolled machines.
 	Transport Copier
+	// Runner runs config reload on each copy an apply writes.
+	Runner Runner
 	// Now stamps receipts.
 	Now func() time.Time
 }
 
-// LoadRollout reads roster.toml and managed.toml from the private config directory.
-func LoadRollout(privateDir string, t Copier) (*Rollout, error) {
+// LoadRollout reads roster.toml and managed.toml from the private config directory; t copies the files and run
+// runs config reload on each copy an apply writes.
+func LoadRollout(privateDir string, t Copier, run Runner) (*Rollout, error) {
 	rosterData, err := os.ReadFile(filepath.Join(privateDir, "roster.toml"))
 	if err != nil {
 		return nil, err
@@ -111,7 +118,7 @@ func LoadRollout(privateDir string, t Copier) (*Rollout, error) {
 	return &Rollout{
 		Roster: roster, Managed: managed, privateDir: privateDir,
 		rosterDigest: string(digest.Of(rosterData)), managedDigest: string(digest.Of(managedData)),
-		Transport: t, Now: time.Now,
+		Transport: t, Runner: run, Now: time.Now,
 	}, nil
 }
 
@@ -139,12 +146,15 @@ type CopyPlan struct {
 	BeforeSHA256 string `json:"before_sha256,omitempty"`
 	AfterSHA256  string `json:"after_sha256,omitempty"`
 	// Revision is where the previous managed file is kept on the machine.
-	Revision string     `json:"revision,omitempty"`
-	Changes  []Change   `json:"changes,omitempty"`
-	Diff     string     `json:"diff,omitempty"`
+	Revision string   `json:"revision,omitempty"`
+	Changes  []Change `json:"changes,omitempty"`
+	Diff     string   `json:"diff,omitempty"`
+	// Commands are the planned scp commands and, last, the ssh command that runs config reload on the copy.
 	Commands [][]string `json:"commands,omitempty"`
 
 	before, after []byte
+	// reload is the remote config reload command, as the Runner runs it.
+	reload []string
 }
 
 // NeedsApproval reports whether any change in the plan is outside routine rollout authority.
@@ -225,7 +235,8 @@ func (r *Rollout) Plan(ctx context.Context, machines []string, stageDir string) 
 			return nil, fmt.Errorf("machine %q has no Director copies", label)
 		}
 		for j, d := range m.Directors {
-			c := CopyPlan{Machine: m.Label, Director: d.Name, SSHAlias: m.SSHAlias, Target: d.CopyDir + "/managed.toml"}
+			c := CopyPlan{Machine: m.Label, Director: d.Name, SSHAlias: m.SSHAlias, Target: d.CopyDir + "/managed.toml",
+				reload: ReloadCommand(m.Guildhall(), d.CopyDir)}
 			r.planCopy(ctx, &c, d, filepath.Join(fetchDir, fmt.Sprintf("%d-%d.toml", i, j)), stageDir)
 			p.Copies = append(p.Copies, c)
 		}
@@ -285,6 +296,7 @@ func (r *Rollout) planCopy(ctx context.Context, c *CopyPlan, d Director, fetched
 	for _, x := range c.transfers(filepath.Join(stage, "previous.toml"), filepath.Join(stage, "managed.toml"), filepath.Join(stage, "verify.toml")) {
 		c.Commands = append(c.Commands, x.command())
 	}
+	c.Commands = append(c.Commands, sshCommand(c.SSHAlias, c.reload))
 }
 
 func (p *Plan) digest() string {
@@ -366,17 +378,19 @@ type CopyReceipt struct {
 	Error          string `json:"error,omitempty"`
 }
 
-// Step is one command a rollout ran.
+// Step is one command a rollout ran, with its error, or, for a remote command that succeeded, what it printed.
 type Step struct {
 	Command []string `json:"command"`
 	Error   string   `json:"error,omitempty"`
+	Output  string   `json:"output,omitempty"`
 }
 
 // Apply carries out the dry-run plan in stageDir.
 // It plans again and refuses unless the result is identical and the staged previews are intact,
 // and refuses a plan needing approval unless approve is that plan's digest.
 // Each changed copy keeps its previous managed file as a revision, then gets the new managed file;
-// only after both puts succeed is it read back and verified.
+// only after both puts succeed is it read back and verified, and only a verified copy has config reload run on it,
+// which authorizes the new managed file in the copy's own store. A failed reload does not undo the copy.
 // The local config is never written; validated managed inputs replace preview source paths in transport commands.
 // A copy that fails does not stop the others; the receipt, written to stageDir, records every outcome.
 //
@@ -500,6 +514,20 @@ func (r *Rollout) applyCopy(ctx context.Context, c CopyPlan, stageDir string) Co
 		cr.Status, cr.Error = StatusVerifyFailed, "the copy read back does not match the rolled-out config"
 		return cr
 	}
+	step := Step{Command: sshCommand(c.SSHAlias, c.reload)}
+	err = errors.New("no remote command runner")
+	var out []byte
+	if r.Runner != nil {
+		out, err = r.Runner.Run(ctx, c.SSHAlias, c.reload)
+	}
+	if err != nil {
+		step.Error = err.Error()
+		cr.Steps = append(cr.Steps, step)
+		cr.Status, cr.Error = StatusReloadFailed, "the new managed file is published and verified, but config reload failed, so the Director has not authorized it: "+err.Error()
+		return cr
+	}
+	step.Output = strings.TrimSpace(string(out))
+	cr.Steps = append(cr.Steps, step)
 	cr.Status = StatusApplied
 	return cr
 }

@@ -38,7 +38,7 @@ func (t Transport) run(ctx context.Context, argv []string) error {
 	ctx, cancel := context.WithTimeout(ctx, t.Timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, t.Path, argv[1:]...)
-	configureSCPCancellation(cmd)
+	configureCancellation(cmd)
 	// Bound pipe draining even if a descendant escapes process cancellation.
 	cmd.WaitDelay = 100 * time.Millisecond
 	out, err := cmd.CombinedOutput()

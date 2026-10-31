@@ -57,6 +57,26 @@ func TestParseRoster(t *testing.T) {
 	if _, ok := r.Machine("absent"); ok {
 		t.Error("absent machine found")
 	}
+	if got := ws.Guildhall(); got != DefaultGuildhall {
+		t.Errorf("Guildhall without guildhall_path = %q, want %q", got, DefaultGuildhall)
+	}
+}
+
+// TestRosterGuildhallPath covers the optional per-machine guildhall_path, an absolute file path in the machine's
+// own path form.
+func TestRosterGuildhallPath(t *testing.T) {
+	data := strings.Replace(rosterFixture, `os = "linux"`, "os = \"linux\"\nguildhall_path = \"/home/guild/bin/guildhall\"", 1)
+	data = strings.Replace(data, `os = "windows"`, "os = \"windows\"\nguildhall_path = \"C:/Users/guild/bin/guildhall.exe\"", 1)
+	r, err := ParseRoster([]byte(data))
+	if err != nil {
+		t.Fatalf("roster with guildhall_path refused: %v", err)
+	}
+	for label, want := range map[string]string{"workstation": "/home/guild/bin/guildhall", "laptop": "C:/Users/guild/bin/guildhall.exe"} {
+		m, _ := r.Machine(label)
+		if got := m.Guildhall(); got != want {
+			t.Errorf("%s Guildhall = %q, want %q", label, got, want)
+		}
+	}
 }
 
 func TestRosterSchemaRefusals(t *testing.T) {
@@ -101,6 +121,15 @@ func TestRosterValidationRefusals(t *testing.T) {
 		{"no repositories", `repositories = ["handbook"]`, `repositories = []`, "needs at least one repository"},
 		{"invalid repository", `repositories = ["handbook"]`, `repositories = ["Hand Book"]`, "invalid repository id"},
 		{"duplicate repository", `repositories = ["cli", "site"]`, `repositories = ["cli", "cli"]`, `duplicate repository "cli"`},
+		{"relative guildhall_path", `os = "linux"`, "os = \"linux\"\nguildhall_path = \"bin/guildhall\"", "guildhall_path"},
+		{"parent segment in guildhall_path", `os = "linux"`, "os = \"linux\"\nguildhall_path = \"/home/guild/../bin/guildhall\"", "guildhall_path"},
+		{"space in guildhall_path", `os = "linux"`, "os = \"linux\"\nguildhall_path = \"/home/guild/my bin/guildhall\"", "guildhall_path"},
+		{"shell in guildhall_path", `os = "linux"`, "os = \"linux\"\nguildhall_path = \"/home/guild/bin/guildhall;id\"", "guildhall_path"},
+		{"option as guildhall_path", `os = "linux"`, "os = \"linux\"\nguildhall_path = \"-oProxyCommand=sh\"", "guildhall_path"},
+		{"windows guildhall_path on linux", `os = "linux"`, "os = \"linux\"\nguildhall_path = \"C:/guild/guildhall.exe\"", "guildhall_path"},
+		{"backslash guildhall_path", `os = "windows"`, "os = \"windows\"\nguildhall_path = 'C:\\Users\\guild\\guildhall.exe'", "guildhall_path"},
+		{"posix guildhall_path on windows", `os = "windows"`, "os = \"windows\"\nguildhall_path = \"/c/Users/guild/guildhall.exe\"", "guildhall_path"},
+		{"quoted windows guildhall_path", `os = "windows"`, "os = \"windows\"\nguildhall_path = \"C:/Program Files/guildhall.exe\"", "guildhall_path"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
