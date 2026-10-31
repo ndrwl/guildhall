@@ -1,7 +1,7 @@
 # Spec template
 
-Write the result in this order and keep every heading.
-Write "None" under a heading that has nothing, with the reason.
+Write the result in this order and keep every heading but `## Slices`, which only a multi-PR task has.
+Write "None" under any other heading that has nothing, with the reason.
 
 ```markdown
 ## Problem
@@ -46,7 +46,14 @@ One entry per boundary the change touches or adds:
 ## Size
 
 One pull request, because <reason>.
-Or: splits into <n> tasks, in order: <task 1>, <task 2>, each with its own acceptance criteria.
+Or: <n> slices, one pull request each, in the order `## Slices` lists them, because <reason>.
+
+## Slices
+
+Only when the work is more than one pull request; leave the heading out otherwise.
+
+1. **<slice title>**: what this pull request delivers, and its expected size: about <lines> lines in <files> files.
+2. **<slice title>**: what the next one delivers on top of it, and its expected size.
 
 ## Open questions
 

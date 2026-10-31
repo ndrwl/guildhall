@@ -242,10 +242,17 @@ func (a *App) clerkRead(ctx context.Context, c clerkPaths) (clerkData, error) {
 				return struct{}{}, err
 			}
 			// A pull request document that cannot be read leaves the task with no pull request shown.
-			if prs, merging, err := interp.TaskPullRequests(docs, documents); err == nil {
-				ct.merging = merging
+			if prs, merged, err := interp.TaskPullRequests(docs, documents); err == nil {
+				// The pull request shown is the latest slice's, and merging is that slice's.
+				ct.merging = merged[1]
 				if len(prs) > 0 {
 					ct.pr = &prs[len(prs)-1]
+					for i := range prs {
+						if prs[i].Slice >= ct.pr.Slice {
+							ct.pr = &prs[i]
+						}
+					}
+					ct.merging = merged[ct.pr.Slice]
 				}
 			}
 			d.byKey[key] = ct
@@ -524,7 +531,11 @@ func (d clerkData) guild(all bool) string {
 	} else {
 		rows := [][]string{}
 		for _, ct := range shown {
-			rows = append(rows, []string{d.name(ct.view.Repository, ct.view.ID), ct.view.Priority.String(), d.kind(ct.view.Task), oneLine(ct.view.Title), d.stands(ct)})
+			stands := d.stands(ct)
+			if sl := ct.status.Slices; sl != nil {
+				stands = fmt.Sprintf("slice %d of %d, %s", sl.Current, sl.Total, stands)
+			}
+			rows = append(rows, []string{d.name(ct.view.Repository, ct.view.ID), ct.view.Priority.String(), d.kind(ct.view.Task), oneLine(ct.view.Title), stands})
 		}
 		clerkTable(&b, []string{"TASK", "PRI", "KIND", "TITLE", "WHERE IT STANDS"}, rows, 3)
 	}
@@ -696,19 +707,41 @@ func (d clerkData) taskSummary(b *strings.Builder, ct clerkTask) {
 			pr += " (" + ct.checksState() + ")"
 		}
 	}
-	clerkTable(b, nil, [][]string{
+	rows := [][]string{
 		{"State:", string(v.State)},
 		{"Priority:", v.Priority.String()},
 		{"Kind:", d.kind(v.Task)},
 		{"Where it stands:", d.stands(ct)},
-		{"Pull request:", pr},
-	}, -1)
+	}
+	// A multi-PR task names its current slice, and lists every slice with its pull request in place of the one.
+	sl := ct.status.Slices
+	if sl != nil {
+		rows = append(rows, []string{"Slice:", clerkSliceOf(sl)})
+	} else {
+		rows = append(rows, []string{"Pull request:", pr})
+	}
+	clerkTable(b, nil, rows, -1)
+	if sl != nil {
+		b.WriteString("\nSlices\n")
+		var items [][]string
+		for _, it := range sl.Items {
+			pr := "none"
+			if it.PullRequest != nil {
+				pr = fmt.Sprintf("#%d %s", it.PullRequest.Number, it.PullRequest.URL)
+				if it.State == interp.SliceCurrent && v.State == store.TaskOpen && !ct.merging && ct.pr != nil && ct.pr.Number == it.PullRequest.Number {
+					pr += " (" + ct.checksState() + ")"
+				}
+			}
+			items = append(items, []string{strconv.Itoa(it.Index), oneLine(it.Title), it.State, pr})
+		}
+		clerkTable(b, []string{"SLICE", "TITLE", "STATE", "PULL REQUEST"}, items, 1)
+	}
 	b.WriteString("\nSteps\n")
 	if len(ct.status.Steps) == 0 {
 		b.WriteString("No steps yet.\n")
 		return
 	}
-	rows := [][]string{}
+	rows = [][]string{}
 	for _, s := range ct.status.Steps {
 		outcome := string(s.Outcome)
 		if s.Outcome == "" {
@@ -723,6 +756,15 @@ func (d clerkData) taskSummary(b *strings.Builder, ct clerkTask) {
 		rows = append(rows, []string{s.Step, strconv.Itoa(s.Attempt), outcome})
 	}
 	clerkTable(b, []string{"STEP", "ATTEMPT", "OUTCOME"}, rows, -1)
+}
+
+// clerkSliceOf names a multi-PR task's current slice: "<k> of <n>: <title>".
+func clerkSliceOf(sl *statusSlices) string {
+	text := fmt.Sprintf("%d of %d", sl.Current, sl.Total)
+	if sl.Current >= 1 && sl.Current <= len(sl.Items) {
+		text += ": " + oneLine(sl.Items[sl.Current-1].Title)
+	}
+	return text
 }
 
 // inspect is `clerk inspect`: everything task shows, then the task's timeline, attempt summaries, documents and

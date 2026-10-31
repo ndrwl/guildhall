@@ -36,7 +36,13 @@ type cancelDirector struct {
 
 func newCancelDirector(t *testing.T) *cancelDirector {
 	t.Helper()
-	c := &cancelDirector{runDirector: newRunDirector(t), forge: forgetest.NewFake()}
+	return newCancelDirectorWith(t, newRunDirector(t))
+}
+
+// newCancelDirectorWith is newCancelDirector over the run Director d.
+func newCancelDirectorWith(t *testing.T, d runDirector) *cancelDirector {
+	t.Helper()
+	c := &cancelDirector{runDirector: d, forge: forgetest.NewFake()}
 	c.runDirector.forge = c.forge
 	c.stopAttempt = func(_ context.Context, a launch.Attempt) (launch.StopReport, error) {
 		c.mu.Lock()
@@ -397,6 +403,82 @@ func TestTaskCancelRefusesMergedWork(t *testing.T) {
 		}
 		// The work landed outside Guildhall: the task is recorded done, never cancelled.
 		c.wantMergedOutside(t, pr)
+	})
+}
+
+// slicedTask records t-1 as a multi-PR task: an accepted spec of three slices, slice 1 merged on the forge as its
+// pull request and recorded as deliver-1-merge, and slice 2's pull request open on guildhall/t-1.s2.
+func (c *cancelDirector) slicedTask(t *testing.T) (first, second forge.PullRequest) {
+	t.Helper()
+	spec := []byte("# Three\n\n## Goal\n\nThree pull requests.\n\n## Slices\n\n1. **Parser**: one.\n2. **Engine**: two.\n3. **Views**: three.\n")
+	p := path.Join("tasks", "app", "t-1", "plan-1", "spec.md")
+	file := filepath.Join(c.state, "documents", filepath.FromSlash(p))
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, spec, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c.write(t, func(s *store.Store) (store.Receipt, error) {
+		return s.PutDocument("doc-accept", store.DocumentRef{Repository: "app", TaskID: "t-1", Name: "accept-1-spec", Path: p, SHA256: digest.Of(spec).Hex()})
+	})
+	first = c.publish(t)
+	merged, err := c.forge.Merge(context.Background(), forge.Merge{Repository: appRepo, Remote: appRemote, Number: first.Number, Head: first.Head})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.putDocument(t, "deliver-1-merge", map[string]any{"schema": "guildhall.pull-request/1", "remote": appRemote, "number": merged.Number,
+		"url": merged.URL, "branch": merged.Branch, "head": merged.Head, "state": merged.State, "merge_commit": merged.MergeCommit})
+	head := strings.Repeat("c", 40)
+	c.forge.AddCommit(appRepo, head)
+	second, err = c.forge.Publish(context.Background(), forge.Change{Repository: appRepo, Remote: appRemote, Branch: "guildhall/t-1.s2", Head: head, Title: "Engine (slice 2 of 3)"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.putDocument(t, "publish--s2-1-pr", map[string]any{"schema": "guildhall.pull-request/1", "remote": appRemote, "number": second.Number,
+		"url": second.URL, "branch": second.Branch, "head": second.Head, "state": second.State})
+	return first, second
+}
+
+// TestTaskCancelOfAMultiPRTask: a multi-PR task with slice 1 merged and slice 2 open is cancelled: slice 2's pull
+// request is closed, slice 1's merged one is left alone and named in the output, and the task is recorded cancelled,
+// not done. While slice 2's merge is recorded the cancel is refused.
+func TestTaskCancelOfAMultiPRTask(t *testing.T) {
+	t.Run("slice 2 open", func(t *testing.T) {
+		c := newCancelDirectorWith(t, newRunDirectorWith(t, "sliced.toml"))
+		first, second := c.slicedTask(t)
+		code, out, stderr := c.cancel(t, "--reason", "The Guildmaster said: stop after the parser.", "t-1")
+		if code != 0 {
+			t.Fatalf("task cancel: exit %d, %s", code, stderr)
+		}
+		if closes, _ := c.forge.Closes(); closes != 1 {
+			t.Errorf("closes = %d, want slice 2's pull request alone", closes)
+		}
+		prs := c.forge.PullRequests(appRemote)
+		if prs[0].State != forge.Merged || prs[1].State != forge.Closed {
+			t.Errorf("pull requests = %+v, want slice 1 merged and slice 2 closed", prs)
+		}
+		for _, want := range []string{"pull request " + second.URL + " closed", "task app/t-1 cancelled", "slice 1 of 3 (Parser) merged before the cancel and stands: " + first.URL} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output does not say %q:\n%s", want, out)
+			}
+		}
+		if got := c.task(t, "t-1"); got.State != store.TaskCancelled {
+			t.Errorf("task state = %s, want cancelled", got.State)
+		}
+	})
+	t.Run("slice 2 merging", func(t *testing.T) {
+		c := newCancelDirectorWith(t, newRunDirectorWith(t, "sliced.toml"))
+		_, second := c.slicedTask(t)
+		c.putDocument(t, "deliver--s2-1-merge", map[string]any{"schema": "guildhall.pull-request/1", "remote": appRemote, "number": second.Number, "state": "merged"})
+		before := c.receipts(t)
+		code, _, stderr := c.cancel(t, "--reason", "Duplicate.", "t-1")
+		if code != 1 || !strings.Contains(stderr, "is merging slice 2 of 3") {
+			t.Errorf("task cancel while slice 2 merges: exit %d, %s", code, stderr)
+		}
+		if closes, _ := c.forge.Closes(); closes != 0 || c.receipts(t) != before || c.task(t, "t-1").State != store.TaskOpen {
+			t.Errorf("a refused cancel closed %d pull requests or wrote %d receipts", closes, c.receipts(t)-before)
+		}
 	})
 }
 

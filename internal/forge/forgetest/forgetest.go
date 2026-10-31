@@ -212,6 +212,31 @@ func RunForgeContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 		}
 	})
 
+	t.Run("opens a slice branch's own pull request after the first slice merged", func(t *testing.T) {
+		// A multi-PR task's slice k >= 2 publishes on guildhall/<task>.s<k> (docs/decisions/multi-pr-tasks.md).
+		h := newHarness(t)
+		first := publish(t, h, h.Heads[0])
+		if _, err := merge(h, first, h.Heads[0]); err != nil {
+			t.Fatalf("Merge of slice 1 = %v", err)
+		}
+		c := change(h, h.Heads[1])
+		c.Branch, c.Title = "guildhall/t7.s2", "Slice two (slice 2 of 2)"
+		pr, err := h.Forge.Publish(ctx, c)
+		if err != nil {
+			t.Fatalf("Publish of slice 2 = %v", err)
+		}
+		t.Logf("Publish of slice 2 = %+v", pr)
+		if pr.Number == first.Number || pr.Branch != "guildhall/t7.s2" || pr.Head != h.Heads[1] || pr.State != forge.Open {
+			t.Fatalf("Publish of slice 2 = %+v, want a new open pull request of guildhall/t7.s2 at %s", pr, h.Heads[1])
+		}
+		if got := h.Branch(t, "guildhall/t7.s2"); got != h.Heads[1] {
+			t.Errorf("branch guildhall/t7.s2 is at %q, want %s", got, h.Heads[1])
+		}
+		if got, err := merge(h, pr, h.Heads[1]); err != nil || got.State != forge.Merged {
+			t.Errorf("Merge of slice 2 = %+v, %v, want it merged", got, err)
+		}
+	})
+
 	commit := func(h Harness, head string) forge.Commit {
 		return forge.Commit{Repository: h.Repository, Remote: h.Remote, Head: head}
 	}

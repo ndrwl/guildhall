@@ -238,6 +238,7 @@ Regenerate it with `go test ./internal/doccheck -run TestDecisionIndex -update`,
 - [Delivery publishes a task branch, validates it on the forge's checks and squash-merges it under the repository's merge requirements](decisions/delivery-stage.md)
 - [Guard rails are enforced by the binary: a start over the running cap is queued, and the daily cap may be turned off](decisions/guard-rails.md)
 - [Authorized pull requests wait in a merge queue, and Guildhall rebases the front itself in three tiers](decisions/merge-queue-rebase.md)
+- [Large work is one multi-PR task: an accepted spec lists ordered slices, delivered one pull request each](decisions/multi-pr-tasks.md)
 - [A task's working directory is a git worktree of its repository](decisions/worktree-custody.md)
 
 ## Tasks and holds

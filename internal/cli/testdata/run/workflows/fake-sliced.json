@@ -1,0 +1,19 @@
+{
+  "schema": "guildhall.workflow/1",
+  "name": "fake-sliced",
+  "description": "fake-publish with build through deliver as its slice range, for multi-PR tasks.",
+  "slices": {"from": "build", "to": "deliver"},
+  "steps": [
+    {"id": "plan", "type": "plan", "version": 1, "settings": {"profile": "demo"}},
+    {"id": "accept", "type": "guildmaster-approval", "version": 1,
+     "inputs": {"spec": ["plan.spec"]}},
+    {"id": "build", "type": "build", "version": 1, "settings": {"profile": "demo"},
+     "inputs": {"spec": ["accept.spec"]}},
+    {"id": "sign-off", "type": "review", "version": 1, "settings": {"actor": "guildmaster"},
+     "inputs": {"spec": ["accept.spec"], "head": ["build.head"]}},
+    {"id": "publish", "type": "publish", "version": 1,
+     "inputs": {"head": ["build.head"], "review": ["sign-off.outcome"]}},
+    {"id": "deliver", "type": "deliver", "version": 1,
+     "inputs": {"head": ["publish.head"], "review": ["sign-off.outcome"]}}
+  ]
+}

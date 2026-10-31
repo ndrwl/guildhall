@@ -54,6 +54,8 @@ type Spec struct {
 	Profile  string
 	// Settings are the model and effort of the stage's profile, the zero Settings for a stage with none.
 	Settings adapter.Settings
+	// Slices is the slice count of a multi-PR task, which the attempt's presentation names; 0 for a one-slice task.
+	Slices int
 }
 
 // Validate checks the identity, that the working directory, prompt and result paths are absolute,

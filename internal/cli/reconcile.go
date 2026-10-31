@@ -89,6 +89,10 @@ func (a *App) reconcileTask(f advanceFlags, task string) error {
 	if err != nil {
 		return err
 	}
+	if got.Slice > 0 {
+		say("slice %d merged: pull request %s merged outside Guildhall; the task stays open for its next slice", got.Slice, got.URL)
+		return nil
+	}
 	if !got.Done {
 		say("no change: no recorded pull request is merged")
 		return nil

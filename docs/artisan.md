@@ -453,6 +453,7 @@ A live launcher after a Herdr restart is still live: `artisan resume` refuses to
 
 With a Director's `herdr_session` configured, workflow attempts, including judge attempts, each open a new workspace in that session without taking focus from the Director.
 The workspace is labelled `└ <task> · <step> #<attempt>`, for example `└ d3 · review #1`; its tab retains `artisan <repository>/<task>/<step>/<attempt>`.
+A [multi-PR task](tasks.md#multi-pr-tasks)'s workspace names its slice, `└ <task> · slice <k>/<n> · <step> #<attempt>`, for example `└ d3 · slice 2/3 · review #1`, and the sweep recognises both forms.
 When the Director has an exact recorded Herdr pane, Guildhall places each new Artisan workspace directly below that Director, after its earlier children in launch order.
 The Director's workspace is not reused or changed, and even a same-labelled workspace is not reused.
 Ordering uses protocol 16's socket-only `workspace.move` method in the configured named session and verifies the complete returned order.

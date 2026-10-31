@@ -136,7 +136,7 @@ func (r *run) renderBaseline(s workflow.Step, n int) ([]byte, error) {
 		if _, err := r.workDir(); err != nil {
 			return nil, err
 		}
-		if current, err = r.e.Workspaces.Tip(r.ctx, repo.Path, git.DefaultRef(TaskBranch(r.task.ID))); err != nil {
+		if current, err = r.e.Workspaces.Tip(r.ctx, repo.Path, git.DefaultRef(r.branch())); err != nil {
 			if r.ctx.Err() != nil {
 				return nil, r.ctx.Err()
 			}

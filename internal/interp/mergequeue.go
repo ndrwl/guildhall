@@ -306,11 +306,14 @@ func (r *run) publishLink(s workflow.Step, repo config.Repository, l rebaseLink,
 		return nil, err
 	}
 	title := forgeTitle(r.task.Title, r.task.ID)
+	if r.slice.multi() {
+		title = forgeTitle(r.sliceTitle(), r.task.ID)
+	}
 	body := fmt.Sprintf("Guildhall task %s/%s, rebased by step %s onto %s at %s (%s).\n", r.task.Repository, r.task.ID, s.ID, l.doc.Onto, l.head, l.doc.Kind)
 	if f := r.task.Fixes; f != nil {
 		body += fmt.Sprintf("\nFixes a defect introduced by task `%s/%s`.\n", f.Repository, f.ID)
 	}
-	pushed, err := r.e.Forge.Publish(r.ctx, forge.Change{Repository: repo.Path, Remote: pr.Remote, Branch: TaskBranch(r.task.ID), Head: l.head, Title: title, Body: body})
+	pushed, err := r.e.Forge.Publish(r.ctx, forge.Change{Repository: repo.Path, Remote: pr.Remote, Branch: r.branch(), Head: l.head, Title: title, Body: body})
 	if err != nil {
 		return nil, err
 	}

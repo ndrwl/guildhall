@@ -251,7 +251,12 @@ func (sw *workspaceCloseSweep) close(ctx context.Context, host WorkspaceCloseHos
 	tabLabel := launch.TabLabel(c.key)
 	err = host.AdoptTab(ctx, ref)
 	if err == nil {
-		if labels := launch.AttemptWorkspaceLabels(c.key); slices.Contains(labels, list[i].Label) {
+		if launch.IsAttemptWorkspaceLabel(c.key, list[i].Label) {
+			// A multi-PR task's label names its slice count, which the key does not hold, so the label matched is passed.
+			labels := launch.AttemptWorkspaceLabels(c.key)
+			if !slices.Contains(labels, list[i].Label) {
+				labels = append(labels, list[i].Label)
+			}
 			err = host.CloseWorkspace(ctx, ref, labels, tabLabel)
 		} else {
 			// A release before #140 presented the attempt as a tab in a shared workspace, the Director's own among

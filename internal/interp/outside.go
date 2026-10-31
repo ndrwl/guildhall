@@ -27,8 +27,9 @@ var _ PullRequestReader = forge.GitHub{}
 // as outside-<number>-merge. A step's ids are always <step>-<round>, and no workflow step is named outside.
 const outsidePrefix = "outside-"
 
-// outsideID is the id of the outside merge of pull request number.
-func outsideID(number int) string { return outsidePrefix + strconv.Itoa(number) }
+// outsideID is the id of the outside merge of pull request number in slice k: outside-<number>, or
+// outside--s<k>-<number> from slice 2 on.
+func outsideID(number, k int) string { return outsideStep(k) + "-" + strconv.Itoa(number) }
 
 // Reconciled is what Engine.Reconcile found.
 type Reconciled struct {
@@ -36,6 +37,9 @@ type Reconciled struct {
 	Done bool
 	// URL is the merged pull request's.
 	URL string
+	// Slice, for a multi-PR task that stays open, is the slice whose pull request merged outside Guildhall; the next
+	// slice starts at the task's next advance. It is 0 otherwise.
+	Slice int
 }
 
 // Reconcile reads the forge now for each pull request open task repository/task recorded and applies the
@@ -54,9 +58,22 @@ func (e *Engine) Reconcile(ctx context.Context, repository, task string) (Reconc
 	if i := slices.IndexFunc(r.attempts, func(a store.StageAttempt) bool { return a.Outcome == "" }); i >= 0 {
 		return Reconciled{}, fmt.Errorf("interp: %s/%s: attempt %d of step %s is running", repository, task, r.attempts[i].Number, r.attempts[i].Step)
 	}
+	k := r.slice.current
 	merged, _, err := r.mergedOutside()
-	if err != nil || !merged {
+	if err != nil {
 		return Reconciled{}, err
+	}
+	if !merged {
+		if r.slice.current == k {
+			return Reconciled{}, nil
+		}
+		// A slice before a multi-PR task's last merged: the task stays open for the next slice.
+		i := r.sliceMerge(r.base.Slices.To, k)
+		var pr pullRequestDoc
+		if _, err := r.readJSONDoc(r.documents[i].Name, &pr); err != nil {
+			return Reconciled{}, err
+		}
+		return Reconciled{URL: pr.URL, Slice: k}, nil
 	}
 	doc, err := r.outsideMerge()
 	if err != nil {
@@ -71,10 +88,11 @@ func (r *run) running() bool {
 	return slices.ContainsFunc(r.attempts, func(a store.StageAttempt) bool { return a.Outcome == "" })
 }
 
-// outsideMerge returns the pull request an earlier run of the outside-merge rule recorded, or nil.
+// outsideMerge returns the pull request an earlier run of the outside-merge rule recorded for the current slice, or
+// nil.
 func (r *run) outsideMerge() (*pullRequestDoc, error) {
-	for _, d := range r.documents {
-		if !strings.HasPrefix(d.Name, outsidePrefix) || !IsMergeRecord(d.Name) {
+	for i, d := range r.documents {
+		if p := r.docPlaces[i]; !p.ok || p.step != outsideStep(r.slice.current) || p.part != "merge" || p.exit {
 			continue
 		}
 		var pr pullRequestDoc
@@ -93,6 +111,11 @@ func (r *run) outsideMerge() (*pullRequestDoc, error) {
 // the merge queue, releasing its front and clearing its merge hold, and closes it done. A pull request only closed
 // never counts. Every write's id is keyed on the pull request, so a run that fails part-way is finished by the next,
 // from the recorded pull request alone. Without a reader on the forge, or with no pull request merged, it does nothing.
+//
+// For a multi-PR task the rule reads only the current slice's pull requests, while that slice has no merge record. A
+// merge of a slice before the last is recorded as that slice's merge, outside--s<k>-<number>-merge from slice 2 on,
+// and closes only the slice (closeSlice): the task stays open, the run moves on to the next slice and merged is false,
+// so the advance goes on. Only the last slice's merge closes the task.
 func (r *run) mergedOutside() (bool, Next, error) {
 	pr, err := r.outsideMerge()
 	if err != nil {
@@ -102,6 +125,17 @@ func (r *run) mergedOutside() (bool, Next, error) {
 		if pr, err = r.readMergedOutside(); err != nil || pr == nil {
 			return false, Next{}, err
 		}
+	}
+	if !r.slice.final() {
+		repo, err := r.repository()
+		if err != nil {
+			return false, Next{}, err
+		}
+		if err := r.closeSlice(r.slice.current, outsideID(pr.Number, r.slice.current), repo, pr, true); err != nil {
+			return false, Next{}, err
+		}
+		r.nextSlice()
+		return false, Next{}, nil
 	}
 	next, err := r.closeMergedOutside(pr)
 	return err == nil, next, err
@@ -114,8 +148,11 @@ func (r *run) readMergedOutside() (*pullRequestDoc, error) {
 	if !ok {
 		return nil, nil
 	}
-	prs, merging, err := TaskPullRequests(r.documents, r.e.DocumentDir)
-	if err != nil || merging || len(prs) == 0 {
+	if r.currentMerged() {
+		return nil, nil
+	}
+	prs, _, err := TaskPullRequests(r.documents, r.e.DocumentDir)
+	if err != nil || len(prs) == 0 {
 		return nil, err
 	}
 	repo, err := r.repository()
@@ -123,6 +160,9 @@ func (r *run) readMergedOutside() (*pullRequestDoc, error) {
 		return nil, err
 	}
 	for _, rec := range prs {
+		if rec.Slice != r.slice.current {
+			continue
+		}
 		got, err := reader.PullRequest(r.ctx, forge.View{Repository: repo.Path, Remote: rec.Remote, Number: rec.Number})
 		if err != nil {
 			return nil, err
@@ -136,7 +176,7 @@ func (r *run) readMergedOutside() (*pullRequestDoc, error) {
 			}
 			continue
 		}
-		id := outsideID(rec.Number)
+		id := outsideID(rec.Number, r.slice.current)
 		pr := pullRequestDoc{Schema: pullRequestSchema, Remote: rec.Remote, PullRequest: got}
 		if err := r.putPullRequest(id+"-merge", path.Join("tasks", r.task.Repository, r.task.ID, id, "merge.json"), pr); err != nil {
 			return nil, err
@@ -209,7 +249,7 @@ func (r *run) recordedAt(remote string, number int, h string) (bool, error) {
 
 // closeMergedOutside closes the task whose pull request pr merged outside Guildhall, after its record.
 func (r *run) closeMergedOutside(pr *pullRequestDoc) (Next, error) {
-	id := outsideID(pr.Number)
+	id := outsideID(pr.Number, r.slice.current)
 	// The writes' mutation ids are keyed on the pull request's remote, as a digest, and number.
 	key := id + ":" + digest.Of([]byte(pr.Remote)).Hex()[:12]
 	repo, err := r.repository()
@@ -236,10 +276,14 @@ func (r *run) closeMergedOutside(pr *pullRequestDoc) (Next, error) {
 	}
 	text := fmt.Sprintf("Pull request %s was merged outside Guildhall at head %s, merge commit %s; Guildhall last recorded head %s for it. The task is done.",
 		pr.URL, pr.Head, pr.MergeCommit, recorded)
+	if r.slice.multi() {
+		text = fmt.Sprintf("Pull request %s was merged outside Guildhall at head %s, merge commit %s; Guildhall last recorded head %s for it%s",
+			pr.URL, pr.Head, pr.MergeCommit, recorded, r.sliceText(r.slice.current))
+	}
 	if err := r.notify("merged.outside."+strconv.Itoa(pr.Number), store.MessageMerged, text); err != nil {
 		return Next{}, err
 	}
-	if err := r.retire(id, repo, pr.Head); err != nil {
+	if err := r.retire(id, repo, pr.Head, r.slice.current); err != nil {
 		return Next{}, err
 	}
 	s := r.closingStep()

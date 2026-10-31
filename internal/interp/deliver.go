@@ -29,8 +29,9 @@ const refusalSchema = "guildhall.merge-refusal/1"
 // branchPrefix starts every task branch publish pushes: a task's branch is branchPrefix + its id.
 const branchPrefix = "guildhall/"
 
-// TaskBranch is the branch of task id: the branch its worktree is on and publish pushes to.
-func TaskBranch(id string) string { return branchPrefix + id }
+// TaskBranch is the branch of task id's first slice, the only one of a one-slice task: the branch its worktree is on
+// and publish pushes to (SliceBranch).
+func TaskBranch(id string) string { return SliceBranch(id, 1) }
 
 // pullRequestDoc is a recorded pull request: publish's <step>-<round>-pr and deliver's <decision>-merge.
 type pullRequestDoc struct {
@@ -123,7 +124,7 @@ func (r *run) publish(s workflow.Step) (bool, Next, error) {
 		return false, Next{}, err
 	}
 	title, body := pullRequestText(text)
-	branch := branchPrefix + r.task.ID
+	branch := r.branch()
 	pr, err := r.e.Forge.Publish(r.ctx, forge.Change{
 		Repository: repo.Path, Remote: repo.Remote, Branch: branch, Head: h, Title: title, Body: body,
 	})
@@ -165,6 +166,20 @@ func (r *run) publishGate(s workflow.Step, id, h string, required bool) error {
 // wired, the summary of the attempt that recorded its head, its review outcomes and the task's rulings.
 func (r *run) prText(s workflow.Step, h string) (prText, error) {
 	p := prText{Rulings: r.rulings, Task: r.task, Step: s.ID, Head: h}
+	if r.slice.multi() {
+		p.Slice = r.slice.current
+		for _, e := range r.slice.entries {
+			item := prSlice{Slice: e}
+			if i := r.sliceMerge(r.base.Slices.To, e.Index); i >= 0 {
+				var pr pullRequestDoc
+				if _, err := r.readJSONDoc(r.documents[i].Name, &pr); err != nil {
+					return prText{}, err
+				}
+				item.Merged = pr.URL
+			}
+			p.Slices = append(p.Slices, item)
+		}
+	}
 	if refs := s.Inputs["spec"]; len(refs) > 0 {
 		in, err := r.input(s, "spec")
 		if err != nil {
@@ -341,9 +356,9 @@ func (r *run) guardPolicies(repo config.Repository, head string) (config.Reposit
 	if r.e.Workspaces == nil {
 		return repo, false, nil
 	}
-	base, err := r.e.Workspaces.Base(r.ctx, repo.Path, TaskBranch(r.task.ID))
+	base, err := r.e.Workspaces.Base(r.ctx, repo.Path, r.branch())
 	if err != nil {
-		return repo, false, fmt.Errorf("base of %s: %w", TaskBranch(r.task.ID), err)
+		return repo, false, fmt.Errorf("base of %s: %w", r.branch(), err)
 	}
 	changed, err := r.e.Workspaces.Changes(r.ctx, repo.Path, base, head, policies.Path)
 	if err != nil {
@@ -1172,18 +1187,23 @@ func (r *run) merge(s workflow.Step, id string, repo config.Repository, h string
 			return false, Next{}, err
 		}
 	}
-	msg := fmt.Sprintf("Merged head %s (%s); the task is done.", h, r.mergedBy(id))
-	var a authorizationDoc
-	if _, err := r.readJSONDoc(id+"-authorized", &a); err != nil {
-		return false, Next{}, err
+	k := r.slice.current
+	if !r.slice.final() {
+		// A slice before the last: its merge closes the slice, not the task, and the advance goes on to the next.
+		if err := r.closeSlice(k, id, repo, &pullRequestDoc{Remote: pr.Remote, PullRequest: forge.PullRequest{Number: pr.Number, URL: pr.URL, Head: h}}, false); err != nil {
+			return false, Next{}, err
+		}
+		r.sliceMerged = true
+		return false, Next{}, nil
 	}
-	if a.Supersedes != "" {
-		msg += fmt.Sprintf(" Merge decision %s, opened while the requirements did not all hold, is no longer needed.", a.Supersedes)
+	msg, err := r.mergedText(id, h, k)
+	if err != nil {
+		return false, Next{}, err
 	}
 	if err := r.notify("merged."+id, store.MessageMerged, msg); err != nil {
 		return false, Next{}, err
 	}
-	if err := r.retire(id, repo, h); err != nil {
+	if err := r.retire(id, repo, h, k); err != nil {
 		return false, Next{}, err
 	}
 	if err := r.leave("merged:"+id, false); err != nil {

@@ -65,7 +65,7 @@ func TestSendBackSucceededBuildWithFeedbackAndRepublish(t *testing.T) {
 		t.Run(b.name, func(t *testing.T) {
 			e, f := newValidateEnv(t, b)
 			base := baseHead
-			e.eng.Base = func(string) (string, error) { return base, nil }
+			e.eng.Base = func(string, string) (string, error) { return base, nil }
 			script := &gittest.Script{}
 			resolution := []byte("diff --git a/docs/contracts/cli.md b/docs/contracts/cli.md\n")
 			nextBase := strings.Repeat("c", 40)

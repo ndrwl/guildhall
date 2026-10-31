@@ -47,6 +47,16 @@ type Definition struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	Steps       []Step `json:"steps"`
+	// Slices, when set, is the range of steps a multi-PR task runs once per slice of its accepted spec
+	// (docs/decisions/multi-pr-tasks.md); a workflow without it delivers one pull request.
+	Slices *SliceRange `json:"slices,omitempty"`
+}
+
+// SliceRange names the first and last step of the range a multi-PR task repeats per slice: From starts after the
+// step that accepts the spec, and To is a deliver step.
+type SliceRange struct {
+	From string `json:"from"`
+	To   string `json:"to"`
 }
 
 // Step is one use of a built-in kind.

@@ -74,6 +74,9 @@ type Stage struct {
 	// Main, when present, says how far the task branch is behind the default branch and whether it was kept
 	// where it was; it is rendered only when the branch is behind or was kept.
 	Main *Main
+	// Branch is the task branch an Artisan commits a code head on, a multi-PR task's slice branch; empty is
+	// guildhall/<task>. It is not part of the manifest's Identity.
+	Branch string
 	// Dir is the attempt directory Prompt writes into; it must not exist or be empty.
 	// Question ignores it.
 	Dir string
@@ -263,7 +266,7 @@ func Prompt(stage Stage, inputs []Input, baseline Baseline, roots []SkillRoot) (
 	if err != nil {
 		return Rendered{}, err
 	}
-	if err := r.write(&m, inputData, found, stage.Title, stage.Detail, stage.Step.Instructions(), role, guide, standards, stage.Step.Actor(), stage.Revisions, stage.ReviewBase, stage.Retry, stage.Main, baseline); err != nil {
+	if err := r.write(&m, inputData, found, stage.Title, stage.Detail, stage.Step.Instructions(), role, guide, standards, stage.Step.Actor(), stage.Revisions, stage.ReviewBase, stage.Retry, stage.Main, stage.Branch, baseline); err != nil {
 		_ = os.RemoveAll(r.PromptPath)
 		_ = os.RemoveAll(r.SkillsPath)
 		_ = os.RemoveAll(filepath.Join(stage.Dir, InputsDir))
@@ -276,7 +279,7 @@ func Prompt(stage Stage, inputs []Input, baseline Baseline, roots []SkillRoot) (
 	return r, nil
 }
 
-func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, title, detail, instructions, role, guide string, standards []string, actor workflow.Actor, revisions *workflow.Revisions, reviewBase string, retry *Retry, main *Main, baseline Baseline) error {
+func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, title, detail, instructions, role, guide string, standards []string, actor workflow.Actor, revisions *workflow.Revisions, reviewBase string, retry *Retry, main *Main, branch string, baseline Baseline) error {
 	inputsPath := filepath.Join(filepath.Dir(r.PromptPath), InputsDir)
 	if err := os.Mkdir(inputsPath, 0o755); err != nil {
 		return fmt.Errorf("render: %w", err)
@@ -310,7 +313,7 @@ func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, tit
 	}
 	text := composePrompt(m, title, detail, instructions, role, guide, standards, reviewBase, retry, main, baseline.Policies, baseline.PolicyError)
 	if actor == workflow.ArtisanActor {
-		text += outputInstructions(m.Identity, revisions)
+		text += outputInstructions(m.Identity, revisions, branch)
 	}
 	prompt := []byte(text)
 	if err := os.WriteFile(r.PromptPath, prompt, 0o644); err != nil {

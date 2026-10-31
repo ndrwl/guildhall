@@ -4,6 +4,7 @@ date: 2026-10-30
 topic: tasks
 tasks: d47
 amends: worktree-custody.md
+amended-by: multi-pr-tasks.md
 ---
 
 # A task can be cancelled for good, with a reason, voiding its decisions and closing its pull requests

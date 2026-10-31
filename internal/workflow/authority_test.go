@@ -220,7 +220,7 @@ func TestFloor(t *testing.T) {
 		{name: "a second deliver without either", change: func(d *Definition) {
 			d.Steps = append(d.Steps, Step{ID: "deliver-again", Type: "deliver", Version: 1, Inputs: map[string]Refs{"head": {"build.head"}}})
 		}, want: []string{`deliver step "deliver-again" takes no review outcome`, `deliver step "deliver-again" takes no validate result`}},
-		{name: "no deliver step", change: func(d *Definition) { remove(d, "deliver") }},
+		{name: "no deliver step", change: func(d *Definition) { remove(d, "deliver"); d.Slices = nil }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

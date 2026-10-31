@@ -19,34 +19,37 @@ type RecordedPullRequest struct {
 	// Document is the name of the first <step>-<round>-pr document that recorded it.
 	Document string
 	Remote   string
+	// Slice is the slice of a multi-PR task whose records hold it (DocumentSlice); 1 for a one-slice task.
+	Slice int
 	forge.PullRequest
 }
 
 // TaskPullRequests reads what `guildhall task cancel` and the outside-merge rule need of a task's pull requests from
 // its documents in documentDir: each pull request its -pr documents record, once per remote and number in document
-// order, and whether a -merge document is recorded, by deliver or by the outside-merge rule, which means the task
-// merged or is merging. A document that does not
-// match its recorded digest or is not a pull request is an error.
-func TaskPullRequests(docs []store.DocumentRef, documentDir string) (prs []RecordedPullRequest, merging bool, err error) {
+// order, with its slice, and the slices with a -merge document, recorded by deliver or by the outside-merge rule,
+// which merged or are merging. A one-slice task's only slice is 1. A document that does not match its recorded digest
+// or is not a pull request is an error.
+func TaskPullRequests(docs []store.DocumentRef, documentDir string) (prs []RecordedPullRequest, merged map[int]bool, err error) {
 	seen := map[string]int{}
+	merged = map[int]bool{}
 	for _, d := range docs {
 		switch {
 		case IsMergeRecord(d.Name):
-			merging = true
+			merged[DocumentSlice(d.Name)] = true
 		case strings.HasSuffix(d.Name, "-pr"):
 			data, err := os.ReadFile(filepath.Join(documentDir, filepath.FromSlash(d.Path)))
 			if err != nil {
-				return nil, false, err
+				return nil, nil, err
 			}
 			if digest.Of(data).Hex() != d.SHA256 {
-				return nil, false, fmt.Errorf("document %s does not match its recorded digest", d.Path)
+				return nil, nil, fmt.Errorf("document %s does not match its recorded digest", d.Path)
 			}
 			var pr pullRequestDoc
 			if err := json.Unmarshal(data, &pr); err != nil {
-				return nil, false, fmt.Errorf("document %s: %w", d.Name, err)
+				return nil, nil, fmt.Errorf("document %s: %w", d.Name, err)
 			}
 			if pr.Schema != pullRequestSchema || pr.Number < 1 || pr.Remote == "" {
-				return nil, false, fmt.Errorf("document %s is not a %s pull request", d.Name, pullRequestSchema)
+				return nil, nil, fmt.Errorf("document %s is not a %s pull request", d.Name, pullRequestSchema)
 			}
 			key := fmt.Sprintf("%s#%d", pr.Remote, pr.Number)
 			if i, ok := seen[key]; ok {
@@ -54,10 +57,10 @@ func TaskPullRequests(docs []store.DocumentRef, documentDir string) (prs []Recor
 				continue
 			}
 			seen[key] = len(prs)
-			prs = append(prs, RecordedPullRequest{Document: d.Name, Remote: pr.Remote, PullRequest: pr.PullRequest})
+			prs = append(prs, RecordedPullRequest{Document: d.Name, Remote: pr.Remote, Slice: DocumentSlice(d.Name), PullRequest: pr.PullRequest})
 		}
 	}
-	return prs, merging, nil
+	return prs, merged, nil
 }
 
 // maxQuotedReasonBytes bounds the cancel reason a dependency-cancelled message quotes.

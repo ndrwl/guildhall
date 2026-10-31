@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -344,15 +345,21 @@ func (p *pruner) inspect(t pruneTask) (pruneResult, error) {
 	if err != nil {
 		return r, err
 	}
-	work := filepath.Join(p.taskDir(t.ref), "work")
-	if _, err := os.Lstat(work); err == nil {
-		if fi, err := os.Lstat(filepath.Join(work, ".git")); err != nil || !fi.Mode().IsRegular() {
-			r.Worktree, r.Kept = store.WorktreeNotWorkspace, work+" is not a worktree of "+p.repositories[t.ref.Repository].Path
-		} else {
-			r.Bytes += treeSize(work)
-		}
-	} else if !errors.Is(err, fs.ErrNotExist) {
+	dirs, err := p.sliceWorkDirs(t.ref)
+	if err != nil {
 		return r, err
+	}
+	for _, k := range sortedSlices(dirs) {
+		work := filepath.Join(p.taskDir(t.ref), interp.SliceWorkDir(k))
+		if _, err := os.Lstat(work); err == nil {
+			if fi, err := os.Lstat(filepath.Join(work, ".git")); (err != nil || !fi.Mode().IsRegular()) && r.Worktree == store.WorktreeRemoved {
+				r.Worktree, r.Kept = store.WorktreeNotWorkspace, work+" is not a worktree of "+p.repositories[t.ref.Repository].Path
+			} else if err == nil && fi.Mode().IsRegular() {
+				r.Bytes += treeSize(work)
+			}
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return r, err
+		}
 	}
 	for _, at := range h.Attempts {
 		if err := p.pruneAttempt(&r, artisan.AttemptKey{Repository: t.ref.Repository, TaskID: t.ref.ID, Step: at.Step, Attempt: at.Number}, true); err != nil {
@@ -429,51 +436,120 @@ func (p *pruner) pruneCILogs(r *pruneResult) {
 // retire removes the task's worktree with git.Program.Retire, at the head interp.SafeHead names, when nothing in
 // it would be lost; a kept worktree, one Retire cannot remove and a work directory that is not a worktree are left
 // as they are, with the reason.
+//
+// A multi-PR task has a worktree per slice, work and work.s<k> on branches interp.SliceBranch, each retired at the
+// head its slice merged at; the first one kept or not a worktree sets r.Worktree, and every reason is in r.Kept.
 func (p *pruner) retire(ctx context.Context, r *pruneResult, h store.TaskHistory) error {
-	repo := p.repositories[r.Task.Repository]
-	work := filepath.Join(p.taskDir(r.Task), "work")
-	_, statErr := os.Lstat(work)
-	if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
-		return statErr
-	}
-	exists := statErr == nil
-	head, err := interp.SafeHead(h.Documents, p.readDocument)
+	heads, err := interp.SliceHeads(h.Documents, p.readDocument)
 	if err != nil {
 		return err
 	}
+	dirs, err := p.sliceWorkDirs(r.Task)
+	if err != nil {
+		return err
+	}
+	for k := range heads {
+		dirs[k] = true
+	}
 	r.Worktree = store.WorktreeRemoved
+	var kept []string
+	for _, k := range sortedSlices(dirs) {
+		worktree, why, err := p.retireSlice(ctx, r, h, k, heads[k])
+		if err != nil {
+			return err
+		}
+		if worktree == store.WorktreeRemoved {
+			continue
+		}
+		if r.Worktree == store.WorktreeRemoved {
+			r.Worktree = worktree
+		}
+		if k > 1 {
+			why = fmt.Sprintf("slice %d: %s", k, why)
+		}
+		kept = append(kept, why)
+	}
+	r.Kept = strings.Join(kept, "; ")
+	return nil
+}
+
+// retireSlice retires slice k's worktree at head, the head its merge record names; for slice 1 with none, the head
+// interp.SafeHead names. It returns the store.Worktree* outcome, with the reason for one not removed.
+func (p *pruner) retireSlice(ctx context.Context, r *pruneResult, h store.TaskHistory, k int, head string) (string, string, error) {
+	repo := p.repositories[r.Task.Repository]
+	work := filepath.Join(p.taskDir(r.Task), interp.SliceWorkDir(k))
+	_, statErr := os.Lstat(work)
+	if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
+		return "", "", statErr
+	}
+	exists := statErr == nil
+	if head == "" && k == 1 {
+		var err error
+		if head, err = interp.SafeHead(h.Documents, p.readDocument); err != nil {
+			return "", "", err
+		}
+		if heads, _ := interp.SliceHeads(h.Documents, p.readDocument); len(heads) > 0 {
+			// A multi-PR task cancelled before its first slice merged: the newest merge is another slice's.
+			head = ""
+		}
+	}
 	if head == "" {
 		switch {
 		case exists && h.Task.State == store.TaskCancelled:
-			r.Worktree, r.Kept = store.WorktreeKept, "the task was cancelled unmerged, so no merge record names a head its work is safe at"
+			return store.WorktreeKept, "the task was cancelled unmerged, so no merge record names a head its work is safe at", nil
 		case exists:
-			r.Worktree, r.Kept = store.WorktreeKept, "no merge record names the head the task merged at"
+			return store.WorktreeKept, "no merge record names the head the task merged at", nil
 		}
-		return nil
+		return store.WorktreeRemoved, "", nil
 	}
 	size := int64(0)
 	if exists {
 		size = treeSize(work)
 	}
-	w := git.Workspace{Repository: repo.Path, Remote: repo.Remote, Branch: interp.TaskBranch(r.Task.ID), Dir: work}
+	w := git.Workspace{Repository: repo.Path, Remote: repo.Remote, Branch: interp.SliceBranch(r.Task.ID, k), Dir: work}
 	kept, err := p.workspaces.Retire(ctx, git.Retirement{Workspace: w, Head: head, Outputs: interp.RetirementOutputs(r.Task.Repository, r.Task.ID, h.Documents)})
 	switch {
 	case errors.Is(err, git.ErrNotWorkspace):
-		r.Worktree, r.Kept = store.WorktreeNotWorkspace, work+" is not a worktree of "+repo.Path
-		return nil
+		return store.WorktreeNotWorkspace, work + " is not a worktree of " + repo.Path, nil
 	case err != nil && ctx.Err() != nil:
-		return ctx.Err()
+		return "", "", ctx.Err()
 	case err != nil:
 		kept = []string{"it could not be removed: " + err.Error()}
 	}
 	if len(kept) > 0 {
-		r.Worktree, r.Kept = store.WorktreeKept, strings.Join(kept, "; ")
-		return nil
+		return store.WorktreeKept, strings.Join(kept, "; "), nil
 	}
 	if _, err := os.Lstat(work); errors.Is(err, fs.ErrNotExist) {
 		r.Bytes += size
 	}
-	return nil
+	return store.WorktreeRemoved, "", nil
+}
+
+// sliceWorkDirs returns the slices whose working directory, work or work.s<k>, is in t's directory, always slice 1.
+func (p *pruner) sliceWorkDirs(t store.TaskRef) (map[int]bool, error) {
+	out := map[int]bool{1: true}
+	entries, err := os.ReadDir(p.taskDir(t))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	for _, e := range entries {
+		if rest, ok := strings.CutPrefix(e.Name(), "work.s"); ok {
+			if k, err := strconv.Atoi(rest); err == nil && k >= 2 && interp.SliceWorkDir(k) == e.Name() {
+				out[k] = true
+			}
+		}
+	}
+	return out, nil
+}
+
+// sortedSlices is the slices of set in order.
+func sortedSlices(set map[int]bool) []int {
+	var out []int
+	for k := range set {
+		out = append(out, k)
+	}
+	sort.Ints(out)
+	return out
 }
 
 // readDocument returns a task document's content from under the state's documents directory, after checking its

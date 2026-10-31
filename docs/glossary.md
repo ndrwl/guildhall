@@ -147,5 +147,14 @@ A finished outcome without a readable result is refused, not guessed.
 
 ## Worktree
 
-- A task's working directory, `<state>/<repo>/<task>/work`, is a git worktree of the repository's `path` on branch `guildhall/<task>` ([the working directory](interpreter.md#the-working-directory), [D68](decisions/worktree-custody.md)).
+- A task's working directory, `<state>/<repo>/<task>/work`, is a git worktree of the repository's `path` on branch `guildhall/<task>` ([the working directory](interpreter.md#the-working-directory), [D68](decisions/worktree-custody.md)); a multi-PR task's slice k from 2 on has its own, `work.s<k>` on `guildhall/<task>.s<k>`.
 - It is neither the Director copy nor the repository's own checkout at `path`.
+
+## Slice
+
+- A **multi-PR task** is a task whose accepted spec lists more than one slice under `## Slices`: one grill, one accepted spec and one pull request per slice, and only the last slice's merge closes it ([decision](decisions/multi-pr-tasks.md), [tasks](tasks.md#multi-pr-tasks)).
+  Avoid "epic", "large task" and "parent task".
+- A **slice** is one ordered entry of a multi-PR task's accepted spec, delivered as one pull request on its own branch, `guildhall/<task>` for slice 1 and `guildhall/<task>.s<k>` after; the workflow's slice range runs once for it.
+  Avoid "part", "phase", "sub-task" and "chunk"; the hallmark skill's "slice", a pull-request-sized part of planned work, means the same.
+- A **cycle**, in contract TDD, is one contract case and its minimal implementation inside a single build (`guildhall-contract-tdd`); it was called a slice there before multi-PR tasks.
+- A **stack** and its **layers** are GitHub's stacked pull requests, named only for how slices might one day be shown on the forge, never in place of "slice"; Guildhall does not stack pull requests yet ([decision](decisions/multi-pr-tasks.md)).

@@ -1,0 +1,17 @@
+Task app/a-sliced, as of 2026-10-30 12:00 UTC, local state
+
+a-sliced: Large work in three
+State:            open
+Priority:         p3
+Kind:             feature
+Where it stands:  CI pending, PR #402
+Slice:            2 of 3: Engine
+
+Slices
+SLICE  TITLE   STATE    PULL REQUEST
+1      Parser  merged   #401 https://forge.invalid/app/pull/401
+2      Engine  current  #402 https://forge.invalid/app/pull/402 (CI pending)
+3      Views   pending  none
+
+Steps
+No steps yet.

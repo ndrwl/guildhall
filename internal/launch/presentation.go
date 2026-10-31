@@ -12,12 +12,15 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/herdr"
 	"github.com/ndrwl/guildhall/internal/interp"
+	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
 // Presentation is the optional terminal boundary for Process. Host creates and
@@ -91,10 +94,22 @@ func FinishLine(closeAfter time.Duration) string {
 // with no owner recovers it and launches again.
 const PaneClaim = "pane-launch.json"
 
-// WorkspaceLabel is the label of the Herdr workspace an attempt is presented
-// in: "└ <task> · <step> #<n>".
+// WorkspaceLabel is the label of the Herdr workspace an attempt of a one-slice
+// task is presented in: "└ <task> · <step> #<n>".
 func WorkspaceLabel(k artisan.AttemptKey) string {
 	return fmt.Sprintf("└ %s · %s #%d", k.TaskID, k.Step, k.Attempt)
+}
+
+// SliceWorkspaceLabel is the label of the Herdr workspace an attempt of a
+// multi-PR task of total slices is presented in: "└ <task> · slice k/n ·
+// <step> #<n>", the step without its slice mark. For total below 2 it is
+// WorkspaceLabel.
+func SliceWorkspaceLabel(k artisan.AttemptKey, total int) string {
+	if total < 2 {
+		return WorkspaceLabel(k)
+	}
+	step, slice := workflow.ParseSliceStep(k.Step)
+	return fmt.Sprintf("└ %s · slice %d/%d · %s #%d", k.TaskID, slice, total, step, k.Attempt)
 }
 
 // TabLabel is the label of the tab an attempt runs in: "artisan <key>".
@@ -103,9 +118,40 @@ func TabLabel(k artisan.AttemptKey) string { return "artisan " + k.String() }
 // AttemptWorkspaceLabels are the labels a Herdr workspace created for attempt
 // k alone has carried: WorkspaceLabel, and TabLabel, which releases from #140
 // to #145 gave the workspace too. Releases before #140 presented an attempt
-// as a tab in a shared workspace, whose label is neither.
+// as a tab in a shared workspace, whose label is neither. A multi-PR task's
+// SliceWorkspaceLabel names its slice count, which k does not hold, so
+// IsAttemptWorkspaceLabel recognises it.
 func AttemptWorkspaceLabels(k artisan.AttemptKey) []string {
 	return []string{WorkspaceLabel(k), TabLabel(k)}
+}
+
+// IsAttemptWorkspaceLabel reports whether label is one AttemptWorkspaceLabels
+// lists for k, or SliceWorkspaceLabel of k for any slice count.
+func IsAttemptWorkspaceLabel(k artisan.AttemptKey, label string) bool {
+	if slices.Contains(AttemptWorkspaceLabels(k), label) {
+		return true
+	}
+	step, slice := workflow.ParseSliceStep(k.Step)
+	prefix := fmt.Sprintf("└ %s · slice %d/", k.TaskID, slice)
+	rest, ok := strings.CutPrefix(label, prefix)
+	if !ok {
+		return false
+	}
+	total, tail, ok := strings.Cut(rest, " · ")
+	n, err := strconv.Atoi(total)
+	return ok && err == nil && n >= max(2, slice) && strconv.Itoa(n) == total && tail == fmt.Sprintf("%s #%d", step, k.Attempt)
+}
+
+// workspaceLabel is the label at's Herdr workspace is created with.
+func (a Attempt) workspaceLabel() string { return SliceWorkspaceLabel(a.Key, a.Slices) }
+
+// workspaceLabels are the labels closing at's workspace accepts.
+func (a Attempt) workspaceLabels() []string {
+	labels := AttemptWorkspaceLabels(a.Key)
+	if l := a.workspaceLabel(); !slices.Contains(labels, l) {
+		labels = append(labels, l)
+	}
+	return labels
 }
 
 // launchingClaim is the PaneClaim a launch writes before it has a tab binding.
@@ -170,7 +216,7 @@ func (pr *Presentation) closeAbandoned(ctx context.Context, at Attempt, stale la
 	}
 	ctx, cancel := context.WithTimeout(ctx, abandonedCloseTimeout)
 	defer cancel()
-	if err := closer.CloseAbandonedWorkspace(ctx, stale.Workspace, stale.Tabs, AttemptWorkspaceLabels(at.Key), TabLabel(at.Key)); err != nil {
+	if err := closer.CloseAbandonedWorkspace(ctx, stale.Workspace, stale.Tabs, at.workspaceLabels(), TabLabel(at.Key)); err != nil {
 		return false, err.Error()
 	}
 	return true, ""
@@ -223,7 +269,7 @@ func (p *Process) launchPane(ctx context.Context, at Attempt, cmd *exec.Cmd, pre
 	label := TabLabel(at.Key)
 	// The launching claim records each workspace and tab as it is created, so a
 	// launch that fails before its binding leaves them for recovery to close.
-	workspace, err := presentation.Host.CreateWorkspace(ctx, WorkspaceLabel(at.Key), cmd.Dir)
+	workspace, err := presentation.Host.CreateWorkspace(ctx, at.workspaceLabel(), cmd.Dir)
 	record := launching{State: "launching"}
 	if workspace.ID != "" {
 		record.Workspace = workspace.ID
@@ -399,13 +445,13 @@ func (pr *Presentation) log(at Attempt, r artisan.PresentationReport) {
 func (pr *Presentation) recovered(at Attempt, abandoned string, closed bool, reason string) {
 	switch {
 	case abandoned == "":
-		pr.warn("recovered a stale launching claim for %s: no command was typed for it; an earlier Herdr workspace %q may have been left behind by a lost create response, so close it by hand", at.Key, WorkspaceLabel(at.Key))
+		pr.warn("recovered a stale launching claim for %s: no command was typed for it; an earlier Herdr workspace %q may have been left behind by a lost create response, so close it by hand", at.Key, at.workspaceLabel())
 	case closed:
 		pr.warn("recovered a stale launching claim for %s: no command was typed for it; closed the Herdr workspace %s it had created", at.Key, abandoned)
 	default:
-		pr.warn("recovered a stale launching claim for %s: no command was typed for it; left open the Herdr workspace %s %q it had created (%s), so close it by hand", at.Key, abandoned, WorkspaceLabel(at.Key), reason)
+		pr.warn("recovered a stale launching claim for %s: no command was typed for it; left open the Herdr workspace %s %q it had created (%s), so close it by hand", at.Key, abandoned, at.workspaceLabel(), reason)
 	}
-	if err := artisan.LogPaneClaimRecovered(at.Dir(), WorkspaceLabel(at.Key), abandoned, closed, reason); err != nil {
+	if err := artisan.LogPaneClaimRecovered(at.Dir(), at.workspaceLabel(), abandoned, closed, reason); err != nil {
 		pr.warn("record pane claim recovery for %s: %v", at.Key, err)
 	}
 }
