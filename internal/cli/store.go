@@ -7,24 +7,36 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
-// storeCmd runs `guildhall store init|doctor`, on the path given or the selected copy's store.
+// storeCmd runs `guildhall store init|doctor|export|import`, on the path given or the selected copy's store.
 func (a *App) storeCmd(args []string) int {
-	const usage = "usage: guildhall store init|doctor <path>, or --copy <dir>"
-	if len(args) == 0 || (args[0] != "init" && args[0] != "doctor") {
+	const usage = "usage: guildhall store init|doctor <path>, store export <path> --out <dir>, or store import <path> --from <dir>; --copy <dir> in place of <path>"
+	if len(args) == 0 || (args[0] != "init" && args[0] != "doctor" && args[0] != "export" && args[0] != "import") {
 		return a.usageError(usage)
 	}
 	fl := flag.NewFlagSet("store "+args[0], flag.ContinueOnError)
 	fl.SetOutput(io.Discard)
 	var cp copyFlags
 	cp.register(fl)
+	var dir string
+	switch args[0] {
+	case "export":
+		fl.StringVar(&dir, "out", "", "the new directory the export is written to")
+	case "import":
+		fl.StringVar(&dir, "from", "", "the directory holding the export")
+	}
 	if err := parseInterspersed(fl, args[1:]); err != nil {
 		return a.usageError("store " + args[0] + ": " + err.Error())
+	}
+	if (args[0] == "export" || args[0] == "import") && dir == "" {
+		return a.usageError(usage)
 	}
 	var path string
 	if fl.NArg() == 1 {
@@ -39,10 +51,67 @@ func (a *App) storeCmd(args []string) int {
 	if fl.NArg() > 1 || path == "" {
 		return a.usageError(usage)
 	}
-	if args[0] == "init" {
+	switch args[0] {
+	case "init":
 		return a.storeInit(path)
+	case "export":
+		return a.storeExport(path, dir, cp.dir)
+	case "import":
+		return a.storeImport(path, dir)
 	}
 	return a.storeDoctor(path)
+}
+
+// storeExport writes the text export of the store at path into the new directory dir, in one read transaction that
+// waits at most the copy's lock_wait, or the default lock_wait with no copy, for a writer.
+func (a *App) storeExport(path, dir, copyDir string) int {
+	fail := func(err error) int {
+		_, _ = fmt.Fprintf(a.Stderr, "guildhall: store export: %v\n", err)
+		return 1
+	}
+	wait := config.DefaultLockWait
+	if copyDir != "" {
+		cfg, err := config.Load(filepath.Join(copyDir, "config.toml"))
+		if err != nil {
+			return fail(err)
+		}
+		if wait, err = cfg.LockWait(); err != nil {
+			return fail(err)
+		}
+	}
+	s, err := store.Open(path, store.Options{ReadOnly: true, LockTimeout: wait})
+	if errors.Is(err, fs.ErrNotExist) {
+		return fail(noStore(path))
+	} else if err != nil {
+		return fail(err)
+	}
+	res, err := s.Export(dir, store.ExportOptions{})
+	if cerr := s.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return fail(err)
+	}
+	return a.printJSON(struct {
+		Store           string   `json:"store"`
+		Out             string   `json:"out"`
+		Files           []string `json:"files"`
+		ReceiptSequence uint64   `json:"receipt_sequence"`
+	}{path, dir, res.Files, res.ReceiptSequence})
+}
+
+// storeImport creates a new store at path from the export in dir; it refuses anything already at path.
+func (a *App) storeImport(path, dir string) int {
+	rep, err := store.Import(path, dir)
+	if err != nil {
+		_, _ = fmt.Fprintf(a.Stderr, "guildhall: store import: %v\n", err)
+		return 1
+	}
+	return a.printJSON(struct {
+		Store         string `json:"store"`
+		SchemaVersion int    `json:"schema_version"`
+		Receipts      int    `json:"receipts"`
+	}{path, rep.SchemaVersion, rep.Receipts})
 }
 
 // storeInit creates and initializes an empty store at path. It refuses anything already there, of any kind,

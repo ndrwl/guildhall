@@ -255,6 +255,7 @@ Regenerate it with `go test ./internal/doccheck -run TestDecisionIndex -update`,
 
 ## Director
 
+- [Each Director backs up its own copy, as a store export and its copy files, to its own branch of a private repository](decisions/director-backups.md)
 - [The session supervisor watches pending checks, and resume wakes the Director once](decisions/director-checks-watch.md)
 - [Plain English to the Director is the Guildmaster's primary interface, and the commands stay complete and public](decisions/director-conversation-first.md)
 - [Three triggers tell the Director a handoff is due, and Claude's context is read from the transcript by the core turn-end hook](decisions/director-handoff-triggers.md)

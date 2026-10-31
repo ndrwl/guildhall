@@ -4,6 +4,9 @@
 # Store fixtures are bbolt files, never text.
 *.store binary
 
+# The golden store export is compared byte for byte, so Windows checkouts keep its exact bytes.
+internal/store/testdata/schema-v1.export/** -text
+
 # Message envelope fixtures keep the exact bytes and encodings Windows tools write.
 internal/messaging/testdata/*.json binary
 

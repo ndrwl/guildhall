@@ -1,0 +1,13 @@
+guildhall-store-export	1
+root	repositories
+bucket	1	app	0
+bucket	2	attempts	0
+record	2	t-1/build/0000000001	{"repository":"app","task_id":"t-1","step":"build","number":1,"outcome":"succeeded"}
+bucket	2	decisions	0
+record	2	t-1/accept-plan	{"repository":"app","task_id":"t-1","id":"accept-plan","question":"Accept the plan?","answered":true,"answer":"Yes"}
+bucket	2	documents	0
+record	2	t-1/plan	{"repository":"app","task_id":"t-1","name":"plan","path":"tasks/t-1/plan.md","sha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}
+bucket	2	panes	0
+record	2	t-1	{"repository":"app","task_id":"t-1","session":"lab","workspace":"w1","tab":"w1:t2","pane":"w1:p3"}
+bucket	2	tasks	0
+record	2	t-1	{"repository":"app","id":"t-1","title":"Add the store","workflow":{"name":"default","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"config_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","state":"open"}
