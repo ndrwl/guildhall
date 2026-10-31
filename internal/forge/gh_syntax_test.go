@@ -26,7 +26,7 @@ func validateGHArgs(args []string) error {
 		"pr create":   {values: []string{"--repo", "--head", "--title", "--body"}},
 		"pr edit":     {values: []string{"--repo", "--title", "--body"}, positional: 1},
 		"pr view":     {values: []string{"--repo", "--json"}, positional: 1},
-		"pr merge":    {values: []string{"--repo", "--match-head-commit"}, bools: []string{"--squash"}, positional: 1},
+		"pr merge":    {values: []string{"--repo", "--match-head-commit", "--subject", "--body"}, bools: []string{"--squash"}, positional: 1},
 		"pr close":    {values: []string{"--repo", "--comment"}, positional: 1},
 		"api graphql": {values: []string{"--hostname", "-f"}},
 		// gh api <endpoint> is a REST GET; the only endpoint read is a job's logs.
@@ -86,7 +86,7 @@ func ghCallShapes() [][]string {
 		{"pr", "create", "--repo", "github.com/acme/widgets", "--head", "guildhall/t7", "--title", "Task t7", "--body", "Body text"},
 		{"pr", "view", "1", "--repo", "github.com/acme/widgets", "--json", "number,url,state,headRefName,headRefOid,mergeCommit"},
 		{"pr", "view", "1", "--repo", "github.com/acme/widgets", "--json", "url,state,headRefOid,baseRefName,mergeable,mergeStateStatus"},
-		{"pr", "merge", "1", "--repo", "github.com/acme/widgets", "--squash", "--match-head-commit", strings.Repeat("a", 40)},
+		{"pr", "merge", "1", "--repo", "github.com/acme/widgets", "--squash", "--match-head-commit", strings.Repeat("a", 40), "--subject", "Task t7 (#1)", "--body", ""},
 		{"api", "graphql", "--hostname", "github.com", "-f", "query=query { viewer { login } }", "-f", "owner=acme", "-f", "name=widgets", "-f", "oid=" + strings.Repeat("a", 40)},
 		{"pr", "edit", "1", "--repo", "github.com/acme/widgets", "--title", "Task t7", "--body", "Body text"},
 		{"api", "repos/acme/widgets/actions/jobs/123/logs", "--hostname", "github.com", "--allow-escape-sequences"},

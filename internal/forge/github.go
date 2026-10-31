@@ -103,6 +103,8 @@ func (g GitHub) Publish(ctx context.Context, c Change) (PullRequest, error) {
 
 // Merge squash-merges pull request m.Number only while it is at m.Head, and returns it merged with its merge
 // commit. It never passes --admin or --auto, so the forge's protection, required checks and review rules apply.
+// The merge commit's subject is m.Subject(), the published title plus " (#N)", and its body is passed explicitly
+// empty, so GitHub's default squash message is never used; a blank m.Title is ErrInvalid before gh runs.
 // A pull request already merged at m.Head is returned as it is, so repeating a merge is safe.
 // A merge gh fails is checked by viewing the pull request again: merged at m.Head, it is returned; still open,
 // closed or at another head, the failure is the forge's refusal, ErrRefused with gh's reason. A closed pull
@@ -110,7 +112,7 @@ func (g GitHub) Publish(ctx context.Context, c Change) (PullRequest, error) {
 // that leaves the forge's answer unknown, such as gh's failed sign-in or a view that fails after the merge,
 // is returned as a plain error.
 func (g GitHub) Merge(ctx context.Context, m Merge) (PullRequest, error) {
-	if err := m.Validate(); err != nil {
+	if err := m.ValidateTitled(); err != nil {
 		return PullRequest{}, err
 	}
 	repo, err := GitHubRepository(m.Remote)
@@ -128,7 +130,8 @@ func (g GitHub) Merge(ctx context.Context, m Merge) (PullRequest, error) {
 		return PullRequest{}, fmt.Errorf("%w: pull request %s is %s at %s", ErrRefused, pr.URL, pr.State, pr.Head)
 	}
 	var run *runError
-	_, mergeErr := g.gh(ctx, m.Repository, "pr", "merge", strconv.Itoa(m.Number), "--repo", repo, "--squash", "--match-head-commit", m.Head)
+	_, mergeErr := g.gh(ctx, m.Repository, "pr", "merge", strconv.Itoa(m.Number), "--repo", repo, "--squash", "--match-head-commit", m.Head,
+		"--subject", m.Subject(), "--body", "")
 	if mergeErr != nil {
 		if ctx.Err() != nil {
 			return PullRequest{}, ctx.Err()

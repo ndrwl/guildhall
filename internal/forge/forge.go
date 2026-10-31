@@ -4,7 +4,8 @@
 //
 // Guildhall prescribes only these edges. It pushes only a task branch, never the base; it merges only the
 // head its merge decision or recorded merge authorization (deliver-<k>-authorized) is bound to, with a squash
-// merge; and it never bypasses the forge's branch protection, required checks or review rules. Anything the forge refuses is ErrRefused, for the
+// merge whose subject is the pull request's published title plus " (#N)" and whose body is empty, never the
+// forge's default message; and it never bypasses the forge's branch protection, required checks or review rules. Anything the forge refuses is ErrRefused, for the
 // Director to recover from. Credentials stay in the forge program's own sign-in store: nothing here reads,
 // stores or passes one.
 package forge
@@ -70,6 +71,10 @@ type Merge struct {
 	Number int
 	// Head is the full commit id the merge was approved for; the forge merges only while the pull request is at it.
 	Head string
+	// Title is the pull request's title as Guildhall last published it; the merge's subject is Title plus " (#N)".
+	// Validate does not require it, since Mergeability uses a Merge only to name the pull request, but Merge refuses
+	// a blank one.
+	Title string
 }
 
 // Validate reports a merge missing a field or naming an invalid head, as ErrInvalid.
@@ -83,6 +88,23 @@ func (m Merge) Validate() error {
 		return fmt.Errorf("%w: head %q is not a full commit id", ErrInvalid, m.Head)
 	}
 	return nil
+}
+
+// ValidateTitled is Validate for a merge itself: it also reports a blank Title as ErrInvalid, since a merge without
+// one would fall back to the forge's default subject.
+func (m Merge) ValidateTitled() error {
+	if err := m.Validate(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(m.Title) == "" {
+		return fmt.Errorf("%w: a merge has the pull request's title", ErrInvalid)
+	}
+	return nil
+}
+
+// Subject is the merge commit's subject: Title plus " (#N)".
+func (m Merge) Subject() string {
+	return fmt.Sprintf("%s (#%d)", m.Title, m.Number)
 }
 
 // View asks for one pull request as the forge reports it now, changing nothing.
