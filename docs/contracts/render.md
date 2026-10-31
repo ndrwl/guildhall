@@ -9,6 +9,7 @@ Pure over files: no interface and no double.
 The [required outputs and result template contract](../rendering.md#required-outputs-and-result-template) owns the generated Artisan completion instructions and their actor boundary.
 `TreeDigest(files []File) digest.Digest` is shared by skill copying and interpreter preparation verification for the [skill tree digest](../rendering.md#skills).
 It accepts files in any order without modifying the input slice.
+`DecisionOptions()` returns a copy of the option set each Guildmaster question offers, by the step kind that opens it, and `"design"` for a design round's, for the task page's option-meanings table ([`internal/web`](web.md)).
 
 ## Tests
 

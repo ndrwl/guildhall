@@ -125,6 +125,8 @@ A finished outcome without a readable result is refused, not guessed.
 
 - **Clerk** is the Guildmaster's read-only Claude Code plugin, `/guild`, `/decisions`, `/task`, `/inspect` and `/queue`, each echoing a `guildhall clerk` answer from the local copy ([Clerk](clerk.md)); it decides and changes nothing, and is neither a dashboard nor the Director.
 - **Where it stands** is a task's position in its workflow as one plain phrase, such as `build running`, `waiting for your approval`, `CI pending, PR #212`, `in merge queue 2/3` or `not started` ([where it stands](clerk.md#where-it-stands)).
+- **Task page** is the web page for one task, served by Guildhall from the store on the tailnet, showing what needs the Guildmaster, the task's context, status, documents and story ([task pages](web.md)); avoid dashboard, portal or web UI for it.
+- **Reader page** is the page for one of a task's documents, with the open asks beside it and a way back to the task page ([the reader page](web.md#the-reader-page)).
 
 ## Rebase
 

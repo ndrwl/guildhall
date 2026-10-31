@@ -61,6 +61,7 @@ The three-slice, outside-merge and reconcile tests failed first with the slice g
 
 The [rounds and loops contract](../interpreter.md#rounds-and-loops) owns passing the recorded binding's revisions and range base into review preparation.
 Required output examples are instructional, not an outcome recovery mechanism: missing review files and stale revisions are still refused.
+`DecisionOptions()` returns copies of the option sets of the decisions the engine opens itself, by kind: loop exit (an ordinary loop's and a validate step's), merge and follow-ups, for the task page's option-meanings table ([`internal/web`](web.md)); the questions it opens through `render.Question` are `render.DecisionOptions`'.
 
 ## Refutation
 

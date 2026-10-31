@@ -57,9 +57,16 @@ func (s sessionStart) wait() {
 	s.prunes.wait()
 }
 
-// sessionWatchers are a role's watchers of one session, nil for none.
+// sessionWatchers are a role's watchers of one session, nil for none, and the task pages the session serves, nil
+// when it serves none.
 type sessionWatchers struct {
 	checks, deps, queue, starts, holds *checksWatch
+	web                                *webServer
+}
+
+// close stops what the session serves; runSession defers it, so it runs before the session's end is recorded.
+func (w sessionWatchers) close() {
+	w.web.close()
 }
 
 // wait waits for every running watcher round.
@@ -205,6 +212,9 @@ func (a *App) directorSessionWatchers(p startPlan, n int, dir, copyDir, storePat
 	if w.holds, err = a.watchHolds(p, dir, copyDir, storePath, state); err != nil {
 		return sessionWatchers{}, err
 	}
+	// Only a Director session serves the task pages, and only with a [web] table; it binds again at every session,
+	// the first and each reload's, and a bind failure only warns (docs/web.md).
+	w.web = a.startWeb(p.cfg, n, copyDir, storePath, state)
 	return w, nil
 }
 

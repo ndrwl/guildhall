@@ -71,6 +71,10 @@ type directorStatus struct {
 	// SupervisorBinary compares the newest session's supervisor binary with the guildhall on PATH, for a feed
 	// with a session; the supervisor's own snapshot leaves it out.
 	SupervisorBinary *supervisorBinaryStatus `json:"supervisor_binary,omitempty"`
+	// Web is where the task pages are served and whether the running session serves them: "not configured" with no
+	// [web] table, else its url and "serving", "failed to bind" with the reason, or "not serving" (docs/web.md);
+	// absent when status reads no config.
+	Web *webStatus `json:"web,omitempty"`
 
 	// released are the released holds that still matter, which the holds watcher wakes the Director for once each.
 	released []releasedHold
@@ -506,6 +510,7 @@ func (a *App) directorStatusCmd(args []string) int {
 		out.NeedsMe = append(out.NeedsMe, it)
 	}
 	out.SupervisorBinary = a.supervisorBinaryStatus(out.Session)
+	out.Web = readWebStatus(*cfg, *state, out.Session)
 	return a.printJSON(out)
 }
 
