@@ -339,6 +339,23 @@ It belongs to a Director config; a Steward config with one is refused.
 A config without the table serves nothing and has the same config digest as before the table existed.
 Config decoding refuses unknown keys, so add `[web]` only after installing a `guildhall` that knows it; an older binary refuses the whole config.
 
+### The backup table
+
+The optional `[backup]` table backs the copy up to its own branch of a private git repository ([backups](running.md#backups), [decision](decisions/director-backups.md)).
+It belongs to a Director config; a Steward config with one is refused.
+It is machine scope: it is read for the whole copy, and no task override replaces it.
+
+| Key | Meaning |
+|---|---|
+| `repo` | The backup repository's git remote; required. Write an SSH remote whose host alias names this Director's deploy key, such as `git@guildhall-backup-main:ndrwl/guildhall-backups.git`, so the config never holds a key; a remote with a password, or any user info in an `http` or `https` URL, is refused, as for a repository's `remote`. |
+| `branch` | This copy's own branch, `<machine>/<director>`, such as `andrew-lap-wsl/main`; required. Each part starts with a letter or digit and holds letters, digits, `-` and `_`, and `<director>` must be the config's `name`. |
+| `every` | How often the session supervisor backs up, as a Go duration of at least a minute; default `1h`. |
+
+The table is **outside the task-bound config digest**, as [role profiles](decisions/role-profiles-outside-the-digest.md) are outside the workflow digest: it is never part of the config's JSON, so adding, editing or removing it changes no open task's config digest and no session's.
+A config without the table backs nothing up, makes no `backup.git` and has the same config digest as before the table existed.
+There is no managed form yet; each copy writes its own.
+Config decoding refuses unknown keys, so add `[backup]` only after installing a `guildhall` that knows it.
+
 ## Lanterns presentation preference
 
 The automatically installed [Lanterns plugin](lanterns.md) keeps its per-Director `/calm` preference in `<copy>/director/lanterns-calm`, not in `config.toml`.

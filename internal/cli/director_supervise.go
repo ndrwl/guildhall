@@ -315,7 +315,7 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	}
 	w := sessionWatch{copyDir: copyDir, storePath: storePath, n: n, grace: a.stopGrace(), hook: ep != nil && p.runtime.TurnEndHook(),
 		idleAfter: idleAfter, handoffIdle: triggers.Idle, pane: a.directorPane(), now: a.Now, checks: watchers.checks, deps: watchers.deps, queue: watchers.queue,
-		starts: watchers.starts, holds: watchers.holds, closes: begun.closes, prunes: begun.prunes, quiet: quiet, maxDelay: maxDelay}
+		starts: watchers.starts, holds: watchers.holds, closes: begun.closes, prunes: begun.prunes, backups: begun.backups, quiet: quiet, maxDelay: maxDelay}
 	if ep != nil {
 		w.turns = ep.Turns()
 		// A session that is not typed into is woken through its waiter, with the notice in its pane while none is
@@ -453,6 +453,8 @@ type sessionWatch struct {
 	closes *workspaceCloseWatch
 	// prunes is the session's daily prune, ticked at every poll; nil while prune_daily is off.
 	prunes *workspaceCloseWatch
+	// backups is the session's backup, ticked at every poll; nil without a [backup] table.
+	backups *workspaceCloseWatch
 
 	// wanted is when an end now wanted was first seen, zero while none is, and signalled when the newest turn
 	// signal or wake arrived, or the first decision was made.
@@ -549,6 +551,7 @@ func (a *App) waitSession(u runtimeUnit, c *exec.Cmd, signals <-chan os.Signal, 
 			}
 			w.closes.tick(time.Now())
 			w.prunes.tick(time.Now())
+			w.backups.tick(time.Now())
 			decide("")
 		case <-u.Exited():
 			err := errors.Join(empty(u, poll), u.Close())

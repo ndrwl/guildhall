@@ -48,13 +48,14 @@ type sessionSettings struct {
 // daily prune the session ticks, nil for none.
 type sessionStart struct {
 	inFlight, running, parked, held, policies []string
-	closes, prunes                            *workspaceCloseWatch
+	closes, prunes, backups                   *workspaceCloseWatch
 }
 
 // wait waits for the session's running sweeps.
 func (s sessionStart) wait() {
 	s.closes.wait()
 	s.prunes.wait()
+	s.backups.wait()
 }
 
 // sessionWatchers are a role's watchers of one session, nil for none, and the task pages the session serves, nil
@@ -150,6 +151,16 @@ func (a *App) directorSessionStart(p startPlan, copyDir, storePath, state string
 	fail := func(err error) (sessionStart, error) {
 		out.wait()
 		return sessionStart{}, err
+	}
+	// With a [backup] table, the session backs the copy up at its start and then every [backup] every, off the
+	// decision path; the session's end waits for a running backup, whose push is bounded.
+	bk, err := a.sessionBackup(p.cfg, copyDir, storePath)
+	if err != nil {
+		return fail(err)
+	}
+	if bk != nil {
+		out.backups = &workspaceCloseWatch{every: bk.every, round: bk.run}
+		out.backups.tick(time.Now())
 	}
 	status, err := readDirectorStatusConfig(context.Background(), storePath, state, p.cfgPath, a.Now)
 	if err != nil {

@@ -312,3 +312,34 @@ It exits 0 when the store opened and showed no problems, and 1 when it is missin
 
 Both commands take `--copy <dir>`, or the copy found from the current directory, in place of `<path>`, naming the copy's `director.store`; a path given with `--copy` must be that file, and a path given without it bypasses copy discovery ([copies](running.md#copies)).
 `store init --copy <dir>` also gives the copy its [copy marker](running.md#the-copy-marker), which a bare `store init <path>` does not write.
+
+## Store export and import
+
+`guildhall store export <path> --out <dir>` writes a deterministic, LF-only text export of the store at `<path>` into the new directory `<dir>`, which must not exist or must be empty, and prints `{"store", "out", "files", "receipt_sequence"}` as one JSON line.
+It reads the whole store in one read-only transaction, waiting at most the copy's [`lock_wait`](configuration.md#settings) for a writer (30 seconds with no copy), so the export is one consistent snapshot and a writer is held off no longer than that.
+`guildhall store import <path> --from <dir>` creates a new store at `<path>` from an export and prints `{"store", "schema_version", "receipts"}`.
+Both take `--copy <dir>` in place of `<path>`, as `store init|doctor` do; the [backups](running.md#backups) commit the export, never the binary file.
+
+The export is one file per top-level bucket, `<bucket>.txt`, such as `meta.txt`, `receipts.txt`, `workflow-approvals.txt` and `director.txt`, and `repositories.txt` for the `repositories` bucket's own header, with each repository's bucket in its own `repositories/<repository>.txt`.
+A bucket name that is not a lowercase file name, or starts with `x-`, is written `x-<hex of the name>.txt`.
+Each file holds tab-separated lines:
+
+| Line | Meaning |
+|---|---|
+| `guildhall-store-export` `1` | The format and its version, the first line of every file |
+| `root` [`<bucket>`…] | The buckets the file's top bucket is nested in: none for a top-level bucket, `repositories` for a repository's |
+| `bucket` `<depth>` `<name>` `<sequence>` | A bucket at depth 1 for the file's top bucket, one more for each nesting, with its bbolt sequence |
+| `record` `<depth>` `<key>` `<value>` | A key and value of the most recent bucket at that depth |
+
+Buckets are walked depth first in key order, one line per record, so the same store always exports to the same bytes and an unchanged store exports unchanged.
+Keys, values and names are written as their raw bytes when they are valid UTF-8 with no control characters and do not start with `base64:`, and otherwise as `base64:` and their standard base64; values are never decoded and re-encoded, so records written before a field existed, retired records and non-JSON `meta` values keep their bytes.
+Every bucket's sequence is recorded, because note ids `n<k>`, follow-up ids `f<k>` and the receipt sequence come from them: a store rebuilt without them would reuse ids.
+
+An export file over 32 MiB is split at line boundaries into `<file>.part-0001`, `<file>.part-0002` and so on, each at most 32 MiB unless one line alone is larger, with the format line only in the first part; a file that fits is written whole, never as one part.
+Only the `receipts` file, since receipts are never pruned, is expected to grow that large.
+
+`store import` creates only a fresh store: it refuses anything already at `<path>` with `ErrExists`, and creates the file exclusively.
+It reads the top-level files in name order, then `repositories/` in name order, each file's parts in order, writes every bucket, record and sequence in one transaction, and refuses an export whose `schema_version` is newer than this Guildhall supports with `ErrNewerSchema`.
+It ends with [`Doctor`](#guildhall-store-doctor) and fails on any problem; a failed import removes the file it created.
+So `export`, `import`, `export` gives byte-identical files, and the next note id and receipt sequence continue where the exported store left off.
+The repository holds the export of the schema 1 fixture (`internal/store/testdata/schema-v1.export/`), which the tests compare on Linux, Windows and macOS.

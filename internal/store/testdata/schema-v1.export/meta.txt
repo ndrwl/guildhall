@@ -1,0 +1,5 @@
+guildhall-store-export	1
+root
+bucket	1	meta	0
+record	1	format	guildhall-store
+record	1	schema_version	1

@@ -16,7 +16,7 @@ With a [copy](#copies), `--copy <dir> --repo <id>` replaces `--store`, `--config
 
 ## Copies
 
-A Director copy is one directory holding its [copy marker](#the-copy-marker) `.guildhall-copy`, `config.toml`, an optional `managed.toml`, `director.store` and `state/` ([the pin](releases.md#the-pin)), and, once a session has run, `director/session-<n>/` for each [Director session](director.md#start).
+A Director copy is one directory holding its [copy marker](#the-copy-marker) `.guildhall-copy`, `config.toml`, an optional `managed.toml`, `director.store` and `state/` ([the pin](releases.md#the-pin)), and, once a session has run, `director/session-<n>/` for each [Director session](director.md#start), and, with a [`[backup]` table](#backups), the backup repository `backup.git/`.
 Every command that takes a store (`task`, `step`, `decide`, `messages`, `workflow`, `director`, `spend`, `quality`, `version`, the owned `artisan` commands and `store init|doctor`) selects its copy with `--copy <dir>`, or, when that flag is absent, by **copy discovery** from the current directory.
 The copy defaults `--store` to `<dir>/director.store`, `--config` to `<dir>/config.toml` and `--state` to `<dir>/state`, for each of those flags the command takes; `workflow approve` takes the copy's config only with `--repo` and no `--file`.
 A [Steward copy](steward.md#the-steward-copy), one that holds `steward.store` and no `director.store`, defaults `--store` to its `steward.store` instead.
@@ -229,3 +229,77 @@ It exits 0 when the prune ran, a partial prune included, 1 when the config or st
 With [`prune_daily`](configuration.md#settings) `"true"`, the session supervisor runs the same prune, off its decision path, at session start when the copy's last prune, stamped in `<state>/prune-last.json`, was a day ago or more, and then once a day; its output goes to the supervisor's standard error.
 For a task whose worktree it leaves it sends the Director one unread `prune-workspace-kept` message per task, not one a day, which does not wake it.
 Claude Code's own transcripts, `director/session-<n>/` directories and caches outside the task directory are not pruned.
+
+## Backups
+
+A Director copy backs itself up, standalone or managed, with no Steward ([decision](decisions/director-backups.md)): it commits what it holds that exists nowhere else and pushes it, fast-forward only, to its own branch `<machine>/<director>` of one private repository, such as `ndrwl/guildhall-backups`.
+A lost machine then loses no records: a copy can be restored from any commit on its branch.
+
+### Setting up
+
+1. Create the private backup repository once, such as `ndrwl/guildhall-backups`.
+2. Add a branch ruleset on it targeting all branches that blocks force pushes and deletions. Guildhall never force-pushes and never deletes a branch, and the ruleset holds every other client to the same.
+3. Give each Director its own SSH deploy key with write access (a deploy key belongs to one repository, and one public key can be a deploy key only once), and an SSH host alias in `~/.ssh/config` naming that key, such as `Host guildhall-backup-main` with `HostName github.com`, `User git` and `IdentityFile ~/.ssh/guildhall-backup-main`. Keys are added by hand for now.
+4. Add the [`[backup]` table](configuration.md#the-backup-table) to the copy's `config.toml`, with `repo = "git@guildhall-backup-main:ndrwl/guildhall-backups.git"` and `branch = "<machine>/<director>"`, such as `andrew-lap-wsl/main`.
+5. Run `guildhall backup now` for the first push, then `guildhall backup status`.
+
+### What is backed up
+
+The backup tree mirrors the copy: it holds **every regular file in the copy, minus a fixed exclusion list**, so a new kind of copy file is backed up by default.
+
+| In the backup | Tree path |
+|---|---|
+| `director.store`, as its [text export](store.md#store-export-and-import), never the binary file | `store/` |
+| Every regular file under the copy: `.guildhall-copy`, `config.toml`, `managed.toml`, `workflows/`, `quality/`, `baseline/`, a config-relative role file, `state/documents/`, `director/` and the top-level `state/*.json` stamps | `copy/<relative path>` |
+| Every attempt directory and task file under `state/<repo>/<task>/`: results, outcomes, usage, `events.jsonl`, `launcher.log`, prompts and `model/` with the attempt's transcript files | `copy/state/<repo>/<task>/…` |
+| `* -text`, so git rewrites no line ending on any platform | `.gitattributes` |
+
+| Left out | Why |
+|---|---|
+| Worktrees, `state/<repo>/<task>/work/` | Their work is on forge branches |
+| CI log caches, `state/<repo>/<task>/ci-logs/` | A cache of forge data that [`ci log`](ci-logs.md) fetches again |
+| `director.store` itself, `backup.git/`, the `state/backup-last.json` stamp, `*.lock` files, anything named `.git`, symbolic links, sockets and other non-regular files | Exported instead, the backup itself, or not data |
+| Claude Code's session logs in its config directory (`~/.claude/projects`) | Outside the copy, large and growing daily, and may hold secrets from tool output; a restore does not need them |
+| The Steward's `steward.store`, `rollouts/` and config checkout | Not a Director's; a Steward backup is a follow-up |
+
+The tip of the branch mirrors the copy as it is now: a file [`guildhall prune`](#pruning) removes leaves the next commit's tree and stays in git history, which is the backup's retention.
+Nothing is encrypted, and the backup repository is never pruned.
+
+### One run
+
+A run, by the supervisor or `backup now`, takes the copy's backup lock (`backup.git/attempt.lock`; a second run of the same copy is refused while one runs) and, in order:
+
+1. Exports the store in one read-only transaction, waiting at most the copy's [`lock_wait`](configuration.md#settings) for a writer, so the export is one consistent snapshot and holds no writer off for longer.
+2. Checks every recorded document's file under `state/documents/` against its sha256. A missing or mismatched document fails the run with no commit, so a damaged document never replaces a good backup.
+3. Stages the copy's files, by the exclusion list, into a bare repository at `<copy>/backup.git`, outside `state/` and `director/`, through a private index (`backup.git/guildhall-index`) with `git update-index`, whose stat cache means an unchanged file is not read again; nothing is checked out. **The size guard** leaves out a copy file over 32 MiB, backs up everything else, and names the file in `backup status`, the supervisor's standard error and `director status`. Store export files over 32 MiB are [split into parts](store.md#store-export-and-import) instead, so no file nears GitHub's 50 MB warning or 100 MB limit.
+4. Adds the `.gitattributes`.
+5. Commits only when the tree differs from the last commit's, with a message naming the branch, the store's receipt sequence and the time, as `Guildhall backup <backup@guildhall.invalid>`; `git gc --auto` runs after a commit. A copy whose `backup.git` has no commit yet, such as a new machine's, first reads the branch from the backup repository and continues its history when it is there.
+6. Pushes `<commit>:refs/heads/<branch>`, with no `+`: a branch that does not fast-forward is refused by git and reported, never forced. A failed push keeps the commit, and the next run pushes it with every commit after it.
+
+Each run is recorded in `<state>/backup-last.json`, written atomically and never read as task state: the run's time and outcome, its error, the last commit and its receipt sequence, the last commit the backup repository accepted, and any files the size guard left out.
+
+### The supervisor's backups
+
+With a `[backup]` table, the [session supervisor](director.md#the-session-supervisor) backs the copy up at session start and then every `[backup] every`, default an hour, off its decision path and with no model spend, writing a `guildhall: backup:` line to its standard error for each commit, file left out and failure.
+Its push is bounded at 10 minutes; a push that times out keeps its commit for the next run.
+The session's end waits for a running backup.
+The table is read again at each reload.
+A store message names a task, and a backup belongs to none, so a failed last run, or a file left out, is a `backup` item in [`director status`](director.md#status) `needs_me`, with `guildhall backup status` as its command, until a run succeeds whole.
+Hourly backups run only while a session supervisor runs; a copy with no session gets none, though its store does not change then either, and `guildhall backup now` backs it up by hand.
+A copy with no `[backup]` table backs nothing up and has no `backup.git`.
+
+### Commands
+
+`guildhall backup now [--copy <dir>]` runs one backup in the foreground, with no push bound, and prints the branch, the new commit, or that nothing changed, and the last commit pushed; it exits 1 when the copy has no `[backup]` table or the run failed.
+
+`guildhall backup status [--copy <dir>]` prints the branch, the repository and `every`, then the last run's time and outcome, the last commit with its time and receipt sequence, the last push, the last error, each file the size guard left out, and the local `backup.git` size.
+
+`guildhall backup restore --copy <dir> [--repo <remote>] <branch|commit>` restores a copy into `<dir>`:
+
+- It refuses a `<dir>` whose `director.store` exists, naming the Director session when its newest session is not `stopped`; a restore never replaces a store.
+- `--repo` defaults to the `[backup] repo` of the copy found from the current directory, else of `<dir>`'s own `config.toml`.
+- It fetches the branch or full commit id into `<dir>/backup.git`, falling back to every branch for a commit the server will not serve by id, writes the commit's copy files into `<dir>`, all but the copy marker, rebuilds `director.store` with [`store import`](store.md#store-export-and-import), last, so a copy with a store is a finished restore, and gives `<dir>` a [copy marker](#the-copy-marker) of its own.
+- A restored branch becomes `<dir>`'s backup history, so a backup of `<dir>` to the same branch continues it.
+- The restored store holds the source's sessions as they were; the next `director start` recovers the newest one as it does after a crash ([start](director.md#start)).
+
+For example, `guildhall backup restore --copy /tmp/restored andrew-lap-wsl/main` and then `guildhall task list --copy /tmp/restored` lists the same tasks.

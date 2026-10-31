@@ -258,6 +258,13 @@ A sweep runs in the supervisor process, one at a time and off the decision path,
 Each attempt it leaves open is reported once with an unread `herdr-workspace-left-open` message that does not wake the Director; an unreachable Herdr writes one standard-error line and the next sweep tries again.
 `director start --tab`, the wrapper, does not sweep; the supervisor in its tab does.
 
+## Backups
+
+With a [`[backup]` table](configuration.md#the-backup-table), the session supervisor backs its copy up to the copy's branch of the backup repository ([backups](running.md#backups), [decision](decisions/director-backups.md)): once when each session starts, a reload's included, and then on the first tick at least `[backup] every`, default an hour, after the previous run started.
+A run is deterministic code in the supervisor process, one at a time and off the decision path, with no model spend; its push is bounded at 10 minutes, and the supervisor lets a running backup end before it records the session stopped.
+It writes a `guildhall: backup:` line to standard error for each commit, each file the size guard left out and each failure, and a failed last run is a `backup` item in the [status feed](#status)'s `needs_me` until a run succeeds.
+A copy with no table runs no backup; no Steward is involved.
+
 ## Dependencies
 
 A task the [dependency gate](interpreter.md#the-dependency-gate) holds, `next.json` `{"wait":"dependencies","step":"<step>"}`, is moved on by the session supervisor too.
@@ -671,7 +678,10 @@ The document has these sections:
   11. `dependencies`: an open task whose `next.json` says `"wait":"dependencies"`, with its held `step`, which the [dependency gate](interpreter.md#the-dependency-gate) holds until its dependencies merge and the supervisor's [dependency watcher](#dependencies) advances; `guildhall task start --repo <r> <t>`, or `--ignore-deps --reason <text>` added to start it anyway.
   12. `maintenance`: a due [note audit](#maintenance), then one item per repository, in id order, whose hallmark is due, with its `repository` and the `count` of merges since; after the `merge-queue` items, and before only `install`.
       It is the Director's but not urgent, so it does not wake the Director on [resume](#pause-and-resume) and does not hold back `director ready`.
-  13. `install`: last, after every other item, one item when the binary printing the feed is behind Guildhall's own repository's default branch, its `version` block's `behind_main` with a `count` above 0, with that `repository` and `count` and the reason `the installed guildhall (<first 8 of the revision>) is <n> merge[s] behind main[ (#<pr>, …)]; ask the Guildmaster to install`; `guildhall version`.
+  13. `backup`: one item when the copy's last [backup](running.md#backups) failed, its reason naming the branch, the run's time and the error, or when its size guard left files out, naming them; `guildhall backup status`.
+      It is read from the run's stamp, `<state>/backup-last.json`, since a backup belongs to no task and so cannot send a store message, and is gone once a run succeeds with nothing left out; a copy that never backed up has none.
+      It waits on the Director, so it counts on [resume](#pause-and-resume).
+  14. `install`: last, after every other item, one item when the binary printing the feed is behind Guildhall's own repository's default branch, its `version` block's `behind_main` with a `count` above 0, with that `repository` and `count` and the reason `the installed guildhall (<first 8 of the revision>) is <n> merge[s] behind main[ (#<pr>, …)]; ask the Guildmaster to install`; `guildhall version`.
       It is read from the default branch as last fetched, with no fetch, and is not stored, so it changes on every read and is gone once an installed binary is no longer behind; a binary with no revision, or a copy that lists no own repository, has none.
       The advance that leaves a task of Guildhall's own repository done with a merge fetches that branch first, bounded and ignoring failure, so the feed the `merged` message wakes the Director for counts it; a merge made by hand is counted once anything fetches the branch, as plain `guildhall version` does.
       It waits on the Guildmaster, so it neither counts nor wakes the Director on [resume](#pause-and-resume), and the supervisor's snapshot, which has no `version` block, leaves it out.
