@@ -2,7 +2,7 @@
 
 ## Contract
 
-The judge session of the [quality rubric](../quality.md#running-it) and its agreement with the Guildmaster's audit ([decision](../decisions/quality-judge.md)).
+The judge session of the [quality rubric](../quality.md#running-it) and its agreement with the Guildmaster's audit ([decision](../decisions/quality-rubric.md)).
 Its seams are `interp.Records` extended with `TaskHistory` and `LatestDirectorSession` for the store, `interp.Outbox` for Director messages, `Launcher`, which `launch.Process` implements with `LaunchFiles`, and `AgreementRecords` for the agreement reads.
 
 `ReadSelfReview` reads a `guildhall.self-review/1` document as the [self-review skill](../../skills/guildhall-self-review/SKILL.md) writes it, taking only its repository, task, number, head and the criteria whose `judge` is `pending`, each with its kind; it refuses another schema, a missing identity or number, and a head that is not an object id, with `ErrSelfReview`.

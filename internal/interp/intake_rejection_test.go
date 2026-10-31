@@ -185,7 +185,7 @@ func TestInvalidResultOutputs(t *testing.T) {
 	}
 }
 
-// D3: a review result says succeeded with outputs [], and the launcher has
+// The dogfood intake regression: a review result says succeeded with outputs [], and the launcher has
 // already finished the attempt successfully before intake can validate it.
 func TestRejectedLauncherSuccess(t *testing.T) {
 	for _, b := range backends {

@@ -257,7 +257,7 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 		}
 		inFlight = append(inFlight, fmt.Sprintf("%s: %s; run `%s`", it.Kind, oneLine(it.Reason), it.Command))
 	}
-	// Parked attempts come from the same status read, so what a session is told cannot drift from the feed (D71).
+	// Parked attempts come from the same status read, so what a session is told cannot drift from the feed (docs/decisions/director-start.md).
 	var parked, held []string
 	for _, p := range status.Parked {
 		line := fmt.Sprintf("parked: attempt %d of %s of %s/%s %s; reason: %s; retry with `%s`",
@@ -284,7 +284,7 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 		}
 		running = append(running, fmt.Sprintf("%s; %s; check with `%s`", line, oneLine(r.Reason), r.Command))
 	}
-	// Every live note goes to the new session; the old handoff note is not shown (D94).
+	// Every live note goes to the new session; the old handoff note is not shown (docs/decisions/director-reload-and-notes.md).
 	type startupNotes struct {
 		lines []string
 		bytes int

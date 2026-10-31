@@ -34,7 +34,7 @@ var ErrNewerSchema = strictjson.ErrNewerSchema
 
 var idPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 
-// JudgeStep is the step of a delivered task's judge attempts (docs/decisions/quality-judge.md): Validate refuses it as a
+// JudgeStep is the step of a delivered task's judge attempts (docs/decisions/quality-rubric.md): Validate refuses it as a
 // workflow step id, so it is never one of a workflow's steps.
 const JudgeStep = "quality-judge"
 

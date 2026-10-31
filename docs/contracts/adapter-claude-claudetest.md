@@ -19,4 +19,4 @@ Whatever it plays, except a hang, it prints `Output` as it exits: a Claude Code 
 
 It is test support exercised by the Claude adapter's conformance runs.
 The adapter's `TestSessionStubRequiresMessageSeparator` starts the stub directly as a real subprocess with and without `--model`: the delimited message is accepted and the old unseparated shape exits 2 naming `--`.
-All four cases failed before the stub was tightened and pass afterward ([decision and evidence](../decisions/director-startup-admission.md)).
+All four cases failed before the stub was tightened and pass afterward ([decision and evidence](../decisions/director-start.md)).

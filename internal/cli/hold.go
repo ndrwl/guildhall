@@ -21,7 +21,7 @@ import (
 )
 
 // Holds are Director records kept until named tasks merge: a park with --until-merged, a decision deferral and a
-// follow-up (docs/decisions/0096-hold-until-merged.md). Status derives each one's release from the task states it
+// follow-up (docs/decisions/hold-until-merged.md). Status derives each one's release from the task states it
 // reads; the session supervisor's holds watcher wakes the Director once for each release.
 
 // untilMerged collects repeated --until-merged flags in the order given.
@@ -162,7 +162,7 @@ func holdsRound(path, state string, wake func(id string) error, logf func(format
 }
 
 // watchHolds is session n's holds watcher: a fifth checks watcher, on the same interval, that wakes the Director
-// once for each hold released since (docs/decisions/0096-hold-until-merged.md); it logs to holds.log in dir. Like
+// once for each hold released since (docs/decisions/hold-until-merged.md); it logs to holds.log in dir. Like
 // the others it runs only while the session is running or recovering.
 func (a *App) watchHolds(p startPlan, dir, copyDir, storePath, state string) (*checksWatch, error) {
 	w, _, err := a.watcher(p, dir, copyDir, storePath, state, holdsLog)

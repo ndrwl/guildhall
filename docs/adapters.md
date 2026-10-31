@@ -66,7 +66,7 @@ This is attempt-local cancellation evidence, not task completion or a separate t
 
 ## Usage file
 
-An adapter that can report what an attempt spent writes a usage file, `usage.json`, beside the result file, before it publishes any result ([decision](decisions/0079-attempt-spend.md)):
+An adapter that can report what an attempt spent writes a usage file, `usage.json`, beside the result file, before it publishes any result ([decision](decisions/attempt-spend.md)):
 
 ```json
 {
@@ -200,7 +200,7 @@ The same adapter runs the [Director's session](director.md#start) interactively;
 ### Artisan permissions
 
 The default workflow's build stage asks its Artisan to run the repository's checks and commit its work ([`build.md`](../baseline/stages/build.md)), and both are shell commands, which the wrapper's `acceptEdits` does not allow.
-Each Director grants them itself, per profile, through its own copy's `config.toml` ([D89](decisions/0089-artisan-allow-rules.md), [D93](decisions/0093-shipped-default-grants.md)): Claude Code permission rules the stage's session is given beyond `acceptEdits`, through the wrapper's `--copy` / `--profile` / `--repo` reference and settings file above.
+Each Director grants them itself, per profile, through its own copy's `config.toml` ([D89](decisions/task-grants.md), [D93](decisions/task-grants.md)): Claude Code permission rules the stage's session is given beyond `acceptEdits`, through the wrapper's `--copy` / `--profile` / `--repo` reference and settings file above.
 Raw rule flags are not accepted; a profile the copy neither declares nor gets [shipped](configuration.md#profiles) is refused.
 Without both copy and profile, the wrapper grants nothing.
 The session's **effective grant** is, in order and with a repeated rule kept once:

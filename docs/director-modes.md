@@ -2,7 +2,7 @@
 
 Everything on this page is designed, not built, except where [what already holds](#what-already-holds) says otherwise.
 No command, config key or store record it names exists yet; later slices build each contract red-first, as [contracts](contracts.md#method) describes.
-The decision is recorded in [optional Steward](decisions/0050-optional-steward.md).
+The decision is recorded in [optional Steward](decisions/optional-steward.md).
 
 A Director runs in one of two modes:
 
@@ -20,7 +20,7 @@ On `main` today:
 - `config.Load` falls back to `config.Parse` when no sibling `managed.toml` exists, so a copy with only `config.toml` loads ([configuration](configuration.md)).
 - Repositories, their paths, owner machine, merge requirements and workflow, and the Artisan profiles are all in `config.toml`, so a standalone copy already holds its own guard rails for repositories and merging.
 - `Config.Setting` gives a local value only where the managed key allows it, and a local value for a non-overridable managed key is refused, so managed keys win.
-- Rollouts write only `managed.toml` and never `config.toml` (D14), and refuse a copy whose repositories differ from the roster.
+- Rollouts write only `managed.toml` and never `config.toml` ([managed publication](decisions/managed-publication-separate-from-director-config.md)), and refuse a copy whose repositories differ from the roster.
 - `guildhall task new` loads the combined config and binds its digest to the task, so a changed managed revision reaches new tasks only (R1.62).
 
 ## What is missing
@@ -143,4 +143,4 @@ These are flagged rather than chosen silently:
 - **R1.39** and **R1.40** let the Herdr setup helper touch only machines enrolled by the Steward; a standalone Director's machine would need its own entry.
 - **R1.32** has the Steward draft every lesson; a standalone lesson is adopted without one.
 
-The [optional Steward decision](decisions/0050-optional-steward.md) supersedes D12's no-remote-command restriction for `config reload`.
+The [optional Steward decision](decisions/optional-steward.md) amends the [scp rollouts](decisions/steward-rollouts-copy-with-scp.md) no-remote-command restriction for `config reload`.

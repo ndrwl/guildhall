@@ -212,7 +212,7 @@ The store has one writer at a time; each command holds it only for its own opera
 
 ## Inspection
 
-The Director inspects a task through read-only commands rather than by opening worker files (D24).
+The Director inspects a task through read-only commands rather than by opening worker files ([inspection reads](decisions/inspection-reads-from-store-receipts.md)).
 `timeline` and `files` read only the store: one read transaction, with the store opened read-only, so they never write, never create a store, and wait for the writer's lock like any other read.
 Each prints one JSON document whose `as_of` label says exactly what it describes:
 

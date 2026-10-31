@@ -1,6 +1,6 @@
 # Review standard
 
-Every pull request is reviewed against this standard, the requirements in `docs/requirements.md`, the decisions in `docs/decisions.md` and `CONTRIBUTING.md`.
+Every pull request is reviewed against this standard, the requirements in `docs/requirements.md`, the live decision records indexed in `docs/decisions.md` and `CONTRIBUTING.md`.
 Human and automated reviewers apply the same rules.
 For an interpreter code-review attempt, follow the [review skill's range and round rules](../skills/guildhall-review/SKILL.md#what-you-review).
 
@@ -11,7 +11,7 @@ The [quality rubric](quality.md) is the scored and trend layer above these rules
 Each finding names the file and line, the rule it breaks (a requirement id such as `R1.27` or a rule id below such as `S4`), and a concrete failure: the input or state and the wrong result.
 A finding without a cited rule is a suggestion: list it in an approved outcome.
 The verdict is approved, changes requested or rejected, and applies to the exact head commit reviewed.
-Changes requested always sends the work back, whatever its findings cite ([decision](decisions/review-verdict-routes.md)).
+Changes requested always sends the work back, whatever its findings cite ([decision](decisions/review-outcome-2.md)).
 
 ## Rules
 
@@ -35,14 +35,15 @@ Changes requested always sends the work back, whatever its findings cite ([decis
   No generic frameworks, plugin registries, event buses or always-on services beyond what a requirement needs (R1.29); concrete types come before abstractions.
 - **S7 Dependencies.**
   The standard library comes first.
-  Each new third-party module, CI action or tool version is recorded with its reason in a decision under `docs/decisions/`.
+  Each new third-party module, CI action or tool version is recorded with its reason in a decision record under `docs/decisions/`, in [the template](decisions.md#body).
 - **S8 Custody.**
   Code never deletes unlanded work (R1.18) and never closes or stops Herdr tabs, workspaces or sessions it did not create (R1.54).
 - **S9 Release integrity.**
   Workflows hold least-privilege permissions; only a pushed version tag publishes a release; every release artifact is listed in `SHA256SUMS`.
 - **S10 Documentation.**
   Markdown has one sentence per line.
-  Engineering decisions are recorded under `docs/decisions/` by the pull request that makes them, and user-visible commands are described in the README.
+  Each engineering decision that meets [the bar](decisions.md#the-bar) is recorded under `docs/decisions/` by the pull request that makes it, in [the template](decisions.md#body), and a record it supersedes or amends is marked in the same change.
+  User-visible commands are described in the README.
 - **S11 Contracts.**
   New or changed behaviour at a module, process, operating-system, shell or terminal boundary states its contract first and follows `docs/contracts.md`.
   A test double that replaces a real boundary passes the same contract test as the real implementation.

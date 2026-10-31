@@ -12,7 +12,7 @@ import (
 var artisanReadOnlyGit = []string{"Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git rev-list:*)", "Bash(git merge-base:*)", "Bash(git ls-files:*)"}
 
 // ShippedDefaultGrants are the allowed_tools this release gives a claude profile with a well-known name that sets
-// none (docs/decisions/0093-shipped-default-grants.md): read-only git for each, the git a build needs to commit and
+// none (docs/decisions/task-grants.md): read-only git for each, the git a build needs to commit and
 // rebase for builder, the same without git switch for rebaser, guildhall review check for reviewer, so it can check
 // its outcome as intake will before it finishes, and web search and fetch for researcher; planner and designer get
 // read-only git alone. They grant neither git checkout nor git push, nor any toolchain command; a repository grant

@@ -15,7 +15,7 @@ import (
 var bucketFollowUps = []byte("follow-ups")
 
 // FollowUp is something the Director means to do once named tasks merge, with no attempt or decision to hold yet
-// (docs/decisions/0096-hold-until-merged.md). It is a hold: status lists it as held while it waits and as a
+// (docs/decisions/hold-until-merged.md). It is a hold: status lists it as held while it waits and as a
 // follow-up item in needs_me once released, until it is done. A done follow-up stays, with Done set.
 type FollowUp struct {
 	// ID is "f<k>", k from the follow-ups bucket's own sequence.

@@ -1,5 +1,5 @@
 // Package quality runs the judge session of the quality rubric for a delivered task and measures its agreement with
-// the Guildmaster's audit (docs/quality.md#running-it, docs/decisions/quality-judge.md); docs/contracts/quality.md
+// the Guildmaster's audit (docs/quality.md#running-it, docs/decisions/quality-rubric.md); docs/contracts/quality.md
 // owns its contract.
 package quality
 

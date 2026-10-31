@@ -148,7 +148,7 @@ type ReviewOutcome struct {
 }
 
 // Blocking reports whether the outcome holds the task back: its verdict is changes_requested, whatever
-// its findings cite (docs/decisions/review-verdict-routes.md), so a /1 changes_requested verdict whose
+// its findings cite (docs/decisions/review-outcome-2.md), so a /1 changes_requested verdict whose
 // findings all became suggestions still blocks. A reviewer with suggestions only records approved and
 // lists them. A rejected verdict is not a request for changes and is not Blocking.
 func (o ReviewOutcome) Blocking() bool {

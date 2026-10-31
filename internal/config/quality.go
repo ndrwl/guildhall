@@ -15,7 +15,7 @@ import (
 // docs/quality.md on or off and size them. They are settings read through Setting, so a Steward's managed value is
 // read-only to the Director and a standalone copy sets them under [local]. Every practice is optional.
 // The self-review switch and the size budget are read by the guildhall-self-review skill through director status,
-// and the judge settings by the judge session through Judge (docs/decisions/quality-judge.md); the reference-run and
+// and the judge settings by the judge session through Judge (docs/decisions/quality-rubric.md); the reference-run and
 // skill-edit settings are parsed and validated for later work, and the deprecated audit sample is parsed and validated
 // but read by nothing.
 const (
@@ -244,7 +244,7 @@ func parseCount(key, v string) (int, error) {
 
 var ErrNoJudge = errors.New("no judge profile is left")
 
-// JudgeChoice is who judges a delivered task's self-review (docs/decisions/quality-judge.md).
+// JudgeChoice is who judges a delivered task's self-review (docs/decisions/quality-rubric.md).
 type JudgeChoice struct {
 	Profile string `json:"profile,omitempty"`
 	// Adapter is the judge's runtime adapter, which is its family.

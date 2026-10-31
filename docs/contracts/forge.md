@@ -3,7 +3,7 @@
 ## Contract
 
 The boundary to the host of a repository's pull requests, called by the interpreter's [publish and deliver](../interpreter.md#publish-and-deliver) and [validate](../interpreter.md#validate) through its `interp.Forge` seam.
-Guildhall prescribes only the edges: it pushes only a task branch, never the base; it merges only the head its merge decision or recorded merge authorization (`deliver-<k>-authorized`) is bound to, with a squash merge; and it never bypasses the forge's branch protection, required checks or review rules ([decision](../decisions/0060-delivery-stage.md), [merge requirements](../decisions/merge-requires.md)).
+Guildhall prescribes only the edges: it pushes only a task branch, never the base; it merges only the head its merge decision or recorded merge authorization (`deliver-<k>-authorized`) is bound to, with a squash merge; and it never bypasses the forge's branch protection, required checks or review rules ([decision](../decisions/delivery-stage.md)).
 Credentials stay in the forge program's own sign-in store: nothing here reads, stores or passes one (R1.10, R1.28).
 
 `Publish(ctx, Change)` pushes `Change.Head` to `refs/heads/<Change.Branch>` on `Change.Remote`, replacing whatever that task branch held, and returns the branch's open pull request, opening one against the remote's default branch when none is open.
@@ -23,7 +23,7 @@ A pull request already merged at that head is returned as it is, so repeating a 
 A forge refusal (required checks, protection, a branch behind its base, a pull request no longer at the head), a closed pull request, one merged at another head, or one not merged after the forge answered, is `ErrRefused` with the forge's reason in the error text; nothing was merged.
 A merge the forge fails is checked by viewing the pull request again: merged at the head, it is returned; still open, closed or at another head, the failure is the forge's refusal, `ErrRefused` with its reason.
 A malformed merge is `ErrInvalid`; a failure that leaves the forge's answer unknown, such as a missing program, a failed sign-in, or a view that fails after the merge failed, is returned as a plain error and is not `ErrRefused`.
-`Checks(ctx, Commit)` returns every check and commit status the forge reports for `Commit.Head`, sorted by name, URL and then id, each `pending`, `passed` or `failed` with its details URL when the forge gives one and `ID`, the forge's id of that run of the check, which a re-run replaces ([decision](../decisions/0066-validate-stage.md)); `forge.GitHub` reports a check run's or commit status's GraphQL node id.
+`Checks(ctx, Commit)` returns every check and commit status the forge reports for `Commit.Head`, sorted by name, URL and then id, each `pending`, `passed` or `failed` with its details URL when the forge gives one and `ID`, the forge's id of that run of the check, which a re-run replaces ([decision](../decisions/delivery-stage.md)); `forge.GitHub` reports a check run's or commit status's GraphQL node id.
 It reads the checks of that commit, not of whatever a pull request is at now, so a later push cannot answer for an earlier head.
 No checks is an empty list.
 A malformed commit is `ErrInvalid`; a head the remote does not hold is `ErrUnknownHead`.
@@ -78,7 +78,7 @@ These forge tests were added after implementation as integration evidence, not c
 `forge_test.go` runs the suite against `Fake` and against `GitHub` with real git pushing to a local bare repository, which the test's own git configuration maps to `https://github.com/acme/widgets.git` with `insteadOf`, and the test binary acting as gh over a state file, reading branch heads from the bare repository; the fake gh refuses any command or flag it does not know, so a change in what `GitHub` asks for fails.
 `TestGHCommandShapes` exercises each gh call shape and rejects unsupported flags, missing flag values and extra positional arguments before the stand-in can mutate state.
 The strict stand-in reproduced `repo view --repo` through `TestGitHubArguments` before the positional-argument fix ([red run](../evidence/forge-gh-syntax-2026-10-26-red.txt), [green run](../evidence/forge-gh-syntax-2026-10-26-green.txt)); the new command-shape and installed-help tests passed on their first run.
-The audit and its limits are recorded in the [command-syntax decision](../decisions/forge-gh-command-syntax.md).
+The audit and its limits are recorded under [command syntax audit](#command-syntax-audit) below.
 `TestInstalledGHFlags` additionally checks those flags, and `TestGitHubArguments` checks its recorded calls, against an installed gh with `--help`, without credentials or network; this checks flag parsing, not positional arity or server semantics.
 The installed-gh checks skip when gh is not on `PATH`; the stand-in checks still run.
 `TestGitHubArguments` pins the repository arguments described above, the checks query's `--hostname github.com`, owner, name and head, `--head`, `--title` and `--body` on create, the number, `--title` and `--body` on edit, `--squash` and `--match-head-commit <head>` on merge, and the absence of `--admin`, `--auto` and `--base`.
@@ -99,3 +99,12 @@ The redirect itself is gh's: its `api` command follows the endpoint's 302 to the
 It was confirmed against a live failed job on 2026-10-30 ([evidence](../evidence/failed-job-logs-redirect-2026-10-30.txt)): with `--allow-escape-sequences` gh printed the plain-text log, a byte order mark first, CRLF line ends and timestamped `##[group]Run` and `##[error]` lines, and exited 0; without the flag it refused the log's escape sequences and exited 1.
 gh's message for a log past retention was not gathered there; the 404 and 410 cases rest on gh's usual `(HTTP <code>)` error form.
 The checks cases, `TestGitHubCheckStates` and the checks call in `TestGitHubArguments` were written red first against `Checks` stubs returning no checks and no error ([red run](../evidence/validate-stage-2026-10-22-red.txt)); the no-checks case passed against the stubs and pins rather than proves the empty answer.
+
+### Command syntax audit
+
+A publish failure on 2026-10-26 exposed a false assumption in both `GitHub` and its stand-in: `gh repo view` does not take the `--repo` flag the pull-request commands accept.
+The default-branch lookup now names `github.com/<owner>/<repo>` positionally; an offline probe against gh 2.102.0 confirmed that this form resolves the expected owner and repository on api.github.com, so no `GH_HOST` override or change of repository identity is needed.
+The gh stand-in therefore validates the supported command-specific subset before executing any operation, refusing unsupported flags, missing flag values and wrong positional counts, the original `repo view --repo` call included, while the real-git integration tests stay.
+The audit covered `repo view`, `pr list`, `pr create`, `pr view`, `pr merge`, `api graphql`, `git cat-file -e` and the task-branch push refspec, and installed help confirmed the other emitted flags, including `--squash`, `--match-head-commit`, `--hostname` and `-f`; no production caller then ran `gh pr edit`, and `internal/forge/github.go` is the only production gh process boundary.
+The installed-help checks are credential-free and network-free, but help validates neither positional arity nor GitHub's server behaviour, so these tests are not a live GitHub integration run.
+They retrofit an existing boundary and are not evidence that the original implementation was developed against real gh.

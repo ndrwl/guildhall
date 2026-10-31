@@ -25,7 +25,7 @@ const (
 )
 
 // HandoffNote is one retired handoff note a Director recorded for its next session before notes replaced them
-// (docs/decisions/0094-director-notes.md). Nothing writes or shows them any more; stores keep them and
+// (docs/decisions/director-reload-and-notes.md). Nothing writes or shows them any more; stores keep them and
 // `store doctor` still decodes them (docs/store.md#handoff-notes).
 type HandoffNote struct {
 	// Session is the number of the session that recorded the note.

@@ -1,6 +1,6 @@
 Contract-first evidence for Director-owned PR conflict recovery (2026-10-26)
 
-The behavioural contract was recorded in docs/decisions/pr-conflict-director-control.md before implementation.
+The behavioural contract was recorded in a decision record before implementation; that record is now part of docs/decisions/merge-queue-rebase.md.
 The initial interpreter tests were added before the new API or implementation.
 Their first run failed at compilation, not at a behavioural assertion:
 

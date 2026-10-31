@@ -56,4 +56,16 @@ Do not hide a budget in a helper to evade it.
 ## Ownership regressions
 
 See [Artisan commands](artisan.md#commands) for the owned result-timeout lifecycle, the [launch contract](contracts/launch.md) for ownership-wait cancellation, and the [store containment record](store.md#containment-record) for pre-start recovery evidence.
-The [decision](decisions/ci-timing-flakes.md) records the rationale; [regression evidence](evidence/ci-timing-flakes-2026-10-26.md) captures the failures and subsequent runs.
+The [decision](decisions/artisan-timeout-and-not-started-evidence.md) records the rationale; [regression evidence](evidence/ci-timing-flakes-2026-10-26.md) captures the failures and subsequent runs.
+
+## Preflight lock wait
+
+The [CLI test contract](contracts/cli.md#tests) owns `TestAdvancePreflightLockWait`'s required refusal and timing budget.
+An advance must first acquire its task lock, whose deadline includes opening `attempt.lock` and scheduling its initial nonblocking acquisition.
+Delaying that OS open by two seconds deterministically reproduces the reported task-lock deadline with the original one-second configuration, without another task-lock holder or a duplicate acquisition by retry.
+This establishes a sufficient trigger for the symptom, not proof of which operation stalled on the Windows runner.
+
+The test's configured wait is increased in this test only, leaving headroom for uncontended task-lock acquisition while keeping the refusal ceiling below the default store wait.
+Production locking order and cancellation behaviour are unchanged: an expired acquisition context is a legitimate refusal.
+The real store and task-lock integration boundaries are kept rather than replacing either with a fake or accepting either error indiscriminately.
+The deterministic delayed-open reproduction is a local Linux diagnostic; native filesystem behaviour continues to run in the three-OS CI matrix.

@@ -56,7 +56,7 @@ The existing commands cited are shorthand; invocation must retain the selected c
 - **Evidence:** `internal/interp/engine.go:251-260,728-742,771-774`; `internal/interp/head.go:15-29`; `internal/git/head.go` implements the clean-head check; `internal/interp/engine.go:365` refuses retry of success.
 - **Director needs:** distinguish already-repaired omission from dirty/unborn/unreadable repository errors, show dirty paths and the recorded head if any, and send a repair Artisan without forging a failed result.
 - **Small fix:** expose incomplete-intake status and the exact Git evidence, with a safe repair/new-attempt route that preserves the succeeded result and retries intake only after resolving the underlying problem.
-- **Existing evidence:** [build-head decision](../decisions/build-head-output.md) and its linked tests; do not file the old omission as still unfixed.
+- **Existing evidence:** [build-head decision](../decisions/engine-advance.md) and its linked tests; do not file the old omission as still unfixed.
 
 ### A06 — Missing/malformed review output: retry works now, recovery guidance is incomplete
 
@@ -71,7 +71,7 @@ The existing commands cited are shorthand; invocation must retain the selected c
 - **Current:** empty `standards_revision` is now valid when unconfigured and must match the binding exactly; invented nonempty values and whitespace-only values do not satisfy that contract, while a human review accepted under an older standards revision cannot satisfy the current delivery gate and the engine does not automatically reopen it solely for changed standards.
 - **Evidence:** `internal/workflow/review.go:51-54,190-198,205-229`; `internal/interp/engine.go:863-898`; `internal/interp/loops.go:512-548`.
 - **Director needs:** expected and actual subject/spec/standards bindings, plus a fresh review request that actually schedules or reopens the applicable review, not advice to invent a standards revision.
-- **Small fix:** expose the binding delta and add explicit review renewal for stale human evidence; keep exact matching and the [unconfigured-revisions decision](../decisions/unconfigured-review-revisions.md).
+- **Small fix:** expose the binding delta and add explicit review renewal for stale human evidence; keep exact matching and the [unconfigured-revisions decision](../decisions/review-skill.md).
 
 ### A08 — Forge refuses a merge; retry cannot repair its cause
 

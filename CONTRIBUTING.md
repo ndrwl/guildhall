@@ -7,9 +7,9 @@ Evidence a contract page must cite, such as a post-implementation failure check'
 Write Markdown with one sentence per line.
 Do not add co-author trailers to commit messages.
 Pull requests are reviewed against `docs/review.md` and the requirements in `docs/requirements.md`.
-Record each engineering decision in its own new file, `docs/decisions/<branch-or-topic-slug>.md`, in the pull request that makes it.
-Do not number it or edit the `docs/decisions.md` index: decisions are numbered and indexed by a refresh after merge, so parallel pull requests cannot collide on a number.
-The refresh numbers every unnumbered record after each sustainability review, in that review's follow-up batch: in the lane that carries its docs-truth finding, or in the batch's docs lane when the review raised none.
+Record each engineering decision that meets [the bar](docs/decisions.md#the-bar) in its own new file, `docs/decisions/<slug>.md`, in the pull request that makes it, with the header and template [the convention](docs/decisions.md#convention) describes.
+A record keeps its slug name for life and gets no number; mark any record it supersedes or amends in the same pull request.
+Then regenerate the index with `go test ./internal/doccheck -run TestDecisionIndex -update`, which is also how to resolve a conflict in it.
 Record a package's contract and tests in its own `docs/contracts/<package>.md`.
 Describe a new command in its own `docs/` page and add at most one line for it to the README command list.
 
@@ -34,8 +34,8 @@ go test -race ./...
 python3 .github/tests/test_release.py
 ```
 
-`go test -race` needs cgo and a C compiler; the release test needs PyYAML 6.0.1 ([D7](docs/decisions/0007-release-policy-regression-test.md)).
+`go test -race` needs cgo and a C compiler; the release test needs PyYAML 6.0.1 ([D7](docs/decisions/release-policy-regression-test.md)).
 
 `gofmt -l .` must print nothing.
-Use the golangci-lint version pinned in `.github/workflows/ci.yml`; the lint policy is recorded in [D4](docs/decisions/0004-ci-matrix-and-lint.md).
+Use the golangci-lint version pinned in `.github/workflows/ci.yml`; the lint policy is recorded in [D4](docs/decisions/ci-matrix-and-lint.md).
 Actions in `.github/workflows` are pinned by commit SHA with the tag as a comment ([CI action pins and race](docs/decisions/ci-action-pins-and-race.md)).

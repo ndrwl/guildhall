@@ -36,7 +36,7 @@ All citations below were checked against `7d99b2ad`.
   - `TestGitHubArguments` is documented at `internal/forge/forge_test.go:207-208`. It fails on any call containing `--admin`, `--auto` or `--base` (line 243).
   - The strict gh stand-in refuses a merge with `--admin` or `--auto` with exit 2 (`internal/forge/gh_syntax_test.go:99-104`).
   - The contract records the pin (`docs/contracts/forge.md:62`).
-  - D60 says the same: "never uses `--admin` or `--auto`" (`docs/decisions/0060-delivery-stage.md:11`).
+  - D60 says the same: "never uses `--admin` or `--auto`" (`docs/decisions/delivery-stage.md:11`).
 
 ### Synchronous `run.merge`, with no "queued" state
 
@@ -61,10 +61,10 @@ Deliver reaches `run.merge` in one of two ways:
 - Validate calls it before reading checks (`internal/interp/validate.go:129-138`). Deliver calls it again before merging (`internal/interp/deliver.go:214-217`).
 - "Behind" only appears when `main` requires branches to be up to date ("strict" protection). That is the case d23 targets.
 - Validate reads checks for one commit, the reviewed head (`internal/interp/validate.go:139`; query at `internal/forge/github.go:143-162`, function at line 228).
-- `docs/decisions/merge-requires.md` leaves out two options on purpose:
+- `docs/decisions/delivery-stage.md` leaves out two options on purpose:
   - a head option: "the delivered head is always the reviewed head, and a rebase gets a new review round" (line 38)
   - a merge method option: "squash stays fixed" (line 40)
-- D42 gives a rebased range a narrowed review only when `range-diff` proves a pure rebase. A base change to a file the task touches gets a full review (`docs/decisions/0042-rebase-classification.md:4-5`).
+- D42 gives a rebased range a narrowed review only when `range-diff` proves a pure rebase. A base change to a file the task touches gets a full review (`docs/decisions/rebase-classification.md:4-5`).
 
 ### CI
 
@@ -130,7 +130,7 @@ Reading the table:
 
 The reasoning:
 
-- **What the rule binds today.** Guildhall binds a merge to the PR's head (`--match-head-commit`, `internal/forge/github.go:121`), not to the commit that lands on `main`. `merge-requires.md:38` ("the delivered head is always the reviewed head") is a rule about the head. A queue does not change the PR's head (claim 3.5, unconfirmed), so the rule still holds under a queue.
+- **What the rule binds today.** Guildhall binds a merge to the PR's head (`--match-head-commit`, `internal/forge/github.go:121`), not to the commit that lands on `main`. The merge requirements decision, now in [delivery-stage.md](../decisions/delivery-stage.md), ("the delivered head is always the reviewed head") is a rule about the head. A queue does not change the PR's head (claim 3.5, unconfirmed), so the rule still holds under a queue.
 - **What lands today without strict protection.** A squash merge lands the reviewed changes on whatever `main` has become. That tree was never reviewed as a whole and **never tested**. So today's flow can already land an untested combination.
 - **What lands with strict protection, with or without d23.** The landed tree is a rebased head. It was re-reviewed, but the review is only narrowed when range-diff proves a pure rebase (D42). It was also tested as landed.
 - **What lands with a queue.** The landed tree is the reviewed head stacked on the PRs ahead of it. Guildhall never reviewed that tree, but CI tested it as landed. Compared with no strict protection, that is strictly better: the same review binding, plus testing. Compared with strict protection plus d23, it trades a narrowed review of the rebase for a CI test of the combination. A narrowed review of a pure rebase does not examine the interaction with the new base anyway, so little review is lost.
@@ -160,9 +160,9 @@ The code, contract, test and CI changes a real adoption needs (research notes §
   - `internal/forge/gh_syntax_test.go:99-104`
   - `docs/contracts/forge.md:62`
   - the package doc and the merge comment (`internal/forge/forge.go:5-9`, `internal/forge/github.go:94-95`)
-  - D60's "never uses `--admin` or `--auto`" (`docs/decisions/0060-delivery-stage.md:11`)
+  - D60's "never uses `--admin` or `--auto`" (`docs/decisions/delivery-stage.md:11`)
   - a new decision recording the change
-- **Merge method.** The queue's method must be squash, to keep the history D60 fixes. Guildhall has no merge-method option by design (`docs/decisions/merge-requires.md:40`), so it would have to check or document the queue's setting instead.
+- **Merge method.** The queue's method must be squash, to keep the history D60 fixes. Guildhall has no merge-method option by design (`docs/decisions/delivery-stage.md:40`), so it would have to check or document the queue's setting instead.
 - **CI.** Add `merge_group` to `.github/workflows/ci.yml:3-7`. Check that the concurrency key (lines 12-14) does not cancel one queue run with another. Each queue entry costs a full 3-OS run.
 - **Repository.** An organization owner, if claim 3.1 holds. A trial needs a throwaway organization repository, or is recorded as "needs a live trial". The live repository stays unchanged.
 

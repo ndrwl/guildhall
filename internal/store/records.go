@@ -686,7 +686,7 @@ func getTask(tx *bolt.Tx, repository, taskID string) (Task, error) {
 }
 
 // attemptTask returns the task an attempt of step starts on: an open task, or a done one for the judge step
-// (docs/decisions/quality-judge.md).
+// (docs/decisions/quality-rubric.md).
 func attemptTask(tx *bolt.Tx, repository, taskID, step string) (Task, error) {
 	if step != workflow.JudgeStep {
 		return openTask(tx, repository, taskID)

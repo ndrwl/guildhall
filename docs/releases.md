@@ -2,7 +2,7 @@
 
 Everything on this page is designed, not built, except the copy and its selection, which [copies](running.md#copies) describes as built.
 No other command, config key, file or store record it names exists yet; later slices build each contract red-first, as [contracts](contracts.md#method) describes.
-The decision is recorded in [release upgrades](decisions/0051-release-upgrades.md).
+The decision is recorded in [release upgrades](decisions/release-upgrades.md).
 It implements R1.31: a release pin, side-by-side installs, new tasks only, and rollback.
 
 The same rules as [standalone and managed Directors](director-modes.md) apply:
@@ -15,8 +15,8 @@ The same rules as [standalone and managed Directors](director-modes.md) apply:
 
 On `main` today:
 
-- A release is one binary per platform, named `guildhall_<os>_<arch>` and listed in `SHA256SUMS` (D5), with its skills embedded (D30).
-- Rollouts copy `managed.toml` with `scp` and keep every previous revision (D12, D14).
+- A release is one binary per platform, named `guildhall_<os>_<arch>` and listed in `SHA256SUMS` ([release builds](decisions/release-builds.md)), with its skills embedded ([release skills root](decisions/release-skills-root.md)).
+- Rollouts copy `managed.toml` with `scp` and keep every previous revision ([scp rollouts](decisions/steward-rollouts-copy-with-scp.md), [managed publication](decisions/managed-publication-separate-from-director-config.md)).
 - `guildhall task new` binds the configuration digest to the task, so a new managed revision reaches new tasks only (R1.62).
 
 Nothing records which release a task runs, and a machine has exactly one `guildhall` on `PATH`.
@@ -105,7 +105,7 @@ A task whose recorded release is missing or damaged refuses to advance and raise
 
 The Steward never tells the Director by message; it acts by command, in order:
 
-1. `scp` the new binary into `.incoming/<version>/` and the new `managed.toml` (D12);
+1. `scp` the new binary into `.incoming/<version>/` and the new `managed.toml` ([scp rollouts](decisions/steward-rollouts-copy-with-scp.md));
 2. `guildhall config reload --copy <dir>` over SSH, using recovery dispatch if the pin is absent or its executable is missing or damaged, which authorizes the revision, verifies an already installed target or runs `release install` from `.incoming/` against `release_sha256`, records `release-pin` in that copy's store and then writes that copy's pin;
 3. `guildhall director reload --copy <dir>` over SSH.
 

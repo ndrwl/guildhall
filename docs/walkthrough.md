@@ -15,7 +15,7 @@ mkdir -p demo/state
 
 A Director's copy holds a `config.toml` naming its repositories, their merge requirements and workflow, and its Artisan profiles; see [configuration and workflows](configuration.md).
 A Director runs standalone on that config, or managed by a Steward that adds shared settings; see [standalone and managed Directors](director-modes.md) (designed, not built).
-Every role will start, stop, report and resume with one grammar, for example `guildhall director start claude`; see [the role grammar](decisions/0053-cli-role-grammar.md).
+Every role will start, stop, report and resume with one grammar, for example `guildhall director start claude`; see [the role grammar](decisions/cli-role-grammar.md).
 `guildhall director start claude --copy demo` runs a Director session in your terminal, and `--tab` runs it in its own Herdr tab; see [the Director](director.md#start).
 Start a role through Guildhall rather than running the agent directly, so it gets its rendered skills, settings, preflight and recorded identity.
 

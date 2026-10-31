@@ -73,7 +73,7 @@ func newRunDirectorWith(t *testing.T, config string) runDirector {
 }
 
 // appRepo is repository app's path in the run configs, in this machine's form: a Director opens only a path
-// absolute on its own machine (D11), so on Windows the configs are copied with a drive path.
+// absolute on its own machine (docs/decisions/repository-paths-are-absolute.md), so on Windows the configs are copied with a drive path.
 var appRepo = func() string {
 	if runtime.GOOS == "windows" {
 		return `C:\srv\app`
@@ -362,7 +362,7 @@ func (d runDirector) waitDecision(t *testing.T, id string) {
 	t.Fatalf("decision %s was not opened within %v; plan-1 launcher log:\n%s", id, testenv.Ceiling(time.Minute), log)
 }
 
-// TestTaskStartAndStepDoneByTheWatcher is TestTaskStartAndStepDone from a copy (D3): task start launches the plan
+// TestTaskStartAndStepDoneByTheWatcher is TestTaskStartAndStepDone from a copy: task start launches the plan
 // attempt with --advance, and the attempt's launcher, once it records the result, runs step done itself, so the
 // task reaches the accept-1 decision without step done typed by hand.
 func TestTaskStartAndStepDoneByTheWatcher(t *testing.T) {

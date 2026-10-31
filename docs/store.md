@@ -12,7 +12,7 @@ Ids use the workflow id form: lowercase letters, digits and hyphens, starting wi
 | Record | Key | Contract |
 |---|---|---|
 | Task | repository, task id | Title, the workflow revision (name and `sha256:` digest), the `sha256:` digest of the configuration it was accepted under, and the tasks it depends on, and optionally the earlier task whose defect it fixes. The revisions never change after creation (R1.62). State starts `open` and moves once to `done` or `cancelled`; `CancelTask`, [`task cancel`](tasks.md#task-cancel)'s write, also records `cancel_reason` and `cancelled_at`, the commit time, in an operation of its own, `cancel-task`. Dependencies and the fixed task must already exist, in any repository of the same Director. |
-| Stage attempt | repository, task, step, number | Numbered from 1 per task and step. Running until finished as `succeeded`, `failed` or `stopped`; see [attempts](#attempts) for first-finish and intake-rejection rules. A step cannot start a new attempt while one is running, and a task that is not open cannot start one, except that the [judge](decisions/quality-judge.md) step `quality-judge` starts only on a `done` task. Optionally its `spend`, recorded once ([attempts](#attempts)), and `director` for a Director stage's attempt, which the running cap does not count. |
+| Stage attempt | repository, task, step, number | Numbered from 1 per task and step. Running until finished as `succeeded`, `failed` or `stopped`; see [attempts](#attempts) for first-finish and intake-rejection rules. A step cannot start a new attempt while one is running, and a task that is not open cannot start one, except that the [judge](decisions/quality-rubric.md) step `quality-judge` starts only on a `done` task. Optionally its `spend`, recorded once ([attempts](#attempts)), and `director` for a Director stage's attempt, which the running cap does not count. |
 | Document reference | repository, task, name | A slash-separated relative path and the lowercase hex sha256 of the file. The document itself is a file, not a store record (R1.13). A reference never changes once recorded. A review outcome's reference also projects its summary, findings, suggestions and dispositions (`review`), so inspection and rulings never open the file; finding and suggestion ids must be valid ids with non-blank summaries, a summary when present must be non-blank, and disposition states are `resolved`, `unresolved` or `disputed`, or the /1 names `still-open` and `withdrawn` of projections recorded before `guildhall.review-outcome/2`. |
 | Pane binding | repository, task | Herdr session, workspace, tab and pane. Presentation only: binding, rebinding and unbinding never change task state (R1.52). |
 | Workflow approval | workflow digest | The Guildmaster's approval of one exact workflow revision for this Director: the workflow name, its `sha256:` digest, the approval words exactly as given and the UTC time it was recorded. Recorded once per digest; see [workflow-edit authority](configuration.md#workflow-edit-authority). Not per repository and never changes a task. |
@@ -73,7 +73,7 @@ The send's request digest is computed with the sender cleared, so resending the 
 `DirectorUnread` counts notes by sender, keyed `note from <sender>`, and every other type as before.
 Starting Director session `<n>` records the mutation `director-session:<n>`, moving it to a state records `director-state:<n>:<state>:<from>`, where `<from>` is the receipt sequence of the state it leaves, and recording the wake for message `<id>` records `wake:<id>`.
 Approving workflow digest `<digest>` records the mutation `workflow-approval:<digest>`, so the same approval replays and different words for an approved digest conflict.
-The [decision command reference](decisions-cli.md#answers) defines answer mutation ids (D23).
+The [decision command reference](decisions-cli.md#answers) defines answer mutation ids ([typed decisions](decisions/typed-decisions-bound-to-an-artefact.md)).
 
 - Replaying a mutation id with the same operation and request returns the original receipt and changes nothing, even after a restart and even when later mutations have changed the records since.
 - Reusing a mutation id for a different operation or request fails with `ErrMutationConflict` and changes nothing.
@@ -103,7 +103,7 @@ The caps are not part of the request, so a replay returns its receipt whatever t
 
 ### The start queue
 
-The per-repository `start-queue` bucket holds one entry per task and step, keyed `<task>/<step>`, for a start the running cap did not admit ([decision](decisions/queue-over-cap-starts.md)): the attempt number it will start, its `queued_at` by the store's clock, and the `request` that asked for it, `start`, `decision`, `retry` with `retried`, the retried attempt, `send-back`, `design`, for the designer attempt of a [design round](interpreter.md#design-rounds), or `engine`.
+The per-repository `start-queue` bucket holds one entry per task and step, keyed `<task>/<step>`, for a start the running cap did not admit ([decision](decisions/guard-rails.md)): the attempt number it will start, its `queued_at` by the store's clock, and the `request` that asked for it, `start`, `decision`, `retry` with `retried`, the retried attempt, `send-back`, `design`, for the designer attempt of a [design round](interpreter.md#design-rounds), or `engine`.
 `StartQueue` reads every repository's entries in one transaction, each with its task's priority read then, ordered by `OrderStartQueue`: priority, then `queued_at`, then task id, then repository and step.
 Entries of tasks that are not open, and of attempts since recorded, are left out.
 
@@ -159,7 +159,7 @@ It is refused with `ErrInvalid` for a session that is not the newest or is `stop
 
 ### Handoff notes
 
-Handoff notes are retired: [Director notes](#director-notes) replace them ([D94](decisions/0094-director-notes.md)).
+Handoff notes are retired: [Director notes](#director-notes) replace them ([D94](decisions/director-reload-and-notes.md)).
 Stores that ran an earlier release keep their `handoffs` records, each naming the session that recorded it, its document `director/handoff-<sequence>.md` and its sha256, and `store doctor` still decodes them; nothing writes or shows them any more.
 
 ### Director notes

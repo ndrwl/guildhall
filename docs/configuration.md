@@ -131,7 +131,7 @@ Customize those tool grants in the copy's profile, independently from managed/lo
 
 ### Quality settings
 
-These settings switch the optional practices of the [quality rubric](quality.md) and size them ([decision](decisions/0083-quality-rubric.md)); `config.Quality` reads their effective values and `config.Parse` refuses a value it cannot use, naming the key.
+These settings switch the optional practices of the [quality rubric](quality.md) and size them ([decision](decisions/quality-rubric.md)); `config.Quality` reads their effective values and `config.Parse` refuses a value it cannot use, naming the key.
 A copy that sets none of them gets the defaults below, with self-review and reference runs off.
 [`director status`](director.md#status) shows the effective values as its `quality` section.
 
@@ -148,7 +148,7 @@ A copy that sets none of them gets the defaults below, with self-review and refe
 | `quality_judge_separate_family` | `on`, the default, prefers the first eligible listed judge profile of a different model family from the builder's when the builder's historical adapter is known, a family being a profile's adapter; otherwise it takes the first eligible profile. See [running the judge](quality.md#running-it) for the current historical-family limitation. `off` takes the first eligible listed profile, never the builder's session. |
 | `quality_skill_edits_need_approval` | `on`, the default for the first cycle, treats an edit to the review, build or spec skill text as a design change that needs the Guildmaster's approval; `off` treats it as any other lesson. |
 
-`quality_self_review` and the size budget are read by the self-review skill and the judge settings by [`quality judge`](quality.md#running-it) ([decision](decisions/quality-judge.md)); the deprecated `quality_audit_sample` is read by nothing, and the other settings are read by nothing yet.
+`quality_self_review` and the size budget are read by the self-review skill and the judge settings by [`quality judge`](quality.md#running-it) ([decision](decisions/quality-rubric.md)); the deprecated `quality_audit_sample` is read by nothing, and the other settings are read by nothing yet.
 The reference-run and skill-edit settings are parsed and validated so a copy can set them now; the reference runner and the lesson-proposal shape that will read them are later work.
 
 ### Repositories
@@ -173,7 +173,7 @@ Other letter case is compared exactly.
 
 #### Merge requirements
 
-Each repository chooses what a task's pull request needs before Guildhall merges it ([decision](decisions/merge-requires.md)).
+Each repository chooses what a task's pull request needs before Guildhall merges it ([decision](decisions/delivery-stage.md)).
 The section sits under the repository's `[[repository]]` block, like `workflow_overrides`:
 
 ```toml
@@ -334,7 +334,7 @@ The preference survives generated workspace refreshes and handoffs.
 A workflow defines the steps of one task as an ordered list of built-in step kinds.
 It does not replace the task dependency graph: independent tasks still run in parallel, each with its own workflow.
 JSON names built-in kinds and gives their settings; it cannot contain commands, code, expressions or new step kinds.
-The shipped default, a feature task's workflow, is [`internal/workflow/default.json`](../internal/workflow/default.json); the shipped bug workflow is [`internal/workflow/bug.json`](../internal/workflow/bug.json), the default's steps without grill and the Guildmaster's acceptance, so a bug task has no Guildmaster stage and merges under the repository's [merge requirements](#merge-requirements); build and review take plan's spec, and research, plan, build and review are instructed to reproduce the defect from the task title, proceed on recommended answers or fail back with a question that needs the Guildmaster, test it first and check that test ([task kinds](tasks.md#task-kinds), [decision](decisions/0095-bug-workflow-without-acceptance.md)).
+The shipped default, a feature task's workflow, is [`internal/workflow/default.json`](../internal/workflow/default.json); the shipped bug workflow is [`internal/workflow/bug.json`](../internal/workflow/bug.json), the default's steps without grill and the Guildmaster's acceptance, so a bug task has no Guildmaster stage and merges under the repository's [merge requirements](#merge-requirements); build and review take plan's spec, and research, plan, build and review are instructed to reproduce the defect from the task title, proceed on recommended answers or fail back with a question that needs the Guildmaster, test it first and check that test ([task kinds](tasks.md#task-kinds), [decision](decisions/task-kinds.md)).
 Both name no profiles; Artisan steps run under their [role profiles](#profiles), resolved at use and outside the digest.
 The shipped hallmark workflow, [`internal/workflow/hallmark.json`](../internal/workflow/hallmark.json), is one read-only `hallmark` step under the `researcher` profile with the `guildhall-hallmark` skill and no deliver step, so a hallmark task finishes as done without a pull request ([decision](decisions/report-only-workflows.md)).
 Its test evidence needs a [repository grant](#profiles) for the researcher's test commands, such as `[repository.profiles.researcher] allowed_tools = ["Bash(go test:*)"]`; shipped grants carry no toolchain command.
@@ -384,8 +384,8 @@ The authoritative [built-in registry](../internal/workflow/registry.go), exposed
 
 `research` accepts `profile`, a [profile](#profiles) name, and `instructions`, a string rendered into the Artisan's prompt; it does not accept `skills`.
 `plan`, `refute`, `build`, `document-review` and `review` accept `profile` and optional `skills`, a list of distinct skill names rendered for the Artisan ([rendering](rendering.md#skills)); reviews keep them when swapping actors, and they are unused while the Guildmaster reviews.
-`plan`, `build`, `document-review`, `review` and `guildmaster-approval` also accept `instructions` ([decision](decisions/research-build-instructions.md)).
-The `spec` input of `build` and `review` takes an accepted spec or, in a workflow with no acceptance step such as the shipped `bug`, plan's spec; the engine checks a spec against its approval only when it comes from an acceptance ([decision](decisions/0095-bug-workflow-without-acceptance.md)).
+`plan`, `build`, `document-review`, `review` and `guildmaster-approval` also accept `instructions` ([decision](decisions/task-kinds.md)).
+The `spec` input of `build` and `review` takes an accepted spec or, in a workflow with no acceptance step such as the shipped `bug`, plan's spec; the engine checks a spec against its approval only when it comes from an acceptance ([decision](decisions/task-kinds.md)).
 `hallmark` accepts `profile`, `skills` and `instructions`; it takes an optional `previous` document, which the engine wires to the repository's previous hallmark report, and writes a `report` document, and intake refuses its result when it leaves a tracked change or moves HEAD ([decision](decisions/report-only-workflows.md)).
 A workflow with no `deliver` step finishes as done once every step is.
 The workflow schema permits an absent `profile`; task admission enforces the actor-dependent requirement under [profiles](#profiles).
@@ -415,7 +415,7 @@ Each kind declares who may fulfil it, and `Step.Actor` reports who fulfils a ste
 | `handoff-wait` | `guildmaster` | a handoff document |
 
 The director actor on `grill` is part of the accepted workflow design's stage table (design report section 4.1: grill produces notes, with actor director, a conversation with the Guildmaster, or artisan) and does not conflict with R1.5, because a grill is the Director clarifying requirements with the Guildmaster, not doing the work.
-The director grill is a live interview in rounds of numbered questions until the Director and the Guildmaster share an understanding, recorded as the stage's notes (R1.13); the `artisan` actor is the opt-in for a repository meant to run unattended; with `guildhall-grill-unattended` listed in the grill step's `skills`, its Artisan answers its own questions with recommendations the Guildmaster reviews at acceptance ([decision](decisions/0061-grill-live-interview.md)).
+The director grill is a live interview in rounds of numbered questions until the Director and the Guildmaster share an understanding, recorded as the stage's notes (R1.13); the `artisan` actor is the opt-in for a repository meant to run unattended; with `guildhall-grill-unattended` listed in the grill step's `skills`, its Artisan answers its own questions with recommendations the Guildmaster reviews at acceptance ([decision](decisions/grill-live-interview.md)).
 A kind with more than one actor requires the `actor` setting; a kind with one actor refuses it.
 `publish` comes before `validate` so forge checks have a pushed head to read; it never merges.
 `publish` and `deliver` have no settings: the repository's configuration and merge requirements decide where work goes and how it lands.
@@ -466,7 +466,7 @@ Every writer writes /2; readers still accept `guildhall.review-outcome/1` ([deci
 | `revisions.spec_digest` | `sha256:<hex>` digest of the specification the build was given, the accepted one where the workflow has an acceptance step; required for a code head, optional for a document. |
 | `revisions.standards_revision` | Central standards revision reviewed against; `""` means no standards revision is configured; nonempty whitespace-only values are invalid. |
 
-An outcome blocks the task exactly when its verdict is `changes_requested`, whatever its findings cite; a reviewer with suggestions only records `approved` and lists them under `suggestions` ([decision](decisions/review-verdict-routes.md)).
+An outcome blocks the task exactly when its verdict is `changes_requested`, whatever its findings cite; a reviewer with suggestions only records `approved` and lists them under `suggestions` ([decision](decisions/review-outcome-2.md)).
 A /1 outcome is read with the /2 meaning, in memory only: a finding without a rule is a suggestion, `still-open` is `unresolved` and `withdrawn` is `resolved`; its schema stays /1, it has no summary, and a /2-only key in it is refused.
 A /1 `changes_requested` outcome whose findings all became suggestions still blocks.
 An outcome counts only for the exact subject, specification digest and standards revision it names, so a document review never counts for a code head or the reverse.

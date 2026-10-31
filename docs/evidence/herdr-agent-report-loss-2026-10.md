@@ -60,7 +60,7 @@ The report is made **once** in an attempt's life.
 **No event or log line records it**: `launchPane` writes nothing to `events.jsonl` or `launcher.log` about the report or Herdr's answer.
 
 `ResumeArgv` ([`internal/launch/resume.go:225-237`](../../internal/launch/resume.go)) is `guildhall artisan resume --store … --state … --repo … --task … --step … --attempt …`.
-It starts with a plain command name because Herdr refuses a path (`herdr.go:658-661`, `herdr.go:692-694`, [`docs/decisions/0048-artisan-resume.md:10`](../decisions/0048-artisan-resume.md)).
+It starts with a plain command name because Herdr refuses a path (`herdr.go:658-661`, `herdr.go:692-694`, [`docs/decisions/artisan-resume.md:10`](../decisions/artisan-resume.md)).
 
 ### What runs in the pane after the report
 
@@ -119,7 +119,7 @@ Confirming it from the attempt's files **needs state read** of `state/guildhall/
 
 ## Q4: does Herdr reuse or renumber workspace ids?
 
-- The repository asserts that "Herdr ids are short ordinals that a restart may reuse" ([`docs/decisions/artisan-workspace-close-sweep.md:31`](../decisions/artisan-workspace-close-sweep.md)) without a source.
+- The repository asserts that "Herdr ids are short ordinals that a restart may reuse" ([`docs/decisions/artisan-herdr-workspaces.md:31`](../decisions/artisan-herdr-workspaces.md)) without a source.
 - The recorded ids point to **one counter per server run, never reused within it**: d23 used `w2Y`, `w3A`, `w3G` and `w3H`, while d8 build-8 had `w3E` and d22 build-5 had `w3F`.
   These ids come from the d28 grill and the research notes, not a primary record; confirming them **needs state read** of each attempt's `pane-launch.json` and of `state/artisan-workspaces.json`.
   Other tasks' workspaces fill the gaps, and `w2Y` → `w3A` suggests a counter whose last place runs over letters.
@@ -151,7 +151,7 @@ Any fix must keep these constraints:
 
 - **Never fail a launch over presentation.** Ordering already never fails an Artisan launch (`docs/artisan.md:462`); an event, read-back or re-report failure must only warn.
 - **Never type a second command or launch twice.** An ambiguous response leaves the claim and types nothing more (`presentation.go:119-124`, `docs/artisan.md:474-478`); a re-report is a `report-agent` call, never typed input.
-- **Never treat a pane or label as liveness evidence.** The terminal is a presentation binding only (`presentation.go:20-26`, [`docs/decisions/workflow-artisan-tabs.md:5`](../decisions/workflow-artisan-tabs.md)); a missing label must not change an attempt's classification, and a re-report must not imply the worker is alive.
+- **Never treat a pane or label as liveness evidence.** The terminal is a presentation binding only (`presentation.go:20-26`, [`docs/decisions/artisan-herdr-workspaces.md:5`](../decisions/artisan-herdr-workspaces.md)); a missing label must not change an attempt's classification, and a re-report must not imply the worker is alive.
 
 The tests that pin today's behaviour are `TestReportAgentRegistersTheResumeCommand`, `TestReportAgentRefusesWhatHerdrWouldReject` and `TestReportAgentReturnsHerdrsRefusal` ([`internal/herdr/herdr_test.go:493-548`](../../internal/herdr/herdr_test.go)), and [`internal/launch/presentation_unix_test.go`](../../internal/launch/presentation_unix_test.go).
 

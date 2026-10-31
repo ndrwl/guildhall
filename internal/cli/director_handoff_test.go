@@ -45,7 +45,7 @@ func putRetiredHandoffNote(t *testing.T, path string) {
 	}
 }
 
-// TestDirectorHandoffIsGone: `director handoff` is no longer a command (D94).
+// TestDirectorHandoffIsGone: `director handoff` is no longer a command (docs/decisions/director-reload-and-notes.md).
 func TestDirectorHandoffIsGone(t *testing.T) {
 	d := newRunDirector(t)
 	if code, _, stderr := runCLI(t, "director", "handoff", "--note-file", "-", "--store", d.store, "--state", d.state); code != 2 || !strings.Contains(stderr, "the commands are") {
@@ -140,7 +140,7 @@ func TestDirectorStatusNamesTheReload(t *testing.T) {
 }
 
 // TestDirectorReloadNowDuringAStage: --now is admitted while a Director stage attempt runs; the next session
-// restarts the grill (D94).
+// restarts the grill (docs/decisions/director-reload-and-notes.md).
 func TestDirectorReloadNowDuringAStage(t *testing.T) {
 	d := newRunDirectorWith(t, "grill.toml")
 	flags := []string{"--store", d.store, "--state", d.state}
@@ -155,7 +155,7 @@ func TestDirectorReloadNowDuringAStage(t *testing.T) {
 
 // TestPlainReloadAppliesWithAGrillOpen: a grill waiting on the Guildmaster does not hold a plain reload, which
 // applies at the next quiet point and leaves the grill attempt unfinished and handed for the next session to
-// restart (docs/decisions/plain-reload-ignores-director-stages.md).
+// restart (docs/decisions/director-reload-and-notes.md).
 func TestPlainReloadAppliesWithAGrillOpen(t *testing.T) {
 	dir, d := supervisedCopy(t)
 	cfg := filepath.Join(dir, "config.toml")

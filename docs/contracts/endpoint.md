@@ -2,7 +2,7 @@
 
 ## Contract
 
-Guildhall's one control endpoint, the AF_UNIX socket of the [attempt endpoint decision](../decisions/0034-attempt-endpoint-af-unix.md) and the line protocol of the [protocol decision](../decisions/0038-endpoint-protocol-v1.md), extracted from its two copies by sustainability review 12 (F43).
+Guildhall's one control endpoint, the AF_UNIX socket of the [attempt endpoint decision](../decisions/attempt-endpoint-af-unix.md) and the line protocol of the [protocol decision](../decisions/endpoint-protocol-v1.md), extracted from its two copies by sustainability review 12 (F43).
 Its consumers are the attempt control endpoint (`artisan.Listen` and `artisan.Call`, [control endpoint](../artisan.md#control-endpoint)) and the Director session's turn signals (`session.Listen` and `session.Signal`, [session](session.md)); a later socket, such as a context reporter or a release reload, composes over it rather than copying it.
 
 - An endpoint is one AF_UNIX stream socket, on Windows as on Unix, at a path of at most `MaxPath` bytes (103 on macOS, 107 on Linux and Windows); a longer path is `ErrPath` and creates nothing.
@@ -28,6 +28,15 @@ Its consumers are the attempt control endpoint (`artisan.Listen` and `artisan.Ca
   This lets an owning launcher exit after `Close` without truncating its stop reply.
   Handlers must return before shutdown can complete and must not call `Close` themselves.
   Handler execution has no shutdown deadline; transport read and write deadlines still apply.
+
+### Shutdown drain
+
+`Close` drains replies because of a launcher stop bug fixed on 2026-10-26.
+The launcher already deferred endpoint closure, but closure returned while reply goroutines were still running.
+A stop handler can release the launcher's main execution before the endpoint has encoded and written the stop reply, so process exit truncated the reply and made a successful stop appear to fail.
+Replies are drained at this shared boundary rather than by special-casing the launcher's `stop` or by accepting EOF as a successful reply, so the caller's protocol validation is not weakened.
+`endpoint.go` counts accepted connections in the accept loop, so a connection racing closure cannot escape the drain.
+Draining does not guarantee delivery to a disconnected caller, and the Windows-only worker stop path is unchanged.
 
 ## Tests
 

@@ -1,48 +1,56 @@
-# Waking a Claude Director without typing into its input box
+---
+status: accepted
+date: 2026-10-28
+topic: director
+amends: director-safety-checks.md
+formerly: D69, 0069-director-wake.md, D77, 0077-wake-outside-the-task-lock.md
+---
 
-This decision supersedes the typing parts of [D69](0069-director-wake.md) for every runtime but the fake: Guildhall never types a wake into a Claude Code Director's pane, whatever its input box holds.
-D69's store-first wake, its one recorded decision per message (`wake:<id>`), its counts-only line, its ten-second bound and its rule that no store lock is held while waking all stand.
+# One store-first wake tells the Director of unread messages, delivered to Claude through a rewake hook and never typed into its input
 
-## Why typing had to go
+## Context
 
-D69 woke the Director with `herdr pane run <pane> <line>`: the line and Enter, typed into the pane.
-The pane's input box is the Guildmaster's too, so a wake that landed while they were half-way through a sentence sent their half sentence with Guildhall's line glued on, or typed Guildhall's line into the middle of theirs.
-Guildhall cannot read the box before typing without a race, and any typing at all is a collision with a person, so the fix is a channel that does not touch the box.
+A stored message is not proof that anyone has seen it, and the Director must hear about one while its session runs, without a service (R1.29).
+Typing a wake into the Director's pane collided with the Guildmaster, whose input box it is too.
 
-## The waiter
+## Decision
 
-Claude Code runs a command hook marked `"async": true, "asyncRewake": true` in the background; when it exits 2, its standard error wakes the session as a new turn, or, when a turn is running, is added to that turn.
-The [Phase 0 probes](../evidence/director-input-2026-10-27.txt) showed, on Claude Code 2.1.312, that such a hook wakes an idle session, wakes it with half-typed text in the box and leaves that text untouched and unsent, and still works with a 24-hour `timeout` well past the 600-second default.
+- **One wake after every send to the Director.**
+  `messaging.Wake` is called after the engine's outbox, `messages send ... director` and the launcher's sends ([launcher stall](stall-observation.md)); `WakeResumed` and `WakeIdle` deliver through the same seam ([waking the Director](../messaging.md#waking-the-director)).
+  Only a `running` or `recovering` [session](director-start.md) is woken; every other case records `queued` with its reason, and a paused session is not woken, since pausing is how the Guildmaster quiets the Director.
+- **Counts, never text.**
+  The line is `guildhall: <n> unread (<type> <count>, ...)`, naming only Guildhall's own types and counting the rest as `other`, so no sender can put instructions in front of the Director.
+- **One recorded decision per message**, `wake:<message id>`, recorded after delivery: a replay types nothing new, two concurrent wakes may both deliver and the first record stands, and a failed wake never fails the send.
+- **No lock held while waking, and a bound.**
+  The wake takes the store through a narrow interface and holds no store lock; an advance wakes for its messages after releasing the task lock; every `herdr` run sets `WaitDelay` to five seconds, so a wake keeps its ten-second bound.
+- **Claude is woken by a rewake hook.**
+  The session's settings arm `guildhall director wait-wake`, an `async`, `asyncRewake` command hook with a 24-hour timeout, on `SessionStart`, `UserPromptSubmit`, `Stop` and `Notification`; it long-polls the supervisor's `wait-wake` operation on `supervisor.sock` and, handed a line, prints it on standard error and exits 2, which wakes the session or joins the running turn.
+  One waiter per session, the newer retiring the older; a waiter refreshes five minutes before its timeout ([the end of a turn](../director.md#the-end-of-a-turn)).
+- **Only the fake runtime is typed into.**
+  The session records its adapter; every other session, including one with no adapter recorded, gets the line over its endpoint, and a Claude session never falls back to typing.
+  With no waiter the wake is `queued` as `no waiter`, the supervisor shows a notice in the pane's Herdr title, and the next waiter gets one catch-up wake.
+- The supervisor counts each delivered wake and refresh as the Director's activity, so the idle rule, a plain reload's quiet point and the idle trigger work as for a typed wake.
 
-The Director session's settings therefore arm `guildhall director wait-wake`, with `async`, `asyncRewake` and `timeout` 86400 seconds, on `SessionStart`, `UserPromptSubmit` and `Stop`, so an idle Director always has one armed; `StopFailure` keeps only `turn-ended`.
-The waiter registers with the session supervisor over the session endpoint (`supervisor.sock`) with a new `wait-wake` operation and long-polls it: each poll is held for up to 30 seconds and answered with a wake line, with nothing, so the waiter polls again, or as retired.
+## Alternatives rejected
 
-- One waiter per session: a registration under a new id retires the older waiter, whose poll is answered retired and which exits 0 silently.
-- Handed a wake, the waiter prints the line, Guildhall's own `HandoffLine(WakeLine(...))`, on standard error and exits 2.
-- With no supervisor listening, such as while one restarts, it polls again every second instead of exiting; it exits 0 once its session is recorded stopped or a newer session exists.
-- Five minutes before its timeout a waiter still registered tells the supervisor with a `refresh` operation and exits 2 with a counts-only line, so the short turn that follows arms a new waiter through its `Stop` hook.
+- Reading the input box before typing: racy, and any typing collides with a person.
+- Recording `woke` before delivering: a recorded wake with nothing delivered would be a lie, while a delivered line that is not seen costs nothing.
+- Waking inside the advance: one slow pane held the task lock for 34 seconds.
 
-A waiter counts as registered while a poll of it is open and for five seconds after one ends, so the supervisor can tell a live waiter from one that ended, which only happens when it is killed.
-A waiter that has taken a wake line no longer counts as registered, since it exits to wake the Director: a second wake before the next waiter registers is recorded `no waiter` with the wake notice and reaches that next waiter as its catch-up wake, rather than being handed to a waiter that is gone.
-A line handed to a waiter between its polls and not taken before a newer waiter replaces it is kept for the newer one.
+## Consequences
 
-## Wake delivery
-
-`messaging.Wake`, `WakeResumed` and `WakeIdle` deliver through one seam.
-The session records the runtime adapter it runs (`store.DirectorSession.Adapter`) and its directory (`Dir`); only the fake runtime, which is test-only and has no hooks, is typed into, and every other session, a session recorded with no adapter among them, is handed the line with a `wake` operation on its endpoint.
-A Claude session can never fall back to typing.
-A wake the endpoint delivers is recorded `woke` exactly as a typed one was; one with no waiter registered, or no supervisor listening, is recorded `queued` with the new reason `no waiter`, and the message waits in the inbox as every queued wake's does.
-
-The supervisor keeps two duties.
-
-- It counts each wake a waiter took, and each refresh, as the Director's activity, counted before any turn signal arriving at the same moment, so the Idle rule, the quiet point of a plain reload and the idle trigger are decided as they were for a typed wake: the Director is idle again once a turn has ended since.
-  The probes showed a rewake turn fires `UserPromptSubmit` like a typed prompt, and that a rewake arriving mid-turn joins that turn rather than starting another, so the next turn end ends the wake's activity either way.
-- Once a waiter registers after a wake was recorded `no waiter`, it hands that waiter one wake of the current unread counts.
-
-While no waiter is registered and messages are unread, after a missed wake or with the Director idle, the supervisor shows a wake notice outside the input box: the pane's Herdr title, set with `herdr pane report-metadata <pane> --source guildhall --title "guildhall: 2 unread (note 2)"` and cleared with `--clear-title` once the wake is delivered or nothing is unread.
-
-## What it costs
-
-A waiter killed while the Director is idle cannot be replaced by the supervisor, which cannot run a hook: the wake waits, with the notice showing, until the Guildmaster's next prompt or a `Notification` hook re-arms it (spec open question 1, answered "the notice only").
+A waiter killed while the Director is idle cannot be replaced by the supervisor, which runs no hook: the wake waits, with the notice showing, until the next prompt or a `Notification` hook re-arms it.
 An idle Director takes one short refresh turn a day.
-The wake line is still Guildhall's counts and never a sender's words, which matters more now: the probes showed the model is wary of hook text that asks it for something.
+The [safety checks](director-safety-checks.md) now assert that nothing is typed into a Claude session's pane; other runtimes need a [design](../director-input-runtimes.md).
+
+## History
+
+- 2026-10-22, D69 (0069-director-wake.md): the store-first, counts-only wake, typed into the pane with `herdr pane run`.
+  `herdr.Client.RecordedTab` adopted the recorded pane in a later process after checking it still exists (R1.54), and typing refused a pane whose shell was idle, recording `runtime not running`.
+  Sender types were `guildhall` and `local`, since `messages send` cannot tell the Guildmaster from an Artisan; the planned `guildmaster` sender of [Director messaging](director-messaging.md) refines that, and the recorded type is the input a per-sender budget will read.
+- 2026-10-22, D77 (0077-wake-outside-the-task-lock.md): sustainability review 11 (F36) found the ten-second bound broken, since a killed `herdr` whose child held its pipe kept the call open, and the wake run under the task lock, so a two-message advance took 34 seconds under it, long enough for another advance to lose the lock (F35).
+  It added `WaitDelay`, as `forge` and `git` had, and moved the advance's wakes after the lock, one per message in send order, whether or not the advance succeeded.
+- 2026-10-28, director-wake-hook.md: typing glued the wake onto the Guildmaster's half-typed sentences, so delivery moved to the rewake hook for every runtime but the fake.
+  [Phase 0 probes](../evidence/director-input-2026-10-27.txt) on Claude Code 2.1.312 showed the hook wakes an idle session, leaves half-typed text untouched and unsent, and works with a 24-hour timeout; that a rewake fires `UserPromptSubmit`; and that the model is wary of hook text asking for something, so the line stays counts only.
+  A waiter counts as registered while a poll is open and for five seconds after, and no longer once it has taken a line, so a second wake reaches the next waiter as its catch-up rather than a waiter that is gone.
+  An idle Director with a killed waiter gets only the notice (spec open question 1, answered "the notice only").

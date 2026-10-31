@@ -11,7 +11,7 @@ import (
 )
 
 // TestRetiredHandoffNotesStillDecode: a store holding a handoff note from before notes replaced them opens, and
-// doctor decodes the note and reports nothing (D94).
+// doctor decodes the note and reports nothing (docs/decisions/director-reload-and-notes.md).
 func TestRetiredHandoffNotesStillDecode(t *testing.T) {
 	s, path := newStore(t)
 	mustStartSession(t, s, sampleSession(1))

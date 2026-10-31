@@ -10,7 +10,7 @@ import (
 var bucketDecisionDeferrals = []byte("decision-deferrals")
 
 // DecisionDeferral is the Director's record that an open decision is held out of needs_me until named tasks merge
-// (docs/decisions/0096-hold-until-merged.md). The decision itself never changes, so it stays open and other tasks'
+// (docs/decisions/hold-until-merged.md). The decision itself never changes, so it stays open and other tasks'
 // dependency states do not shift. Undeferring keeps the record with Deferred false, so Cycle, the number of
 // undefers so far, survives and the next deferral's mutation id differs from the last one's, as a park's does.
 type DecisionDeferral struct {

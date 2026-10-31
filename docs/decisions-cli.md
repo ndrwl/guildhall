@@ -55,7 +55,7 @@ Answering records the answer only: it never advances, resumes or launches a task
 
 ## Deferring a decision
 
-`decide defer` is the Director's: it holds an open decision out of [`needs_me`](director.md#status) until every task named by `--until-merged <repo>/<task>`, which may be repeated, has merged, with the Director's `--reason` ([holds](director.md#holds), [decision](decisions/0096-hold-until-merged.md)).
+`decide defer` is the Director's: it holds an open decision out of [`needs_me`](director.md#status) until every task named by `--until-merged <repo>/<task>`, which may be repeated, has merged, with the Director's `--reason` ([holds](director.md#holds), [decision](decisions/hold-until-merged.md)).
 The decision itself is not changed: it stays open, `decide list` still lists it, and other tasks' dependency states do not shift.
 While the hold waits, `director status` lists the decision under `held` and marks it `"deferred": true` in `decisions`, and the Lanterns band does not count it; once every named task is `done`, or any is `cancelled`, it is an ordinary `decision` item again with the release appended to its reason, and the session supervisor wakes the Director once with a `hold-released` message.
 Answering a deferred decision closes it as usual, and the deferral is then ignored.

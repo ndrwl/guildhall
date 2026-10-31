@@ -60,7 +60,7 @@ func TestGrillSkillsValidation(t *testing.T) {
 }
 
 // TestDefaultGrillIsTheDirectorsLiveGrill: the shipped workflow's first stage is the Director's grill with the live
-// grill's two skills (D61).
+// grill's two skills (docs/decisions/grill-live-interview.md).
 func TestDefaultGrillIsTheDirectorsLiveGrill(t *testing.T) {
 	def, err := Default()
 	if err != nil {
