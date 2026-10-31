@@ -29,6 +29,30 @@ func TestReadableStreamBoundsAndFinalResult(t *testing.T) {
 	}
 }
 
+// TestReadableStreamSignalsResultEvent: the result-event signal is raised only once the whole result event has
+// arrived, however Write splits it, and not by other events.
+func TestReadableStreamSignalsResultEvent(t *testing.T) {
+	stream := &readableStream{out: &bytes.Buffer{}, result: &limitedBuffer{limit: maxOutputBytes}}
+	_, _ = stream.Write([]byte(`{"type":"assistant","message":{"content":[{"type":"text","text":"working"}]}}` + "\n"))
+	if stream.sawResult.Load() {
+		t.Fatal("an assistant event raised the result signal")
+	}
+	final := `{"type":"result","result":"done"}` + "\n"
+	half := len(final) / 2
+	_, _ = stream.Write([]byte(final[:half]))
+	if stream.sawResult.Load() {
+		t.Fatal("half a result event raised the result signal")
+	}
+	_, _ = stream.Write([]byte(final[half:]))
+	if !stream.sawResult.Load() {
+		t.Fatal("a result event split across writes did not raise the result signal")
+	}
+	_, _ = stream.Write([]byte(final))
+	if !stream.sawResult.Load() {
+		t.Fatal("a second result event cleared the result signal")
+	}
+}
+
 type brokenPresentation struct{}
 
 func (brokenPresentation) Write([]byte) (int, error) { return 0, errors.New("pane gone") }

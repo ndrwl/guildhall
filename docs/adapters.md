@@ -177,10 +177,16 @@ claude --print <instruction> --output-format stream-json --verbose --permission-
 The wrapper keeps the result protocol, not the model:
 
 - it refuses to start, starting nothing, when the result file exists or the attempt is cancelled, and a prompt inside the model directory is refused, since replacing the directory removes any stale draft;
-- once Claude exits it publishes the draft's bytes at the result file by a hard link, never replacing a result; it does not validate them, so a malformed or misidentified draft is rejected by the reader like any other result, and no draft means no result;
-- the cancel marker, an interrupt or the end of its context asks Claude to stop (an interrupt on Unix, termination on Windows), kills it after 10 seconds, and publishes nothing; so the owned launcher's stop ends at rung 1;
+- once Claude exits, or once the wrapper stops a Claude still running after a valid draft (below), it publishes the draft's bytes at the result file by a hard link, never replacing a result; it does not validate them, so a malformed or misidentified draft is rejected by the reader like any other result, and no draft means no result;
+- print mode can outlive its result: a session has been seen to write its draft and final text, then run on idle for about 15 minutes before exiting, which held the attempt open and raised a worker-stalled alert.
+  So while Claude runs the wrapper reads the draft every 50 ms, and once it is a valid result for the attempt (at most 1 MiB, with the attempt's identity; a malformed or misidentified draft never counts) the wrapper stops Claude, as for a cancel, on either trigger:
+  - `result-event`: the final result event has arrived too, and Claude is still running 10 seconds later;
+  - `quiet`: the draft has not changed and Claude has written nothing, on its output or error output, for 3 minutes, in case the result event comes only as Claude exits.
+
+  It names the stop on its error output, as `guildhall: claude-artisan: Claude still running 10s after its result (trigger: result-event); stopping it`, then writes the usage file and publishes the draft as for an exit, unless the attempt was cancelled meanwhile; the stop's exit status is not reported as a failure.
+- the cancel marker, an interrupt or the end of its context asks Claude to stop (an interrupt on Unix, termination on Windows), kills it after 10 seconds, and publishes nothing; so the owned launcher's stop ends at rung 1; only the result-ready stop above publishes;
 - Claude's exit status does not decide completion: a failing exit after a published draft is still reported;
-- once Claude exits, before publishing, it writes the [usage file](#usage-file) from the result message: its `usage` input, output, cache creation and cache read tokens are `measured`, and its `total_cost_usd`, Claude Code's price for those tokens, is an `estimated` cost; what the message lacks is `unknown`, and a missing or invalid final result event gives unknown usage; it then writes that event's `result` text to its own output.
+- once Claude exits or is stopped after its result, before publishing, it writes the [usage file](#usage-file) from the result message: its `usage` input, output, cache creation and cache read tokens are `measured`, and its `total_cost_usd`, Claude Code's price for those tokens, is an `estimated` cost; what the message lacks is `unknown`, and a missing or invalid final result event gives unknown usage; it then writes that event's `result` text to its own output.
   A stopped session prints no result message and writes no usage file, so its spend is unknown.
 - it names on its error output, which is the attempt's launcher log, each tool use print mode denied, from the result message's `permission_denials`, as `guildhall: claude-artisan: Claude was denied 2 tool uses: Bash(go test ./...), Bash(git commit -m ...); ...`, so an attempt that could not run its checks or commit says why.
 
