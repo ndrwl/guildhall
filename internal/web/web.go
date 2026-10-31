@@ -31,9 +31,11 @@ type Source interface {
 type StepState string
 
 const (
-	// StateDone is a finished step: its attempt succeeded or its decision was approved (✓, green).
+	// StateDone is a finished step: its attempt succeeded or its decision was answered with a positive, carry-on or
+	// neutral option of the option table, or in free text (✓, green).
 	StateDone StepState = "ok"
-	// StateBack is a step sent back: changes were requested and the work went back (↩, violet).
+	// StateBack is a step sent back: a review round's changes sent its work back, or its decision was answered with
+	// an option the option table does not describe for its kind (↩, violet).
 	StateBack StepState = "back"
 	// StateRunning is a step whose attempt is at work (▸, blue).
 	StateRunning StepState = "run"

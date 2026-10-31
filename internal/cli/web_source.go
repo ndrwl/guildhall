@@ -351,13 +351,6 @@ func decisionStep(id string) (string, int, bool) {
 	return base, k, true
 }
 
-// webPositive and webNegative are answers that end a step well and answers that stop it; any other answer to a
-// decision with options, such as changes_requested, continue or hold, sends the work back or round again.
-var (
-	webPositive = []string{"approved", "accept", "merge", "approve", "pick", "received"}
-	webNegative = []string{"rejected", "reject", "decline"}
-)
-
 // steps is the stepper: each step of the bound workflow in order, with the state of its records in the current
 // slice (a step outside the slice range, of slice 1), or later when it has none.
 func (b webBuilder) steps() []web.Step {
@@ -399,12 +392,9 @@ func (b webBuilder) steps() []web.Step {
 			case dec.Open():
 				st.State, st.Note = web.StateYou, "waiting on you"
 			case dec.Void:
-			case slices.Contains(webPositive, dec.Choice):
-				st.State, st.Note = web.StateDone, dec.ID+" "+dec.Choice
-			case dec.Choice != "" && slices.Contains(webNegative, dec.Choice):
-				st.State, st.Note = web.StateFailed, dec.ID+" "+dec.Choice
 			case dec.Choice != "":
-				st.State, st.Note = web.StateBack, dec.ID+" "+strings.ReplaceAll(dec.Choice, "_", " ")
+				// No positive or negative option has a _, so this keeps their words raw as before.
+				st.State, st.Note = web.DecisionState(string(dec.Kind), dec.Choice), dec.ID+" "+strings.ReplaceAll(dec.Choice, "_", " ")
 			case dec.Answered:
 				st.State, st.Note = web.StateDone, dec.ID+" answered"
 			}
@@ -498,22 +488,20 @@ func (b webBuilder) story(docs []web.Document) []web.Node {
 			n.State, n.Word, n.Ask = web.StateYou, "deferred · still yours", dec.ID
 		case dec.Open():
 			n.State, n.Word, n.Ask = web.StateYou, "waiting on you", dec.ID
-		case slices.Contains(webPositive, dec.Choice):
-			n.State, n.Word = web.StateDone, web.OptionWord(dec.Choice)
-		case dec.Choice != "" && slices.Contains(webNegative, dec.Choice):
-			n.State, n.Word = web.StateFailed, web.OptionWord(dec.Choice)
 		case dec.Choice != "":
-			n.State, n.Word = web.StateBack, web.OptionWord(dec.Choice)
+			n.State, n.Word = web.DecisionState(string(dec.Kind), dec.Choice), web.OptionWord(dec.Choice)
 		default:
 			n.State, n.Word = web.StateDone, "answered"
 		}
 		if dec.Answered {
-			words := dec.Note
-			if len(dec.Options) == 0 {
-				words = strings.TrimSpace(dec.Answer)
+			words := strings.TrimSpace(dec.Answer)
+			if dec.Choice != "" {
+				words = dec.Note
 			}
 			if words != "" {
-				n.Said = append(n.Said, web.Said{Text: words, Where: webAnswerWhere(dec.Decision), Back: n.State == web.StateBack})
+				// A carry-on answer's words stay violet, as a send-back's do (the Guildmaster's call at d135 accept-1).
+				m, _ := web.OptionMeaning(string(dec.Kind), dec.Choice)
+				n.Said = append(n.Said, web.Said{Text: words, Where: webAnswerWhere(dec.Decision), Back: n.State == web.StateBack || m.Tone == web.ToneCarryOn})
 			} else if dec.Choice != "" {
 				n.Body = "answered " + dec.Choice + " · " + webAnswerWhere(dec.Decision)
 			}
