@@ -34,6 +34,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -72,6 +74,14 @@ const maxOutputBytes = 4 << 20
 // StopGrace is how long the wrapper waits for Claude to exit after asking it
 // to stop before killing it.
 const StopGrace = 10 * time.Second
+
+// ExitGrace is how long the wrapper lets Claude exit on its own once its draft is a valid result and its final
+// result event has arrived, before it stops Claude and publishes the draft. A variable only so tests can shorten it.
+var ExitGrace = StopGrace
+
+// QuietLimit is how long the wrapper lets Claude run with an unchanged valid draft and no output at all, no result
+// event included, before it stops Claude and publishes the draft. A variable only so tests can shorten it.
+var QuietLimit = 3 * time.Minute
 
 // ErrNoDraft reports that Claude exited without writing its draft result, so
 // the attempt has no result.
@@ -402,7 +412,9 @@ var errMarked = errors.New("cancel marker present")
 // lines on stdout as events arrive, and its error output on stderr. An interrupt, the end of ctx, or the attempt's cancel
 // marker asks Claude to stop (an interrupt on Unix, termination on Windows),
 // killing it after StopGrace, and publishes nothing; the marker is not an
-// error. Once Claude exits, the draft's bytes are published at the result
+// error. A Claude still running after a valid draft is stopped the same way
+// (watchResult), but its draft is then published as for an exit. Once Claude
+// exits, the draft's bytes are published at the result
 // file, never replacing one, unless the attempt was cancelled meanwhile; no
 // draft is ErrNoDraft. Before publishing, Run writes the usage Claude's JSON
 // final result event reports (ParseUsage) as the attempt's usage file, unknown
@@ -459,20 +471,31 @@ func Run(ctx context.Context, a Args, stdout, stderr io.Writer) error {
 	defer stopSignals()
 	ctx, cancel := watchMarker(ctx, a)
 	defer cancel()
+	ctx, stopReady := context.WithCancelCause(ctx)
+	defer stopReady(nil)
 	cmd := exec.CommandContext(ctx, path, ClaudeArgs(a)...)
 	output := &limitedBuffer{limit: maxOutputBytes}
 	stream := &readableStream{out: stdout, result: output}
-	cmd.Stdout, cmd.Stderr = stream, stderr
+	act := newActivity()
+	errOut := &lockedWriter{w: stderr}
+	cmd.Stdout, cmd.Stderr = act.writer(stream), act.writer(errOut)
 	cmd.Cancel = func() error { return stop(cmd.Process) }
 	cmd.WaitDelay = StopGrace
+	endWatch := watchResult(ctx, stopReady, a, stream, act, errOut)
 	runErr := cmd.Run()
+	endWatch()
 	stream.finish()
-	if ctx.Err() != nil {
+	readyStop := errors.Is(context.Cause(ctx), errResultReady)
+	if ctx.Err() != nil && !readyStop {
 		if errors.Is(context.Cause(ctx), errMarked) {
 			_, _ = fmt.Fprintf(stderr, "guildhall: %s: cancel marker present; Claude stopped without a result\n", Subcommand)
 			return nil
 		}
 		return fmt.Errorf("claude adapter: stopped without a result: %w", context.Cause(ctx))
+	}
+	if readyStop {
+		// The wrapper stopped Claude itself, after its result: the stop's exit status is not Claude's.
+		runErr = nil
 	}
 	var usageErr error
 	if err := report(a, output, stdout, stderr); err != nil {
@@ -621,6 +644,119 @@ func watchMarker(ctx context.Context, a Args) (context.Context, context.CancelFu
 		}
 	}()
 	return ctx, func() { cancel(nil) }
+}
+
+// errResultReady ends Claude's session when Claude outlives a valid draft (watchResult); unlike the other causes
+// of a stop, the draft is still published.
+var errResultReady = errors.New("claude still running after its result")
+
+// activity records when Claude last wrote anything, on its output or its error output.
+type activity struct {
+	start time.Time
+	last  atomic.Int64 // time.Duration since start
+}
+
+func newActivity() *activity { return &activity{start: time.Now()} }
+
+// since is how long ago Claude last wrote, or started when it has written nothing.
+func (a *activity) since(now time.Time) time.Duration {
+	return now.Sub(a.start) - time.Duration(a.last.Load())
+}
+
+// writer is w, recording each write as activity.
+func (a *activity) writer(w io.Writer) io.Writer { return activityWriter{w: w, a: a} }
+
+type activityWriter struct {
+	w io.Writer
+	a *activity
+}
+
+func (w activityWriter) Write(p []byte) (int, error) {
+	w.a.last.Store(int64(time.Since(w.a.start)))
+	return w.w.Write(p)
+}
+
+// lockedWriter serializes writes to w, which Claude's error output and the wrapper's own lines share.
+type lockedWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func (w *lockedWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.w.Write(p)
+}
+
+// watchResult stops a Claude that outlives its result, ending ctx through stopClaude with cause errResultReady, and
+// returns a function that ends the watch and waits for it. Every markerPoll it reads a's draft, which counts only
+// once it is a valid result for a (readyDraft), so a malformed or misidentified draft never cuts Claude off. Claude
+// is stopped when it is still running ExitGrace after both the draft is ready and its final result event has arrived,
+// or when the ready draft has not changed and Claude has written nothing for QuietLimit, in case Claude Code writes
+// its result event only as it exits. The stop is named on stderr with its trigger.
+func watchResult(ctx context.Context, stopClaude context.CancelCauseFunc, a Args, stream *readableStream, act *activity, stderr io.Writer) func() {
+	quit, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(done)
+		t := time.NewTicker(markerPoll)
+		defer t.Stop()
+		var draft []byte
+		var changed, both time.Time // when the ready draft last changed, and when it and the result event were both seen
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-quit:
+				return
+			case <-t.C:
+			}
+			now := time.Now()
+			data, ready := readyDraft(a)
+			if !ready {
+				draft, both = nil, time.Time{}
+				continue
+			}
+			if !bytes.Equal(data, draft) {
+				draft, changed, both = data, now, time.Time{}
+			}
+			if both.IsZero() && stream.sawResult.Load() {
+				both = now
+			}
+			trigger, waited := "", time.Duration(0)
+			switch {
+			case !both.IsZero() && now.Sub(both) >= ExitGrace:
+				trigger, waited = "result-event", ExitGrace
+			case now.Sub(changed) >= QuietLimit && act.since(now) >= QuietLimit:
+				trigger, waited = "quiet", QuietLimit
+			default:
+				continue
+			}
+			_, _ = fmt.Fprintf(stderr, "guildhall: %s: Claude still running %s after its result (trigger: %s); stopping it\n", Subcommand, waited, trigger)
+			stopClaude(errResultReady)
+			return
+		}
+	}()
+	return func() {
+		close(quit)
+		<-done
+	}
+}
+
+// readyDraft returns a's draft when it is a valid result for a, no larger than a result may be.
+func readyDraft(a Args) ([]byte, bool) {
+	f, err := os.Open(DraftFile(a.ResultFile))
+	if err != nil {
+		return nil, false
+	}
+	data, err := io.ReadAll(io.LimitReader(f, adapter.MaxResultBytes+1))
+	_ = f.Close()
+	if err != nil || len(data) > adapter.MaxResultBytes {
+		return nil, false
+	}
+	if _, err := adapter.ParseResult(data, a.Identity); err != nil {
+		return nil, false
+	}
+	return data, true
 }
 
 // publish links the draft's bytes into place as a's result file: a reader

@@ -35,6 +35,9 @@ func TestMain(m *testing.M) {
 	adaptertest.RunIfRecorder()
 	claudetest.RunIfStub()
 	if len(os.Args) > 1 && os.Args[1] == claude.Subcommand {
+		if d, err := time.ParseDuration(os.Getenv(exitGraceEnv)); err == nil {
+			claude.ExitGrace = d
+		}
 		os.Exit(claude.Main(os.Args[2:], os.Stdout, os.Stderr))
 	}
 	os.Exit(testenv.RunWithClaudeGuard(m))

@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -27,6 +28,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter/adaptertest"
 	"github.com/ndrwl/guildhall/internal/adapter/claude"
 	"github.com/ndrwl/guildhall/internal/adapter/fake"
+	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/interp"
 )
 
@@ -47,6 +49,31 @@ var Usage = adapter.Usage{Tokens: adapter.Measured, InputTokens: 1200, OutputTok
 // Denied is the stub behaviour that succeeds after print mode denied it one shell command, `go test ./...`, which
 // its result message reports as Claude Code's does.
 const Denied = "denied"
+
+// The linger behaviours write their draft and then, like a `claude --print` that outlives its result, keep running
+// until stopped, their parent ends or HangLimit.
+const (
+	// Linger writes a valid draft and prints its result message before lingering.
+	Linger = "linger"
+	// LingerSilent writes a valid draft and lingers without printing anything more, not even its result message.
+	LingerSilent = "linger-silent"
+	// LingerWrongIdentity is Linger with a draft for another attempt.
+	LingerWrongIdentity = "linger-wrong-identity"
+	// LingerMalformed is Linger with a draft that is not a whole result.
+	LingerMalformed = "linger-malformed"
+	// LingerCancelOnStop is Linger that, when asked to stop, writes the attempt's cancel marker before exiting:
+	// a cancel racing the wrapper's own stop.
+	LingerCancelOnStop = "linger-cancel-on-stop"
+)
+
+// lingers reports whether b is one of the linger behaviours.
+func lingers(b adaptertest.Behaviour) bool {
+	switch b {
+	case Linger, LingerSilent, LingerWrongIdentity, LingerMalformed, LingerCancelOnStop:
+		return true
+	}
+	return false
+}
 
 // Output is the print-mode JSON output the stub writes on standard output when it exits, shaped as Claude Code's
 // result message, reporting Usage.
@@ -238,7 +265,7 @@ func stub(args []string) error {
 		}
 	}
 	_, _ = fmt.Fprintln(os.Stdout, `{"type":"assistant","message":{"content":[{"type":"text","text":"I am inspecting the task."},{"type":"tool_use","name":"Read","input":{"file_path":"src/main.go"}},{"type":"tool_use","name":"Bash","input":{"command":"go test ./..."}}]}}`)
-	if b != adaptertest.Hang {
+	if b != adaptertest.Hang && !lingers(b) {
 		// Claude Code prints its result message as it exits, whatever the session did.
 		var denials []any
 		if b == Denied {
@@ -252,15 +279,20 @@ func stub(args []string) error {
 		"status": "succeeded", "summary": Summary, "outputs": []any{},
 	}
 	switch b {
-	case adaptertest.Succeed, adaptertest.ExitErrorAfterResult, Denied:
+	case adaptertest.Succeed, adaptertest.ExitErrorAfterResult, Denied, Linger, LingerSilent, LingerCancelOnStop:
 	case adaptertest.Fail:
 		result["status"] = "failed"
-	case adaptertest.WrongIdentity:
+	case adaptertest.WrongIdentity, LingerWrongIdentity:
 		result["attempt_id"] = id.AttemptID + "-other"
 	case adaptertest.NoResult:
 		return nil
 	case adaptertest.Malformed:
-		return os.WriteFile(draft, []byte(`{"schema": "`+adapter.ResultSchema+`", "version": 1, "task_id": `), 0o600)
+		return os.WriteFile(draft, []byte(malformed), 0o600)
+	case LingerMalformed:
+		if err := os.WriteFile(draft, []byte(malformed), 0o600); err != nil {
+			return err
+		}
+		return linger(b, draft, id)
 	case adaptertest.Hang:
 		hang()
 		return nil
@@ -277,6 +309,36 @@ func stub(args []string) error {
 	if b == adaptertest.ExitErrorAfterResult {
 		return errExit{}
 	}
+	if lingers(b) {
+		return linger(b, draft, id)
+	}
+	return nil
+}
+
+// malformed is the draft of the malformed behaviours: the start of a result, cut off.
+const malformed = `{"schema": "` + adapter.ResultSchema + `", "version": 1, "task_id": `
+
+// linger plays b after its draft: it prints the result message unless b is LingerSilent, then hangs. When asked to
+// stop, LingerCancelOnStop writes the cancel marker of the attempt whose draft is draft before it exits; the others
+// take the interrupt's default, ending at once.
+func linger(b adaptertest.Behaviour, draft string, id adapter.Identity) error {
+	stopped := make(chan os.Signal, 1)
+	if b == LingerCancelOnStop {
+		signal.Notify(stopped, os.Interrupt)
+	}
+	if b != LingerSilent {
+		_, _ = os.Stdout.Write(output(nil))
+	}
+	go func() {
+		<-stopped
+		resultFile := filepath.Join(filepath.Dir(filepath.Dir(draft)), artisan.ResultFile)
+		if err := adapter.MarkCancelled(resultFile, id); err != nil {
+			fmt.Fprintf(os.Stderr, "claude stub: cancel marker: %v\n", err)
+			os.Exit(2)
+		}
+		os.Exit(0)
+	}()
+	hang()
 	return nil
 }
 

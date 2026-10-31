@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync/atomic"
 	"unicode"
 )
 
@@ -14,11 +15,13 @@ import (
 // A failed presentation sink never breaks the worker's stdout pipe. Only a
 // result event is retained for the existing usage/denial/final-text reporter.
 // os/exec serializes calls to Write; finish is called only after Wait.
+// sawResult is set once a result event arrives; it alone is read while Claude runs.
 type readableStream struct {
-	out      io.Writer
-	result   *limitedBuffer
-	line     []byte
-	dropping bool
+	out       io.Writer
+	result    *limitedBuffer
+	line      []byte
+	dropping  bool
+	sawResult atomic.Bool
 }
 
 func (s *readableStream) Write(p []byte) (int, error) {
@@ -79,6 +82,7 @@ func (s *readableStream) event(line []byte) {
 		s.result.buf.Reset()
 		s.result.truncated = false
 		_, _ = s.result.Write(line)
+		s.sawResult.Store(true)
 	case "assistant":
 		for _, block := range event.Message.Content {
 			switch block.Type {
