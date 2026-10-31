@@ -22,7 +22,7 @@ A grill in progress need not be finished or noted: the next session restarts it.
 
 ## Before you reload
 
-Record everything the next session must not lose: a reply the Guildmaster gave that is not yet a `guildhall decide answer`, including a reply to your own question about a task (open it with `guildhall decide open` first if it is not yet recorded), a task they asked for that is not yet a `guildhall task new`, requirements they gave about one task that are not yet its `guildhall task context add`, another task's document they wanted a task's Artisans to see that is not yet its `guildhall task link add`, a setting they asked one task to override that is not yet its `guildhall task override set`.
+Record everything the next session must not lose: a reply the Guildmaster gave that is not yet a `guildhall decide answer`, including a reply to your own question about a task (open it with `guildhall decide open` first if it is not yet recorded), a task they asked for that is not yet a `guildhall task new`, requirements they gave about one task that are not yet its `guildhall task context add`, another task's document they wanted a task's Artisans to see, or a document a task's statement depends on, that is not yet its `guildhall task link add`, a setting they asked one task to override that is not yet its `guildhall task override set`.
 The store is the record, so a note never carries what a command can record.
 
 Then run the note audit from `guildhall-maintenance`, whether or not it is due, and record it with `guildhall director maintenance record --notes --summary <text>`.
