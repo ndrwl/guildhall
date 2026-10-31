@@ -8,9 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
-	"strings"
 
+	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -34,11 +33,7 @@ func BoundTaskGrant(copyDir, repository, taskID, attemptID string) (grant *store
 	if copyDir == "" || repository == "" {
 		return nil, false, nil
 	}
-	i := strings.LastIndex(attemptID, "-")
-	if i < 0 {
-		return nil, false, nil
-	}
-	if n, err := strconv.Atoi(attemptID[i+1:]); err != nil || n < 1 || strconv.Itoa(n) != attemptID[i+1:] {
+	if _, _, ok := artisan.ParseAttemptID(attemptID); !ok {
 		return nil, false, nil
 	}
 	path := filepath.Join(copyDir, copyStoreFile)

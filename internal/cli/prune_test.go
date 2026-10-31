@@ -571,6 +571,68 @@ func TestPruneRemovesAFinishedHallmarkWorktree(t *testing.T) {
 	}
 }
 
+// TestPruneRetiresAtTheNewestMergeRecord: a task with two merge records is retired at the newest one's head, the last
+// in the store's name order (interp.MergeRecord), the head the hallmark baseline names too; the older record's head
+// would keep the worktree for an unmerged commit.
+func TestPruneRetiresAtTheNewestMergeRecord(t *testing.T) {
+	f := newPruneFixture(t)
+	f.task("app", "t-1")
+	f.attempt("app", "t-1", "build", store.AttemptSucceeded, nil)
+	older := f.worktree("t-1")
+	w := f.workspace("t-1")
+	writeTree(t, filepath.Join(w.Dir, "more.txt"), "more\n")
+	f.git(w.Dir, "add", "more.txt")
+	f.git(w.Dir, "commit", "-q", "-m", "more")
+	newer := f.git(w.Dir, "rev-parse", "HEAD")
+	f.document("t-1", "outside-3-merge", "outside-3/merge.json", `{"schema":"guildhall.pull-request/1","remote":"origin","number":3,"head":"`+newer+`","state":"merged"}`)
+	f.close("app", "t-1")
+	if older == newer {
+		t.Fatal("the two merge records name one head")
+	}
+	got := f.run(false)
+	if len(got) != 1 || got[0].Worktree != store.WorktreeRemoved || !got[0].complete() {
+		t.Fatalf("prune = %+v, want the worktree retired at %s", got, newer)
+	}
+	if _, err := os.Lstat(w.Dir); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("worktree: %v, want it removed", err)
+	}
+}
+
+// TestPruneFailsOnABadMergeRecord: a merge record that names no valid head, does not decode, or has no file fails
+// the task's prune with an error naming the record, and its worktree is not removed.
+func TestPruneFailsOnABadMergeRecord(t *testing.T) {
+	for name, record := range map[string]func(f *pruneFixture){
+		"no valid head": func(f *pruneFixture) {
+			f.document("t-1", "outside-3-merge", "outside-3/merge.json", `{"schema":"guildhall.pull-request/1","head":"nope"}`)
+		},
+		"not JSON": func(f *pruneFixture) {
+			f.document("t-1", "outside-3-merge", "outside-3/merge.json", `{"schema":`)
+		},
+		"no file": func(f *pruneFixture) {
+			f.mutate(func(s *store.Store) error {
+				_, err := s.PutDocument(f.id(), store.DocumentRef{Repository: "app", TaskID: "t-1", Name: "outside-3-merge", Path: "tasks/app/t-1/outside-3/merge.json", SHA256: strings.Repeat("0", 64)})
+				return err
+			})
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newPruneFixture(t)
+			f.task("app", "t-1")
+			f.attempt("app", "t-1", "build", store.AttemptSucceeded, nil)
+			f.worktree("t-1")
+			record(f)
+			f.close("app", "t-1")
+			_, err := f.pruner().run(context.Background(), "", "", false, nil)
+			if err == nil || !strings.Contains(err.Error(), "prune app/t-1: ") || !strings.Contains(err.Error(), "outside-3-merge") {
+				t.Fatalf("prune = %v, want an error naming outside-3-merge", err)
+			}
+			if _, err := os.Lstat(f.workspace("t-1").Dir); err != nil {
+				t.Errorf("worktree: %v, want it kept", err)
+			}
+		})
+	}
+}
+
 func (f *pruneFixture) spend() string {
 	f.t.Helper()
 	rep, err := withStore(f.store, true, func(s *store.Store) (spendReport, error) {
@@ -716,7 +778,7 @@ func TestPruneLeavesAPlainWorkDirectory(t *testing.T) {
 	f := newPruneFixture(t)
 	f.task("app", "t-1")
 	f.attempt("app", "t-1", "build", store.AttemptSucceeded, nil)
-	f.document("t-1", "deliver-1-merge", "deliver-1/merge.json", `{"head":"`+strings.Repeat("b", 40)+`"}`)
+	f.document("t-1", "deliver-1-merge", "deliver-1/merge.json", `{"schema":"guildhall.pull-request/1","head":"`+strings.Repeat("b", 40)+`"}`)
 	work := filepath.Join(f.state, "app", "t-1", "work")
 	writeTree(t, filepath.Join(work, "notes.md"), "old\n")
 	f.close("app", "t-1")

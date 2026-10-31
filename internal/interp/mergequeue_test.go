@@ -466,7 +466,7 @@ func onceEach(t *testing.T, e *env) {
 	}
 	var merges []string
 	for name := range e.documents(t) {
-		if strings.HasSuffix(name, "-merge") {
+		if interp.IsMergeRecord(name) {
 			merges = append(merges, name)
 		}
 		if strings.HasPrefix(name, "deliver-3-") {

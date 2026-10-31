@@ -31,7 +31,7 @@ func TaskPullRequests(docs []store.DocumentRef, documentDir string) (prs []Recor
 	seen := map[string]int{}
 	for _, d := range docs {
 		switch {
-		case strings.HasSuffix(d.Name, "-merge"):
+		case IsMergeRecord(d.Name):
 			merging = true
 		case strings.HasSuffix(d.Name, "-pr"):
 			data, err := os.ReadFile(filepath.Join(documentDir, filepath.FromSlash(d.Path)))

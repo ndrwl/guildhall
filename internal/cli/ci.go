@@ -12,9 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/ndrwl/guildhall/internal/atomicfile"
@@ -163,9 +161,6 @@ type ciJob struct {
 	Remote, Head string
 }
 
-// resultName matches a validate result's document name, <step>-<round>-result.
-var resultName = regexp.MustCompile(`^(.+)-([0-9]+)-result$`)
-
 // recordedJobs lists the failed checks of every failed validate result of the task, the latest round first, then
 // the failed jobs the failed-jobs block of each of a hallmark task's baselines lists, its merges newest first; each
 // document is read from under docs and checked against its recorded digest.
@@ -204,8 +199,8 @@ func recordedJobs(s *store.Store, docs, repo, task string) ([]ciJob, error) {
 			}
 			continue
 		}
-		m := resultName.FindStringSubmatch(d.Name)
-		if m == nil || filepath.Base(d.Path) != "result.json" {
+		_, round, ok := interp.ParseResultName(d.Name)
+		if !ok || filepath.Base(d.Path) != "result.json" {
 			continue
 		}
 		p, data, err := read(d)
@@ -225,7 +220,6 @@ func recordedJobs(s *store.Store, docs, repo, task string) ([]ciJob, error) {
 		if json.Unmarshal(data, &v) != nil || v.Schema != "guildhall.validation-result/1" || v.Verdict != "failed" {
 			continue
 		}
-		round, _ := strconv.Atoi(m[2])
 		for _, l := range v.Logs {
 			out = append(out, ciJob{Check: l.Check, Job: l.Job, Result: d.Name, Path: p, round: round, Remote: v.Remote, Head: v.Head})
 		}

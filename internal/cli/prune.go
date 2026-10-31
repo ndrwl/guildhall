@@ -426,7 +426,7 @@ func (p *pruner) pruneCILogs(r *pruneResult) {
 	r.Bytes += size
 }
 
-// retire removes the task's worktree with git.Program.Retire, at the head its merge record names, when nothing in
+// retire removes the task's worktree with git.Program.Retire, at the head interp.SafeHead names, when nothing in
 // it would be lost; a kept worktree, one Retire cannot remove and a work directory that is not a worktree are left
 // as they are, with the reason.
 func (p *pruner) retire(ctx context.Context, r *pruneResult, h store.TaskHistory) error {
@@ -437,7 +437,7 @@ func (p *pruner) retire(ctx context.Context, r *pruneResult, h store.TaskHistory
 		return statErr
 	}
 	exists := statErr == nil
-	head, err := p.mergedHead(h.Documents)
+	head, err := interp.SafeHead(h.Documents, p.readDocument)
 	if err != nil {
 		return err
 	}
@@ -476,28 +476,18 @@ func (p *pruner) retire(ctx context.Context, r *pruneResult, h store.TaskHistory
 	return nil
 }
 
-// mergedHead is the head the task's newest merge record, the <id>-merge document, names, or for a task whose workflow
-// has no deliver step the head its finished record names (interp.FinishedDocument), or empty when it has neither.
-func (p *pruner) mergedHead(docs []store.DocumentRef) (string, error) {
-	head := ""
-	for _, d := range docs {
-		if !strings.HasSuffix(d.Name, "-merge") && d.Name != interp.FinishedDocument {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(p.state, "documents", filepath.FromSlash(d.Path)))
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
-		} else if err != nil {
-			return "", err
-		}
-		var doc struct {
-			Head string `json:"head"`
-		}
-		if json.Unmarshal(data, &doc) == nil && digest.ValidHead(doc.Head) {
-			head = doc.Head
-		}
+// readDocument returns a task document's content from under the state's documents directory, after checking its
+// recorded digest.
+func (p *pruner) readDocument(d store.DocumentRef) ([]byte, error) {
+	path := filepath.Join(p.state, "documents", filepath.FromSlash(d.Path))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
 	}
-	return head, nil
+	if digest.Of(data).Hex() != d.SHA256 {
+		return nil, fmt.Errorf("document %s at %s does not match its recorded digest", d.Name, path)
+	}
+	return data, nil
 }
 
 // pruneAttempt removes, or with dry measures, everything in k's attempt directory but the files a prune keeps:

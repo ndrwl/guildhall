@@ -313,6 +313,60 @@ func TestHallmarkBaselineChecksError(t *testing.T) {
 	}
 }
 
+// mergeRecord is a guildhall.pull-request/1 merge record of task's pull request number at head.
+func (h *baselineEnv) mergeRecord(t *testing.T, task string, number int, head string) []byte {
+	t.Helper()
+	data, err := json.Marshal(map[string]any{"schema": "guildhall.pull-request/1", "remote": h.remote, "number": number,
+		"url": fmt.Sprintf("https://example.invalid/pull/%d", number), "branch": "guildhall/" + task, "head": head, "state": "merged"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+// TestHallmarkBaselineTwoMergeRecords: a task with two merge records is listed at the newest one's head, the last in
+// the store's name order (interp.MergeRecord), the head prune retires it at too.
+func TestHallmarkBaselineTwoMergeRecords(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			h := newBaselineEnv(t, b, hallmarkExp(1, map[string]string{}, report("# Hallmark\n")))
+			a := h.commit(t, "t5-a")
+			bh := h.commit(t, "t5-b")
+			h.close(t, "t5", straight(t).Revision(), func() {
+				h.putDoc(t, "t5", "deliver-1-merge", "tasks/app/t5/deliver-1/merge.json", h.mergeRecord(t, "t5", 105, a))
+				h.putDoc(t, "t5", "outside-3-merge", "tasks/app/t5/outside-3/merge.json", h.mergeRecord(t, "t5", 3, bh))
+			})
+			h.eng.Forge = nil
+			want(t, h.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 1})
+			_, text := h.baseline(t)
+			containsInOrder(t, text, "## Merged tasks (1, newest first)", "| t5 | [#3](https://example.invalid/pull/3) | `` | `"+bh+"` |")
+			if strings.Contains(text, a) {
+				t.Fatal("the baseline names the older merge record's head")
+			}
+		})
+	}
+}
+
+// TestHallmarkBaselineUnreadableMergeRecord: a task whose merge record names no valid head, and one whose record does
+// not decode, are not dropped: the Not placed line lists each as unreadable, and the baseline is still recorded.
+func TestHallmarkBaselineUnreadableMergeRecord(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			h := newBaselineEnv(t, b, hallmarkExp(1, map[string]string{}, report("# Hallmark\n")))
+			h.close(t, "t4", straight(t).Revision(), func() {
+				h.putDoc(t, "t4", "deliver-1-merge", "tasks/app/t4/deliver-1/merge.json", []byte(`{"schema":"guildhall.pull-request/1","head":"nope"}`))
+			})
+			h.close(t, "t5", straight(t).Revision(), func() {
+				h.putDoc(t, "t5", "deliver-1-merge", "tasks/app/t5/deliver-1/merge.json", []byte(`{"schema":`))
+			})
+			want(t, h.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 1})
+			_, text := h.baseline(t)
+			containsInOrder(t, text, "No merged task is between the two heads.", "\nNot placed: ", "t5: merge record unreadable: merge record deliver-1-merge: ",
+				"; t4: merge record unreadable: merge record deliver-1-merge names no valid head.\n")
+		})
+	}
+}
+
 // TestHallmarkBaselineCancelled: an advance whose context ends during Checks returns the context's error and
 // records no baseline.
 func TestHallmarkBaselineCancelled(t *testing.T) {
