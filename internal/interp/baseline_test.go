@@ -126,18 +126,60 @@ func (h *baselineEnv) putDoc(t *testing.T, task, name, p string, data []byte) {
 	}
 }
 
-// close creates task with workflow rev and closes it done, a day after the task closed before it.
-func (h *baselineEnv) close(t *testing.T, task string, rev workflow.Revision, docs func()) {
+// create creates task, open, with workflow rev.
+func (h *baselineEnv) create(t *testing.T, task string, rev workflow.Revision) {
 	t.Helper()
 	if _, err := h.h.CreateTask("task:app:"+task, store.Task{Repository: "app", ID: task, Title: "Task " + task, Workflow: rev, ConfigDigest: "sha256:" + strings.Repeat("c", 64)}); err != nil {
 		t.Fatal(err)
 	}
-	docs()
+}
+
+// finish closes task in state, a day after the task closed before it.
+func (h *baselineEnv) finish(t *testing.T, task string, state store.TaskState) {
+	t.Helper()
 	h.clock = h.clock.Add(24 * time.Hour)
 	h.h.Clock.Set(h.clock)
-	if _, err := h.h.Records.SetTaskState("state:"+task, "app", task, store.TaskDone); err != nil {
+	if _, err := h.h.Records.SetTaskState("state:"+task, "app", task, state); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// close creates task with workflow rev and closes it done, a day after the task closed before it.
+func (h *baselineEnv) close(t *testing.T, task string, rev workflow.Revision, docs func()) {
+	t.Helper()
+	h.create(t, task, rev)
+	docs()
+	h.finish(t, task, store.TaskDone)
+}
+
+// recordMerge records merge record name of task, such as deliver--s2-1-merge, as pull request number merged at c,
+// and makes the forge report checks for c.
+func (h *baselineEnv) recordMerge(t *testing.T, task, name string, number int, c string, checks ...forge.Check) {
+	t.Helper()
+	data, err := json.Marshal(map[string]any{"schema": "guildhall.pull-request/1", "remote": h.remote, "number": number,
+		"url": fmt.Sprintf("https://example.invalid/pull/%d", number), "branch": "guildhall/" + task, "head": c, "state": "merged", "merge_commit": c})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.putDoc(t, task, name, "tasks/app/"+task+"/"+strings.TrimSuffix(name, "-merge")+"/merge.json", data)
+	h.forge.SetBranch(h.remote, "main-"+name+"-"+task, c)
+	h.forge.SetChecks(h.remote, c, checks...)
+}
+
+// sliced creates task t6, open, bound to the three-slice workflow with its accepted spec recorded, and makes the
+// engine resolve that workflow besides the hallmark one.
+func (h *baselineEnv) sliced(t *testing.T) {
+	t.Helper()
+	def := slicedDefinition(t, true)
+	resolve := h.eng.Workflow
+	h.eng.Workflow = func(rev workflow.Revision) (*workflow.Definition, error) {
+		if rev.Name == def.Name {
+			return def, nil
+		}
+		return resolve(rev)
+	}
+	h.create(t, "t6", def.Revision())
+	h.putDoc(t, "t6", "accept-1-spec", "tasks/app/t6/plan-1/spec.md", []byte(threeSlices))
 }
 
 // merged lands a commit for task, records it merged as pull request number at that merge commit, and makes the
@@ -327,12 +369,17 @@ func (h *baselineEnv) mergeRecord(t *testing.T, task string, number int, head st
 	return data
 }
 
-// TestHallmarkBaselineTwoMergeRecords: a task with two merge records is listed at the newest one's head, the last in
-// the store's name order (interp.MergeRecord), the head prune retires it at too.
+// TestHallmarkBaselineTwoMergeRecords: a task with two merge records at different heads gets a row for each, the one
+// that landed later first; two records of one task at the same commit are one row, the later name's.
 func TestHallmarkBaselineTwoMergeRecords(t *testing.T) {
 	for _, b := range backends {
 		t.Run(b.name, func(t *testing.T) {
 			h := newBaselineEnv(t, b, hallmarkExp(1, map[string]string{}, report("# Hallmark\n")))
+			same := h.commit(t, "t4")
+			h.close(t, "t4", straight(t).Revision(), func() {
+				h.putDoc(t, "t4", "deliver-1-merge", "tasks/app/t4/deliver-1/merge.json", h.mergeRecord(t, "t4", 104, same))
+				h.putDoc(t, "t4", "outside-2-merge", "tasks/app/t4/outside-2/merge.json", h.mergeRecord(t, "t4", 2, same))
+			})
 			a := h.commit(t, "t5-a")
 			bh := h.commit(t, "t5-b")
 			h.close(t, "t5", straight(t).Revision(), func() {
@@ -342,16 +389,161 @@ func TestHallmarkBaselineTwoMergeRecords(t *testing.T) {
 			h.eng.Forge = nil
 			want(t, h.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 1})
 			_, text := h.baseline(t)
-			containsInOrder(t, text, "## Merged tasks (1, newest first)", "| t5 | [#3](https://example.invalid/pull/3) | `` | `"+bh+"` |")
-			if strings.Contains(text, a) {
-				t.Fatal("the baseline names the older merge record's head")
+			containsInOrder(t, text, "## Merged tasks (3, newest first)",
+				"| t5 | [#3](https://example.invalid/pull/3) | `` | `"+bh+"` |\n",
+				"| t5 | [#105](https://example.invalid/pull/105) | `` | `"+a+"` |\n",
+				"| t4 | [#2](https://example.invalid/pull/2) | `` | `"+same+"` |\n")
+			if strings.Contains(text, "#104") {
+				t.Fatal("the baseline lists a second row for the same commit")
 			}
 		})
 	}
 }
 
+// TestHallmarkBaselineOpenTask: an open one-slice task's merge record in range gets a row and a checks section, as a
+// done task's does (the d122 case); an open task with no merge record adds nothing, and the hallmark task's own merge
+// record is not listed.
+func TestHallmarkBaselineOpenTask(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			h := newBaselineEnv(t, b, hallmarkExp(1, map[string]string{}, report("# Hallmark\n")))
+			h.create(t, "t3", straight(t).Revision())
+			c := h.commit(t, "t5")
+			h.create(t, "t5", straight(t).Revision())
+			h.recordMerge(t, "t5", "deliver-1-merge", 105, c)
+			own := h.commit(t, "t7")
+			h.recordMerge(t, "t7", "deliver-1-merge", 107, own)
+			want(t, h.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 1})
+			_, text := h.baseline(t)
+			containsInOrder(t, text, "## Merged tasks (1, newest first)",
+				"| t5 | [#105](https://example.invalid/pull/105) | `"+c+"` | `"+c+"` |\n",
+				"### t5 `"+c+"`\n\nNo checks reported.")
+			for _, absent := range []string{"Not placed", "#107", "| t3 |", "| t7 |"} {
+				if strings.Contains(text, absent) {
+					t.Errorf("baseline has %q", absent)
+				}
+			}
+		})
+	}
+}
+
+// TestHallmarkBaselineSlices: an open three-slice task's two merged slices are each a row labelled with its slice, in
+// landing order with a done task's merge landed between them, not grouped by task; a slice's checks heading and
+// failed job name its slice.
+func TestHallmarkBaselineSlices(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			h := newBaselineEnv(t, b, hallmarkExp(1, map[string]string{}, report("# Hallmark\n")))
+			h.sliced(t)
+			c1 := h.commit(t, "t6-s1")
+			h.recordMerge(t, "t6", "deliver-1-merge", 201, c1)
+			c4 := h.merged(t, "t4", 104)
+			c2 := h.commit(t, "t6-s2")
+			h.recordMerge(t, "t6", "deliver--s2-1-merge", 202, c2, forge.Check{Name: "lint", State: forge.CheckFailed, Job: "42"})
+			want(t, h.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 1})
+			_, text := h.baseline(t)
+			containsInOrder(t, text, "## Merged tasks (3, newest first)",
+				"| t6 · slice 2/3 | [#202](https://example.invalid/pull/202) | `"+c2+"` | `"+c2+"` |\n",
+				"| t4 | [#104](https://example.invalid/pull/104) | `"+c4+"` | `"+c4+"` |\n",
+				"| t6 · slice 1/3 | [#201](https://example.invalid/pull/201) | `"+c1+"` | `"+c1+"` |\n",
+				"### t6 · slice 2/3 `"+c2+"`", "### t4 `"+c4+"`", "### t6 · slice 1/3 `"+c1+"`")
+			jobs, err := interp.BaselineJobs([]byte(text))
+			if err != nil || len(jobs) != 1 || jobs[0] != (interp.BaselineJob{Task: "t6 · slice 2/3", Remote: h.remote, Head: c2, Check: "lint", Job: "42"}) {
+				t.Fatalf("failed jobs = %+v, %v; want slice 2's lint job", jobs, err)
+			}
+		})
+	}
+}
+
+// TestHallmarkBaselineCancelledSlices: a three-slice task cancelled after slice 1 merged still lists that slice.
+func TestHallmarkBaselineCancelledSlices(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			h := newBaselineEnv(t, b, hallmarkExp(1, map[string]string{}, report("# Hallmark\n")))
+			h.sliced(t)
+			c1 := h.commit(t, "t6-s1")
+			h.recordMerge(t, "t6", "deliver-1-merge", 201, c1)
+			h.finish(t, "t6", store.TaskCancelled)
+			h.eng.Forge = nil
+			want(t, h.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 1})
+			_, text := h.baseline(t)
+			containsInOrder(t, text, "## Merged tasks (1, newest first)", "| t6 · slice 1/3 | [#201](https://example.invalid/pull/201) | `"+c1+"` | `"+c1+"` |\n")
+		})
+	}
+}
+
+// TestHallmarkBaselineSlicesPartlyInRange: a finished three-slice task whose slice 3 landed at the previous hallmark's
+// head and whose slice 1 landed after it lists slice 1 only.
+func TestHallmarkBaselineSlicesPartlyInRange(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			prev := []byte("# Earlier hallmark\n")
+			h := newBaselineEnv(t, b, hallmarkExp(1, map[string]string{"previous": "sha256:" + sum(prev)}, report("# Hallmark\n")))
+			h.sliced(t)
+			c3 := h.commit(t, "t6-s3")
+			h.recordMerge(t, "t6", "deliver--s3-1-merge", 203, c3)
+			h.hallmark(t, "t2", prev, c3)
+			c1 := h.commit(t, "t6-s1")
+			h.recordMerge(t, "t6", "deliver-1-merge", 201, c1)
+			h.finish(t, "t6", store.TaskDone)
+			h.eng.Forge = nil
+			want(t, h.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 1})
+			_, text := h.baseline(t)
+			containsInOrder(t, text, "- Previous hallmark: t2, head `"+c3+"`\n", "## Merged tasks (1, newest first)",
+				"| t6 · slice 1/3 | [#201](https://example.invalid/pull/201) | `"+c1+"` | `"+c1+"` |\n")
+			if strings.Contains(text, "#203") {
+				t.Fatal("the baseline lists a slice from before the previous hallmark's head")
+			}
+		})
+	}
+}
+
+// TestHallmarkBaselineOpenNewestKept: the limit keeps the newest merges by landing, so an open task's merge landed
+// last is listed first and the two oldest done merges are the ones dropped.
+func TestHallmarkBaselineOpenNewestKept(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			h := newBaselineEnv(t, b, hallmarkExp(1, map[string]string{}, report("# Hallmark\n")))
+			for i := 1; i <= 21; i++ {
+				h.merged(t, fmt.Sprintf("m%02d", i), i)
+			}
+			c := h.commit(t, "o1")
+			h.create(t, "o1", straight(t).Revision())
+			h.recordMerge(t, "o1", "deliver-1-merge", 99, c)
+			h.eng.Forge = nil
+			want(t, h.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 1})
+			_, text := h.baseline(t)
+			containsInOrder(t, text, "## Merged tasks (20, newest first)\n\n| Task | Pull request | Merge commit | Head |\n|---|---|---|---|\n| o1 | [#99]",
+				"| m21 |", "| m03 |", "2 older merges in the range are not listed (limit 20).")
+			for _, absent := range []string{"| m02 |", "| m01 |"} {
+				if strings.Contains(text, absent) {
+					t.Errorf("baseline has %q", absent)
+				}
+			}
+		})
+	}
+}
+
+// TestHallmarkBaselineSliceLabelFallback: a slice-2 merge record of a task whose workflow does not resolve is
+// labelled with its slice alone, and the baseline is still recorded.
+func TestHallmarkBaselineSliceLabelFallback(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			h := newBaselineEnv(t, b, hallmarkExp(1, map[string]string{}, report("# Hallmark\n")))
+			h.create(t, "t6", slicedDefinition(t, true).Revision())
+			c := h.commit(t, "t6-s2")
+			h.recordMerge(t, "t6", "deliver--s2-1-merge", 202, c)
+			h.eng.Forge = nil
+			want(t, h.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 1})
+			_, text := h.baseline(t)
+			containsInOrder(t, text, "## Merged tasks (1, newest first)", "| t6 · slice 2 | [#202](https://example.invalid/pull/202) | `"+c+"` | `"+c+"` |\n")
+		})
+	}
+}
+
 // TestHallmarkBaselineUnreadableMergeRecord: a task whose merge record names no valid head, and one whose record does
-// not decode, are not dropped: the Not placed line lists each as unreadable, and the baseline is still recorded.
+// not decode, are not dropped: each is an unreadable row with no checks section and is on the Not placed line, and
+// the baseline is still recorded.
 func TestHallmarkBaselineUnreadableMergeRecord(t *testing.T) {
 	for _, b := range backends {
 		t.Run(b.name, func(t *testing.T) {
@@ -364,8 +556,16 @@ func TestHallmarkBaselineUnreadableMergeRecord(t *testing.T) {
 			})
 			want(t, h.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 1})
 			_, text := h.baseline(t)
-			containsInOrder(t, text, "No merged task is between the two heads.", "\nNot placed: ", "t5: merge record unreadable: merge record deliver-1-merge: ",
+			containsInOrder(t, text, "## Merged tasks (2, newest first)",
+				"| t5 | unreadable: merge record deliver-1-merge: ", " | — | — |\n",
+				"| t4 | unreadable: merge record deliver-1-merge names no valid head | — | — |\n",
+				"\nNot placed: ", "t5: merge record unreadable: merge record deliver-1-merge: ",
 				"; t4: merge record unreadable: merge record deliver-1-merge names no valid head.\n")
+			for _, absent := range []string{"### t5", "### t4"} {
+				if strings.Contains(text, absent) {
+					t.Errorf("baseline has %q", absent)
+				}
+			}
 		})
 	}
 }
