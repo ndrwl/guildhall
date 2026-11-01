@@ -49,6 +49,7 @@ effort = "high"
 `[steward]` is valid only in a Steward config, and `[director]` only in a Director's.
 `name` labels the Steward's Herdr workspace and tab and is required to start a session; `adapter`, `model`, `effort` and `role` choose the session's runtime and role prompt as `[director]` does for a Director, and `role` is a config-relative path that replaces the release's `roles/steward.md`.
 A config that only runs rollouts needs no `[steward]` table.
+The table has no `idle_after`, handoff or `wake_quiet` key: the Steward's session runs the defaults of those ([lifecycle](#lifecycle)).
 The table is an addition to schema version 1, so an older binary refuses it as an unknown key rather than guessing (R1.11).
 Like every config, it names no credential: each machine's address, user and key stay in the Steward user's SSH config behind its roster `ssh_alias`.
 
@@ -76,7 +77,8 @@ guildhall steward handoff [--copy <dir>]
 
 Each runs the Director's command of the same name, [ready](director.md#ready), [pause and resume](director.md#pause-and-resume), [stop](director.md#stop) and [reload](director.md#reload), on the Steward copy's `steward.store`, and refuses any copy whose store is not a `steward.store`.
 `steward handoff` is `steward reload --now`: a fresh session picks up from this one, with every live note in its `startup.md`.
-The automatic handoff triggers of a Director's session, such as the context trigger, apply to the Steward's too.
+The Steward's session runs the defaults of a Director's session settings: `idle_after` (5 minutes), the [automatic handoff](director.md#automatic-handoff) triggers (the context trigger at 70%, with the after-tasks and idle triggers off) and `wake_quiet` (3 seconds).
+They cannot be changed: the first four are `[director]` keys, and a Steward config refuses that table and the same keys under `[steward]`, and it refuses `wake_quiet` in `[local]` or `[managed]`.
 A wake line ending `; handoff due (<reason>)` is answered by the `guildhall-steward-handoff` skill, which runs `steward handoff`.
 
 ### Inbox

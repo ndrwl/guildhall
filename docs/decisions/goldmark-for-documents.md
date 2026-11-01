@@ -16,7 +16,8 @@ On d105's grill the Guildmaster asked "should we use a markdown rendering librar
 ## Decision
 
 Add `github.com/yuin/goldmark` v1.8.7 for `internal/web`, following the policy of [adding a dependency when a feature needs it](standard-library-only-for-the-foundation.md).
-`web.RenderMarkdown` uses one goldmark with only its tables extension, at goldmark's safe defaults: raw HTML is omitted (no `html.WithUnsafe`) and `javascript:`, `vbscript:`, `file:` and `data:` links are dropped.
+`web.RenderMarkdown` uses one goldmark with only its tables extension, at goldmark's safe defaults: raw HTML is omitted (no `html.WithUnsafe`), and a dangerous URL is blanked: the `<a>` or `<img>` stays with an empty `href` or `src`.
+The dangerous URLs are `javascript:`, `vbscript:`, `file:` and every `data:` URL except `data:image/png`, `gif`, `jpeg` or `webp` followed by `;base64,`, matched case-insensitively; those four base64 images are kept, and the page's CSP (`img-src 'self'`) stops the browser loading them.
 Its output is the only HTML a page passes to `html/template` unescaped; every other field is escaped, an HTML document is shown only in a sandboxed frame, and every document keeps a Raw link.
 `internal/web`'s tests pin that raw HTML and those links render harmless, and a fuzz test that no `<script` tag or `on…=` attribute reaches the output ([contract](../contracts/web.md)).
 

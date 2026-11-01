@@ -652,3 +652,40 @@ func TestClerkKindRenamedHallmark(t *testing.T) {
 		t.Fatalf("clerk task does not show Kind: hallmark:\n%s", out)
 	}
 }
+
+// TestClerkFollowUpsWaitsForYourPick: a hallmark waiting on its open follow-ups decision waits for the Guildmaster's
+// pick of its ranked follow-ups, not for an approval, since there is nothing to approve.
+func TestClerkFollowUpsWaitsForYourPick(t *testing.T) {
+	dir := markCopy(t, filepath.Dir(writeDirector(t, directorTOML)))
+	s, err := store.Open(filepath.Join(dir, "director.store"), store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	def, err := workflow.Hallmark()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateTask("m-1", store.Task{Repository: "app", ID: "h1", Title: "Review the whole", Workflow: def.Revision(), ConfigDigest: "sha256:" + strings.Repeat("c", 64)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.OpenDecision("m-2", store.Decision{Repository: "app", TaskID: "h1", ID: "follow-ups", Kind: store.DecisionFollowUps,
+		Subject: &store.Subject{Kind: store.SubjectDocument, Digest: "sha256:" + strings.Repeat("c", 64)},
+		Options: []string{"pick", "none"}, Question: "Which follow-ups?"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "state", "app", "h1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "state", "app", "h1", "next.json"), `{"wait":"decision","step":"hallmark","decision":"follow-ups"}`)
+	code, out, stderr := runClerk(t, dir, "guild")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, stderr)
+	}
+	tasks, _, _ := strings.Cut(out, "\nNeeds you\n")
+	if line := clerkLine(tasks, "h1"); !strings.HasSuffix(line, "  waiting for your pick") {
+		t.Errorf("line %q, want it to end %q:\n%s", line, "waiting for your pick", out)
+	}
+}

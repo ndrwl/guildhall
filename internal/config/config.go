@@ -327,8 +327,8 @@ type Web struct {
 	// default port, so each copy on a machine names its own. Its host must resolve only to Tailscale addresses when
 	// the server binds, or nothing is served; page links are built from it.
 	Address string `toml:"address"`
-	// Guildmaster is the Guildmaster's Tailscale login, such as "andrew@example.com"; optional until answering on the
-	// page arrives, which will accept only requests Tailscale identifies as this login.
+	// Guildmaster is the Guildmaster's Tailscale login, such as "andrew@example.com"; optional. Only requests Tailscale
+	// identifies as this login can answer on the page; with none, every page is read-only.
 	Guildmaster string `toml:"guildmaster" json:",omitempty"`
 }
 
@@ -666,6 +666,11 @@ func (c *Config) validate() []string {
 		}
 		if c.Backup != nil {
 			add("the backup table belongs to a director, not the steward")
+		}
+		// The Steward's session runs the default wake_quiet, as it does idle_after and the handoff triggers.
+		_, local := c.Local[WakeQuietKey]
+		if _, managed := c.Managed[WakeQuietKey]; local || managed {
+			add("%s is a director setting, not the steward's", WakeQuietKey)
 		}
 	default:
 		add(`mode must be "steward" or "director", not %q`, c.Mode)

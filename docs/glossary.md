@@ -20,9 +20,23 @@ This page says which is meant where.
 
 - A **task kind** is what a task is created as, `feature`, `bug` or `hallmark`, chosen with `task new --kind`; it chooses the task's workflow ([task kinds](tasks.md#task-kinds)).
   In Go it is `taskKind`, `config.TaskKindFeature`, `config.TaskKindBug` and `config.TaskKindHallmark`, never a bare `Kind`.
-- A **hallmark task** is a report-only review of the whole repository: one read-only `hallmark` step writes a ranked report, starting from the repository's previous one, and the task sends a `finished` message, with no pull request, then stays open until the Guildmaster answers its `follow-ups` decision, when it finishes as done ([decision](decisions/report-only-workflows.md)).
+- `hallmark` is both a task kind and a step kind; [hallmark](#hallmark) tells the meanings apart.
 - A **step kind** is a built-in, versioned step type a workflow names, such as `research` or `review`: `workflow.Kind` in the [registry](configuration.md#built-in-step-kinds).
   A task kind's workflow is made of step kinds.
+
+## Hallmark
+
+- A **hallmark task** is a task of kind `hallmark`: a report-only review of the whole repository, which sends a `finished` message, with no pull request, then stays open until the Guildmaster answers its `follow-ups` decision, when it finishes as done ([task kinds](tasks.md#task-kinds), [decision](decisions/report-only-workflows.md)).
+- The **hallmark step** is a step of the `hallmark` step kind, which runs under the `researcher` profile with the `guildhall-hallmark` skill and leaves the repository unchanged ([built-in step kinds](configuration.md#built-in-step-kinds)).
+- The **hallmark report** is the ranked report that step writes as its `report` output; the repository's next hallmark step reads it as `previous` ([built-in step kinds](configuration.md#built-in-step-kinds)).
+- **A hallmark is due** is the maintenance item that `hallmark_after_merges` paces: after that many of a repository's pull requests merged since its last hallmark, the Director launches the next hallmark task ([maintenance](director.md#maintenance)).
+
+## Follow-ups
+
+- A **follow-up** is the Director's own `director follow-up` record `f<k>`: a hold, with no attempt or decision yet, until named tasks merge ([holds](director.md#holds)).
+- A hallmark's **ranked follow-ups** are the PR-sized items its report ranks, and the **pick** is the Guildmaster's choice of them in the hallmark task's `follow-ups` decision, `pick` with the chosen ids or `none` ([maintenance](director.md#maintenance)).
+- Say "follow-up" alone only for the Director's record.
+  For a hallmark, say "the hallmark's follow-ups" or "the pick", never "the Director's follow-ups".
 
 ## Profile
 
@@ -129,7 +143,7 @@ A finished outcome without a readable result is refused, not guessed.
 ## Clerk
 
 - **Clerk** is the Guildmaster's read-only Claude Code plugin, `/guild`, `/decisions`, `/task`, `/inspect` and `/queue`, each echoing a `guildhall clerk` answer from the local copy ([Clerk](clerk.md)); it decides and changes nothing, and is neither a dashboard nor the Director.
-- **Where it stands** is a task's position in its workflow as one plain phrase, such as `build running`, `waiting for your approval`, `CI pending, PR #212`, `in merge queue 2/3` or `not started` ([where it stands](clerk.md#where-it-stands)).
+- **Where it stands** is a task's position in its workflow as one plain phrase, such as `build running`, `waiting for your approval`, `waiting for your pick` (a hallmark's open `follow-ups` decision), `CI pending, PR #212`, `in merge queue 2/3` or `not started` ([where it stands](clerk.md#where-it-stands)).
 - **Task page** is the web page for one task, served by Guildhall from the store on the tailnet, showing what needs the Guildmaster, the task's context, status, documents and story ([task pages](web.md)); avoid dashboard, portal or web UI for it.
 - **Reader page** is the page for one of a task's documents, with the open asks beside it and a way back to the task page ([the reader page](web.md#the-reader-page)).
 

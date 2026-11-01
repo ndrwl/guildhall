@@ -81,7 +81,7 @@ Each task's position is one plain phrase:
 | no `next.json` | `not started` |
 | `wait: attempt` with a running attempt | `<step> running` (for example `build running`) |
 | `wait: attempt`, not yet running | `<step> starting` |
-| `wait: decision`, the decision still open | `waiting for your approval` (or `waiting for your answer` for a question) |
+| `wait: decision`, the decision still open | `waiting for your approval` (or `waiting for your answer` for a question, and `waiting for your pick` for a hallmark's `follow-ups` decision) |
 | `wait: decision`, the decision answered but the task not yet continued | `waiting for the Director` |
 | `wait: director` / `director-stage` | `waiting for the Director` |
 | `wait: checks` | `CI pending, PR #<n>` |
