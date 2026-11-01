@@ -33,6 +33,30 @@ func TestMarkdownIsSafe(t *testing.T) {
 	}
 }
 
+// TestMarkdownDataURLs pins goldmark's data: rule: a dangerous URL is blanked, its <a> or <img> kept with an empty
+// href or src, and every data: URL is dangerous except a base64 PNG, GIF, JPEG or WebP image, which is kept.
+func TestMarkdownDataURLs(t *testing.T) {
+	for src, want := range map[string]string{
+		"[a](data:text/html;base64,PHNjcmlwdD4=)":  `<a href="">a</a>`,
+		"[b](DATA:text/html,x)":                    `<a href="">b</a>`,
+		"![h](data:image/svg+xml;base64,PHN2Zz4=)": `<img src="" alt="h">`,
+		"[i](data:image/png,x)":                    `<a href="">i</a>`,
+		"<data:text/html,x>":                       `<a href="">data:text/html,x</a>`,
+		"![p](data:image/png;base64,iVBOR)":        `<img src="data:image/png;base64,iVBOR" alt="p">`,
+	} {
+		got := string(RenderMarkdown([]byte(src)))
+		if !strings.Contains(got, want) {
+			t.Errorf("%s rendered without %s:\n%s", src, want, got)
+		}
+		// An autolink's text is its URL, escaped; only an href or src holding data:text or svg would be unsafe.
+		for _, bad := range []string{`="data:text`, `="DATA:text`, "svg"} {
+			if strings.Contains(got, bad) {
+				t.Errorf("%s rendered %q:\n%s", src, bad, got)
+			}
+		}
+	}
+}
+
 // unsafeMarkup reports a tag in rendered HTML that is a script, or an attribute named on…, scanning only the markup
 // goldmark wrote, since it escapes every < of the input's text.
 func unsafeMarkup(html string) string {

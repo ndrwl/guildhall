@@ -496,7 +496,9 @@ func (p *pruner) retireSlice(ctx context.Context, r *pruneResult, h store.TaskHi
 			return "", "", err
 		}
 		if heads, _ := interp.SliceHeads(h.Documents, p.readDocument); len(heads) > 0 {
-			// A multi-PR task cancelled before its first slice merged: the newest merge is another slice's.
+			// A guard: slices merge in order, so slice 1 has no merge head while another slice has one only if the
+			// records are out of order; SafeHead's newest merge is then another slice's, and slice 1 is never
+			// retired at it.
 			head = ""
 		}
 	}

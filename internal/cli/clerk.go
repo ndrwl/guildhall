@@ -432,8 +432,12 @@ func (d clerkData) stands(ct clerkTask) string {
 		// next.json keeps naming the decision after it is answered, until the Director continues the task.
 		for _, dec := range d.status.Decisions {
 			if dec.Repository == t.Repository && dec.TaskID == t.ID && dec.ID == n.Decision {
-				if dec.Kind == store.DecisionQuestion {
+				switch dec.Kind {
+				case store.DecisionQuestion:
 					return "waiting for your answer"
+				case store.DecisionFollowUps:
+					// A hallmark's ranked follow-ups: nothing to approve, only the Guildmaster's pick.
+					return "waiting for your pick"
 				}
 				return "waiting for your approval"
 			}
@@ -634,8 +638,6 @@ func (d clerkData) guild(all bool) string {
 	return b.String()
 }
 
-// decisions is `clerk decisions`: every open decision, its question and numbered options, and whether it is
-// deferred.
 // clerkDirectorStageKind is the kind of Clerk's Needs you line for an open task handed to a Director stage, such as
 // the grill; it is derived from the task's next.json and is never a needs_me item.
 const clerkDirectorStageKind = "director-stage"
@@ -659,6 +661,8 @@ func (d clerkData) needsMeLines(b *strings.Builder, items []needsMeItem) {
 	}
 }
 
+// decisions is `clerk decisions`: every open decision, its question and numbered options, and whether it is
+// deferred.
 func (d clerkData) decisions() string {
 	var b strings.Builder
 	b.WriteString(d.heading("Decisions"))

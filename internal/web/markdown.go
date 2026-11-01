@@ -10,8 +10,10 @@ import (
 )
 
 // markdown is the one goldmark the pages render documents with: its tables extension at goldmark's safe defaults,
-// so raw HTML is omitted (no html.WithUnsafe) and javascript:, vbscript: and file: links are dropped
-// (docs/decisions/goldmark-for-documents.md).
+// so raw HTML is omitted (no html.WithUnsafe) and a dangerous URL is blanked, the <a> or <img> kept with an empty
+// href or src. The dangerous URLs are javascript:, vbscript:, file: and every data: URL except data:image/png, gif,
+// jpeg or webp followed by ;base64, (case-insensitively); those four base64 images are kept, and the page's CSP
+// (img-src 'self') stops the browser loading them (docs/decisions/goldmark-for-documents.md).
 var markdown = goldmark.New(goldmark.WithExtensions(extension.Table))
 
 // RenderMarkdown renders a Markdown document to HTML with goldmark at its safe defaults. It is the only HTML the

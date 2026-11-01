@@ -224,7 +224,7 @@ Cancel never records `cancelled` for a task whose work landed.
 ## Merged outside Guildhall
 
 A task's pull request may be merged on the forge by hand, outside Guildhall.
-The task has then **landed outside Guildhall** when it has no `-merge` document, so deliver has not merged it, and the forge now reports one of the pull requests its `-pr` documents record as merged, at whatever head; every recorded pull request is read, not only the latest, so an earlier one merged by hand counts though a later one was closed.
+The task has then **landed outside Guildhall** when it has no `-merge` document, so deliver has not merged it, and the forge now reports one of the pull requests its `-pr` documents record as merged, at whatever head; every recorded pull request is read, not only the latest, so an earlier one merged by hand counts though a later one was closed; a [multi-PR task](#multi-pr-tasks) reads only its current slice's pull requests.
 A pull request only closed never counts.
 A merge of deliver's own whose record a crash lost, the pull request merged at the head of deliver's latest merge, not rebased and not held, is left to deliver, which records it as before.
 
@@ -277,7 +277,7 @@ A crash between a slice's merge record and the next slice's first attempt resume
 Each slice merge sends a `merged` message, so it counts toward `hallmark_after_merges`; `handoff_after_tasks`, `--depends-on` and `--until-merged` count or release only when the task closes.
 
 A spec that turns out wrong part-way goes back to plan with `step send-back`; the revised spec keeps every merged slice's entry byte for byte and may rewrite, add or drop the slices still to come, the Guildmaster accepts it, and the current slice's steps, bound to the old spec, run again under the new one.
-Merged slices' records are never read again.
+A merged slice's steps never run again; its records are read only to show the slices (`director status`, the Clerk and the pull request body, which lists each merged slice and its pull request) and to find merge heads.
 `director status` gives such a task a `slices` object, `{current, total, items: [{index, title, state, pull_request}]}`; Clerk's `/guild` shows `slice k of n` beside where it stands, `/task` and `/inspect` show the current slice and list every slice with its title, state and pull request, and the Artisan's Herdr workspace is labelled `└ <task> · slice k/n · <step> #<n>`.
 GitHub stacked pull requests are not used: each slice starts after the one before merged ([why, and when stacking may be reconsidered](decisions/stacked-prs-not-yet.md)).
 
