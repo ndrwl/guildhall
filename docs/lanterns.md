@@ -4,7 +4,7 @@ Lanterns is Guildhall's visual Claude Code plugin, shipped inside the Guildhall 
 There is no marketplace step and no dependency on bridge-lights or a Firstmate home.
 It is separate from **[Clerk](clerk.md)**, the read-only interaction plugin that owns `/guild`, `/decisions`, `/task`, `/inspect` and `/queue`, which ships and installs beside it.
 Lanterns has no Guildhall interaction commands and never changes tasks, decisions, messages or workflow state.
-Artisan interactive presentation is deferred; only Artisan process labels are published today.
+Lanterns publishes only Artisan process labels; an Artisan's Herdr pane is presented by the [Workbench](artisan.md#workbench), Guildhall's own Go display, which is separate from Lanterns and does not depend on it.
 
 ## Installation and support
 

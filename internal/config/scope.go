@@ -99,6 +99,7 @@ var settingRegistry = []settingEntry{
 	{key: ChecksRefreshKey, scope: ScopeTask, check: func(v string) error { _, err := parseChecksRefresh(v); return err }},
 	{key: CILogLimitKey, scope: ScopeTask, check: func(v string) error { _, err := parseCILogLimit(v); return err }},
 	{key: ArtisanWorkspaceCloseAfterKey, scope: ScopeMachine, check: func(v string) error { _, err := parseArtisanWorkspaceCloseAfter(v); return err }},
+	{key: ArtisanPaneOutputKey, scope: ScopeMachine, check: checkArtisanPaneOutput},
 	{key: PruneAfterKey, scope: ScopeMachine, check: func(v string) error { _, err := parsePruneAfter(v); return err }},
 	{key: PruneDailyKey, scope: ScopeMachine, check: func(v string) error { _, err := parsePruneDaily(v); return err }},
 	{key: LockWaitKey, scope: ScopeMachine, check: func(v string) error { _, err := parseLockWait(v); return err }},
