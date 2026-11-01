@@ -253,7 +253,7 @@ func (r *run) validate(s workflow.Step) (bool, Next, error) {
 						n = l.n + 1
 					}
 				}
-				if err := r.putJSONDoc(rebaseName(s.ID, k, n), decisionID(s.ID, k, false), fmt.Sprintf("rebase-%d.json", n), doc); err != nil {
+				if err := r.putJSONDoc(rebaseName(s.ID, k, n), DecisionID(s.ID, k, false), fmt.Sprintf("rebase-%d.json", n), doc); err != nil {
 					return false, Next{}, err
 				}
 				continue
@@ -326,7 +326,7 @@ func (r *run) validate(s workflow.Step) (bool, Next, error) {
 			return false, Next{}, err
 		}
 	}
-	id := decisionID(s.ID, k, false)
+	id := DecisionID(s.ID, k, false)
 	data, err := json.Marshal(v)
 	if err != nil {
 		return false, Next{}, err
@@ -404,7 +404,7 @@ func (r *run) rebaseFailed(s workflow.Step, k int, cur string, pr *pullRequestDo
 	if e.Files == nil {
 		e.Files = []string{}
 	}
-	id := decisionID(s.ID, k, false)
+	id := DecisionID(s.ID, k, false)
 	v := validationDoc{Schema: validationSchema, Remote: pr.Remote, Number: pr.Number, URL: pr.URL, Head: cur, Verdict: validationFailed,
 		Checks: []forge.Check{}, Failing: []string{"rebase"}, Rebase: linkNames(links), Escalation: &e}
 	if r.document(id+"-result") == nil {

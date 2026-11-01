@@ -96,7 +96,7 @@ func parseRebaseName(step, name string) (k, n int, ok bool) {
 }
 
 func rebaseName(step string, k, n int) string {
-	return fmt.Sprintf("%s-rebase-%d", decisionID(step, k, false), n)
+	return fmt.Sprintf("%s-rebase-%d", DecisionID(step, k, false), n)
 }
 
 // rebases returns step's recorded rebases in round and number order.
@@ -337,7 +337,7 @@ func (r *run) publishLink(s workflow.Step, repo config.Repository, l rebaseLink,
 // ChecksRefresh, and records a finished read as <step>-<k>-checks-<x>. It returns the recorded result, or nil with the
 // wait while they are pending.
 func (r *run) headChecks(s workflow.Step, k int, repo config.Repository, x string, pr *pullRequestDoc) (*validationDoc, Next, error) {
-	name := fmt.Sprintf("%s-checks-%s", decisionID(s.ID, k, false), x)
+	name := fmt.Sprintf("%s-checks-%s", DecisionID(s.ID, k, false), x)
 	var v validationDoc
 	if ok, err := r.readJSONDoc(name, &v); err != nil || ok {
 		return &v, Next{}, err
@@ -371,7 +371,7 @@ func (r *run) headChecks(s workflow.Step, k int, repo config.Repository, x strin
 		return nil, wait, r.notify(fmt.Sprintf("checks-pending.%s.%s", s.ID, x[:12]), store.MessageChecksPending,
 			fmt.Sprintf("Step %s waits for the checks of rebased head %s on pull request %s to finish.", s.ID, x, pr.URL))
 	}
-	return &v, Next{}, r.putJSONDoc(name, decisionID(s.ID, k, false), "checks-"+x+".json", v)
+	return &v, Next{}, r.putJSONDoc(name, DecisionID(s.ID, k, false), "checks-"+x+".json", v)
 }
 
 // observe reads the pull request's mergeability at head h, without recording it; "not observed" without a reader
@@ -587,15 +587,15 @@ func (r *run) escalate(s workflow.Step, k int, e escalationDoc) (Next, error) {
 	i := slices.IndexFunc(es, func(x escalationDoc) bool {
 		return x.From == e.From && x.Onto == e.Onto && x.Authorization == e.Authorization
 	})
-	name := fmt.Sprintf("%s-escalated-%d", decisionID(s.ID, k, false), n)
+	name := fmt.Sprintf("%s-escalated-%d", DecisionID(s.ID, k, false), n)
 	if i >= 0 {
 		e = es[i]
 	} else {
 		for r.document(name) != nil {
 			n++
-			name = fmt.Sprintf("%s-escalated-%d", decisionID(s.ID, k, false), n)
+			name = fmt.Sprintf("%s-escalated-%d", DecisionID(s.ID, k, false), n)
 		}
-		if err := r.putJSONDoc(name, decisionID(s.ID, k, false), fmt.Sprintf("escalated-%d.json", n), e); err != nil {
+		if err := r.putJSONDoc(name, DecisionID(s.ID, k, false), fmt.Sprintf("escalated-%d.json", n), e); err != nil {
 			return Next{}, err
 		}
 	}
@@ -612,7 +612,7 @@ func (r *run) escalate(s workflow.Step, k int, e escalationDoc) (Next, error) {
 	if a == nil || a.Outcome != store.AttemptSucceeded {
 		return Next{}, fmt.Errorf("%w: step %s has no succeeded attempt to send back", ErrUnsupported, build.ID)
 	}
-	if r.document(sendBackName(build.ID, a.Number)) == nil {
+	if r.document(SendBackName(build.ID, a.Number)) == nil {
 		if err := r.sentBack(Event{Kind: StepSentBack, Step: build.ID, Attempt: a.Number, Reason: feedback}); err != nil {
 			return Next{}, err
 		}
@@ -641,7 +641,7 @@ func (r *run) carryFrom(s workflow.Step) (escalationDoc, bool, error) {
 
 // openMerge opens deliver step s's merge decision for round k bound to head x.
 func (r *run) openMerge(s workflow.Step, k int, x, question string) (Next, error) {
-	d := store.Decision{Repository: r.task.Repository, TaskID: r.task.ID, ID: decisionID(s.ID, k, false), Kind: store.DecisionMerge,
+	d := store.Decision{Repository: r.task.Repository, TaskID: r.task.ID, ID: DecisionID(s.ID, k, false), Kind: store.DecisionMerge,
 		Subject: &store.Subject{Kind: store.SubjectHead, Digest: x}, Options: mergeOptions, Question: boundedQuestion(question, mergeOptions)}
 	if _, err := r.e.Records.OpenDecision(r.mutation("decision", d.ID), d); err != nil {
 		return Next{}, err

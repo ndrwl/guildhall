@@ -69,9 +69,9 @@ func parseRound(s string) (int, bool, bool) {
 	return n, exit, err == nil && n > 0 && strconv.Itoa(n) == number
 }
 
-// decisionID names a step's round decision, <step>-<round>, or its loop exit, <step>-x<k>; it is also the
+// DecisionID names a step's round decision, <step>-<round>, or its loop exit, <step>-x<k>; it is also the
 // prefix of every document recorded from that attempt, round or exit.
-func decisionID(step string, round int, exit bool) string {
+func DecisionID(step string, round int, exit bool) string {
 	if exit {
 		return fmt.Sprintf("%s-x%d", step, round)
 	}
@@ -80,7 +80,7 @@ func decisionID(step string, round int, exit bool) string {
 
 // documentName names the document at p.
 func documentName(p place) string {
-	name := decisionID(p.step, p.round, p.exit) + "-" + p.part
+	name := DecisionID(p.step, p.round, p.exit) + "-" + p.part
 	if p.index > 0 {
 		name += "-" + strconv.Itoa(p.index)
 	}
@@ -169,7 +169,7 @@ func (h *history) rulingsOn(document string) []store.Ruling {
 func (h *history) markContested(document, finding, step string, n int) {
 	for i, r := range h.rulings {
 		if r.Document == document && r.Finding == finding {
-			h.rulings[i].ContestedBy = decisionID(step, n, false)
+			h.rulings[i].ContestedBy = DecisionID(step, n, false)
 		}
 	}
 }
@@ -178,7 +178,7 @@ func (h *history) markContested(document, finding, step string, n int) {
 func (h *history) contestedBy(step string, n int) []store.Ruling {
 	var out []store.Ruling
 	for _, r := range h.rulings {
-		if r.ContestedBy == decisionID(step, n, false) {
+		if r.ContestedBy == DecisionID(step, n, false) {
 			out = append(out, r)
 		}
 	}
@@ -354,7 +354,7 @@ func (h *history) origin(s workflow.Step, k int) (firing, error) {
 		return firing{}, err
 	}
 	if k < 1 || k > len(fs) {
-		return firing{}, fmt.Errorf("%w for exit %s: step %s has %d", errNoOrigin, decisionID(s.ID, k, true), s.ID, len(fs))
+		return firing{}, fmt.Errorf("%w for exit %s: step %s has %d", errNoOrigin, DecisionID(s.ID, k, true), s.ID, len(fs))
 	}
 	return fs[k-1], nil
 }
@@ -417,7 +417,7 @@ func (h *history) output(step, port string) (store.DocumentRef, string, error) {
 		return store.DocumentRef{}, "", err
 	}
 	p := h.docPlaces[best]
-	return h.documents[best], decisionID(p.step, p.round, p.exit), nil
+	return h.documents[best], DecisionID(p.step, p.round, p.exit), nil
 }
 
 // reviewedRange returns the range the code review step's latest outcome reviewed, from the binding of the attempt that

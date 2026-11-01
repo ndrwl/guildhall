@@ -429,7 +429,7 @@ func (r *run) changes(s workflow.Step, here Next, subject *store.Subject) (bool,
 // or, when dispute is not empty, because a rule-cited blocker's ruling was contested. For validate, max is
 // exhausted and dispute names the failing checks; its exit offers no accept, since nothing passed to accept.
 func (r *run) exit(s workflow.Step, k int, subject *store.Subject, dispute string) (bool, Next, error) {
-	id := decisionID(s.ID, k, true)
+	id := DecisionID(s.ID, k, true)
 	d := r.decision(id)
 	if d == nil {
 		why := fmt.Sprintf("Step %s of %s/%s still requests changes after %d rounds, its max of %d.", s.ID, r.task.Repository, r.task.ID, k, s.On[changesRequested].Max)
@@ -594,7 +594,7 @@ func (r *run) held(s workflow.Step, k int, f firing) (string, error) {
 	if f.answer != nil {
 		return "", nil
 	}
-	if d := r.decision(decisionID(s.ID, k, true)); d != nil && d.Answered && d.Choice == "continue" {
+	if d := r.decision(DecisionID(s.ID, k, true)); d != nil && d.Answered && d.Choice == "continue" {
 		return "", nil
 	}
 	o, err := r.outcome(s.ID, f.round)

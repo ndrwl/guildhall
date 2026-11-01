@@ -25,7 +25,7 @@ func (r *run) sentBack(ev Event) error {
 	if i < 0 || r.def.Steps[i].Actor() != workflow.ArtisanActor || a == nil || a.Outcome != store.AttemptSucceeded || strings.TrimSpace(ev.Reason) == "" {
 		return fmt.Errorf("%w: send-back requires a succeeded Artisan attempt and nonempty feedback", ErrEvent)
 	}
-	name := sendBackName(ev.Step, ev.Attempt)
+	name := SendBackName(ev.Step, ev.Attempt)
 	if d := r.document(name); d != nil {
 		if d.SHA256 != digest.Of([]byte(ev.Reason)).Hex() {
 			return fmt.Errorf("%w: send-back feedback for %s attempt %d is immutable", ErrEvent, ev.Step, ev.Attempt)
@@ -65,7 +65,8 @@ func (r *run) sentBack(ev Event) error {
 	return r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: name, Path: path.Join("tasks", r.task.Repository, r.task.ID, name+".md"), SHA256: digest.Of(data).Hex()}, data)
 }
 
-func sendBackName(step string, n int) string { return "send-back-" + step + "-" + strconv.Itoa(n) }
+// SendBackName names the Director's feedback that sent attempt n of step back, send-back-<step>-<n>.
+func SendBackName(step string, n int) string { return "send-back-" + step + "-" + strconv.Itoa(n) }
 
 // sentBackFeedback returns unserved Director feedback in attempt order. Binding
 // the feedback durably makes its consumption recoverable, as with loop feedback.
@@ -75,7 +76,7 @@ func (r *run) sentBackFeedback(s workflow.Step) ([]render.Input, error) {
 		if a.Step != s.ID {
 			continue
 		}
-		d := r.document(sendBackName(s.ID, a.Number))
+		d := r.document(SendBackName(s.ID, a.Number))
 		if d == nil {
 			continue
 		}

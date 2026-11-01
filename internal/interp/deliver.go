@@ -110,7 +110,7 @@ func (r *run) publish(s workflow.Step) (bool, Next, error) {
 	if err != nil {
 		return false, Next{}, err
 	}
-	id := decisionID(s.ID, k, false)
+	id := DecisionID(s.ID, k, false)
 	if err := r.publishGate(s, id, h, repo.Merge.Requires.Artisan()); err != nil {
 		return false, Next{}, err
 	}
@@ -534,7 +534,7 @@ func (r *run) authorizeHead(s workflow.Step, repo config.Repository, x deliverHe
 	switch {
 	case dec == nil || !dec.Answered && unattended:
 		k := r.deliverRound(s)
-		id := decisionID(s.ID, k, false)
+		id := DecisionID(s.ID, k, false)
 		lead := ""
 		if requires.Guildmaster() && repo.Merge.Reapprove() == config.RebaseNever {
 			e, ok, err := r.carryFrom(s)
@@ -724,7 +724,7 @@ func (r *run) rebaseFront(s workflow.Step, k int, repo config.Repository, id str
 		}
 	}
 	name := rebaseName(s.ID, k, n)
-	return r.putJSONDoc(name, decisionID(s.ID, k, false), fmt.Sprintf("rebase-%d.json", n), doc)
+	return r.putJSONDoc(name, DecisionID(s.ID, k, false), fmt.Sprintf("rebase-%d.json", n), doc)
 }
 
 // pendingEscalation returns the escalation of head cur under authorization id: a recorded one, or the one a recorded
@@ -808,7 +808,7 @@ func (r *run) reauthorize(s workflow.Step, repo config.Repository, from string, 
 	}
 	kind := chainKind(links)
 	k := r.deliverRound(s)
-	id := decisionID(s.ID, k, false)
+	id := DecisionID(s.ID, k, false)
 	holds := len(carryRefusals(conditions)) == 0
 	spec, err := r.sameSpec(s, from)
 	if err != nil {
@@ -1149,7 +1149,7 @@ func (r *run) authorization(s workflow.Step, h string) (string, error) {
 			return "", fmt.Errorf("document %s is not a %s or %s authorization", r.documents[i].Name, authorizationSchema, carriedAuthorizationSchema)
 		}
 		if a.Head == h {
-			id = decisionID(p.step, p.round, false)
+			id = DecisionID(p.step, p.round, false)
 		}
 	}
 	return id, nil

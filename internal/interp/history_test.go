@@ -48,8 +48,80 @@ func TestParseName(t *testing.T) {
 		if ok != c.ok || ok && got != c.want {
 			t.Errorf("parse %q = %+v, %v; want %+v, %v", c.name, got, ok, c.want, c.ok)
 		}
-		if ok && c.document && documentName(got) != c.name || ok && !c.document && decisionID(got.step, got.round, got.exit) != c.name {
+		if ok && c.document && documentName(got) != c.name || ok && !c.document && DecisionID(got.step, got.round, got.exit) != c.name {
 			t.Errorf("%q does not format back from %+v", c.name, got)
+		}
+	}
+}
+
+// TestRecordPlace reads every name kind the engine writes, and each round-trips through the engine's own
+// builder, with the slice qualifier put back; a name of no record form is ok false.
+func TestRecordPlace(t *testing.T) {
+	head := strings.Repeat("ab", 20)
+	decision := func(p Place) string { return DecisionID(workflow.SliceStep(p.Step, p.Slice), p.Round, p.Exit) }
+	document := func(p Place) string {
+		return documentName(place{step: workflow.SliceStep(p.Step, p.Slice), round: p.Round, exit: p.Exit, part: p.Part, index: p.Index})
+	}
+	for _, c := range []struct {
+		name  string
+		want  Place
+		build func(Place) string
+	}{
+		{"review-3", Place{Step: "review", Slice: 1, Round: 3}, decision},
+		{"build-2-head", Place{Step: "build", Slice: 1, Round: 2, Part: "head"}, document},
+		{"accept-1-spec", Place{Step: "accept", Slice: 1, Round: 1, Part: "spec"}, document},
+		{"review-x2", Place{Step: "review", Slice: 1, Round: 2, Exit: true}, decision},
+		{"review-x2-answer", Place{Step: "review", Slice: 1, Round: 2, Exit: true, Part: "answer"}, document},
+		{"review-x2-outcome", Place{Step: "review", Slice: 1, Round: 2, Exit: true, Part: "outcome"}, document},
+		{"build--s2-1", Place{Step: "build", Slice: 2, Round: 1}, decision},
+		{"build--s2-3-head", Place{Step: "build", Slice: 2, Round: 3, Part: "head"}, document},
+		{"review--s2-x1", Place{Step: "review", Slice: 2, Round: 1, Exit: true}, decision},
+		{"deliver--s2-1-merge", Place{Step: "deliver", Slice: 2, Round: 1, Part: "merge"}, document},
+		{"send-back-build-2", Place{Step: "build", Slice: 1, Round: 2, Part: "send-back"},
+			func(p Place) string { return SendBackName(workflow.SliceStep(p.Step, p.Slice), p.Round) }},
+		{"send-back-build--s2-3", Place{Step: "build", Slice: 2, Round: 3, Part: "send-back"},
+			func(p Place) string { return SendBackName(workflow.SliceStep(p.Step, p.Slice), p.Round) }},
+		{"build-2-inputs", Place{Step: "build", Slice: 1, Round: 2, Part: "inputs"},
+			func(p Place) string { return bindingName(workflow.SliceStep(p.Step, p.Slice), p.Round) }},
+		{"hallmark-1-report", Place{Step: "hallmark", Slice: 1, Round: 1, Part: "report"}, document},
+		{"deliver-1-merge", Place{Step: "deliver", Slice: 1, Round: 1, Part: "merge"}, document},
+		{"publish-1-pr", Place{Step: "publish", Slice: 1, Round: 1, Part: "pr"}, document},
+		{"build-2-head-3", Place{Step: "build", Slice: 1, Round: 2, Part: "head", Index: 3}, document},
+		{"build-2-1-head", Place{Step: "build-2", Slice: 1, Round: 1, Part: "head"}, document},
+		{"deliver-1-rebase-1", Place{Step: "deliver", Slice: 1, Round: 1, Part: "rebase", Index: 1},
+			func(p Place) string { return rebaseName(workflow.SliceStep(p.Step, p.Slice), p.Round, p.Index) }},
+		{"deliver-1-rebase-2", Place{Step: "deliver", Slice: 1, Round: 1, Part: "rebase", Index: 2},
+			func(p Place) string { return rebaseName(workflow.SliceStep(p.Step, p.Slice), p.Round, p.Index) }},
+		{"deliver--s2-1-rebase-1-resolved", Place{Step: "deliver", Slice: 2, Round: 1, Part: "rebase", Index: 1},
+			func(p Place) string {
+				return rebaseName(workflow.SliceStep(p.Step, p.Slice), p.Round, p.Index) + "-resolved"
+			}},
+		{"deliver-1-escalated-1", Place{Step: "deliver", Slice: 1, Round: 1, Part: "escalated", Index: 1},
+			func(p Place) string {
+				return fmt.Sprintf("%s-escalated-%d", DecisionID(workflow.SliceStep(p.Step, p.Slice), p.Round, false), p.Index)
+			}},
+		{"deliver-1-checks-" + head, Place{Step: "deliver", Slice: 1, Round: 1, Part: "checks"},
+			func(p Place) string {
+				return fmt.Sprintf("%s-checks-%s", DecisionID(workflow.SliceStep(p.Step, p.Slice), p.Round, false), head)
+			}},
+		// Pinned by the precedence: a context or link record name reads as a round-1 decision.
+		{"context-1", Place{Step: "context", Slice: 1, Round: 1}, decision},
+		{"links-2", Place{Step: "links", Slice: 1, Round: 2}, decision},
+	} {
+		got, ok := RecordPlace(c.name)
+		if !ok || got != c.want {
+			t.Errorf("RecordPlace(%q) = %+v, %v; want %+v, true", c.name, got, ok, c.want)
+			continue
+		}
+		if back := c.build(got); back != c.name {
+			t.Errorf("RecordPlace(%q) builds back as %q", c.name, back)
+		}
+	}
+	for _, name := range []string{"follow-ups", "finished", "q3", "accept-plan", "merge-approval", "previous-review",
+		"baseline-validate", "review-01", "build-2-head-1", "validate-rerun-" + head, "send-back-build", "deliver-1-rebase-0",
+		"deliver-1-rebase-01", "deliver-1-escalated-x"} {
+		if got, ok := RecordPlace(name); ok {
+			t.Errorf("RecordPlace(%q) = %+v, true; want false", name, got)
 		}
 	}
 }

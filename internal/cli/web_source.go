@@ -162,19 +162,14 @@ var webDocKind = map[string]string{
 	"handoff-wait": "Handoff",
 }
 
-// docPlace reads a document name as <step>-<round>-<part>, the engine's naming (interp's documentName): the step
-// with its slice qualifier removed, its slice and its round, zero when the name has no round.
-func docPlace(name string) (step string, slice, round int) {
-	segs := strings.Split(name, "-")
-	for i := 1; i < len(segs); i++ {
-		r := strings.TrimPrefix(segs[i], "x")
-		if n, err := strconv.Atoi(r); err == nil && n > 0 && strconv.Itoa(n) == r && segs[i-1] != "" {
-			base, k := workflow.ParseSliceStep(strings.Join(segs[:i], "-"))
-			return base, k, n
-		}
+// recordPlace is where interp.RecordPlace puts a record name, or for a name of no record form, such as follow-ups,
+// the whole name as its step, with its slice qualifier read off, and round 0.
+func recordPlace(name string) interp.Place {
+	if p, ok := interp.RecordPlace(name); ok {
+		return p
 	}
-	base, k := workflow.ParseSliceStep(name)
-	return base, k, 0
+	step, k := workflow.ParseSliceStep(name)
+	return interp.Place{Step: step, Slice: k}
 }
 
 // stepType is the type of step id in the bound workflow, "" when the workflow has no such step.
@@ -191,10 +186,11 @@ func (b webBuilder) stepType(id string) string {
 }
 
 func (b webBuilder) docKind(name string) (kind, step string, round int) {
-	if strings.HasPrefix(name, "send-back-") {
+	p := recordPlace(name)
+	if p.Part == "send-back" {
 		return "Feedback", "", 0
 	}
-	step, _, round = docPlace(name)
+	step, round = p.Step, p.Round
 	if k, ok := webDocKind[b.stepType(step)]; ok {
 		return k, step, round
 	}
@@ -210,7 +206,7 @@ func (b webBuilder) documents() []web.Document {
 	v := b.ct.view
 	var out []web.Document
 	for _, d := range b.fl.Documents {
-		if strings.HasSuffix(d.Name, "-inputs") {
+		if recordPlace(d.Name).Part == "inputs" {
 			continue
 		}
 		kind, step, round := b.docKind(d.Name)
@@ -267,11 +263,11 @@ func subjectDocument(docs []web.Document, v taskView, s store.Subject) string {
 
 // openFindings are the findings of the newest review outcome of the step a loop-exit decision id names.
 func (b webBuilder) openFindings(id string) []web.Finding {
-	step, slice, _ := docPlace(id)
+	at := recordPlace(id)
 	var newest *timedFindings
 	for i := range b.tl.Findings {
 		f := &b.tl.Findings[i]
-		if s, k, _ := docPlace(f.Document); s == step && k == slice {
+		if p := recordPlace(f.Document); p.Step == at.Step && p.Slice == at.Slice {
 			newest = f
 		}
 	}
@@ -336,21 +332,6 @@ func webStepName(id string) string {
 	return web.OptionWord(id)
 }
 
-// decisionStep is the step and slice a decision id <step>-<round> or <step>-x<k> names, and ok false for an id of
-// another form, such as follow-ups.
-func decisionStep(id string) (string, int, bool) {
-	i := strings.LastIndex(id, "-")
-	if i <= 0 {
-		return "", 0, false
-	}
-	r := strings.TrimPrefix(id[i+1:], "x")
-	if n, err := strconv.Atoi(r); err != nil || n < 1 {
-		return "", 0, false
-	}
-	base, k := workflow.ParseSliceStep(id[:i])
-	return base, k, true
-}
-
 // steps is the stepper: each step of the bound workflow in order, with the state of its records in the current
 // slice (a step outside the slice range, of slice 1), or later when it has none.
 func (b webBuilder) steps() []web.Step {
@@ -384,8 +365,7 @@ func (b webBuilder) steps() []web.Step {
 			}
 		}
 		for _, dec := range b.tl.Decisions {
-			base, k, ok := decisionStep(dec.ID)
-			if !ok || base != s.ID || k != slice {
+			if p, ok := interp.RecordPlace(dec.ID); !ok || p.Part != "" || p.Step != s.ID || p.Slice != slice {
 				continue
 			}
 			switch {
@@ -462,7 +442,7 @@ func (b webBuilder) story(docs []web.Document) []web.Node {
 				n.Body = webCut(oneLine(s), 400)
 			}
 		}
-		prefix := webDecisionID(at.Step, at.Number) + "-"
+		prefix := interp.DecisionID(at.Step, at.Number, false) + "-"
 		n.Documents = own(prefix)
 		if f := b.findingsOf(prefix); f != nil && len(f.Findings) > 0 {
 			n.Findings = b.fixed(i, at.Step, f)
@@ -472,7 +452,7 @@ func (b webBuilder) story(docs []web.Document) []web.Node {
 		}
 		if fb := b.feedback(at.Step, at.Number); fb != "" {
 			n.Said = append(n.Said, web.Said{Text: fb, Where: "the Director's feedback, sent back to " + at.Step, Back: true})
-			n.Documents = append(n.Documents, "send-back-"+at.Step+"-"+strconv.Itoa(at.Number))
+			n.Documents = append(n.Documents, interp.SendBackName(at.Step, at.Number))
 		}
 		nodes = append(nodes, n)
 	}
@@ -587,7 +567,7 @@ func (b webBuilder) fixed(i int, step string, f *timedFindings) []web.Finding {
 		if later.Step != step {
 			continue
 		}
-		if lf := b.findingsOf(webDecisionID(later.Step, later.Number) + "-"); lf != nil {
+		if lf := b.findingsOf(interp.DecisionID(later.Step, later.Number, false) + "-"); lf != nil {
 			for _, d := range lf.Dispositions {
 				if d.State == workflow.Resolved {
 					resolved[d.Finding] = true
@@ -626,7 +606,7 @@ func (b webBuilder) sentBackTo(i int) string {
 // its document send-back-<step>-<n> when the file matches its record, cut to webFeedbackBytes; "" when there is
 // none.
 func (b webBuilder) feedback(step string, n int) string {
-	name := "send-back-" + step + "-" + strconv.Itoa(n)
+	name := interp.SendBackName(step, n)
 	for _, d := range b.fl.Documents {
 		if d.Name != name {
 			continue
@@ -638,11 +618,6 @@ func (b webBuilder) feedback(step string, n int) string {
 		return webCut(strings.TrimSpace(string(data)), webFeedbackBytes)
 	}
 	return ""
-}
-
-// webDecisionID is the engine's prefix of every record of attempt or round n of step, <step>-<n>.
-func webDecisionID(step string, n int) string {
-	return step + "-" + strconv.Itoa(n)
 }
 
 // webCut cuts s to at most n bytes on a rune boundary, ending a cut with ….
