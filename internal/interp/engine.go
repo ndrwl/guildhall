@@ -1260,7 +1260,7 @@ func (r *run) supersede(s workflow.Step, d *store.Decision) (bool, error) {
 	if d.Subject != nil && *d.Subject == *subject {
 		return false, nil
 	}
-	reason := fmt.Sprintf("Superseded: the spec changed to %s; asked again as %s", subject.Digest, decisionID(s.ID, r.nextRound(s.ID), false))
+	reason := fmt.Sprintf("Superseded: the spec changed to %s; asked again as %s", subject.Digest, DecisionID(s.ID, r.nextRound(s.ID), false))
 	if _, err := r.e.Records.VoidDecision(r.mutation("void", d.ID), r.task.Repository, r.task.ID, d.ID, reason); err != nil {
 		return false, err
 	}
@@ -1347,7 +1347,7 @@ func (r *run) open(s workflow.Step, k int, inputs []render.Input, ask render.Ask
 		return Next{}, err
 	}
 	d := store.Decision{
-		Repository: r.task.Repository, TaskID: r.task.ID, ID: decisionID(s.ID, k, false),
+		Repository: r.task.Repository, TaskID: r.task.ID, ID: DecisionID(s.ID, k, false),
 		Kind: sp.kind, Subject: subject, Options: ask.Options, Question: ask.Question,
 	}
 	if s.Type == "review" || s.Type == "document-review" {

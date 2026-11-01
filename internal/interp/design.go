@@ -123,7 +123,7 @@ func (r *run) designRequested(ev Event) error {
 	n := r.designRound()
 	open := false
 	if n > 0 {
-		d := r.decision(decisionID(decision, n, false))
+		d := r.decision(DecisionID(decision, n, false))
 		open = d == nil || !d.Answered
 	}
 	if open && r.document(briefName(decision, n)).SHA256 == digest.Of([]byte(ev.Reason)).Hex() {
@@ -143,7 +143,7 @@ func (r *run) designRequested(ev Event) error {
 		return refuse("build has started: step %s has attempt %d", r.attempts[i].Step, r.attempts[i].Number)
 	}
 	if open {
-		return refuse("design round %d is already open, until decision %s is answered", n, decisionID(decision, n, false))
+		return refuse("design round %d is already open, until decision %s is answered", n, DecisionID(decision, n, false))
 	}
 	for _, a := range r.attempts {
 		if a.Outcome == "" {
@@ -160,7 +160,7 @@ func (r *run) designRequested(ev Event) error {
 	}
 	data := []byte(ev.Reason)
 	return r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: briefName(decision, n+1),
-		Path: path.Join("tasks", r.task.Repository, r.task.ID, decisionID(decision, n+1, false), "brief.md"), SHA256: digest.Of(data).Hex()}, data)
+		Path: path.Join("tasks", r.task.Repository, r.task.ID, DecisionID(decision, n+1, false), "brief.md"), SHA256: digest.Of(data).Hex()}, data)
 }
 
 // designRun moves the task's design rounds on before the walk and reports whether the walk may go on: it records
@@ -170,7 +170,7 @@ func (r *run) designRun() (bool, Next, error) {
 	decision, _ := DesignSteps(r.def)
 	n := r.designRound()
 	for k := 1; k <= n; k++ {
-		d := r.decision(decisionID(decision, k, false))
+		d := r.decision(DecisionID(decision, k, false))
 		if d == nil || !d.Answered {
 			continue
 		}
@@ -188,7 +188,7 @@ func (r *run) designRun() (bool, Next, error) {
 	if n == 0 {
 		return true, Next{}, nil
 	}
-	id := decisionID(decision, n, false)
+	id := DecisionID(decision, n, false)
 	if d := r.decision(id); d != nil {
 		if d.Answered {
 			return true, Next{}, nil
@@ -338,7 +338,7 @@ func (r *run) askDesign(n int, brief store.DocumentRef, a *store.StageAttempt) (
 	if err != nil {
 		return Next{}, err
 	}
-	id := decisionID(decision, n, false)
+	id := DecisionID(decision, n, false)
 	ask := render.DesignQuestion(r.task.Repository, r.task.ID, id, n, []render.Input{docInput(BriefPort, brief, r.e.DocumentDir), docInput(DesignPort, *doc, r.e.DocumentDir)})
 	d := store.Decision{Repository: r.task.Repository, TaskID: r.task.ID, ID: id, Kind: store.DecisionApproval,
 		Subject: &store.Subject{Kind: store.SubjectDocument, Digest: string(dg)}, Options: ask.Options, Question: ask.Question}

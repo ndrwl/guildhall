@@ -221,7 +221,7 @@ func (r *run) authorizedMerge(remote string, pr forge.PullRequest) (bool, error)
 		}
 		// A merge rebased at the front merges its rebased head, under a later authorization, never h.
 		rebased := slices.ContainsFunc(r.documents, func(d store.DocumentRef) bool {
-			return strings.HasPrefix(d.Name, decisionID(s.ID, round, false)+"-rebase-")
+			return strings.HasPrefix(d.Name, DecisionID(s.ID, round, false)+"-rebase-")
 		})
 		if h != "" && h == pr.Head && !rebased {
 			return r.recordedAt(remote, pr.Number, h)

@@ -229,7 +229,7 @@ func (r *run) settleSlice() error {
 		return err
 	}
 	p := r.docPlaces[i]
-	id := decisionID(p.step, p.round, false)
+	id := DecisionID(p.step, p.round, false)
 	repo, err := r.repository()
 	if err != nil {
 		return err
