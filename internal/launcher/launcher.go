@@ -2,7 +2,8 @@
 // (docs/releases.md#the-path-launcher). It selects the copy a command names, as the CLI selects it, reads that
 // copy's release.pin and runs the pinned release with the same arguments and standard streams, setting
 // GUILDHALL_RELEASE for it. It loads no configuration and never falls back to another release, except for the
-// recovery dispatch of `guildhall release ...`, which runs on the newest installed, verified release.
+// recovery dispatch of `guildhall release ...` and of an explicit `guildhall config reload --copy <dir>`, which
+// run on the newest installed, verified release.
 //
 // A task command, one that advances, launches or resumes an existing task (TaskCommand), runs instead on the
 // release its task recorded at task new, read from the task's store, whatever the copy pins; a task that recorded
@@ -255,7 +256,8 @@ func taskRelease(path string, t Task) (store.TaskRelease, bool, error) {
 }
 
 // recoverable reports whether args is a command recovery dispatch may run with no usable pin: `guildhall release
-// ...`, and, with no copy selected at all, help and version, which read and change nothing.
+// ...`, `guildhall config reload` with an explicit --copy, which authorizes a managed revision and may repair the
+// pin from it, and, with no copy selected at all, help and version, which read and change nothing.
 func recoverable(args []string, copySelected bool) bool {
 	if len(args) == 0 {
 		return !copySelected
@@ -263,8 +265,26 @@ func recoverable(args []string, copySelected bool) bool {
 	switch args[0] {
 	case "release":
 		return true
+	case "config":
+		return len(args) > 1 && args[1] == "reload" && explicitCopy(args[2:])
 	case "help", "-h", "--help", "version":
 		return !copySelected
+	}
+	return false
+}
+
+// explicitCopy reports whether args, before any "--", give a --copy flag.
+func explicitCopy(args []string) bool {
+	for _, a := range args {
+		if a == "--" {
+			return false
+		}
+		if !strings.HasPrefix(a, "-") {
+			continue
+		}
+		if name, _, _ := strings.Cut(strings.TrimLeft(a, "-"), "="); name == "copy" {
+			return true
+		}
 	}
 	return false
 }
@@ -278,7 +298,8 @@ func recoverable(args []string, copySelected bool) bool {
 //  3. that copy's release.pin, run when its release is installed and intact;
 //  4. a pin whose release is missing or damaged is refused, naming the version, the path checked and the fix,
 //     and so is a copy with no pin, naming guildhall release use, or, managed, config reload --copy;
-//  5. recovery dispatch, for `guildhall release ...` only, runs on the newest installed, verified release
+//  5. recovery dispatch, for `guildhall release ...` and `guildhall config reload --copy <dir>` only (and help and
+//     version with no copy selected), runs on the newest installed, verified release
 //     instead of refusing, and refuses when there is none; it never runs an unverified .incoming binary.
 func Choose(o Options) (Choice, error) {
 	goos := o.GOOS

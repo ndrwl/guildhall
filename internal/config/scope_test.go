@@ -73,7 +73,7 @@ func TestSettingScopes(t *testing.T) {
 		"quality_judge_profiles", "quality_judge_separate_family", "quality_skill_edits_need_approval"}
 	machine := []string{"max_running_attempts", "max_attempts_per_day", "lock_wait", "herdr_session",
 		"artisan_workspace_close_after", "artisan_pane_output", "prune_after", "prune_daily", "wake_quiet", "wake_max_delay",
-		"claude_skills_director", "claude_skills_artisan", "standards_revision", "claude_skills_profile_builder"}
+		"claude_skills_director", "claude_skills_artisan", "standards_revision", "claude_skills_profile_builder", "release", "release_sha256"}
 	for _, key := range task {
 		if got, ok := SettingScope(key); !ok || got != ScopeTask {
 			t.Errorf("SettingScope(%q) = %q, %v; want task", key, got, ok)
@@ -89,8 +89,8 @@ func TestSettingScopes(t *testing.T) {
 			t.Errorf("SettingScope(%q) = %q, true; want unknown", key, got)
 		}
 	}
-	if n := len(settingRegistry); n != 28 {
-		t.Errorf("the registry has %d entries, want 28: 27 settings and the profile skill policy prefix", n)
+	if n := len(settingRegistry); n != 30 {
+		t.Errorf("the registry has %d entries, want 30: 29 settings and the profile skill policy prefix", n)
 	}
 }
 

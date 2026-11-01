@@ -23,7 +23,7 @@ Before d127 nothing recorded which release a task runs, and a machine had exactl
 
 ## Built so far
 
-Task d127 builds this page in five slices; slices 1 to 4 are built. Slice 1 changes nothing for any copy:
+Task d127 builds this page in five slices, and all five are built. Slice 1 changes nothing for any copy:
 
 - **The Guildhall home** is `$GUILDHALL_HOME` when set; else, for an installed release, the home it is installed under (`<home>/releases/<version>/guildhall`); else `$XDG_DATA_HOME/guildhall`, or `~/.local/share/guildhall` without it, on Linux, WSL and a VDS alike, and `%LOCALAPPDATA%\Guildhall` on Windows.
 - **What counts as a release**: a binary whose `guildhall version --json` reports a version other than `dev`, `modified: false` and a `release_contract`, tagged (`v1.4.0`) or a main pseudo-version (`v0.0.0-20261031162214-d385b331abcd`). A plain `go build` reports `dev` and a build from a tree with local changes is modified; both are refused, since two of them would share a directory.
@@ -58,8 +58,16 @@ Slice 4 is built too: [rollback](#rollback) and [pruning](#pruning) for a standa
 - **`guildhall release status`** lists, for each release past the newest three, why it is kept, across every inventoried copy, or that it is prunable, and which copies would make prune refuse.
 - **The applied `director-reload`** records the old and new config digest beside the old and new release and sha256.
 
-The contracts are [`internal/release`](contracts/release.md), [`internal/launcher`](contracts/launcher.md), [`internal/copydir`](contracts/copydir.md), [the store's release pins and task releases](contracts/store.md) and [the CLI's release commands](contracts/cli.md#release).
-Slice 5 adds the managed pin through `config reload`, and with it the managed rollback below.
+Slice 5 is built too: the managed pin through `config reload`, and with it the managed rollback below.
+
+- **`managed.toml` carries `release` and `release_sha256`**, managed keys that go together, are never overridable and are refused as local settings, since a standalone copy's pin is set by `release use` ([settings](configuration.md#settings)).
+- **`guildhall config reload --copy <dir>`**, once it has authorized the revision, verifies the release it names, installed intact with `release_sha256`, or installs it from the rollout's copy at `releases/.incoming/<version>/guildhall` against `release_sha256`; only then does it record a `release-pin` event with source `reload` and write that copy's `release.pin`, under the home lock and the store-schema rule, and prune. A release it cannot verify leaves the pin as it was: the revision stays authorized, and a reload once the release is in place pins it.
+- **Recovery dispatch** runs an explicit `config reload --copy <dir>` on the newest installed, verified release when the copy's pin is absent or its release missing or damaged, so a rollout can give a managed copy its first pin or move it off a damaged release; a reload by copy discovery still refuses.
+- **The managed rollback** is the rollout of the previous `managed.toml` revision, then `config reload --copy` and `director reload --copy`; `release use` and `release rollback` refuse a managed copy, naming the rollout.
+
+Not built yet: the rollout's own copy of the release binary into `releases/.incoming/` (the binary is placed there, or installed with `release install`, by hand), the Steward's remote `director reload`, still reserved in its allow-list, the system alert for a pin that disagrees with its store, and downloading a release from GitHub, the first follow-up.
+
+The contracts are [`internal/release`](contracts/release.md), [`internal/launcher`](contracts/launcher.md), [`internal/copydir`](contracts/copydir.md), [the store's release pins and task releases](contracts/store.md) and [the CLI's release commands](contracts/cli.md#release) and [config reload](contracts/cli.md#config-reload).
 Until a copy adopts, the install-each-merge routine (`go install …@<pseudo-version>` onto `PATH`) is unchanged.
 After it adopts, an upgrade is `guildhall release install <version> --from <file> --sha256 <hex>`, `guildhall release use <version>` and `guildhall director reload`.
 

@@ -120,6 +120,9 @@ var settingRegistry = []settingEntry{
 	{key: ClaudeSkillsProfilePrefix, scope: ScopeMachine, prefix: true},
 	// The standards revision binds reviews, so a per-task value would weaken the standards gate.
 	{key: StandardsRevisionKey, scope: ScopeMachine},
+	// The release pin is the copy's, read by the launcher and config reload, never by a task (checkRelease).
+	{key: ReleaseKey, scope: ScopeMachine, check: checkReleaseVersion},
+	{key: ReleaseSHA256Key, scope: ScopeMachine, check: checkReleaseSHA256},
 }
 
 // excludedEntry is config a task override may never name, kept in the registry so a refusal can name it.

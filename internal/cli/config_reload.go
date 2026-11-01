@@ -24,10 +24,13 @@ func (a *App) configCmd(args []string) int {
 // authorized before. Reloading a digest already authorized by reload replays its event, so it is idempotent per
 // digest. It refuses, recording nothing, an inline [managed], a copy that is not managed, a config that does not
 // load or validate, and a config that is not a director's. It changes no task: active tasks keep their bound
-// config, and the new revision reaches new tasks only.
+// config, and the new revision reaches new tasks only. A revision naming a release, managed release and
+// release_sha256, then pins the copy to it with source reload, once the release is verified installed or installed
+// from the rollout's releases/.incoming/<version>/ copy (applyManagedRelease); the launcher runs an explicit
+// config reload --copy by recovery dispatch when the copy's pin is absent or unusable.
 func (a *App) configReload(args []string) int {
 	const name = "config reload"
-	_, cfgPath, storePath, code := a.modeCopy(name, args, nil)
+	dir, cfgPath, storePath, code := a.modeCopy(name, args, nil)
 	if code >= 0 {
 		return code
 	}
@@ -88,6 +91,12 @@ func (a *App) configReload(args []string) int {
 	fmt.Fprintf(&b, "); new tasks get its settings, and active tasks keep their bound config\n")
 	if _, err := fmt.Fprint(a.Stdout, b.String()); err != nil {
 		return 1
+	}
+	// Only now, with the revision authorized, may its release be verified and pinned (docs/releases.md#the-pin). A
+	// refusal here leaves the pin as it was; the revision stays authorized, so a reload once the release can be
+	// verified pins it.
+	if err := a.applyManagedRelease(dir, storePath, cfg); err != nil {
+		return fail("%s %s is authorized, but its release is not pinned, and the copy keeps its pin: %w; fix that and run guildhall config reload --copy %s again", managedFile, got.Digest, err, dir)
 	}
 	return 0
 }

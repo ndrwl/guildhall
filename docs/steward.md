@@ -312,11 +312,11 @@ A `managed.toml` changed on the machine by anything but a rollout and its reload
 A managed revision is the sha256 of its `managed.toml`, which the plan and receipt record; plans separately bind the fetched local config digest.
 For task configuration binding, see [tasks](tasks.md#the-bound-workflow); the managed digest alone is not the entire effective config.
 A rollout keeps each previous revision on the machine and never deletes one.
-Release binding and execution enforcement of R1.31 remain future work.
+A revision naming a `release` moves the copy's pin at its reload, and active tasks keep the release they recorded ([release upgrades](releases.md#tasks-keep-their-release)).
 
 ## Not implemented yet
 
-- The release pin and side-by-side release installs (R1.31), designed in [release upgrades](releases.md); the Guildhall home, `guildhall release install` and `status`, the pin, `guildhall release use` and `adopt`, the PATH launcher, tasks recording and running on their release, and a standalone copy's `guildhall release rollback` and `release prune` are [built so far](releases.md#built-so-far); the managed pin through `config reload`, and so the Steward's release rollouts and rollbacks, are not.
+- The rest of R1.31, the release pin and side-by-side release installs designed in [release upgrades](releases.md): the Guildhall home, `guildhall release install` and `status`, the pin, `guildhall release use` and `adopt`, the PATH launcher, tasks recording and running on their release, a standalone copy's `guildhall release rollback` and `release prune`, and the managed pin, `release` and `release_sha256` in `managed.toml` applied by `config reload`, are [built](releases.md#built-so-far). A rollout of a new `release` changes the pin once the release is installed or its binary is in the machine's `releases/.incoming/<version>/`; the rollout copying that binary itself and the remote `director reload` are not built yet.
 - `rollback`, which will restore a preserved revision for new tasks.
 - Tool installs (`guildhall steward install`, R1.7, R1.50), audits and learnings (R1.32).
 - Enrolment through the setup wizard (R1.43-R1.51).
