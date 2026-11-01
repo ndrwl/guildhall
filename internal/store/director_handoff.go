@@ -73,6 +73,10 @@ type DirectorReload struct {
 	OldSHA256  string `json:"old_sha256,omitempty"`
 	NewRelease string `json:"new_release,omitempty"`
 	NewSHA256  string `json:"new_sha256,omitempty"`
+	// OldConfigDigest and NewConfigDigest are the effective configuration digests the two sessions recorded, copied
+	// with their releases.
+	OldConfigDigest string `json:"old_config_digest,omitempty"`
+	NewConfigDigest string `json:"new_config_digest,omitempty"`
 	// RefusedSHA256 and RefusedReason are set when the supervisor refused to move onto the guildhall binary on
 	// PATH, whose sha256 RefusedSHA256 is, and reloaded on its own binary instead.
 	RefusedSHA256 string `json:"refused_sha256,omitempty"`
@@ -165,7 +169,7 @@ func (s *Store) LatestDirectorReload() (DirectorReload, error) {
 // followed session oldSession (0 for none), with the mutation id "director-reload-applied:<seq>". It is refused
 // with ErrNotFound for no reload at seq and ErrInvalid for a newSession below 1 or an oldSession not below
 // newSession; applying it again with other sessions or another refusal is ErrMutationConflict. Replaying returns the
-// applied reload. The old and new release and binary sha256 are copied from the two sessions' records, as recorded
+// applied reload. The old and new release, binary sha256 and config digest are copied from the two sessions' records, as recorded
 // (none for a session not recorded), so whichever binary applies the reload records the same; refused, when it is
 // not the zero refusal, is the PATH binary the old session's supervisor refused to move onto.
 func (s *Store) ApplyDirectorReload(seq uint64, oldSession, newSession int, refused ReloadRefusal) (DirectorReload, error) {
@@ -201,16 +205,16 @@ func (s *Store) ApplyDirectorReload(seq uint64, oldSession, newSession int, refu
 		d.State, d.OldSession, d.NewSession, d.AppliedAt = ReloadApplied, oldSession, newSession, s.now().UTC()
 		sessions := directorBucket(tx, bucketSessions)
 		for _, side := range []struct {
-			n               int
-			release, sha256 *string
-		}{{oldSession, &d.OldRelease, &d.OldSHA256}, {newSession, &d.NewRelease, &d.NewSHA256}} {
+			n                       int
+			release, sha256, config *string
+		}{{oldSession, &d.OldRelease, &d.OldSHA256, &d.OldConfigDigest}, {newSession, &d.NewRelease, &d.NewSHA256, &d.NewConfigDigest}} {
 			var ds DirectorSession
 			switch err := getJSON(sessions, sessionKey(side.n), &ds); {
 			case side.n == 0 || errors.Is(err, ErrNotFound):
 			case err != nil:
 				return err
 			default:
-				*side.release, *side.sha256 = ds.Release, ds.BinarySHA256
+				*side.release, *side.sha256, *side.config = ds.Release, ds.BinarySHA256, ds.ConfigDigest
 			}
 		}
 		d.RefusedSHA256, d.RefusedReason = refused.SHA256, refused.Reason

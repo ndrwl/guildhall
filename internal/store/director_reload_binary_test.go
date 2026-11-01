@@ -10,7 +10,7 @@ import (
 // binaryDigest is a well-formed binary sha256.
 const binaryDigest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-// TestApplyDirectorReloadRecordsTheBinaries: the applied reload copies each session's release and binary sha256 from
+// TestApplyDirectorReloadRecordsTheBinaries: the applied reload copies each session's release, binary sha256 and config digest from
 // its record and carries a refusal; replaying it with the same payload returns the same record, while another
 // refusal conflicts. A session with no sha256, as an older supervisor records, leaves its side's sha256 empty.
 func TestApplyDirectorReloadRecordsTheBinaries(t *testing.T) {
@@ -24,7 +24,7 @@ func TestApplyDirectorReloadRecordsTheBinaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	second := sampleSession(2)
-	second.Release, second.BinarySHA256 = "v0.5.0", cur
+	second.Release, second.BinarySHA256, second.ConfigDigest = "v0.5.0", cur, sampleDigest('d')
 	mustStartSession(t, s, second)
 	refused := ReloadRefusal{SHA256: strings.Repeat("c", 64), Reason: "director start --check: exit status 1"}
 	applied, err := s.ApplyDirectorReload(r.Sequence, 1, 2, refused)
@@ -32,6 +32,7 @@ func TestApplyDirectorReloadRecordsTheBinaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	if applied.OldRelease != "v0.4.0" || applied.OldSHA256 != old || applied.NewRelease != "v0.5.0" || applied.NewSHA256 != cur ||
+		applied.OldConfigDigest != sampleDigest('c') || applied.NewConfigDigest != sampleDigest('d') ||
 		applied.RefusedSHA256 != refused.SHA256 || applied.RefusedReason != refused.Reason || applied.State != ReloadApplied {
 		t.Fatalf("applied = %+v", applied)
 	}

@@ -231,6 +231,7 @@ It exits 0 when the prune ran, a partial prune included, 1 when the config or st
 With [`prune_daily`](configuration.md#settings) `"true"`, the session supervisor runs the same prune, off its decision path, at session start when the copy's last prune, stamped in `<state>/prune-last.json`, was a day ago or more, and then once a day; its output goes to the supervisor's standard error.
 For a task whose worktree it leaves it sends the Director one unread `prune-workspace-kept` message per task, not one a day, which does not wake it.
 Claude Code's own transcripts, `director/session-<n>/` directories and caches outside the task directory are not pruned.
+Installed releases are not either: `guildhall release prune` removes those, after each pin change and by hand, as [pruning releases](releases.md#pruning) describes.
 
 ## Backups
 

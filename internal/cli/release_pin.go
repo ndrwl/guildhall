@@ -45,8 +45,8 @@ type pinChange struct {
 // the home lock, it registers the copy in the inventory, records a release-pin event unless the newest one already
 // names r, and then writes the copy's release.pin cache by rename, so a pin file always follows its event
 // (docs/releases.md#the-pin). A target whose store schema differs from that of a release an active task records is
-// refused (checkStoreSchema). The lock serializes pin changes with each other and with task creation, and, from
-// later slices, with pruning.
+// refused (checkStoreSchema). The lock serializes pin changes with each other, with task creation and with
+// pruning, which runs after each pin change under its own hold (pruneAfterPin).
 func (a *App) setPin(h release.Home, dir, storePath string, r release.Release, source store.ReleasePinSource) (pinChange, error) {
 	unlock, err := h.Lock(releaseLockWait)
 	if err != nil {
@@ -112,7 +112,11 @@ func (a *App) releaseUse(args []string) int {
 	if err != nil {
 		return a.fail(fmt.Errorf("release use: %w", err))
 	}
-	return a.printPin(dir, ch)
+	code := a.printPin(dir, ch)
+	if ch.Changed {
+		a.pruneAfterPin(h, storePath)
+	}
+	return code
 }
 
 // printPin prints a pin change, or that there was none.
@@ -308,6 +312,8 @@ func (a *App) releaseAdopt(args []string) int {
 		return fail(fmt.Errorf("guildhall on PATH: %w", err))
 	}
 	var lines []string
+	// pinned is set when this run gave the copy its first pin, a pin change, which prune follows.
+	pinned := false
 	launcherSum, _ := fileSHA256(h.Launcher())
 	adopted := launcherSum != "" && bin.SHA256 == launcherSum
 	// The release this copy adopts: the guildhall on PATH before the machine adopted, else, on a machine whose
@@ -363,6 +369,7 @@ func (a *App) releaseAdopt(args []string) int {
 		if err != nil {
 			return fail(err)
 		}
+		pinned = ch.Changed
 		lines = append(lines, fmt.Sprintf("copy %s pins %s (%s) and is registered in %s", dir, ch.Pin.Version, shortSHA(ch.Pin.SHA256), h.CopiesFile()))
 	}
 	if !adopted {
@@ -374,6 +381,9 @@ func (a *App) releaseAdopt(args []string) int {
 	}
 	if _, err := io.WriteString(a.Stdout, strings.Join(lines, "\n")+"\n"); err != nil {
 		return 1
+	}
+	if pinned {
+		a.pruneAfterPin(h, storePath)
 	}
 	return 0
 }

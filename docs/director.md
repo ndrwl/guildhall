@@ -440,7 +440,7 @@ The supervisor applies a plain reload at a quiet point: a turn has ended since t
 A Director stage attempt running, such as a grill waiting on the Guildmaster's answers, does not hold a plain reload either, since the next session restarts it ([decision](decisions/director-reload-and-notes.md), as [D94](decisions/director-reload-and-notes.md) ruled for `--now`).
 `--now` applies it at the [end of the current turn](#the-end-of-a-turn); it is the last step of the [handoff](#handoff): check the notes, then reload.
 `--now` is refused with exit 1 only when there is no session or the newest one is `stopped`; it needs no note, and a Director stage attempt running, such as a grill, does not hold it, since the next session restarts the grill ([D94](decisions/director-reload-and-notes.md)).
-The [status feed](#status)'s session section carries the newest request as `reload`, `requested` or `applied` with the old and new session numbers, the two sessions' releases and binary sha256 (`old_release`, `old_sha256`, `new_release`, `new_sha256`) and, when the supervisor refused a new binary, `refused_sha256` and `refused_reason`.
+The [status feed](#status)'s session section carries the newest request as `reload`, `requested` or `applied` with the old and new session numbers, the two sessions' releases, binary sha256 and config digests (`old_release`, `old_sha256`, `old_config_digest`, `new_release`, `new_sha256`, `new_config_digest`) and, when the supervisor refused a new binary, `refused_sha256` and `refused_reason`.
 
 ### The supervisor's binary
 
@@ -467,7 +467,7 @@ The status feed's `supervisor_binary` reports such a session with `differs` true
 The status feed's `supervisor_binary` compares the newest session's `binary_sha256` with the `guildhall` on `PATH`: `sha256`, `path`, `path_sha256`, `differs` and a one-line `summary` saying whether a reload would move the supervisor onto another binary.
 
 On a copy that has [adopted releases](releases.md#built-so-far), one with a `release.pin`, the `guildhall` on `PATH` is the launcher, so the reload and the feed use the copy's pinned release, `<home>/releases/<pin>/guildhall`, wherever this section says the `guildhall` on `PATH`: the reload pre-flights and moves onto the pinned release, refusing one that is missing, damaged or reports another version, and execs it with `GUILDHALL_RELEASE` set to the pin; `supervisor_binary` names the pinned release; and `director start` types plain `guildhall` with the explicit `--copy` into the Director's tab, so a restart there goes through the launcher.
-The config digest on the applied reload lands with rollback (d127 slice 4).
+The applied reload also records the two sessions' config digests, `old_config_digest` and `new_config_digest`, so it names the old and new release and settings together (d127 slice 4).
 
 ## The end of a turn
 

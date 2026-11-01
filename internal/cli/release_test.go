@@ -79,6 +79,9 @@ func TestReleaseInstallAndStatus(t *testing.T) {
 	if err := (release.Home{Dir: home}).Register(filepath.Join(home, "..", "copy"), time.Second); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Mkdir(filepath.Join(home, "..", "copy"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	stdout.Reset()
 	if code := app.Run([]string{"release", "status"}); code != 0 {
 		t.Fatalf("release status = %d; stderr %s", code, stderr)
@@ -123,7 +126,7 @@ func TestReleaseStatusOfAnEmptyHome(t *testing.T) {
 		t.Fatalf("release status --json = %d, %q", code, stderr)
 	}
 	homeJSON, _ := json.Marshal(home)
-	if want := `{"home":` + string(homeJSON) + `,"releases":[],"copies":[],"copy":null}` + "\n"; stdout.String() != want {
+	if want := `{"home":` + string(homeJSON) + `,"releases":[],"copies":[],"copy":null,"prune_blocked":[]}` + "\n"; stdout.String() != want {
 		t.Errorf("release status --json = %q, want %q", stdout, want)
 	}
 	// Status reads only: it never creates the home.
