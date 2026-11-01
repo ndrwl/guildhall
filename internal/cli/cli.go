@@ -40,7 +40,11 @@ Commands:
   release adopt [--copy <dir>] [--launcher <file>]
                  install the guildhall on PATH as the copy's first release, pin it, and put the launcher on PATH
   release use <version> [--copy <dir>]
-                 pin a standalone copy to an installed release for new work
+                 pin a standalone copy to an installed release for new work, then prune
+  release rollback [--copy <dir>]
+                 move a standalone copy's pin back to its previous release, then prune
+  release prune [--dry-run] [--copy <dir>]
+                 remove installed releases past the newest three that no inventoried copy or active task holds
   release status [--json] [--copy <dir>]
                  print the Guildhall home, its installed releases with any damage and the copies pinning them,
                  its copies, and the selected copy's pin

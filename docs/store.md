@@ -39,7 +39,7 @@ Ids use the workflow id form: lowercase letters, digits and hyphens, starting wi
 | Note version | sequence | One add, edit or remove of a Director note, with its kind, text, task, session, UTC time, the version it followed and a remove's reason: the notes' history. Not per repository. |
 | Follow-up | follow-up id | Something the Director means to do once named tasks merge: the id `f<k>` from the `follow-ups` bucket's own sequence, one line of text of at most 1024 bytes, `until_merged`, the open tasks it names, its UTC creation time and, once done, `done`; written only by the newest session that is not `stopped`, under `follow-up-add:<session>:<sha256(text|tasks)>` and `follow-up-done:<id>`. See [holds](director.md#holds). Not per repository. |
 | Maintenance run | sequence | One recorded [maintenance](director.md#maintenance) run: `notes`, or `hallmark` with its repository and task for a run recorded before hallmarks were read from their tasks, the session that recorded it, a one-line summary of at most 1024 bytes, its receipt's sequence and the UTC time; see [Director maintenance](#director-maintenance). Not per repository. |
-| Reload request | sequence | One `director reload` request: `requested`, with whether it is `--now`, or `applied`, with the old and new session numbers, the two sessions' releases and binary sha256, a guildhall binary the supervisor refused to move onto, if any, and the UTC times; see [reload requests](#reload-requests). Not per repository. |
+| Reload request | sequence | One `director reload` request: `requested`, with whether it is `--now`, or `applied`, with the old and new session numbers, the two sessions' releases, binary sha256 and config digests, a guildhall binary the supervisor refused to move onto, if any, and the UTC times; see [reload requests](#reload-requests). Not per repository. |
 | Wake | sequence | One wake decision for one message to the Director: the message id, the sender type (`guildhall` or `local`; the message's `sender` is the finer field), `woke` or `queued` with a one-line reason of at most 256 bytes, and the UTC time; at most one per message, written by [the Director's wake](messaging.md#waking-the-director). Not per repository. |
 | Message | repository, message id | A message to the Director or to the Artisan of a running stage attempt, about an existing task and optionally one of its attempts, with an inbox entry until it is acknowledged once, and its `sender`, one of the fixed [senders](messaging.md#senders) Guildhall sets, absent on a message stored before senders were recorded, which reads as `unknown`. Message ids are unique in the store. Messages never change other records; see [messaging](messaging.md). |
 
@@ -178,7 +178,7 @@ A kind other than `promised`, `guildmaster` and `plan`, a blank, multi-line or i
 [`director reload`](director.md#reload) records a request with `RequestDirectorReload`; at most one is `requested` at a time.
 A request made while one is requested returns it, recording nothing, except that `--now` sets the pending request's `Now` under the mutation id `director-reload-now:<sequence>`; a new request has the mutation id `director-reload:<after>:<turn|now>`, where `<after>` is the sequence of the newest reload, so concurrent identical requests replay into one.
 The session that applies it records `ApplyDirectorReload` with the old and new session numbers under `director-reload-applied:<sequence>`; an applied request never changes again.
-The applied record copies `old_release` and `old_sha256` from the old session's record and `new_release` and `new_sha256` from the new session's, as they recorded them, so whichever binary applies the reload records the same.
+The applied record copies `old_release`, `old_sha256` and `old_config_digest` from the old session's record and `new_release`, `new_sha256` and `new_config_digest` from the new session's, as they recorded them, so whichever binary applies the reload records the same.
 A supervisor that refused to move onto the guildhall binary on `PATH` at the reload passes the refusal in, recorded as `refused_sha256`, empty for a binary it could not hash, and `refused_reason`, one line of at most 1 KiB; it is part of the request, so replaying the apply with another refusal is a conflict.
 A session's `binary_sha256` is empty or 64 lowercase hex characters; all these fields are omitted when empty, so older binaries read the records unchanged.
 `LatestDirectorReload` returns the newest request, either state, and `DirectorView.Reload` the same in the view's transaction.
@@ -223,6 +223,13 @@ An event has the pinned `version` and its `sha256` (64 lowercase hex characters)
 A pin to the version and sha256 already newest, a version that is not a release version (`dev`, or not a `v` followed by letters, digits, `.`, `-` and `+`, or with `..`), a bad sha256, an unknown source and a store-set field are `ErrInvalid`.
 `LatestReleasePin` returns the newest event, `ErrNotFound` for none, `ReleasePins` every event oldest first, and `ManagedView.ReleasePin` the newest in the view's transaction, which the configuration-admission boundary compares with `release.pin`.
 `store doctor` decodes every event.
+
+### Release prunes
+
+The `director` bucket's nested `release-prunes` holds the release-pruned events of the copy that ran [`release prune`](releases.md#pruning), keyed by zero-padded event sequence from 1 and created by its first event; it is append-only and additive, so it needs no schema bump.
+An event has the removed release's `version`, its `sha256`, empty for a damaged release whose sha256 could not be read, the `reason` it was eligible, at most 1 KiB, and the `receipt` sequence and `time` the store sets.
+`RecordReleasePruned` records one under the mutation id `release-pruned:<sequence>`, the sequence one more than the newest event's, so two recorded at once conflict with `ErrMutationConflict`; a version that is not a release version, a bad sha256, an empty or overlong reason and a store-set field are `ErrInvalid`.
+`ReleasePrunes` returns every event oldest first, and `store doctor` decodes them.
 
 ### Task releases
 

@@ -25,9 +25,11 @@ const releaseUsage = `usage: guildhall release install <version> --from <file> -
        guildhall release install --launcher [--from <file>]
        guildhall release adopt [--copy <dir>] [--launcher <file>]
        guildhall release use <version> [--copy <dir>]
+       guildhall release rollback [--copy <dir>]
+       guildhall release prune [--dry-run] [--copy <dir>]
        guildhall release status [--json] [--copy <dir>]`
 
-// releaseCmd runs `guildhall release install|adopt|use|status` (docs/contracts/cli.md#release).
+// releaseCmd runs `guildhall release install|adopt|use|rollback|prune|status` (docs/contracts/cli.md#release).
 func (a *App) releaseCmd(args []string) int {
 	if len(args) == 0 {
 		return a.usageError(releaseUsage)
@@ -39,6 +41,10 @@ func (a *App) releaseCmd(args []string) int {
 		return a.releaseAdopt(args[1:])
 	case "use":
 		return a.releaseUse(args[1:])
+	case "rollback":
+		return a.releaseRollback(args[1:])
+	case "prune":
+		return a.releasePrune(args[1:])
 	case "status":
 		return a.releaseStatus(args[1:])
 	}
@@ -128,6 +134,9 @@ type releaseStatusReport struct {
 	Copies   []string             `json:"copies"`
 	// Copy is the selected copy's pin, null when the command selected no copy.
 	Copy *releaseCopyStatus `json:"copy"`
+	// PruneBlocked are the inventoried copies whose pin or store cannot be read or disagrees, each of which makes
+	// release prune refuse; empty when prune may run.
+	PruneBlocked []string `json:"prune_blocked"`
 }
 
 // releaseStatusEntry is one installed release and the inventoried copies whose pin names it.
@@ -136,6 +145,14 @@ type releaseStatusEntry struct {
 	PinnedBy []string `json:"pinned_by"`
 	// Tasks are the selected copy's active tasks, <repo>/<id>, that recorded this release.
 	Tasks []string `json:"tasks"`
+	// Kept are why a release older than the newest release.Keep is kept, across every inventoried copy: the
+	// copies pinning it or rolling back to it and the active tasks recording it. Empty for one of the newest, and
+	// Prunable is set for an older one nothing holds, which the next prune removes.
+	Kept     []string `json:"kept"`
+	Prunable bool     `json:"prunable"`
+	// Left is set for an entry under releases/ whose name is not a release version, which prune never counts or
+	// removes.
+	Left bool `json:"left"`
 }
 
 // releaseTaskStatus is an active task of the selected copy and the release it recorded, with Problem when that
@@ -218,8 +235,14 @@ func (a *App) releaseStatus(args []string) int {
 		}
 		rep.Copy = &cs
 	}
-	for _, r := range releases {
-		rep.Releases = append(rep.Releases, releaseStatusEntry{Release: r, PinnedBy: append([]string{}, pins[r.Version]...), Tasks: append([]string{}, held[r.Version]...)})
+	holds, err := readReleaseHolds(h)
+	if err != nil {
+		return a.fail(fmt.Errorf("release status: %w", err))
+	}
+	rep.PruneBlocked = holds.Problems
+	for _, it := range release.PlanPrune(releases, holds.Held) {
+		rep.Releases = append(rep.Releases, releaseStatusEntry{Release: it.Release, PinnedBy: append([]string{}, pins[it.Version]...),
+			Tasks: append([]string{}, held[it.Version]...), Kept: it.Held, Prunable: it.Remove, Left: it.Left})
 	}
 	if *asJSON {
 		return a.printJSON(rep)
@@ -242,15 +265,24 @@ func (r releaseStatusReport) plain() string {
 	for _, rel := range r.Releases {
 		if rel.Damage != "" {
 			fmt.Fprintf(&b, "  %s  damaged, never run: %s\n", rel.Version, rel.Damage)
-			continue
+		} else {
+			fmt.Fprintf(&b, "  %s  %s  installed %s  store schema %d  release contract %d\n",
+				rel.Version, shortSHA(rel.SHA256), rel.InstalledAt.UTC().Format(time.RFC3339), rel.StoreSchema, rel.ReleaseContract)
+			for _, c := range rel.PinnedBy {
+				fmt.Fprintf(&b, "    pinned by %s\n", c)
+			}
+			for _, t := range rel.Tasks {
+				fmt.Fprintf(&b, "    recorded by task %s\n", t)
+			}
 		}
-		fmt.Fprintf(&b, "  %s  %s  installed %s  store schema %d  release contract %d\n",
-			rel.Version, shortSHA(rel.SHA256), rel.InstalledAt.UTC().Format(time.RFC3339), rel.StoreSchema, rel.ReleaseContract)
-		for _, c := range rel.PinnedBy {
-			fmt.Fprintf(&b, "    pinned by %s\n", c)
+		for _, k := range rel.Kept {
+			fmt.Fprintf(&b, "    kept past the newest %d: %s\n", release.Keep, k)
 		}
-		for _, t := range rel.Tasks {
-			fmt.Fprintf(&b, "    recorded by task %s\n", t)
+		if rel.Left {
+			fmt.Fprintf(&b, "    %s\n", release.NotARelease)
+		}
+		if rel.Prunable {
+			fmt.Fprintf(&b, "    prunable: older than the newest %d and held by no copy or task\n", release.Keep)
 		}
 	}
 	if len(r.Copies) == 0 {
@@ -260,6 +292,9 @@ func (r releaseStatusReport) plain() string {
 	}
 	for _, c := range r.Copies {
 		fmt.Fprintf(&b, "  %s\n", c)
+	}
+	for _, p := range r.PruneBlocked {
+		fmt.Fprintf(&b, "prune refuses: %s\n", p)
 	}
 	if c := r.Copy; c != nil {
 		if c.Pin == "" {

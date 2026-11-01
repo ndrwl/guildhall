@@ -3,7 +3,7 @@
 ## Contract
 
 The package owns the Guildhall home of [release upgrades](../releases.md): the releases installed side by side under it, the inventory of copies that use them and the home lock.
-Slice 1 of task d127 built it; slice 2 adds the pin file and what the [launcher](launcher.md) reads, slice 3 task creation under the home lock and release contract 2, and rollback and prune build on it in later slices.
+Slice 1 of task d127 built it; slice 2 adds the pin file and what the [launcher](launcher.md) reads, slice 3 task creation under the home lock and release contract 2, and slice 4 pruning.
 
 **The home.** `Locate(getenv, exe, version, goos)` finds it, in this order:
 
@@ -50,7 +50,13 @@ An unverified `.incoming` binary is never run; the probe runs only after its sha
 **The home lock.** `Lock(wait)` creates the home and its `lock` file when missing and takes an exclusive lock on it, `flock` on Unix and `LockFileEx` on Windows, polling every 20 ms for up to `wait`, then returning `ErrLocked`.
 The operating system releases it when the process ends, however it ends.
 It is per open file, so a second `Lock` in the same process waits like another process's.
-Install's rename, `Register`, pin changes and task creation hold it; slice 4 serializes pruning with them.
+Install's rename, `Register`, pin changes, task creation and pruning hold it, so a prune's reference checks and removals are serialized with every way a reference is made.
+
+**Pruning** ([pruning](../releases.md#pruning)). `Keep` is 3, fixed, not a setting.
+`PlanPrune(releases, held)` takes the releases as `List` orders them and the holds by version, and keeps the first `Keep` and every older one with a hold, listing its holds as `Held`; each other is `Remove`, with a `Reason` saying it is older than the newest three and held by nothing, prefixed with its damage for a damaged one.
+`RemoveLocked(version)`, for a caller holding the home lock, renames the release directory to a new `.prune-<version>-*` directory under `.incoming/`, so it leaves `releases/` in one step and is never seen half removed, then removes that.
+`PruneIncomingLocked(now)` removes each `.incoming/` entry last changed more than `IncomingStaleAfter`, 24 hours, before `now`, and any `.prune-*` a failed removal left, returning their names; a fresh install's or rollout's copy stays.
+The callers in [the CLI](cli.md#release) gather the holds from every inventoried copy and refuse when one cannot be read.
 
 `Contract` is the release contract this build implements, which `guildhall version --json` reports as `release_contract`: 1 was the home, install and status, and 2, from slice 3, adds tasks recording their release at `task new` and running on it.
 
@@ -61,4 +67,5 @@ Install's rename, `Register`, pin changes and task creation hold it; slice 4 ser
 `TestInstall` installs through a recording probe, which runs only the copy under `.incoming`, then installs again as `Already` with nothing run, and refuses another binary under the same version; `TestInstallRefusals` refuses `dev`, a bad name or sha256, a sha256 mismatch with no probe run, a report of `dev`, another version, a modified build, no release contract, a failing probe and a missing file, each leaving no release and an empty `.incoming`.
 `TestCheckFindsDamage` changes or removes each piece of an installed release, sees `Check` name it and `Install` refuse over it; `TestList` the order and a stray entry reported damaged.
 `pin_test.go` was written with slice 2 and not run red: `TestPin` the missing, written, read and refused pin files; `TestNewestAndRunnable` the newest install, skipping a damaged one, and the missing and damaged refusals.
+`prune_test.go` was written with slice 4 and not run red: `TestPlanPrune` keeps the newest three and an older held release with its holds and removes the rest, a damaged one's reason naming its damage, and leaves entries not named as release versions, a stray one and `dev`, uncounted and never removed (slice 4 review f1); `TestRemoveAndPruneIncoming` removes a release, leaving the others listed, refuses a path, and removes a stale and a half-removed `.incoming/` entry, keeping a fresh one.
 `TestRegister` covers sorting, duplicates and a cleaned path; `TestRegisterIsSerialized` registers sixteen copies at once and keeps every one; `TestLock` sees a second lock and a `Register` refused with `ErrLocked` while it is held, and taken again after unlock.

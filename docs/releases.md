@@ -23,7 +23,7 @@ Before d127 nothing recorded which release a task runs, and a machine had exactl
 
 ## Built so far
 
-Task d127 builds this page in five slices; slices 1 to 3 are built. Slice 1 changes nothing for any copy:
+Task d127 builds this page in five slices; slices 1 to 4 are built. Slice 1 changes nothing for any copy:
 
 - **The Guildhall home** is `$GUILDHALL_HOME` when set; else, for an installed release, the home it is installed under (`<home>/releases/<version>/guildhall`); else `$XDG_DATA_HOME/guildhall`, or `~/.local/share/guildhall` without it, on Linux, WSL and a VDS alike, and `%LOCALAPPDATA%\Guildhall` on Windows.
 - **What counts as a release**: a binary whose `guildhall version --json` reports a version other than `dev`, `modified: false` and a `release_contract`, tagged (`v1.4.0`) or a main pseudo-version (`v0.0.0-20261031162214-d385b331abcd`). A plain `go build` reports `dev` and a build from a tree with local changes is modified; both are refused, since two of them would share a directory.
@@ -51,8 +51,15 @@ Slice 3 is built too: tasks record their release and run on it, as [tasks keep t
 - **The store-schema rule**: `release use` refuses a release whose `store_schema` differs from that of the release any active task records, naming those tasks, so the Guildmaster lets them finish first and no release migrates the store under a task still running an older one.
 - `version --json` reports `release_contract` 2.
 
+Slice 4 is built too: [rollback](#rollback) and [pruning](#pruning) for a standalone copy.
+
+- **`guildhall release rollback [--copy <dir>]`** moves the pin to the previous version of the copy's newest `release-pin` event, with source `rollback`, so a second rollback undoes the first; the previous release must still be installed intact with the sha256 the event names, and the store-schema rule applies as to `release use`. A managed copy is refused, naming the rollout.
+- **`guildhall release prune [--dry-run] [--copy <dir>]`** runs after every pin change (`use`, `rollback` and a first `adopt`) and by hand, exactly as [pruning](#pruning) says, under the home lock; each removal is a `release-pruned` event in the store of the copy that ran it ([store](store.md#release-prunes)), and a stale `.incoming/` entry is one last changed more than a day ago. A prune refused after a pin change is a warning: the pin change stands.
+- **`guildhall release status`** lists, for each release past the newest three, why it is kept, across every inventoried copy, or that it is prunable, and which copies would make prune refuse.
+- **The applied `director-reload`** records the old and new config digest beside the old and new release and sha256.
+
 The contracts are [`internal/release`](contracts/release.md), [`internal/launcher`](contracts/launcher.md), [`internal/copydir`](contracts/copydir.md), [the store's release pins and task releases](contracts/store.md) and [the CLI's release commands](contracts/cli.md#release).
-Slice 4 adds rollback and prune; slice 5 the managed pin through `config reload`.
+Slice 5 adds the managed pin through `config reload`, and with it the managed rollback below.
 Until a copy adopts, the install-each-merge routine (`go install …@<pseudo-version>` onto `PATH`) is unchanged.
 After it adopts, an upgrade is `guildhall release install <version> --from <file> --sha256 <hex>`, `guildhall release use <version>` and `guildhall director reload`.
 
@@ -151,7 +158,7 @@ Steps 1 and 2 alone already make new tasks use the new release, because `task ne
 
 `director reload` asks the running Director to restart its agent session on the current pin and settings.
 Its request, its `--now` form and the end-of-turn rule a standalone Director applies it by are built, as [the Director](director.md#reload) describes.
-The supervisor already moves onto a new binary at a reload: when the `guildhall` on `PATH` differs from its own image by sha256, it pre-flights it and replaces its image with it in the same process and pane, and records the old and new release and sha256 on the applied reload ([the supervisor's binary](director.md#the-supervisors-binary)); taking the binary from the pin rather than `PATH`, and the config digest on the record, land with release pins.
+The supervisor already moves onto a new binary at a reload: when the `guildhall` on `PATH` differs from its own image by sha256, it pre-flights it and replaces its image with it in the same process and pane, and records the old and new release, sha256 and config digest on the applied reload ([the supervisor's binary](director.md#the-supervisors-binary)); on an adopted copy it takes the binary from the pin rather than `PATH`.
 It records a `director-reload` request event and returns at once; it never interrupts a step.
 
 - The Director checks for a pending reload at each step boundary, the same boundary where it applies a new managed revision.
@@ -186,7 +193,7 @@ Pruning refuses deletion if any inventoried copy's pin or store cannot be read o
 Reference checks and deletion must be serialized with pin changes, task creation and copy registration so a new reference cannot race deletion.
 So more than three releases may stay when copies or tasks still need them; retention is fixed, not configurable.
 Each removal is a `release-pruned` store event with the version, its sha256 and the reason it was eligible; a release that was kept past the limit is listed with the reason in `guildhall release status`.
-Prune removes only `releases/<version>/` directories and stale `.incoming/` copies, never the launcher, the store or `managed.toml` revisions.
+Prune removes only `releases/<version>/` directories and stale `.incoming/` copies, never the launcher, the store or `managed.toml` revisions; an entry under `releases/` whose name is not a release version is not counted among the newest three, and prune and `guildhall release status` list it as left alone.
 
 ## Commands and store records
 
