@@ -134,6 +134,18 @@ type releaseStatusReport struct {
 type releaseStatusEntry struct {
 	release.Release
 	PinnedBy []string `json:"pinned_by"`
+	// Tasks are the selected copy's active tasks, <repo>/<id>, that recorded this release.
+	Tasks []string `json:"tasks"`
+}
+
+// releaseTaskStatus is an active task of the selected copy and the release it recorded, with Problem when that
+// release cannot run, so the task refuses to advance.
+type releaseTaskStatus struct {
+	Repository string `json:"repository"`
+	TaskID     string `json:"task_id"`
+	Version    string `json:"version"`
+	SHA256     string `json:"sha256"`
+	Problem    string `json:"problem"`
 }
 
 // releaseCopyStatus is the selected copy's pin: the version its release.pin names ("" for none), its newest
@@ -145,6 +157,10 @@ type releaseCopyStatus struct {
 	EventVersion string `json:"event_version"`
 	EventSHA256  string `json:"event_sha256"`
 	Problem      string `json:"problem"`
+	// Tasks are the copy's tasks neither done nor cancelled that recorded a release, and Unrecorded those,
+	// <repo>/<id>, that recorded none, created before the copy recorded releases, which run on the pin.
+	Tasks      []releaseTaskStatus `json:"tasks"`
+	Unrecorded []string            `json:"unrecorded"`
 }
 
 // releaseStatus runs `guildhall release status [--json] [--copy <dir>]`: the home, every installed release, newest
@@ -185,18 +201,25 @@ func (a *App) releaseStatus(args []string) int {
 			pins[v] = append(pins[v], c)
 		}
 	}
-	for _, r := range releases {
-		rep.Releases = append(rep.Releases, releaseStatusEntry{Release: r, PinnedBy: append([]string{}, pins[r.Version]...)})
-	}
 	if rep.Copies == nil {
 		rep.Copies = []string{}
 	}
+	held := map[string][]string{}
 	if cp.dir != "" {
 		cs, err := readCopyPin(cp.dir, storePath)
 		if err != nil {
 			return a.fail(fmt.Errorf("release status: %w", err))
 		}
+		if err := readCopyTasks(h, &cs, storePath); err != nil {
+			return a.fail(fmt.Errorf("release status: %w", err))
+		}
+		for _, t := range cs.Tasks {
+			held[t.Version] = append(held[t.Version], t.Repository+"/"+t.TaskID)
+		}
 		rep.Copy = &cs
+	}
+	for _, r := range releases {
+		rep.Releases = append(rep.Releases, releaseStatusEntry{Release: r, PinnedBy: append([]string{}, pins[r.Version]...), Tasks: append([]string{}, held[r.Version]...)})
 	}
 	if *asJSON {
 		return a.printJSON(rep)
@@ -226,6 +249,9 @@ func (r releaseStatusReport) plain() string {
 		for _, c := range rel.PinnedBy {
 			fmt.Fprintf(&b, "    pinned by %s\n", c)
 		}
+		for _, t := range rel.Tasks {
+			fmt.Fprintf(&b, "    recorded by task %s\n", t)
+		}
 	}
 	if len(r.Copies) == 0 {
 		b.WriteString("copies: none\n")
@@ -244,8 +270,45 @@ func (r releaseStatusReport) plain() string {
 		if c.Problem != "" {
 			fmt.Fprintf(&b, "  problem: %s\n", c.Problem)
 		}
+		for _, t := range c.Tasks {
+			if t.Problem != "" {
+				fmt.Fprintf(&b, "  task %s/%s runs on %s, which %s\n", t.Repository, t.TaskID, t.Version, t.Problem)
+			} else {
+				fmt.Fprintf(&b, "  task %s/%s runs on %s\n", t.Repository, t.TaskID, t.Version)
+			}
+		}
+		for _, t := range c.Unrecorded {
+			fmt.Fprintf(&b, "  task %s recorded no release and runs on the pin\n", t)
+		}
 	}
 	return b.String()
+}
+
+// readCopyTasks fills cs with the active tasks of the store at storePath, read-only, and the release each
+// recorded, or that it recorded none; a copy with no store has no tasks.
+func readCopyTasks(h release.Home, cs *releaseCopyStatus, storePath string) error {
+	cs.Tasks, cs.Unrecorded = []releaseTaskStatus{}, []string{}
+	if _, err := os.Stat(storePath); err != nil {
+		return nil
+	}
+	type tasks struct {
+		recorded   []activeTaskRelease
+		unrecorded []store.Task
+	}
+	got, err := withStore(storePath, true, func(s *store.Store) (tasks, error) {
+		r, u, err := activeTaskReleases(s)
+		return tasks{r, u}, err
+	})
+	if err != nil {
+		return err
+	}
+	for _, r := range got.recorded {
+		cs.Tasks = append(cs.Tasks, releaseTaskStatus{Repository: r.Repository, TaskID: r.TaskID, Version: r.Version, SHA256: r.SHA256, Problem: taskReleaseProblem(h, r.TaskRelease)})
+	}
+	for _, t := range got.unrecorded {
+		cs.Unrecorded = append(cs.Unrecorded, t.Repository+"/"+t.ID)
+	}
+	return nil
 }
 
 // readCopyPin reads the pin of the copy in dir, whose store is at storePath, and its newest release-pin event,

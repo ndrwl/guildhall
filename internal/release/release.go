@@ -41,8 +41,9 @@ import (
 const HomeEnv = "GUILDHALL_HOME"
 
 // Contract is the release contract this build implements, which `guildhall version --json` reports as
-// release_contract and install records: 1 is the release home, install and status.
-const Contract = 1
+// release_contract and install records: 1 is the release home, install and status, and 2 adds tasks recording
+// their release at task new and running on it (d127 slice 3).
+const Contract = 2
 
 // Names inside the home and inside a release directory.
 const (

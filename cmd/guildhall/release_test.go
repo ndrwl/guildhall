@@ -65,7 +65,7 @@ func TestReleaseInstallOfABuiltBinary(t *testing.T) {
 		ReleaseContract int    `json:"release_contract"`
 	}
 	if err != nil || json.Unmarshal([]byte(out), &report) != nil || report.Version != "v0.0.0-release-test" || report.Modified ||
-		report.StoreSchema < 1 || report.ReleaseContract != 1 {
+		report.StoreSchema < 1 || report.ReleaseContract != 2 {
 		t.Fatalf("version --json = %q, %v", out, err)
 	}
 

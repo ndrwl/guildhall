@@ -44,8 +44,9 @@ type pinChange struct {
 // setPin pins the copy in dir, whose store is at storePath, to the installed, intact release r, from source: under
 // the home lock, it registers the copy in the inventory, records a release-pin event unless the newest one already
 // names r, and then writes the copy's release.pin cache by rename, so a pin file always follows its event
-// (docs/releases.md#the-pin). The lock serializes pin changes with each other and, from later slices, with task
-// creation and pruning.
+// (docs/releases.md#the-pin). A target whose store schema differs from that of a release an active task records is
+// refused (checkStoreSchema). The lock serializes pin changes with each other and with task creation, and, from
+// later slices, with pruning.
 func (a *App) setPin(h release.Home, dir, storePath string, r release.Release, source store.ReleasePinSource) (pinChange, error) {
 	unlock, err := h.Lock(releaseLockWait)
 	if err != nil {
@@ -61,6 +62,9 @@ func (a *App) setPin(h release.Home, dir, storePath string, r release.Release, s
 		case err == nil && latest.Version == r.Version && latest.SHA256 == r.SHA256:
 			return pinChange{Pin: latest}, nil
 		case err != nil && !errors.Is(err, store.ErrNotFound):
+			return pinChange{}, err
+		}
+		if err := checkStoreSchema(h, s, r); err != nil {
 			return pinChange{}, err
 		}
 		p, _, err := s.RecordReleasePin(store.ReleasePin{Version: r.Version, SHA256: r.SHA256, Source: source})

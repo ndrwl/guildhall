@@ -547,6 +547,7 @@ func (a *App) directorStatusCmd(args []string) int {
 			out.RepositoryPolicies = feedPolicies(a.readPolicies(context.Background(), c.Repositories...))
 		}
 	}
+	out.NeedsMe = append(out.NeedsMe, a.taskReleaseItems(*path)...)
 	v := a.versionInfo(context.Background(), *cfg, *state, false)
 	out.Version = &v
 	if it, ok := v.installItem(); ok {

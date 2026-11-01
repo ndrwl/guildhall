@@ -45,6 +45,8 @@ type RepositoryCounts struct {
 	UnreadMessages      int
 	// Pruned counts the tasks with a prune record (docs/store.md#pruned-tasks).
 	Pruned int
+	// TaskReleases counts the tasks with a recorded release (docs/store.md#task-releases).
+	TaskReleases int
 }
 
 // maxProblems bounds the problems Doctor collects from a badly damaged file.
@@ -122,7 +124,7 @@ func (s *Store) Doctor() (Report, error) {
 				string(bucketTaskContexts): &counts.TaskContexts, string(bucketTaskLinks): &counts.TaskLinks,
 				string(bucketTaskOverrides): &counts.TaskOverrides, string(bucketTaskDependencies): &counts.TaskDependencies,
 				string(bucketOwners): &counts.Owners, string(bucketMessages): &counts.Messages, string(bucketInbox): &counts.UnreadMessages,
-				string(bucketPruned): &counts.Pruned,
+				string(bucketPruned): &counts.Pruned, string(bucketTaskReleases): &counts.TaskReleases,
 			} {
 				b := tx.Bucket(bucketRepos).Bucket(repo).Bucket([]byte(name))
 				if b == nil {
@@ -166,6 +168,8 @@ func decodeRecord(bucket string, k, v []byte) (any, error) {
 		rec = new(TaskContext)
 	case string(bucketTaskLinks):
 		rec = new(TaskLink)
+	case string(bucketTaskReleases):
+		rec = new(TaskRelease)
 	case string(bucketTaskOverrides):
 		rec = new(TaskOverride)
 	case string(bucketTaskDependencies):

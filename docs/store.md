@@ -224,6 +224,17 @@ A pin to the version and sha256 already newest, a version that is not a release 
 `LatestReleasePin` returns the newest event, `ErrNotFound` for none, `ReleasePins` every event oldest first, and `ManagedView.ReleasePin` the newest in the view's transaction, which the configuration-admission boundary compares with `release.pin`.
 `store doctor` decodes every event.
 
+### Task releases
+
+A task created on a copy with a pin records that release, which it [keeps](releases.md#tasks-keep-their-release).
+Each repository's `task_releases` bucket holds one record per task, keyed by task id: `repository`, `task_id`, the pinned `version` and its `sha256`, and `recorded_at`, which the store sets.
+It is its own append-only bucket, not a field of the task record, so a release that predates it and rewrites a task record, knowing nothing of releases, cannot drop it; it is additive, so it needs no schema bump.
+`CreateTaskWithRelease` creates the task as `CreateTask` does and records its release in the same transaction, under the task's mutation id with a request that holds both, so a rerun with the same release replays and one with another conflicts with `ErrMutationConflict`; a version that is not a release version, a bad sha256, a release naming another task and a store-set time are `ErrInvalid` and create no task.
+A record is never changed.
+`TaskRelease` returns a task's record, `ErrNotFound` for a task that recorded none, created before its copy recorded releases or on a copy with no pin, and `TaskReleases` every record by repository and task.
+`ReadTaskRelease(path, repository, task, wait)` reads one for the PATH launcher from a store file, read-only, without the schema check `Open` makes, since the bucket's layout holds under every schema.
+`store doctor` counts and decodes every record.
+
 ## Attempt ownership
 
 An ownership record says which per-attempt launcher owns a running stage attempt, so a second launcher cannot run the same attempt while the first is alive.

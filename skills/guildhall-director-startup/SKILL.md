@@ -28,6 +28,7 @@ The binary refuses `guildhall task new`, and `guildhall task start` of a task wi
    - `paused`: a task held while the session was paused; once you are ready and not paused, start it again with `guildhall task start` as the item names.
    - `checks`: not yours; your session's supervisor reads the task's checks again on its own and wakes you when they finish, so never poll them or run its `guildhall task start` yourself.
    - `maintenance`: a note audit or a hallmark is due; it does not hold back `guildhall director ready`, so work it with `guildhall-maintenance` after recovery.
+   - `release`: a task whose recorded release is missing or damaged, so it refuses to advance and never moves to another release; tell the Guildmaster the version the item names, and run its `guildhall release install` only on their word, with the file and sha256 they give.
    - `install`: the installed `guildhall` is behind main; it waits on the Guildmaster, not you.
      When it appears or its count changes, tell the Guildmaster how many merges behind it is and which pull requests it is missing, and that it is time to install.
      If tasks in flight are worth waiting for before installing, name them; that is your judgement.

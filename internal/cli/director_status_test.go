@@ -418,7 +418,7 @@ func TestDirectorStatusOfAnEmptyCopy(t *testing.T) {
 		`"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cost":"unknown","cost_usd":0}},"start_queue":[]},"mode":{"name":"standalone"},"tasks":[],"merge_queues":[],"decisions":[],` +
 		`"messages":{"unread":0,"by_type":{},"headers":[]},"recent":[],"needs_me":[],"parked":[],"held":[],"running":[],"grants":[],` +
 		`"version":{"version":"dev","revision":"` + testRevision + `","time":"2026-10-27T21:00:24Z","modified":false,"go_version":"go1.27.2",` +
-		`"platform":"linux/amd64","pr":null,"task":null,"behind_main":null,"store_schema":1,"release_contract":1}}` + "\n"
+		`"platform":"linux/amd64","pr":null,"task":null,"behind_main":null,"store_schema":1,"release_contract":2}}` + "\n"
 	if out != want {
 		t.Fatalf("empty copy:\n got %s\nwant %s", out, want)
 	}

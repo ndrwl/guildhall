@@ -177,7 +177,8 @@ func TestLauncherRunsTheCopyPin(t *testing.T) {
 		{"--copy=", f.root, []string{"director", "status", "--copy=" + b}, "v2.0.0"},
 		{"discovery", filepath.Join(b), []string{"director", "status"}, "v2.0.0"},
 		{"discovery below the copy", f.copyDirSub(a, "notes"), []string{"version"}, "v1.0.0"},
-		{"the store's own copy", f.root, []string{"artisan", "resume", "--store", filepath.Join(a, "director.store")}, "v1.0.0"},
+		{"the store's own copy", f.root, []string{"director", "status", "--store", filepath.Join(a, "director.store")}, "v1.0.0"},
+		{"an unrecorded task, on the pin", f.root, []string{"artisan", "resume", "--store", filepath.Join(a, "director.store"), "--repo", "app", "--task", "t-1"}, "v1.0.0"},
 		{"release command", a, []string{"release", "status"}, "v1.0.0"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -290,7 +291,7 @@ func TestLauncherRefusesConflictingSelection(t *testing.T) {
 	a, b := f.copyDir("a", "v1.0.0"), f.copyDir("b", "v1.0.0")
 	for _, args := range [][]string{
 		{"director", "status", "--copy", a, "--copy", b},
-		{"artisan", "resume", "--store", filepath.Join(a, "director.store"), "--store", filepath.Join(b, "director.store")},
+		{"director", "status", "--store", filepath.Join(a, "director.store"), "--store", filepath.Join(b, "director.store")},
 	} {
 		r := f.launch(f.root, "", nil, args...)
 		if r.code != 1 || r.stdout != "" || !strings.Contains(r.stderr, "conflicting") {
