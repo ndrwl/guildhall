@@ -715,6 +715,7 @@ func (c *Config) validate() []string {
 	}
 	problems = append(problems, c.checkQuality()...)
 	problems = append(problems, c.checkClaudeSkills()...)
+	problems = append(problems, c.checkRelease()...)
 
 	for _, name := range slices.Sorted(maps.Keys(c.Profiles)) {
 		p := c.Profiles[name]

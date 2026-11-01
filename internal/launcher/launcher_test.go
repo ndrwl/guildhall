@@ -270,6 +270,26 @@ func TestLauncherRecoveryDispatch(t *testing.T) {
 			t.Fatalf("%s: got exit %d on %q, stderr %q; want recovery on v2.0.0", dir, r.code, r.ran.Release, r.stderr)
 		}
 	}
+	// An explicit config reload --copy of a managed copy is recovered too, with its pin absent, missing or
+	// damaged; a config reload by discovery, without --copy, and any other command still refuse.
+	for _, pin := range []string{"", "v9.0.0", "v3.0.0"} {
+		managed := f.copyDir("managed-"+pin, pin)
+		if err := os.WriteFile(filepath.Join(managed, "managed.toml"), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		for _, args := range [][]string{{"config", "reload", "--copy", managed}, {"config", "reload", "--copy=" + managed}} {
+			r := f.launch(f.root, "", nil, args...)
+			if r.code != 0 || r.ran.Release != "v2.0.0" || !slices.Equal(r.ran.Args, args) || !strings.Contains(r.stderr, "recovery dispatch") {
+				t.Fatalf("%q with pin %q: got exit %d on %q, stderr %q; want recovery on v2.0.0", args, pin, r.code, r.ran.Release, r.stderr)
+			}
+		}
+		for _, args := range [][]string{{"config", "reload"}, {"config", "reload", "--", "--copy", managed}, {"director", "status", "--copy", managed}, {"config", "show", "--copy", managed}} {
+			r := f.launch(managed, "", nil, args...)
+			if r.code != 1 || r.stdout != "" {
+				t.Fatalf("%q with pin %q: got exit %d, output %q; want a refusal with no recovery", args, pin, r.code, r.stdout)
+			}
+		}
+	}
 	empty := newFixture(t)
 	if err := os.MkdirAll(filepath.Join(empty.home.IncomingDir(), "v1.0.0"), 0o755); err != nil {
 		t.Fatal(err)
