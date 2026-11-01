@@ -3,6 +3,7 @@ status: accepted
 date: 2026-10-31
 topic: ci
 tasks: d112
+amended-by: flaky-check-reruns-queue-front.md
 ---
 
 # Validate re-runs a failed CI job once before sending the task back to build
@@ -35,5 +36,5 @@ A rerun never marks a check passed: a passed result still needs every check of t
 The shipped default turns reruns on, at upgrade, for every repository whose CI runs on GitHub Actions, including other Directors' repositories; `flaky_checks = "off"` keeps the earlier behaviour.
 A config without the key has the same digest as before, and the shipped `default` and `bug` workflows and their digests are unchanged, since the policy is engine behaviour read from config.
 A forge without `RerunJob` behaves as `off`.
-The checks of a rebased merge-queue front (`headChecks`) are out of scope: a red check there still escalates back to build, and a follow-up can reuse the same rerun record and rule.
+The checks of a rebased merge-queue front (`headChecks`) are out of scope: a red check there still escalates back to build, and a follow-up can reuse the same rerun record and rule. [d143 does](flaky-check-reruns-queue-front.md).
 The design assumes, from GitHub's documented behaviour, that a re-run job is a new check run with a new run id and job id, and that the old job's log stays readable under its id; it was not confirmed against a live run in this change.

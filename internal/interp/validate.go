@@ -314,7 +314,8 @@ func (r *run) validate(s workflow.Step) (bool, Next, error) {
 	}
 	if v.Verdict == validationFailed {
 		// Under flaky_checks, a round about to be recorded first gives its failed jobs their one rerun on this head.
-		if stop, next, err := r.rerunFailed(s, repo, pr, h, &v); err != nil || stop {
+		pending := fmt.Sprintf("Step %s waits for the checks of head %s on pull request %s to finish. Advancing the task again, such as with task start, reads them again.", s.ID, h, pr.URL)
+		if stop, next, err := r.rerunFailed(s, repo, pr, h, &v, pending); err != nil || stop {
 			return false, next, err
 		}
 	} else if err := r.passedReruns(s, repo, h, &v); err != nil {

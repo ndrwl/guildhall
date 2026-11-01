@@ -334,12 +334,17 @@ func (r *run) publishLink(s workflow.Step, repo config.Repository, l rebaseLink,
 }
 
 // headChecks reads the checks of rebased head x on pull request pr for step s, as validate does, paced by
-// ChecksRefresh, and records a finished read as <step>-<k>-checks-<x>. It returns the recorded result, or nil with the
+// ChecksRefresh, and records a finished read as <step>-<k>-checks-<x>. Under flaky_checks a failed read first gives
+// its failed jobs their one rerun, as validate's does, and a passed read sends its flake messages. It returns the recorded result, or nil with the
 // wait while they are pending.
 func (r *run) headChecks(s workflow.Step, k int, repo config.Repository, x string, pr *pullRequestDoc) (*validationDoc, Next, error) {
 	name := fmt.Sprintf("%s-checks-%s", DecisionID(s.ID, k, false), x)
 	var v validationDoc
 	if ok, err := r.readJSONDoc(name, &v); err != nil || ok {
+		if err == nil && v.Verdict == validationPassed {
+			// A crash between the record and its flake messages still sends them; a resend is harmless.
+			err = r.notifyFlakes(s, name, v)
+		}
 		return &v, Next{}, err
 	}
 	wait := Next{Wait: WaitChecks, Step: s.ID}
@@ -367,11 +372,24 @@ func (r *run) headChecks(s workflow.Step, k int, repo config.Repository, x strin
 			finished = false
 		}
 	}
+	pending := fmt.Sprintf("Step %s waits for the checks of rebased head %s on pull request %s to finish.", s.ID, x, pr.URL)
 	if v.Verdict == validationPassed && !finished {
-		return nil, wait, r.notify(fmt.Sprintf("checks-pending.%s.%s", s.ID, x[:12]), store.MessageChecksPending,
-			fmt.Sprintf("Step %s waits for the checks of rebased head %s on pull request %s to finish.", s.ID, x, pr.URL))
+		return nil, wait, r.notify(fmt.Sprintf("checks-pending.%s.%s", s.ID, x[:12]), store.MessageChecksPending, pending)
 	}
-	return &v, Next{}, r.putJSONDoc(name, DecisionID(s.ID, k, false), "checks-"+x+".json", v)
+	if v.Verdict == validationFailed {
+		// Under flaky_checks, the front's failed jobs get their one rerun on this head, as validate's do.
+		if stop, next, err := r.rerunFailed(s, repo, pr, x, &v, pending); err != nil || stop {
+			return nil, next, err
+		}
+		return &v, Next{}, r.putJSONDoc(name, DecisionID(s.ID, k, false), "checks-"+x+".json", v)
+	}
+	if err := r.passedReruns(s, repo, x, &v); err != nil {
+		return nil, Next{}, err
+	}
+	if err := r.putJSONDoc(name, DecisionID(s.ID, k, false), "checks-"+x+".json", v); err != nil {
+		return nil, Next{}, err
+	}
+	return &v, Next{}, r.notifyFlakes(s, name, v)
 }
 
 // observe reads the pull request's mergeability at head h, without recording it; "not observed" without a reader

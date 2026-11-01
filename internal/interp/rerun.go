@@ -27,8 +27,9 @@ const (
 	rerunOutcomeSchema = "guildhall.check-rerun-outcome/1"
 )
 
-// rerunDoc is a rerun record: validate's one rerun of a failed GitHub Actions check of one head, written once
-// before the forge is asked to re-run its job (docs/interpreter.md#validate). It is the flake's evidence: the run
+// rerunDoc is a rerun record: validate's or deliver's one rerun of a failed GitHub Actions check of one head, written
+// once before the forge is asked to re-run its job (docs/interpreter.md#validate); deliver's are those of a rebased
+// merge-queue front's checks. It is the flake's evidence: the run
 // that failed, its job, and the failing test names read from that job's log.
 type rerunDoc struct {
 	Schema string `json:"schema"`
@@ -54,7 +55,7 @@ type rerunOutcomeDoc struct {
 	Error  string `json:"error"`
 }
 
-// rerunEntry is one check of a validation result that validate re-ran on its head: in a passed result, a flake,
+// rerunEntry is one check of a validation result that validate or deliver re-ran on its head: in a passed result, a flake,
 // with its failed and passing run ids; in a failed result, a check that failed again after its rerun.
 type rerunEntry struct {
 	Check string `json:"check"`
@@ -87,7 +88,7 @@ func checkHash(check string) string {
 	return digest.Of([]byte(check)).Hex()[:8]
 }
 
-// rerunName names the rerun record of check on head h for validate step: one per step, head and check, never per
+// rerunName names the rerun record of check on head h for validate or deliver step: one per step, head and check, never per
 // run, so a check that fails again after its rerun is not re-run again. A name too long for a document id is
 // hashed whole.
 func rerunName(step, h, check string) string {
@@ -98,7 +99,7 @@ func rerunName(step, h, check string) string {
 	return name
 }
 
-// rerunPolicy is the flaky_checks policy validate follows for repo: off, as it is, for a forge that cannot re-run a
+// rerunPolicy is the flaky_checks policy validate and deliver follow for repo: off, as it is, for a forge that cannot re-run a
 // job.
 func (r *run) rerunPolicy(repo config.Repository) config.FlakyChecks {
 	if _, ok := r.e.Forge.(CheckRerunner); !ok {
@@ -139,14 +140,14 @@ func (r *run) putOnce(name, dir, file string, v any) error {
 	return r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: name, Path: p, SHA256: digest.Of(data).Hex()}, data)
 }
 
-// rerunFailed gives the failed round v, about to be recorded for head h of validate step s, its one rerun under
-// repo's flaky_checks policy. A round is re-run only when every failing check is a GitHub Actions job not re-run on
-// this head before; validate then waits for every check of the head to finish, and re-runs each failing job once,
-// recording its rerun record first, and waits for the new runs. stop reports that validate waits, with next, and
-// records nothing; otherwise the round is a real failure, recorded as it is, with v.Reruns naming the checks that
+// rerunFailed gives the failed round v, about to be recorded for head h of validate or deliver step s, its one rerun
+// under repo's flaky_checks policy. A round is re-run only when every failing check is a GitHub Actions job not re-run
+// on this head before; the step then waits for every check of the head to finish, sending pendingText as its
+// checks-pending message, and re-runs each failing job once, recording its rerun record first, and waits for the new
+// runs. stop reports that the step waits, with next, and records nothing; otherwise the round is a real failure, recorded as it is, with v.Reruns naming the checks that
 // failed again after their rerun. A rerun the forge refuses is recorded with why, and the round is a real failure in
 // the same advance.
-func (r *run) rerunFailed(s workflow.Step, repo config.Repository, pr *pullRequestDoc, h string, v *validationDoc) (stop bool, next Next, err error) {
+func (r *run) rerunFailed(s workflow.Step, repo config.Repository, pr *pullRequestDoc, h string, v *validationDoc, pendingText string) (stop bool, next Next, err error) {
 	policy := r.rerunPolicy(repo)
 	if policy == config.FlakyChecksOff {
 		return false, Next{}, nil
@@ -184,8 +185,7 @@ func (r *run) rerunFailed(s workflow.Step, repo config.Repository, pr *pullReque
 	wait := Next{Wait: WaitChecks, Step: s.ID}
 	if pending {
 		// GitHub re-runs no job of a workflow run still in progress: the rerun waits for the head's other checks.
-		return true, wait, r.notify(fmt.Sprintf("checks-pending.%s.%s", s.ID, h[:12]), store.MessageChecksPending,
-			fmt.Sprintf("Step %s waits for the checks of head %s on pull request %s to finish. Advancing the task again, such as with task start, reads them again.", s.ID, h, pr.URL))
+		return true, wait, r.notify(fmt.Sprintf("checks-pending.%s.%s", s.ID, h[:12]), store.MessageChecksPending, pendingText)
 	}
 	c := forge.Commit{Repository: repo.Path, Remote: pr.Remote, Head: h}
 	reader, _ := r.e.Forge.(CheckLogReader)
@@ -228,7 +228,7 @@ func (r *run) rerunFailed(s workflow.Step, repo config.Repository, pr *pullReque
 	return true, wait, nil
 }
 
-// passedReruns sets, on the passed result v of head h, the flakes among its checks: each check with a rerun record
+// passedReruns sets, on the passed result v of head h of validate or deliver step s, the flakes among its checks: each check with a rerun record
 // on h that the forge accepted, with its failed and passing run ids, and the policy they were re-run under.
 func (r *run) passedReruns(s workflow.Step, repo config.Repository, h string, v *validationDoc) error {
 	policy := r.rerunPolicy(repo)
@@ -253,7 +253,7 @@ func (r *run) passedReruns(s workflow.Step, repo config.Repository, h string, v 
 // platform is the parenthesised part a matrix check's name ends with, such as macos-latest, or "".
 var platform = regexp.MustCompile(`\(([^()]+)\)\s*$`)
 
-// notifyFlakes sends, for the passed result v recorded as round id of step s under flaky_checks = "rerun-and-file",
+// notifyFlakes sends, for the passed result v recorded as round id of validate or deliver step s under flaky_checks = "rerun-and-file",
 // one flake message per check that passed on its rerun, its text built from the rerun record and the result alone,
 // so a replay sends the same message.
 func (r *run) notifyFlakes(s workflow.Step, id string, v validationDoc) error {

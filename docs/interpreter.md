@@ -357,7 +357,7 @@ Conflicting lines are the lines between `<<<<<<<` and `>>>>>>>` on both sides, w
 `git.Program.Classify` and the [rebase-aware review](#rebase-aware-review) of a new build head are not used and do not change.
 
 **`no_conflicts`.** Guildhall moves the task branch to the rebased head, `Workspaces.Adopt` (`git reset --keep`, which never touches untracked stage outputs), and force-pushes it to the same PR with `Forge.Publish`, recording `<step>-<k>-rebase-<n>-pr` and sending `rebased`.
-It then waits on `{"wait":"checks"}` for the rebased head's checks, read and paced as validate reads them, and records the finished read as `<step>-<k>-checks-<head>`.
+It then waits on `{"wait":"checks"}` for the rebased head's checks, read and paced as validate reads them, and records the finished read as `<step>-<k>-checks-<head>`; a failed GitHub Actions check first gets validate's one [rerun](#validate-reruns) on the rebased head.
 It checks mergeability again and, at deliver, [authorizes](#approval-carry-over) and merges the rebased head.
 
 **`minor_conflicts`.** Guildhall commits the conflict-marked tree as an unpushed head, `marked`.
@@ -375,7 +375,7 @@ A clean replay with unequal patch-ids has no conflicts to resolve, so it skips t
 **`major_conflicts`.** Guildhall records `<step>-<k>-escalated-<n>`, schema `guildhall.rebase-escalation/1`, holding the authorization, from, onto, kind, files, reason, whether the authorization may carry over to the rebuilt head (`carry`) and the spec it was given under (`spec_digest`), and sends the build step that produced the head back, as [`step send-back`](step-send-back.md) does, with feedback naming the base, the conflicting files and the reason; the Director is sent `rebase-escalated`.
 At deliver the task leaves the queue, keeping its ready time, and releases the front; normal propagation then reruns review, publish and validate, and the task rejoins the queue at its first ready time once the new head is authorized.
 At validate the escalation follows the step's `failed` [loop rule](#rounds-and-loops) back to build, with the same feedback.
-Red checks on the rebased head, a narrowed review that requests changes, a failed rebaser and a behaviour change escalate the same way; the next head then needs a new merge decision.
+Red checks on the rebased head, after any one [rerun](#validate-reruns) of a failed Actions job, a narrowed review that requests changes, a failed rebaser and a behaviour change escalate the same way; the next head then needs a new merge decision.
 
 **Again and stuck.** When the base moves again while the front waits for checks, someone having merged outside Guildhall, the front rebases the latest head of its chain again, as rebase `n+1`.
 After three rebases in one stay at the front, the task keeps the front, records `pr-blocked-<head>-<state>` and waits for the Director with `rebase-stuck`; [`task hold-merge`](tasks.md#holding-a-merge) holds it and its next advance releases the front, and a later claim starts a new stay with three more.
@@ -453,7 +453,10 @@ The policy is read from the live config at each advance; under `off`, or on a fo
   A check that failed and then passed on its rerun is a **flake**. Under `rerun-and-file` the Director is told of each as `<repo>.<task>.flake.<step>.<first 12 hex digits of the head>.<8 hex digits of the check name's digest>`, type `flake`, before the `checks-passed` message; its text, built from the rerun record and the result alone so a replay sends it again unchanged, starts `policy: rerun-and-file` and names the check, its platform (the parenthesised end of a matrix check's name, such as `macos-latest`), the job, the failed run and its URL, the passing run, the failing test names or `no test name found in the log`, and the `guildhall ci log` command of the old job. Under `rerun` a flake sends nothing more than `checks-passed`.
 
 A rerun never marks a check passed: the gate below and [`ci_green`](configuration.md#merge-requirements) read only results whose every check passed, and the repository's merge requirements always apply.
-The checks of a rebased merge-queue front are read without reruns.
+
+**The rebased merge-queue front.** Deliver's read of a [rebased front's](#tiered-rebase) checks, `<step>-<k>-checks-<head>`, follows the same rule, records, messages and policy ([decision](decisions/flaky-check-reruns-queue-front.md)): one rerun per step, rebased head and check, its rerun records named `deliver-…` so they never meet validate's for the same head.
+While it waits for the matrix or the rerun the front records nothing, sends `checks-pending` with the rebased head's wording and keeps its place, holding the queue longer.
+A failed read, a refused rerun or a check that is not an Actions job escalates as red checks do today, its reason saying which checks `failed again after one rerun`; a passed read names the flakes as `reruns` and, under `rerun-and-file`, sends each `flake.deliver.<head>.<check>` message, again on a replay, before the front merges.
 
 A `passed` result completes the step.
 A `failed` result is a blocking result of the step's `on.failed` [loop rule](#rounds-and-loops): within `max` the rule's target, which must be an Artisan step, runs again with the result as `feedback`; the new head is then reviewed, published and validated in the next round.
