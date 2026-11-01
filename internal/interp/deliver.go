@@ -668,8 +668,17 @@ func (r *run) front(s workflow.Step, repo config.Repository, dl deliverHead, id,
 				return false, next, err
 			}
 			if v.Verdict != validationPassed {
+				reason := "the checks of the rebased head failed: " + strings.Join(v.Failing, ", ")
+				if len(v.Reruns) > 0 {
+					again := make([]string, len(v.Reruns))
+					for i, e := range v.Reruns {
+						again[i] = e.Check
+					}
+					// The same wording as validate's checks-failed message.
+					reason += fmt.Sprintf(" (%s failed again after one rerun)", strings.Join(again, ", "))
+				}
 				next, err := r.escalate(s, k, escalationDoc{Authorization: id, From: cur.head, Onto: last.doc.Onto, Kind: config.RebaseMajorConflicts, Files: []string{},
-					Reason: "the checks of the rebased head failed: " + strings.Join(v.Failing, ", ")})
+					Reason: reason})
 				return false, next, err
 			}
 			cur.checks = v
