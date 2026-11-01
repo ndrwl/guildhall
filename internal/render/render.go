@@ -80,6 +80,12 @@ type Stage struct {
 	// Dir is the attempt directory Prompt writes into; it must not exist or be empty.
 	// Question ignores it.
 	Dir string
+	// Summary is a plan approval's spec Summary block (spec.Summary), which Question writes after the first line of
+	// a guildmaster-approval question. The caller reads the spec; Question reads no files. Prompt ignores it.
+	Summary string
+	// NoSummary marks a plan approval whose spec has no Summary block, or one that could not be read: Question then
+	// writes a line pointing at the spec instead. It is ignored when Summary is set, and by other kinds and Prompt.
+	NoSummary bool
 }
 
 // Retry is what the Director's retry of the previous attempt tells the next one.
@@ -477,7 +483,8 @@ type Ask struct {
 // Question renders the decision a Guildmaster stage opens: approval offers "approved" or "changes_requested",
 // human review offers every review verdict, and a handoff wait offers "received".
 // The text names the task, step and attempt, carries the step's instructions and lists the inputs
-// by name and recorded digest; it reads no files and has LF line endings.
+// by name and recorded digest; it reads no files and has LF line endings. An approval's question also carries the
+// stage's Summary after its first line or, with NoSummary, a line saying the spec has none.
 // A stage that is not a Guildmaster stage is refused with ErrWrongActor.
 func Question(stage Stage, inputs []Input) (Ask, error) {
 	kind, err := stageKind(stage, true)
@@ -499,6 +506,17 @@ func Question(stage Stage, inputs []Input) (Ask, error) {
 	}
 	fmt.Fprintf(&b, " for %s/%s, step %s (%s version %d), attempt %d.\n",
 		stage.Repository, stage.Task, stage.Step.ID, kind.Type, kind.Version, stage.Attempt)
+	if kind.Type == "guildmaster-approval" {
+		if summary := strings.TrimSpace(normalise(stage.Summary)); summary != "" {
+			fmt.Fprintf(&b, "\nPlan summary:\n%s\n", summary)
+		} else if stage.NoSummary {
+			name := "the spec"
+			if i := slices.IndexFunc(inputs, func(in Input) bool { return in.Port == "spec" }); i >= 0 {
+				name = slashName(inputs[i].Name)
+			}
+			fmt.Fprintf(&b, "\nNo summary in this spec; read %s.\n", name)
+		}
+	}
 	if instructions := strings.TrimRight(normalise(stage.Step.Instructions()), "\n"); strings.TrimSpace(instructions) != "" {
 		fmt.Fprintf(&b, "\nInstructions:\n%s\n", instructions)
 	}

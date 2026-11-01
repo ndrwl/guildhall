@@ -27,6 +27,8 @@ The Guildmaster accepts a spec that states its scope, contracts, tests and size.
    Leave the section out for one pull request.
    When the plan runs again after slices have merged, keep every merged slice's entry byte for byte and rewrite only the slices still to come.
 6. Write every decision you could not settle from the inputs or the repository as a numbered open question with your recommended answer, and proceed on that recommendation.
+7. Write the `## Summary` block last, and rewrite it whenever the plan runs again: Goal, Size, Slices, Changed since the grill and Open questions, as list items in that order, with every open question and its recommendation and nothing left out.
+   The Guildmaster's approval ask shows it as written, so it says only what the spec below it says.
 
 ## Rules
 

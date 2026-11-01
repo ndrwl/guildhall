@@ -1,0 +1,11 @@
+Approval needed for cli/t7, step accept (guildmaster-approval version 1), attempt 2.
+
+No summary in this spec; read tasks/t7/spec.md.
+
+Instructions:
+Check the scope.
+
+Inputs:
+- spec: tasks/t7/spec.md (sha256:242df7188ef036fb7f2376eda94382b23f989a04a61db84ae59acba315fc21be)
+
+Answer with one of: approved, changes_requested.

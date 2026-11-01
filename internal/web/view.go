@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ndrwl/guildhall/internal/spec"
 )
 
 // storyShown is how many of the story's newest nodes show before the rest fold under "N earlier entries".
@@ -72,6 +74,10 @@ type askView struct {
 	Deferred                  bool
 	Findings                  []Finding
 	FindingsSummary           string
+	// Plan says the ask is a plan approval about a spec document; Summary is that spec's Summary block rendered by
+	// goldmark, empty when it has none or its file cannot be shown, and the ask then links the spec instead.
+	Plan    bool
+	Summary template.HTML
 	// Digest is the full subject digest the form carries back, "" for none.
 	Digest string
 	// Form says the request is from the Guildmaster's login, which answers on the page as Login; Answering says the
@@ -289,6 +295,9 @@ func (s *Server) askView(t Task, a Ask) askView {
 	}
 	if a.SubjectDocument != "" {
 		v.SubjectName, v.SubjectHref = a.SubjectDocument, docHref(t.Repository, t.ID, a.SubjectDocument)
+		if doc := taskDocument(t, a.SubjectDocument); a.Kind == "approval" && doc != nil && doc.Kind == "Spec" {
+			s.planSummary(*doc, &v)
+		}
 	}
 	for _, o := range a.Options {
 		m, _ := OptionMeaning(a.Kind, o)
@@ -299,6 +308,62 @@ func (s *Server) askView(t Task, a Ask) askView {
 	}
 	v.Digest = a.Subject
 	return v
+}
+
+// ReadLink says the ask's subject line links its subject document: always when it has one, except on a plan approval
+// whose spec has no summary to show, where the fallback line already links the spec.
+func (v askView) ReadLink() bool {
+	return v.SubjectName != "" && (!v.Plan || v.Summary != "")
+}
+
+// taskDocument is the task's own document called name, nil when it has none.
+func taskDocument(t Task, name string) *Document {
+	for i := range t.Documents {
+		if d := &t.Documents[i]; d.Repository == t.Repository && d.TaskID == t.ID && d.Name == name {
+			return d
+		}
+	}
+	return nil
+}
+
+// planSummary adds a plan approval's summary to its ask, an approval whose subject is the spec document doc (a
+// design round's approval is about its design and shows none): the spec's Summary block, read verified and rendered
+// by goldmark, or, when the spec has no block or its file cannot be shown, the fallback link. The question's own copy
+// of the summary, or its no-summary line, is taken out of the rest of the question, so the summary shows once.
+func (s *Server) planSummary(doc Document, v *askView) {
+	v.Plan = true
+	var summary string
+	if body, status, _ := s.verified(doc); status == http.StatusOK {
+		if text, ok := spec.Summary(body); ok {
+			summary, v.Summary = text, RenderMarkdown([]byte(text))
+		}
+	}
+	v.Rest = stripSummary(v.Rest, summary)
+}
+
+// questionParts are the parts of an approval question that follow its summary (render.Question).
+var questionParts = []string{"\n\nInstructions:\n", "\n\nInputs:\n", "\n\nAnswer with one of: "}
+
+// stripSummary takes an approval question's own summary part off the front of rest, the question after its first
+// line: its "No summary in this spec" line always, and its "Plan summary:" block when the page shows summary, the
+// block it read from the spec, in its place.
+func stripSummary(rest, summary string) string {
+	if line, after, _ := strings.Cut(rest, "\n"); strings.HasPrefix(line, "No summary in this spec") {
+		return strings.TrimSpace(after)
+	}
+	if summary == "" || !strings.HasPrefix(rest, "Plan summary:\n") {
+		return rest
+	}
+	if after, ok := strings.CutPrefix(rest, "Plan summary:\n"+summary); ok && (after == "" || after[0] == '\n') {
+		return strings.TrimSpace(after)
+	}
+	end := len(rest)
+	for _, p := range questionParts {
+		if i := strings.Index(rest, p); i >= 0 && i < end {
+			end = i
+		}
+	}
+	return strings.TrimSpace(rest[end:])
 }
 
 // askState adds what the request brings to an ask: the form when it is from the Guildmaster's login, and the

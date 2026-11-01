@@ -55,6 +55,7 @@ button{font:inherit;color:inherit}
 .since{color:var(--faint);margin-left:auto}
 .q{font:650 17px/1.4 system-ui,sans-serif;margin:10px 0 4px;letter-spacing:-.005em;overflow-wrap:anywhere}
 .subj{font-size:13.5px;color:var(--mut);margin:0 0 10px}
+.plan{margin:0 0 12px;padding:10px 14px;border-radius:8px;background:var(--bg2);border:1px solid var(--line);font-size:15px;line-height:1.55}.plan .ph{font-weight:650;margin:0 0 6px}.plan>:last-child{margin-bottom:0}.plan ul,.plan ol{margin:0 0 8px;padding-left:20px}
 .ctx{margin:0 0 12px;font-size:14px;border-radius:8px;background:var(--bg2);border:1px solid var(--line)}
 .ctx>summary{padding:8px 12px;font-weight:600;color:var(--fg);min-height:44px;display:flex;align-items:center}
 .ctx>summary,.fold>summary{list-style:none}

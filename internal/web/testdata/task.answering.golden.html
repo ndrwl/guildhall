@@ -59,6 +59,7 @@ button{font:inherit;color:inherit}
 .since{color:var(--faint);margin-left:auto}
 .q{font:650 17px/1.4 system-ui,sans-serif;margin:10px 0 4px;letter-spacing:-.005em;overflow-wrap:anywhere}
 .subj{font-size:13.5px;color:var(--mut);margin:0 0 10px}
+.plan{margin:0 0 12px;padding:10px 14px;border-radius:8px;background:var(--bg2);border:1px solid var(--line);font-size:15px;line-height:1.55}.plan .ph{font-weight:650;margin:0 0 6px}.plan>:last-child{margin-bottom:0}.plan ul,.plan ol{margin:0 0 8px;padding-left:20px}
 .ctx{margin:0 0 12px;font-size:14px;border-radius:8px;background:var(--bg2);border:1px solid var(--line)}
 .ctx>summary{padding:8px 12px;font-weight:600;color:var(--fg);min-height:44px;display:flex;align-items:center}
 .ctx>summary,.fold>summary{list-style:none}
@@ -289,6 +290,25 @@ button{font:inherit;color:inherit}
 <p class="q">Grant network to build-3, so it can run the real tailscale whois contract test?</p><label class="yw" for="w-grant-1">Your words <span>optional with an answer</span></label><textarea id="w-grant-1" name="text" rows="3"></textarea><p class="pick">Answer</p>
 <div class="opts"><button class="opt pos" type="submit" name="option" value="approve"><b>Approve</b><span>the grant takes effect for its attempt</span></button><button class="opt neg" type="submit" name="option" value="reject"><b>Reject</b><span>the attempt runs without it</span></button></div><div class="wo"><button class="opt" type="submit" name="send" value="words"><b>Send words only</b><span>answers nothing; your words reach the Director as a message</span></button></div>
 <p class="who">Answering as <b>gm@example.com</b> · your Tailscale login</p></form>
+</div><div class="ask def" id="accept--s2-1"><form method="post" action="/guildhall/d122/answer"><input type="hidden" name="decision" value="accept--s2-1"><input type="hidden" name="subject" value="sha256:46ebdb466f774b077200e2711eb16257a0666e6bed56f38d7cfaf86d00b7805f"><input type="hidden" name="token" value="fixture-token">
+<div class="ah"><span class="kind">Approval</span><a class="aid" href="#accept--s2-1">#accept--s2-1</a><span class="tag you">deferred</span><span class="since">open since 4 Nov 14:33</span></div>
+<p class="q">Approval needed for guildhall/d122, step accept--s2 (guildmaster-approval version 1), attempt 1.</p><div class="plan md"><p class="ph">Plan summary</p><ul>
+<li><strong>Goal:</strong> one web page per task.</li>
+<li><strong>Size:</strong> two slices, about 900 lines.</li>
+<li><strong>Slices:</strong> read-only pages, then answers.</li>
+<li><strong>Changed since the grill:</strong> nothing; the plan follows the grill's agreed change.</li>
+<li><strong>Open questions:</strong> one:
+<ul>
+<li>Q1 Which address? Recommended: the tailnet one.</li>
+</ul>
+</li>
+</ul>
+</div><p class="subj">About <code>sha256:46ebdb466f77</code> · <a href="/guildhall/d122/doc/plan-1-spec">read plan-1-spec</a></p><details class="ctx"><summary>The rest of the question</summary><div><pre>Inputs:
+- spec: tasks/guildhall/d122/plan-1/spec.md
+
+Answer with one of: approved, changes_requested.</pre></div></details><label class="yw" for="w-accept--s2-1">Your words <span>optional with an answer</span></label><textarea id="w-accept--s2-1" name="text" rows="3"></textarea><p class="pick">Answer</p>
+<div class="opts"><button class="opt pos" type="submit" name="option" value="approved"><b>Approved</b><span>approve it; the task goes on</span></button><button class="opt carry" type="submit" name="option" value="changes_requested"><b>Changes requested</b><span>send it back with your words</span></button></div><div class="wo"><button class="opt" type="submit" name="send" value="words"><b>Send words only</b><span>answers nothing; your words reach the Director as a message</span></button></div>
+<p class="who">Deferred: still yours, for later. Answering as <b>gm@example.com</b> · your Tailscale login</p></form>
 </div><div class="ask def" id="deliver-1"><form method="post" action="/guildhall/d122/answer"><input type="hidden" name="decision" value="deliver-1"><input type="hidden" name="subject" value=""><input type="hidden" name="token" value="fixture-token">
 <div class="ah"><span class="kind">Merge</span><a class="aid" href="#deliver-1">#deliver-1</a><span class="tag you">deferred</span><span class="since">open since 4 Nov 14:35</span></div>
 <p class="q">Merge d122?</p><label class="yw" for="w-deliver-1">Your words <span>optional with an answer</span></label><textarea id="w-deliver-1" name="text" rows="3"></textarea><p class="pick">Answer</p>

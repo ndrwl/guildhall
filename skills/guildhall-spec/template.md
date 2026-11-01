@@ -2,8 +2,24 @@
 
 Write the result in this order and keep every heading but `## Slices`, which only a multi-PR task has.
 Write "None" under any other heading that has nothing, with the reason.
+The `## Summary` block is what the Guildmaster reads on the approval ask, so they can judge the plan without opening the spec: keep it short, at most 4 KiB, and keep its parts as list items, never headings.
 
 ```markdown
+# <pull request title>
+
+## Summary
+
+- **Goal:** <what the change does, in a sentence>.
+- **Size:** <one pull request, or n slices>, about <lines> lines in <files> files.
+- **Slices:** <none; one pull request>, or <each slice's title, in order>.
+- **Changed since the grill:** <where the plan differs from, or adds to, the grill's agreed change, in a sentence or two>; or "Nothing; the plan follows the grill's agreed change", or "No grill for this task". On a re-plan, also what changed since the previous plan and why, such as the feedback it answers.
+- **Open questions:** <how many>, or "None":
+  - Q1 <question title>. Recommended: <your answer>.
+
+## Goal
+
+What the change achieves, in a sentence or two.
+
 ## Problem
 
 The problem the task solves, from the point of view of whoever meets it now.

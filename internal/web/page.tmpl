@@ -21,7 +21,8 @@
 {{- if .Form}}<form method="post" action="{{.Action}}"><input type="hidden" name="decision" value="{{.ID}}"><input type="hidden" name="subject" value="{{.Digest}}"><input type="hidden" name="token" value="{{.Token}}">{{end}}
 <div class="ah"><span class="kind">{{.KindName}}</span><a class="aid" href="#{{.ID}}">#{{.ID}}</a>{{if .Deferred}}<span class="tag you">deferred</span>{{end}}{{if .Since}}<span class="since">{{.Since}}</span>{{end}}</div>
 <p class="q">{{.First}}</p>
-{{- if or .Subject .SubjectName}}<p class="subj">{{if .Subject}}About <code>{{.Subject}}</code>{{end}}{{if .SubjectName}}{{if .Subject}} · {{end}}<a href="{{.SubjectHref}}">read {{.SubjectName}}</a>{{end}}</p>{{end}}
+{{- if .Plan}}{{if .Summary}}<div class="plan md"><p class="ph">Plan summary</p>{{.Summary}}</div>{{else}}<p class="subj"><a href="{{.SubjectHref}}">No summary in this spec · read {{.SubjectName}}</a></p>{{end}}{{end}}
+{{- if or .Subject .ReadLink}}<p class="subj">{{if .Subject}}About <code>{{.Subject}}</code>{{end}}{{if .ReadLink}}{{if .Subject}} · {{end}}<a href="{{.SubjectHref}}">read {{.SubjectName}}</a>{{end}}</p>{{end}}
 {{- if .Rest}}<details class="ctx"><summary>The rest of the question</summary><div><pre>{{.Rest}}</pre></div></details>{{end}}
 {{- if .Findings}}<details class="ctx"><summary>{{.FindingsSummary}}</summary><div><ul class="find">{{range .Findings}}<li>{{if .Rule}}<span class="sev">{{.Rule}}</span>{{end}}<span><b>{{.ID}}</b> {{.Summary}}</span></li>{{end}}</ul></div></details>{{end}}
 {{- if .Refused}}<p class="state bad"><b>Refused · nothing written:</b> {{.Refused}}.</p>{{end}}

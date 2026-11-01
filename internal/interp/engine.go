@@ -21,6 +21,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/render"
+	"github.com/ndrwl/guildhall/internal/spec"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
@@ -1315,11 +1316,30 @@ func (r *run) ask(s workflow.Step) (Next, error) {
 		return Next{}, err
 	}
 	k := r.nextRound(s.ID)
-	ask, err := render.Question(render.Stage{Repository: r.task.Repository, Task: r.task.ID, Step: s, Attempt: k}, inputs)
+	stage := render.Stage{Repository: r.task.Repository, Task: r.task.ID, Step: s, Attempt: k}
+	if s.Type == "guildmaster-approval" {
+		stage.Summary, stage.NoSummary = r.summary(inputs)
+	}
+	ask, err := render.Question(stage, inputs)
 	if err != nil {
 		return Next{}, err
 	}
 	return r.open(s, k, inputs, ask)
+}
+
+// summary reads the Summary block of a plan approval's spec input from its verified bytes. A spec with no block, or
+// one that cannot be read or fails its digest, has none: the ask still opens, saying so.
+func (r *run) summary(inputs []render.Input) (string, bool) {
+	i := slices.IndexFunc(inputs, func(in render.Input) bool { return in.Port == "spec" })
+	if i < 0 {
+		return "", true
+	}
+	data, err := r.read(store.DocumentRef{Name: inputs[i].Name, Path: inputs[i].Name, SHA256: inputs[i].SHA256})
+	if err != nil {
+		return "", true
+	}
+	s, ok := spec.Summary(data)
+	return s, !ok
 }
 
 // subject returns what a decision of step s binds to, from its current inputs.
