@@ -318,6 +318,7 @@ Deliver then joins the queue, `JoinMergeQueue`, under that decision or authoriza
 - **Order.** The queue is ordered by [priority](tasks.md#priority), `p0` first, then ready time, then task id (`store.OrderMergeQueue`).
 - **Front.** The first task in queue order that is not held claims the front with `ClaimMergeFront`, in one store mutation, so two tasks advancing at once never both hold it; any other claim is refused with `store.ErrMergeQueued` and records nothing.
   A claim counts the task's stays at the front.
+  A claim's mutation id is keyed on the slice's deliver step (`merge-front:<repo>:<task>:<stay>` for slice 1, `merge-front:<repo>:<task>:<deliver>--s<k>:<stay>` for a later slice, and the same for its `merge-release`), and the engine acts as the front only when the store's front record names the task, so a replayed claim receipt never makes a front.
   The front stands while its task is queued: until it merges, is sent back or is cancelled, or, once it is held, until its next advance releases it; no other task can claim the front before then, so a held front still pushing or merging never shares it.
   A later priority change reorders only the tasks behind it; nothing is preempted.
 - **Behind the front.** A task that is not the front records nothing more and returns `{"wait":"merge-queue","step":"<deliver>"}` (`WaitMergeQueue`), with one `merge-queued` message per place and front, naming its place and the task at the front.

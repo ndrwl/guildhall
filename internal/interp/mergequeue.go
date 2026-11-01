@@ -437,8 +437,19 @@ func (r *run) enqueue(id, record string, pr *pullRequestDoc) (queue, error) {
 	return out, nil
 }
 
-// claim claims the front for the task when it is first in the queue.
-func (r *run) claim(q *queue) error {
+// frontMutation is the mutation id of a merge-front claim or release (kind) of stay for the slice step s runs:
+// <kind>:<repo>:<task>:<stay> for slice 1, as one-slice tasks always had, and <kind>:<repo>:<task>:<step>:<stay> for
+// a later slice, whose stays restart at 1 and would otherwise replay slice 1's receipts.
+func (r *run) frontMutation(kind string, s workflow.Step, stay int) string {
+	if _, k := workflow.ParseSliceStep(s.ID); k > 1 {
+		return r.mutation(kind, s.ID, strconv.Itoa(stay))
+	}
+	return r.mutation(kind, strconv.Itoa(stay))
+}
+
+// claim claims the front for the task, running step s, when it is first in the queue. The task is the front only
+// when the store's front record names it afterwards, so a claim that replays an earlier receipt makes no front.
+func (r *run) claim(s workflow.Step, q *queue) error {
 	if q.front || q.q == nil {
 		return nil
 	}
@@ -447,14 +458,21 @@ func (r *run) claim(q *queue) error {
 		return fmt.Errorf("task %s is not in the merge queue of %s", r.task.ID, r.task.Repository)
 	}
 	stay := q.view.Entries[i].Stays + 1
-	_, err := q.q.ClaimMergeFront(r.mutation("merge-front", strconv.Itoa(stay)), r.task.Repository, r.task.ID)
+	_, err := q.q.ClaimMergeFront(r.frontMutation("merge-front", s, stay), r.task.Repository, r.task.ID)
 	switch {
 	case errors.Is(err, store.ErrMergeQueued):
 		return nil
 	case err != nil:
 		return err
 	}
-	q.stay, q.front = stay, true
+	view, err := q.q.MergeQueue(r.task.Repository)
+	if err != nil {
+		return err
+	}
+	q.view = view
+	if f := view.Front; f != nil && f.TaskID == r.task.ID {
+		q.stay, q.front = f.Stay, true
+	}
 	return nil
 }
 
