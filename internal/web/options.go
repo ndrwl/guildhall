@@ -26,7 +26,8 @@ type Meaning struct {
 // (admit.AlertDecisionOptions) offer; TestOptionMeaningsCoverEveryOption
 // keeps it in step with them. The Steward's rollout approval is listed although a Director's page never reads the
 // Steward's store, so a later Steward page needs no new table. The untyped kind "" holds the handoff wait's option,
-// which render.Question offers with no kind of its own.
+// which render.Question offers with no kind of its own. The answer tiles read it through OptionMeaning, and the
+// stepper and the story through DecisionState, so the page has one tone source.
 var meanings = map[string]map[string]Meaning{
 	"loop-exit": {
 		"continue": {"another round of the loop", ToneCarryOn},
@@ -67,4 +68,20 @@ var meanings = map[string]map[string]Meaning{
 func OptionMeaning(kind, option string) (Meaning, bool) {
 	m, ok := meanings[kind][option]
 	return m, ok
+}
+
+// DecisionState is the stepper's and the story's state for a decision of kind answered with choice: a positive
+// answer is done, a negative one failed, a carry-on or neutral one done with its word, and an option the table does
+// not describe for kind is back. It tests ok before the tone, since an unknown option and follow-ups none are both
+// neutral.
+func DecisionState(kind, choice string) StepState {
+	m, ok := OptionMeaning(kind, choice)
+	switch {
+	case !ok:
+		return StateBack
+	case m.Tone == ToneNegative:
+		return StateFailed
+	default:
+		return StateDone
+	}
 }

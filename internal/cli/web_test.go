@@ -115,6 +115,62 @@ func TestWebSourceAsksFollowClerk(t *testing.T) {
 	}
 }
 
+// TestWebSourceDecisionTone: an answered decision's step and story node take their state from the page's option
+// table, so a merge hold and a follow-ups none are done with their word, not sent back; and a question with options
+// answered in free text shows the text.
+func TestWebSourceDecisionTone(t *testing.T) {
+	dir := clerkFixture(t)
+	src := webSourceFor(t, dir)
+	s, err := store.Open(filepath.Join(dir, "director.store"), store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	subject := &store.Subject{Kind: store.SubjectDocument, Digest: "sha256:" + strings.Repeat("d", 64)}
+	for _, d := range []store.Decision{
+		{ID: "deliver-1", Kind: store.DecisionMerge, Subject: subject, Options: []string{"merge", "hold"}, Question: "Merge it?"},
+		{ID: "validate-1", Kind: store.DecisionFollowUps, Subject: subject, Options: []string{"pick", "none"}, Question: "Which follow-ups?"},
+		{ID: "ask-1", Kind: store.DecisionQuestion, Options: []string{"left", "right"}, Question: "Which way?"},
+	} {
+		d.Repository, d.TaskID = "app", "a-approve"
+		if _, err := s.OpenDecision("open:"+d.ID, d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	answerClerkDecision(t, dir, "app", "a-approve", "deliver-1", "hold")
+	answerClerkDecision(t, dir, "app", "a-approve", "validate-1", "none")
+	answerClerkDecision(t, dir, "app", "a-approve", "ask-1", "Neither; go straight on.")
+	task, err := src.Task("app", "a-approve")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodes := map[string]web.Node{}
+	for _, n := range task.Story {
+		nodes[n.Title] = n
+	}
+	if n, ok := nodes["Merge · deliver-1"]; !ok || n.State != web.StateDone || n.Word != "Hold" {
+		t.Errorf("merge hold node = %+v", n)
+	}
+	if n, ok := nodes["Follow ups · validate-1"]; !ok || n.State != web.StateDone || n.Word != "None" {
+		t.Errorf("follow-ups none node = %+v", n)
+	}
+	if n, ok := nodes["Question · ask-1"]; !ok || n.State != web.StateDone || n.Word != "answered" || len(n.Said) != 1 || n.Said[0].Text != "Neither; go straight on." {
+		t.Errorf("free-text question node = %+v", n)
+	}
+	steps := map[string]web.Step{}
+	for _, st := range task.Steps {
+		steps[st.Name] = st
+	}
+	if st := steps["Deliver"]; st.State != web.StateDone || st.Note != "deliver-1 hold" {
+		t.Errorf("deliver step = %+v", st)
+	}
+	if st := steps["Validate"]; st.State != web.StateDone || st.Note != "validate-1 none" {
+		t.Errorf("validate step = %+v", st)
+	}
+}
+
 // TestWebSourceStagesSlicesAndRefusals: a grill handed to the Director is its stage, not an ask; a multi-PR task has
 // its slices, latest PR and slice merge; an unknown task is ErrNotFound and a held store ErrBusy.
 func TestWebSourceStagesSlicesAndRefusals(t *testing.T) {

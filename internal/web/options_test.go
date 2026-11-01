@@ -71,3 +71,24 @@ func TestUnknownOptionIsNeutral(t *testing.T) {
 		t.Errorf("OptionWord = %q", got)
 	}
 }
+
+// TestDecisionState: an answered decision's stepper and story state come from its option's tone in the table: a
+// positive answer is done, a negative one failed, carry-on and neutral done, and an option the table does not know
+// for its kind is back. The follow-ups none case guards the ok branch: its tone is neutral, as an unknown option's is.
+func TestDecisionState(t *testing.T) {
+	for _, c := range []struct {
+		kind, choice string
+		want         web.StepState
+	}{
+		{"approval", "approved", web.StateDone},
+		{"review", "rejected", web.StateFailed},
+		{"merge", "hold", web.StateDone},
+		{"follow-ups", "none", web.StateDone},
+		{"merge", "later", web.StateBack},
+		{"no-such-kind", "approved", web.StateBack},
+	} {
+		if got := web.DecisionState(c.kind, c.choice); got != c.want {
+			t.Errorf("DecisionState(%q, %q) = %q, want %q", c.kind, c.choice, got, c.want)
+		}
+	}
+}
