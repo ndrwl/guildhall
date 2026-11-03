@@ -23,7 +23,7 @@ const decideUsage = `usage:
   guildhall decide answer --store <path> --repo <id> --task <id> --decision <id> --answer-file <path|->
   guildhall decide defer --store <path> --repo <id> --task <id> --decision <id> --until-merged <repo>/<task>... --reason <text>
   guildhall decide undefer --store <path> --repo <id> --task <id> --decision <id>
-  guildhall decide open --store <path> --repo <id> --task <id> (--question <text> | --question-file <path|->) [--option <text>]...
+  guildhall decide open --store <path> --repo <id> --task <id> (--question <text> | --question-file <path|->) [--option <text>]... [--recommend <option>]
 --copy <dir>, or the copy found from the current directory, may stand in for --store: the copy's director.store`
 
 // decide runs a decide subcommand against an existing store and prints its result as one JSON document
@@ -184,16 +184,23 @@ func openDecisions(s *store.Store, repo string) ([]store.Decision, error) {
 // An answer given in chat, via "", is also recorded on the task page's conversation as the Guildmaster's words in
 // chat, tagged with the decision, in the same transaction as the answer (docs/web.md#the-conversation).
 func answerDecision(s *store.Store, repo, task, id, answer, via, by string) (store.Receipt, error) {
+	var say *store.Saying
+	if via == "" {
+		say = &store.Saying{Author: store.ConversationGuildmasterChat, Tag: id, Kind: store.ConversationSay, Text: answer}
+	}
+	return answerDecisionSaying(s, repo, task, id, answer, via, by, say)
+}
+
+// answerDecisionSaying is answerDecision recording say, when it is not nil, on the task's conversation in the same
+// transaction as the answer, in place of the entry answerDecision derives: the page's Confirm records its
+// confirmation this way. The mutation id is answerDecision's, so a retry replays either.
+func answerDecisionSaying(s *store.Store, repo, task, id, answer, via, by string, say *store.Saying) (store.Receipt, error) {
 	t, err := s.Task(repo, task)
 	if err != nil {
 		return store.Receipt{}, err
 	}
 	if t.State == store.TaskCancelled {
 		return store.Receipt{}, fmt.Errorf("task %s/%s is cancelled (%s); its decisions are not answered", repo, task, t.CancelReason)
-	}
-	var say *store.Saying
-	if via == "" {
-		say = &store.Saying{Author: store.ConversationGuildmasterChat, Tag: id, Kind: store.ConversationSay, Text: answer}
 	}
 	return s.AnswerDecisionSaying(mutationID("decision-answer", repo, task, id), repo, task, id, answer, via, by, say)
 }

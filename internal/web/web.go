@@ -116,8 +116,10 @@ type Task struct {
 	Conversation []Message
 	// Tag is the current stage's attempt, such as grill-2, whose talk shows on Now; "" for a closed task or one with
 	// no attempt yet.
-	Tag    string
-	ReadAt time.Time
+	Tag string
+	// TagStage is Tag's step, such as grill, for its chip; "" when it names none.
+	TagStage string
+	ReadAt   time.Time
 }
 
 // Where is a where-it-stands sentence: Lead, shown in bold, says who or what the task waits on, such as "Waiting for
@@ -134,18 +136,26 @@ const (
 	AuthorDirector        = "director"
 )
 
-// KindRecommendation is the kind of a Message that recommends an answer to its ask.
-const KindRecommendation = "recommendation"
+// The kinds of a Message the page treats apart: KindRecommendation recommends an answer to its ask, which the page
+// offers to Confirm, and KindConfirmed records that the Guildmaster confirmed one.
+const (
+	KindRecommendation = "recommendation"
+	KindConfirmed      = "confirmed"
+)
 
 // Message is one entry of the task's conversation: its number, who wrote it (an Author constant), the attempt or
 // decision it is about (its tag) and that tag's step (Stage, "" when the tag names none), its kind, its Markdown
-// text and when it was recorded.
+// text and when it was recorded. A recommendation's Option is the answer it recommends and Words the Guildmaster's
+// words the ask's Your words box is pre-filled with; a confirmation's Option is the answer it gave and Confirms the
+// number of the recommendation it confirmed.
 type Message struct {
 	Number           int
 	Author           string
 	Tag, Stage, Kind string
 	Text             string
 	At               time.Time
+	Option, Words    string
+	Confirms         int
 }
 
 // Related is a task this task names, with how it is related, such as "depends on" or "fixes".
@@ -233,6 +243,8 @@ type Ask struct {
 	// part, designer-<k>-mockup, or for a mock-up recorded before that part, its legacy name designer-<k>-design-2;
 	// "" for any other ask and for a design with no mock-up.
 	Mockup string
+	// Recommended is the option the Director recommends on a question it opened, which its tile marks; "" for none.
+	Recommended string
 	// Stage is the step the decision belongs to, such as plan, for its tag chip; "" when its id names none.
 	Stage string
 }

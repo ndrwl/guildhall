@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html/template"
 	"slices"
+	"strings"
 )
 
 // talkShown is how many of a talk's newest messages show on Now before the rest fold under "N earlier messages".
@@ -14,14 +15,18 @@ const talkShown = 3
 // and its Markdown body rendered by goldmark.
 type messageView struct {
 	Class, Who, Src, Time string
-	Body                  template.HTML
+	// Rec is the answer a recommendation recommends, as its tile names it.
+	Rec  string
+	Body template.HTML
 }
 
-// talkView is the talk on one attempt or decision shown on Now: its tag, its anchor <tag>-talk, its chip, and its
-// messages oldest first, the newest talkShown shown and the earlier ones folded.
+// talkView is the talk on one attempt or decision shown on Now: its tag, its anchor <tag>-talk ("" when the talk
+// shows inside its ask and this is only the Say box), its chip, and its messages oldest first, the newest talkShown
+// shown and the earlier ones folded; Say is the Say box at its end, on the current stage's talk only.
 type talkView struct {
 	Tag, ID, Chip  string
 	Shown, Earlier []messageView
+	Say            *sayView
 }
 
 // chipLabel is a tag as its chip says it: "<stage> · <tag>", or the tag alone when it names no stage.
@@ -84,8 +89,11 @@ func (s *Server) messageView(t Task, p *talkPlan, m Message) messageView {
 	switch m.Author {
 	case AuthorDirector:
 		v.Class, v.Who = "msg dir", "Director"
-		if m.Kind == KindRecommendation && p.waiting[m.Tag] {
-			v.Class += " wait"
+		if m.Kind == KindRecommendation {
+			v.Rec = OptionWord(m.Option)
+			if p.waiting[m.Tag] {
+				v.Class += " wait"
+			}
 		}
 	default:
 		v.Who = "Guildmaster"
@@ -98,6 +106,10 @@ func (s *Server) messageView(t Task, p *talkPlan, m Message) messageView {
 		case AuthorGuildmasterChat:
 			v.Src = "chat"
 		}
+		if m.Kind == KindConfirmed {
+			v.Class += " conf"
+			v.Body = confirmedBody(m)
+		}
 	}
 	if !m.At.IsZero() {
 		v.Time = s.when(m.At)
@@ -106,6 +118,20 @@ func (s *Server) messageView(t Task, p *talkPlan, m Message) messageView {
 		}
 	}
 	return v
+}
+
+// confirmedBody is a confirmation as its row says it, "↩ Confirmed: <answer>", over the words the answer carried,
+// which follow the option after a blank line, rendered as Markdown.
+func confirmedBody(m Message) template.HTML {
+	head := "<p>↩ Confirmed: <b>" + template.HTMLEscapeString(OptionWord(m.Option)) + "</b></p>\n"
+	words := m.Text
+	if rest, ok := strings.CutPrefix(words, m.Option); ok {
+		words = rest
+	}
+	if words = strings.TrimSpace(words); words == "" {
+		return template.HTML(head) //nolint:gosec // escaped above
+	}
+	return template.HTML(head) + RenderMarkdown([]byte(words)) //nolint:gosec // escaped above, and goldmark's safe output
 }
 
 func (s *Server) messageViews(t Task, p *talkPlan, msgs []Message) []messageView {
@@ -127,6 +153,31 @@ func (s *Server) askTalk(t Task, p *talkPlan, a Ask, v *askView) {
 		v.Talk, v.TalkID, v.ChipHref = s.messageViews(t, p, msgs), talkID(a.ID), "#"+talkID(a.ID)
 		p.now[a.ID] = "ask"
 	}
+	confirm(p.byTag[a.ID], a, v)
+}
+
+// confirm offers the Director's latest recommendation on ask a as its Confirm tile, when it recommends one of the
+// ask's answers, and pre-fills the words box with the recommendation's words, or else the Guildmaster's latest
+// words on the ask before it.
+func confirm(msgs []Message, a Ask, v *askView) {
+	rec := -1
+	for i, m := range msgs {
+		if m.Author == AuthorDirector && m.Kind == KindRecommendation {
+			rec = i
+		}
+	}
+	if rec < 0 || !slices.Contains(a.Options, msgs[rec].Option) {
+		return
+	}
+	m := msgs[rec]
+	meaning, _ := OptionMeaning(a.Kind, m.Option)
+	v.Confirm = &confirmView{Number: m.Number, Option: m.Option, Word: OptionWord(m.Option), Tone: meaning.Tone, Form: v.Form, Decision: a.ID}
+	v.Prefill = m.Words
+	for i := rec - 1; i >= 0 && v.Prefill == ""; i-- {
+		if msgs[i].Author != AuthorDirector && msgs[i].Kind == "say" {
+			v.Prefill = msgs[i].Text
+		}
+	}
 }
 
 // talkView is the talk on tag as Now shows it, its earlier messages folded.
@@ -142,14 +193,29 @@ func (s *Server) talkView(t Task, p *talkPlan, tag string) talkView {
 	return v
 }
 
-// stageTalk is the current stage's talk under the asks of an open task, nil when it has none or it is an ask's.
-func (s *Server) stageTalk(t Task, p *talkPlan) *talkView {
-	if t.State != "open" || t.Tag == "" || len(p.byTag[t.Tag]) == 0 || p.now[t.Tag] != "" {
+// stageTalk is the current stage's talk under the asks of an open task, with the Say box at its end for the
+// Guildmaster's login; nil when it has neither. When the stage's talk is an ask's, it shows inside that ask and this
+// holds only the Say box.
+func (s *Server) stageTalk(t Task, p *talkPlan, base string, st pageState) *talkView {
+	if t.State != "open" || t.Tag == "" {
 		return nil
 	}
-	p.now[t.Tag] = "stage"
-	v := s.talkView(t, p, t.Tag)
-	return &v
+	var say *sayView
+	if st.Answer && s.answering() {
+		say = &sayView{Tag: t.Tag, Action: base + "/say", Token: st.Token, Refused: st.SayRefused, Words: st.SayWords, Said: st.Said}
+	}
+	switch {
+	case len(p.byTag[t.Tag]) > 0 && p.now[t.Tag] == "":
+		p.now[t.Tag] = "stage"
+		v := s.talkView(t, p, t.Tag)
+		v.Say = say
+		return &v
+	case say == nil:
+		return nil
+	case p.now[t.Tag] == "":
+		return &talkView{Tag: t.Tag, ID: talkID(t.Tag), Chip: chipLabel(t.TagStage, t.Tag), Say: say}
+	}
+	return &talkView{Tag: t.Tag, Chip: chipLabel(t.TagStage, t.Tag), Say: say}
 }
 
 // nodeTalk folds the talk on a node's tag under the node, or says where on Now it shows instead.

@@ -23,8 +23,16 @@ const (
 
 // fakeAnswerer records what the page gives it, refusing with err when set.
 type fakeAnswerer struct {
-	answers, sent []web.Answer
-	err           error
+	answers, sent, said []web.Answer
+	err                 error
+}
+
+func (f *fakeAnswerer) Say(a web.Answer) (string, error) {
+	if f.err != nil {
+		return "", f.err
+	}
+	f.said = append(f.said, a)
+	return web.NoteID(a.Repository, a.TaskID, "say:"+a.Tag, a.Text), nil
 }
 
 func (f *fakeAnswerer) Answer(a web.Answer) error {
@@ -107,8 +115,8 @@ func TestAnsweringPage(t *testing.T) {
 			t.Errorf("the Guildmaster's page lacks %s", want)
 		}
 	}
-	if n := strings.Count(body, "<form "); n != 6 {
-		t.Errorf("%d forms, want one per ask (6)", n)
+	if n := strings.Count(body, "<form "); n != 7 {
+		t.Errorf("%d forms, want one per ask (6) and the Say box", n)
 	}
 	for _, bad := range []string{"<script", " disabled>"} {
 		if strings.Contains(body, bad) {
@@ -310,8 +318,12 @@ func TestForeignHostRefused(t *testing.T) {
 			if w.Code != http.StatusMisdirectedRequest || !strings.Contains(w.Body.String(), "[web] address") {
 				t.Errorf("POST at %s: %d, want 421\n%s", c.host, w.Code, w.Body)
 			}
-			if len(f.answers) != 0 || len(f.sent) != 0 {
-				t.Fatalf("an answer at a foreign host reached the Answerer: %+v %+v", f.answers, f.sent)
+			w = at(http.MethodPost, "/guildhall/d122/say", c.host, sayForm("review--s2-2", "Hello."), c.origin)
+			if w.Code != http.StatusMisdirectedRequest || !strings.Contains(w.Body.String(), "[web] address") {
+				t.Errorf("POST say at %s: %d, want 421\n%s", c.host, w.Code, w.Body)
+			}
+			if len(f.answers) != 0 || len(f.sent) != 0 || len(f.said) != 0 {
+				t.Fatalf("an answer at a foreign host reached the Answerer: %+v %+v %+v", f.answers, f.sent, f.said)
 			}
 		})
 	}

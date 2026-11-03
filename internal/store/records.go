@@ -217,6 +217,9 @@ type Decision struct {
 	// was recorded. AnsweredBy is the Tailscale login that answered on the page, set only with AnsweredVia.
 	AnsweredVia string `json:"answered_via,omitempty"`
 	AnsweredBy  string `json:"answered_by,omitempty"`
+	// Recommended is the option the Director recommends on a question it opened (decide open --recommend), one of
+	// Options; empty for none and for every other kind.
+	Recommended string `json:"recommended,omitempty"`
 }
 
 // AnsweredViaPage is Decision.AnsweredVia for an answer given on the task page.
@@ -992,6 +995,9 @@ func validateDecision(d Decision) error {
 		if slices.Contains(d.Options[:i], o) {
 			return invalid("option %q is offered twice", o)
 		}
+	}
+	if d.Recommended != "" && (d.Kind != DecisionQuestion || !slices.Contains(d.Options, d.Recommended)) {
+		return invalid("recommended %q must be one of a question's options %v", d.Recommended, d.Options)
 	}
 	if d.Answered || d.Answer != "" || d.Choice != "" || d.Note != "" || d.Void || d.VoidReason != "" {
 		return invalid("a new decision has no answer and is not void")

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	bolt "go.etcd.io/bbolt"
@@ -47,11 +48,18 @@ var ConversationKinds = []string{ConversationSay, ConversationRound, Conversatio
 
 // Saying is what one conversation entry says: who, about which attempt or decision of the task (its tag, such as
 // grill-2 or accept-1), what kind of entry it is, and its Markdown text.
+//
+// A recommendation also names the Option of its decision the Director recommends and may carry Words, the
+// Guildmaster's words the page pre-fills its Your words box with. A confirmed entry names the Option it answered
+// with and Confirms, the number of the recommendation it confirmed. No other kind carries these.
 type Saying struct {
-	Author string `json:"author"`
-	Tag    string `json:"tag"`
-	Kind   string `json:"kind"`
-	Text   string `json:"text"`
+	Author   string `json:"author"`
+	Tag      string `json:"tag"`
+	Kind     string `json:"kind"`
+	Text     string `json:"text"`
+	Option   string `json:"option,omitempty"`
+	Words    string `json:"words,omitempty"`
+	Confirms int    `json:"confirms,omitempty"`
 }
 
 // ConversationEntry is one entry of a task's conversation. Entries are numbered per task from 1 and append-only:
@@ -66,7 +74,10 @@ type ConversationEntry struct {
 }
 
 // validateSaying checks a saying's author, kind, tag and text: an author and kind of the fixed vocabularies, a tag of
-// id form and Markdown text that is not blank, is valid UTF-8 and is at most MaxTextBytes.
+// id form and Markdown text that is not blank, is valid UTF-8 and is at most MaxTextBytes. A recommendation is the
+// Director's and names a one-line option, with words of at most MaxTextBytes or none; a confirmed entry is the
+// Guildmaster's and names its option and the recommendation it confirmed; no other kind has an option, words or a
+// recommendation it confirms.
 func validateSaying(say Saying) error {
 	switch {
 	case !slices.Contains(ConversationAuthors, say.Author):
@@ -77,7 +88,49 @@ func validateSaying(say Saying) error {
 	if err := validateIDs(say.Tag); err != nil {
 		return err
 	}
-	return validateText("conversation text", say.Text, MaxTextBytes)
+	if err := validateText("conversation text", say.Text, MaxTextBytes); err != nil {
+		return err
+	}
+	switch say.Kind {
+	case ConversationRecommendation:
+		switch {
+		case say.Author != ConversationDirector:
+			return invalid("a recommendation is the Director's, not %s's", say.Author)
+		case say.Confirms != 0:
+			return invalid("a recommendation confirms nothing")
+		}
+		if say.Words != "" {
+			if err := validateText("recommendation words", say.Words, MaxTextBytes); err != nil {
+				return err
+			}
+		}
+		return validateSayingOption(say.Option)
+	case ConversationConfirmed:
+		switch {
+		case say.Author == ConversationDirector:
+			return invalid("a confirmation is the Guildmaster's")
+		case say.Confirms < 1:
+			return invalid("a confirmation names the recommendation it confirms")
+		case say.Words != "":
+			return invalid("a confirmation carries its words in its text")
+		}
+		return validateSayingOption(say.Option)
+	}
+	if say.Option != "" || say.Words != "" || say.Confirms != 0 {
+		return invalid("a %s entry has no option, words or recommendation it confirms", say.Kind)
+	}
+	return nil
+}
+
+// validateSayingOption checks a recommendation's or confirmation's option as a decision's options are checked.
+func validateSayingOption(o string) error {
+	if err := validateText("option", o, MaxOptionBytes); err != nil {
+		return err
+	}
+	if strings.TrimSpace(o) != o || strings.ContainsAny(o, "\r\n") {
+		return invalid("option %q must be one line without surrounding white space", o)
+	}
+	return nil
 }
 
 // AddConversation appends say to the conversation of an open task, receipt record conversation/<n>. A closed (done

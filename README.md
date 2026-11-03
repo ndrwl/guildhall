@@ -170,7 +170,7 @@ The commands are the Director's tools; you can also call them yourself to script
 - `guildhall ci log <repo>/<task> <job|check>`: the full log of a failed CI job a task's validate results record, read-only and granted to every Claude Artisan; see [CI logs](docs/ci-logs.md).
 - `guildhall clerk guild|decisions|task|inspect|queue`: read-only plain-text answers for the Guildmaster, behind the Clerk plugin's slash commands; see [Clerk](docs/clerk.md).
 - `guildhall web [--copy <dir>]`: serve the copy's task pages on the tailnet, where the Guildmaster answers a task's decisions, as a Director session does; see [task pages](docs/web.md).
-- `guildhall task say`: write the Director's words, or quote the Guildmaster's from chat, on a task page's conversation; see [the conversation](docs/web.md#the-conversation).
+- `guildhall task say`: write the Director's words, a recommendation the Guildmaster confirms in one click, or the Guildmaster's quoted words from chat, on a task page's conversation; see [the conversation](docs/web.md#the-conversation).
 - `guildhall spend report --copy <dir> [--json]`: read-only recorded token and cost attribution by task, step and recorded role/profile; see [spend reporting](docs/spend.md).
 - `guildhall quality judge|judged|agreement`: judge a delivered task's self-review in a separate session, take its judgement, and measure the judge against your audits; see [the quality rubric](docs/quality.md#running-it).
 - `guildhall workflow approve|approvals`: approve workflow changes; see [workflow-edit authority](docs/configuration.md#workflow-edit-authority).

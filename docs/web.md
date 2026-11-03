@@ -107,7 +107,9 @@ Messages get there wherever the words already pass through Guildhall, each writt
 - **Send words only** on an ask records your words, as you wrote them, under that ask, from the page;
 - an answer given in chat, which the Director records with `decide answer`, records your answer under its decision, from chat;
 - a question the Director opens with `decide open` records the question under it, from the Director;
-- `guildhall task say --repo <id> --task <id> --tag <attempt|decision> --text-file <path|->` writes the Director's own words, such as its reply to your note, under the attempt or decision; with `--author guildmaster-chat` it quotes words you said about the task in chat that no command records. A tag must name an attempt or decision of the task, and running the same command again writes nothing new.
+- `guildhall task say --repo <id> --task <id> --tag <attempt|decision> --text-file <path|->` writes the Director's own words, such as its reply to your note, under the attempt or decision; with `--author guildmaster-chat` it quotes words you said about the task in chat that no command records. A tag must name an attempt or decision of the task, and running the same command again writes nothing new;
+- **Send to the Director** in the Say box records your words under the current attempt, from the page ([Confirm and Say](#confirm-and-say));
+- **Confirm** records that you confirmed the Director's recommendation, with the answer it gave.
 
 A tile answer on the page records no message: your answer and its words show on its story node.
 
@@ -123,6 +125,28 @@ The rail's Status gains a **Talk** line, "*n* messages · last *hh:mm*".
 
 A done or cancelled task's conversation stays readable and takes nothing new; Now says "This task is done and merged. Its talk stays below, read-only", or that it is cancelled, and its talk folds into its story.
 
+## Confirm and Say
+
+When you send words only on an ask, the Director replies under it on the page.
+When your words read as an answer, its reply is a **recommendation**: its reading of your words and the answer it recommends, written with `guildhall task say --tag <decision> --recommend <option> --text-file -`, one of the ask's options.
+Its row's head says "recommends <answer>", with an amber bar while the ask is open.
+
+Under the ask's talk an amber box, **Recommended by the Director**, holds one tile, **Confirm: <answer>**, and the **Your words** box below it is filled with your words on the ask, or with the words the Director gave with `--words-file`, for you to edit.
+So an ask with a recommendation reads, in order: the question, its summary and open questions, its talk with Confirm, Your words, then the answer tiles.
+
+- **Confirm** answers the ask with the recommended option and the words in the box, through the same answer path as a tile, so tapping twice answers once.
+  The talk records that you confirmed it, naming the recommendation, as "↩ Confirmed: <answer>" over your words, and the recommendation's bar is no longer amber.
+- The ordinary tiles stay, so you can still answer differently.
+- Nothing is answered until you tap. A newer recommendation replaces the Confirm on the page, and confirming one the Director has since replaced is refused: reload and read the new one.
+
+A question the Director opens with `guildhall decide open --recommend <option>` marks that option's tile **Recommended**.
+
+At the end of the current stage's talk, on an open task, your page has a **Say to the Director about <attempt>** box, even when nothing is asked.
+**Send to the Director** answers nothing: it records your words under that attempt and sends them to the Director as a note, naming the task and attempt and shown to you in a toast as words only are, and the Director replies in the same talk.
+It is refused as an answer is, with your words kept in the box, and also on a task that has closed since the page loaded.
+
+Every form on the page posts through one gate: the page must answer at all, the request must be from your login, from this page and carry its form token, each checked as [answering](#answering) describes.
+
 ## The reader page
 
 Every document link opens `http://<address>/<repo>/<task>/doc/<name>`: the document, rendered from Markdown with goldmark at its safe defaults ([decision](decisions/goldmark-for-documents.md)), with the open asks, answerable as on the task page, and Status beside it and a way back to the task.
@@ -134,6 +158,6 @@ A document is shown only when its file still matches the sha256 recorded for it;
 ## Limits
 
 - No grills on the page: a grill round is still answered in the Director's session.
-- The conversation is read on the page; you write to it with Send words only on an ask. A box for talk on the current stage, confirming a Director's recommendation in one click, and a bar that shows a new reply without reloading come later.
+- A bar that shows a new reply without reloading comes later: reload to see the Director's reply.
 - HTTP only, inside the tailnet; no HTTPS.
 - The Steward serves no pages.

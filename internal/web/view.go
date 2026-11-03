@@ -128,6 +128,28 @@ type askView struct {
 	Chip, ChipHref string
 	Talk           []messageView
 	TalkID         string
+	// Confirm is the Director's latest recommendation on the ask, offered as one tile under its talk; nil when it
+	// has none. Prefill is what the words box holds when the request brings no words of its own: the
+	// recommendation's words, or the Guildmaster's latest words on the ask before it.
+	Confirm *confirmView
+	Prefill string
+}
+
+// confirmView is the Confirm tile of an ask the Director recommends an answer to: the recommendation's number, which
+// the tile posts, and the option it answers with, as its tile names it.
+type confirmView struct {
+	Number       int
+	Option, Word string
+	Tone         Tone
+	Form         bool
+	Decision     string
+}
+
+// sayView is the Say box at the end of the current stage's talk: the attempt it is about, the form's action and
+// token, and the refusal and words, or the sent note, of the last words it took.
+type sayView struct {
+	Tag, Action, Token   string
+	Refused, Words, Said string
 }
 
 type tileView struct {
@@ -232,8 +254,13 @@ func (s *Server) taskView(t Task, st pageState) taskView {
 	v.Status = s.statusView(t, v.Open)
 	v.Where = whereLine(t, v.Status, v.SliceOf)
 	v.Status.Stands = v.Where.Sentence()
-	if stage := s.stageTalk(t, talk); stage != nil {
+	stage := s.stageTalk(t, talk, v.Base, st)
+	if stage != nil {
 		v.Talks = append(v.Talks, *stage)
+	}
+	if st.SayRefused != "" && (stage == nil || stage.Say == nil) {
+		// The Say box is gone, such as on a task closed meanwhile: its refusal and words show at the top of Now.
+		v.Gone = &askView{KindName: "Not sent", First: "Your words were not sent", Refused: st.SayRefused, Words: st.SayWords}
 	}
 	v.Closed = closedLine(t)
 	for _, q := range t.Context {
@@ -406,6 +433,9 @@ func (s *Server) askView(t Task, a Ask) askView {
 	// answer; a follow-ups ask's pick and none are about ids, not about its questions, and keep their tiles.
 	recommend := a.Kind == "approval" && v.Questions != nil && v.Questions.Lettered && slices.Contains(a.Options, "approved")
 	v.Tiles = answerTiles(a.Kind, a.Options, recommend)
+	if a.Recommended != "" && !recommend {
+		markRecommended(v.Tiles, a.Recommended)
+	}
 	v.Hint = wordsHint
 	if recommend {
 		v.Hint = recommendedHint

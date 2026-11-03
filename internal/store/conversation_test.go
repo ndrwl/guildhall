@@ -201,3 +201,62 @@ func TestConversationDoctorAndExport(t *testing.T) {
 		t.Fatalf("doctor after a bad entry = %+v, %v", rep, err)
 	}
 }
+
+// TestRecommendationAndConfirmation: a recommendation is the Director's and names an option, with words or none; a
+// confirmation is the Guildmaster's and names its option and the recommendation it confirms; no other kind carries
+// an option, words or a confirmed number. Each round-trips through the store.
+func TestRecommendationAndConfirmation(t *testing.T) {
+	s, _ := newStore(t)
+	mustCreate(t, s, "m-1", sampleTask("app", "t-1"))
+	rec := Saying{Author: ConversationDirector, Tag: "accept-1", Kind: ConversationRecommendation, Text: "I recommend **approve**.", Option: "approve", Words: "approve, it covers Windows"}
+	conf := Saying{Author: ConversationGuildmasterPage, Tag: "accept-1", Kind: ConversationConfirmed, Text: "approve\n\nit covers Windows", Option: "approve", Confirms: 1}
+	for name, bad := range map[string]Saying{
+		"recommendation by the Guildmaster": {Author: ConversationGuildmasterPage, Tag: "accept-1", Kind: ConversationRecommendation, Text: "x", Option: "approve"},
+		"recommendation of nothing":         {Author: ConversationDirector, Tag: "accept-1", Kind: ConversationRecommendation, Text: "x"},
+		"recommendation of two lines":       {Author: ConversationDirector, Tag: "accept-1", Kind: ConversationRecommendation, Text: "x", Option: "a\nb"},
+		"recommendation that confirms":      {Author: ConversationDirector, Tag: "accept-1", Kind: ConversationRecommendation, Text: "x", Option: "a", Confirms: 1},
+		"oversized words":                   {Author: ConversationDirector, Tag: "accept-1", Kind: ConversationRecommendation, Text: "x", Option: "a", Words: strings.Repeat("w", MaxTextBytes+1)},
+		"confirmation by the Director":      {Author: ConversationDirector, Tag: "accept-1", Kind: ConversationConfirmed, Text: "x", Option: "a", Confirms: 1},
+		"confirmation of nothing":           {Author: ConversationGuildmasterPage, Tag: "accept-1", Kind: ConversationConfirmed, Text: "x", Option: "a"},
+		"confirmation with words":           {Author: ConversationGuildmasterPage, Tag: "accept-1", Kind: ConversationConfirmed, Text: "x", Option: "a", Confirms: 1, Words: "w"},
+		"say with an option":                {Author: ConversationDirector, Tag: "accept-1", Kind: ConversationSay, Text: "x", Option: "a"},
+		"say with words":                    {Author: ConversationDirector, Tag: "accept-1", Kind: ConversationSay, Text: "x", Words: "w"},
+	} {
+		if _, err := s.AddConversation("bad-"+strings.ReplaceAll(name, " ", "-"), "app", "t-1", bad); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s: err = %v, want ErrInvalid", name, err)
+		}
+	}
+	for i, say := range []Saying{rec, conf} {
+		if _, err := s.AddConversation("ok-"+string(rune('1'+i)), "app", "t-1", say); err != nil {
+			t.Fatalf("%+v: %v", say, err)
+		}
+	}
+	got, err := s.Conversation("app", "t-1")
+	if err != nil || len(got) != 2 || got[0].Saying != rec || got[1].Saying != conf {
+		t.Fatalf("Conversation = %+v, %v", got, err)
+	}
+}
+
+// TestDecisionRecommended: a question may carry the option the Director recommends, one of its options; no other
+// kind may.
+func TestDecisionRecommended(t *testing.T) {
+	s, _ := newStore(t)
+	mustCreate(t, s, "m-1", sampleTask("app", "t-1"))
+	q := Decision{Repository: "app", TaskID: "t-1", ID: "q1", Kind: DecisionQuestion, Question: "Back off?", Options: []string{"back-off", "stop"}, Recommended: "pause"}
+	if _, err := s.OpenDecision("m-2", q); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("a recommendation not offered: err = %v", err)
+	}
+	a := sampleDecision("accept-1")
+	a.Recommended = "approve"
+	if _, err := s.OpenDecision("m-3", a); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("a recommendation on an approval: err = %v", err)
+	}
+	q.Recommended = "stop"
+	if _, err := s.OpenDecision("m-4", q); err != nil {
+		t.Fatal(err)
+	}
+	all, err := s.Decisions("app", "t-1")
+	if err != nil || len(all) != 1 || all[0].Recommended != "stop" {
+		t.Fatalf("Decisions = %+v, %v", all, err)
+	}
+}

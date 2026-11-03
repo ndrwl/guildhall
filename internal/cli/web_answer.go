@@ -45,29 +45,57 @@ func webBusy(err error) error {
 	return err
 }
 
-// Answer implements web.Answerer.
-func (w webAnswerer) Answer(x web.Answer) error {
+// webAnswerText is the answer x gives with option: the option, then the words after a blank line when there are
+// any, or the words alone with no option. It refuses words that do not read and an answer over the limit.
+func webAnswerText(x web.Answer, option string) (string, error) {
 	text, err := pageText("your answer", x.Text, store.MaxTextBytes)
 	if err != nil {
-		return err
+		return "", err
 	}
-	answer := x.Option
+	answer := option
 	switch {
-	case x.Option == "" && strings.TrimSpace(text) == "":
-		return web.Refuse(http.StatusBadRequest, "write your answer in the box first")
-	case x.Option == "":
+	case option == "" && strings.TrimSpace(text) == "":
+		return "", web.Refuse(http.StatusBadRequest, "write your answer in the box first")
+	case option == "":
 		answer = text
 	case strings.TrimSpace(text) != "":
 		answer += "\n\n" + text
 	}
 	if len(answer) > store.MaxTextBytes {
-		return web.Refuse(http.StatusRequestEntityTooLarge, fmt.Sprintf("your answer is over the limit of %d bytes (64 KiB)", store.MaxTextBytes))
+		return "", web.Refuse(http.StatusRequestEntityTooLarge, fmt.Sprintf("your answer is over the limit of %d bytes (64 KiB)", store.MaxTextBytes))
+	}
+	return answer, nil
+}
+
+// Answer implements web.Answerer.
+func (w webAnswerer) Answer(x web.Answer) error {
+	// A confirmation's option is its recommendation's, read with the answer in the store's one open below.
+	var answer string
+	var err error
+	if x.Confirm == 0 {
+		if answer, err = webAnswerText(x, x.Option); err != nil {
+			return err
+		}
 	}
 	env := webEnvelope(x, web.AnsweredID(x.Repository, x.TaskID, x.Decision), store.MessageDecisionAnswered,
 		fmt.Sprintf("Decision %s of %s/%s was answered on the task page; read the answer with guildhall decide show, then continue the task.", x.Decision, x.Repository, x.TaskID))
 	// The answer and its message are written in one open of the store, so a busy store refuses both.
 	_, err = withRecords(storeRecords{path: w.c.store, wait: webLockWait}, false, nil, func(s *store.Store) (struct{}, error) {
-		if err := webRecordAnswer(s, x, answer); err != nil {
+		var say *store.Saying
+		if x.Confirm > 0 {
+			rec, err := webRecommendation(s, x)
+			if err != nil {
+				return struct{}{}, err
+			}
+			x.Option = rec.Option
+			if answer, err = webAnswerText(x, rec.Option); err != nil {
+				return struct{}{}, err
+			}
+			// The confirmation is the Guildmaster's on the page, naming the recommendation, written with the answer.
+			say = &store.Saying{Author: store.ConversationGuildmasterPage, Tag: x.Decision, Kind: store.ConversationConfirmed, Text: answer,
+				Option: rec.Option, Confirms: rec.Number}
+		}
+		if err := webRecordAnswer(s, x, answer, say); err != nil {
 			return struct{}{}, err
 		}
 		return struct{}{}, webSendDirector(s, env, nil)
@@ -93,9 +121,37 @@ func webSendDirector(s *store.Store, env messaging.Envelope, say *store.Saying) 
 	return err
 }
 
+// webRecommendation is the Director's recommendation x.Confirm names, refused unless it is a recommendation on
+// x.Decision and still the latest one there: the page showed an older one if the Director has recommended since.
+func webRecommendation(s *store.Store, x web.Answer) (store.ConversationEntry, error) {
+	talk, err := s.Conversation(x.Repository, x.TaskID)
+	if err != nil {
+		return store.ConversationEntry{}, err
+	}
+	var named, latest *store.ConversationEntry
+	for i := range talk {
+		e := &talk[i]
+		if e.Tag != x.Decision || e.Kind != store.ConversationRecommendation || e.Author != store.ConversationDirector {
+			continue
+		}
+		latest = e
+		if e.Number == x.Confirm {
+			named = e
+		}
+	}
+	switch {
+	case named == nil:
+		return store.ConversationEntry{}, web.Refuse(http.StatusBadRequest, "the Director made no such recommendation on #"+x.Decision)
+	case latest != named:
+		return store.ConversationEntry{}, web.Refuse(http.StatusConflict, "changed since you loaded the page: the Director has recommended again on #"+x.Decision+"; reload and read it")
+	}
+	return *named, nil
+}
+
 // webRecordAnswer records answer for x in s, refusing with the page's reasons: a decision void or bound to another
-// subject since the page loaded, an option it does not offer, an answer another way or a cancelled task.
-func webRecordAnswer(s *store.Store, x web.Answer, answer string) error {
+// subject since the page loaded, an option it does not offer, an answer another way or a cancelled task. say, when
+// not nil, is recorded on the task's conversation with the answer.
+func webRecordAnswer(s *store.Store, x web.Answer, answer string, say *store.Saying) error {
 	dec, err := findDecision(s, x.Repository, x.TaskID, x.Decision)
 	if errors.Is(err, store.ErrNotFound) {
 		return web.Refuse(http.StatusNotFound, "this task has no decision #"+x.Decision)
@@ -117,7 +173,7 @@ func webRecordAnswer(s *store.Store, x web.Answer, answer string) error {
 	case x.Option == "" && len(dec.Options) > 0 && dec.Kind != store.DecisionQuestion:
 		return web.Refuse(http.StatusBadRequest, "choose one of #"+x.Decision+"'s answers")
 	}
-	_, err = answerDecision(s, x.Repository, x.TaskID, x.Decision, answer, store.AnsweredViaPage, x.Login)
+	_, err = answerDecisionSaying(s, x.Repository, x.TaskID, x.Decision, answer, store.AnsweredViaPage, x.Login, say)
 	switch {
 	case err == nil:
 		return nil
@@ -151,8 +207,50 @@ func webNotePrefix(x web.Answer) string {
 	return x.TaskID + " #" + x.Decision + ", words only, nothing answered: "
 }
 
+// webSayPrefix begins the text of words from the Say box, naming the task and attempt they are about.
+func webSayPrefix(x web.Answer) string {
+	return x.TaskID + " " + x.Tag + ", said on the page, nothing answered: "
+}
+
 // Send implements web.Answerer.
 func (w webAnswerer) Send(x web.Answer) (string, error) {
+	return w.note(x, x.Decision, x.Decision, webNotePrefix(x), func(s *store.Store) error {
+		if _, err := findDecision(s, x.Repository, x.TaskID, x.Decision); errors.Is(err, store.ErrNotFound) {
+			return web.Refuse(http.StatusNotFound, "this task has no decision #"+x.Decision)
+		} else if err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+// Say implements web.Answerer: the words go the way Send's do, under the attempt rather than an ask, and only on an
+// open task, whose conversation still takes words.
+func (w webAnswerer) Say(x web.Answer) (string, error) {
+	return w.note(x, x.Tag, "say:"+x.Tag, webSayPrefix(x), func(s *store.Store) error {
+		t, err := s.Task(x.Repository, x.TaskID)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			return web.Refuse(http.StatusNotFound, "there is no task "+x.Repository+"/"+x.TaskID)
+		case err != nil:
+			return err
+		case t.State != store.TaskOpen:
+			return web.Refuse(http.StatusConflict, "this task is closed; its talk stays readable and takes nothing new")
+		}
+		if err := checkTag(s, x.Repository, x.TaskID, x.Tag); errors.Is(err, store.ErrInvalid) {
+			return web.Refuse(http.StatusBadRequest, "this task has no attempt "+x.Tag)
+		} else if err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+// note sends x.Text, the Guildmaster's words on the page, to the Director as a note whose text begins with prefix
+// and whose id is web.NoteID's over key and the words, once check passes in the same open of the store, and records
+// the words on the task's conversation under tag in the same transaction as the note. It shows the note to the
+// Guildmaster, wakes the Director and returns the note's id.
+func (w webAnswerer) note(x web.Answer, tag, key, prefix string, check func(*store.Store) error) (string, error) {
 	text, err := pageText("your words", x.Text, store.MaxMessageTextBytes)
 	if err != nil {
 		return "", err
@@ -160,19 +258,17 @@ func (w webAnswerer) Send(x web.Answer) (string, error) {
 	if strings.TrimSpace(text) == "" {
 		return "", web.Refuse(http.StatusBadRequest, "write your words in the box first; nothing was sent")
 	}
-	body := webNotePrefix(x) + text
+	body := prefix + text
 	if len(body) > store.MaxMessageTextBytes {
-		return "", web.Refuse(http.StatusRequestEntityTooLarge, fmt.Sprintf("your words are over the limit of %d bytes (16 KiB) for a message", store.MaxMessageTextBytes-len(webNotePrefix(x))))
+		return "", web.Refuse(http.StatusRequestEntityTooLarge, fmt.Sprintf("your words are over the limit of %d bytes (16 KiB) for a message", store.MaxMessageTextBytes-len(prefix)))
 	}
-	env := webEnvelope(x, web.NoteID(x.Repository, x.TaskID, x.Decision, text), store.MessageNote, body)
+	env := webEnvelope(x, web.NoteID(x.Repository, x.TaskID, key, text), store.MessageNote, body)
 	_, err = withRecords(storeRecords{path: w.c.store, wait: webLockWait}, false, nil, func(s *store.Store) (struct{}, error) {
-		if _, err := findDecision(s, x.Repository, x.TaskID, x.Decision); errors.Is(err, store.ErrNotFound) {
-			return struct{}{}, web.Refuse(http.StatusNotFound, "this task has no decision #"+x.Decision)
-		} else if err != nil {
+		if err := check(s); err != nil {
 			return struct{}{}, err
 		}
-		// The words are the Guildmaster's on the page, under the ask they are about, written with the note.
-		say := &store.Saying{Author: store.ConversationGuildmasterPage, Tag: x.Decision, Kind: store.ConversationSay, Text: text}
+		// The words are the Guildmaster's on the page, under the ask or attempt they are about, written with the note.
+		say := &store.Saying{Author: store.ConversationGuildmasterPage, Tag: tag, Kind: store.ConversationSay, Text: text}
 		return struct{}{}, webSendDirector(s, env, say)
 	})
 	if err != nil {

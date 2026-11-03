@@ -128,6 +128,23 @@ func answerTiles(kind string, options []string, recommend bool) []tileView {
 		}
 		out = append(out, t)
 	}
+	sortTiles(out)
+	return out
+}
+
+// markRecommended marks the tile of option, the answer the Director recommends on a question it opened, and puts it
+// first, as an approval's recommended answer is.
+func markRecommended(tiles []tileView, option string) {
+	for i := range tiles {
+		if tiles[i].Option == option {
+			tiles[i].Rec = true
+		}
+	}
+	sortTiles(tiles)
+}
+
+// sortTiles puts the recommended tile first, the rest in their order.
+func sortTiles(out []tileView) {
 	slices.SortStableFunc(out, func(a, b tileView) int {
 		switch {
 		case a.Rec == b.Rec:
@@ -137,5 +154,4 @@ func answerTiles(kind string, options []string, recommend bool) []tileView {
 		}
 		return 1
 	})
-	return out
 }
