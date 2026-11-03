@@ -12,7 +12,7 @@ Choosing which role, stage guide, standards and skill roots apply, and recording
 
 | Written | Contents |
 |---|---|
-| `prompt.md` | The attempt identity (repository, task, step, kind and version, attempt number, profile), the task title (`Stage.Title`) when there is one, then for a retried attempt (`Stage.Retry`) a "Why this is a retry" section, the role prompt, the stage guide, the step's `instructions`, the repository's [policies](#repository-policies) when it has any, the input documents by name and digest, the standards in full, the skills by path and tree digest, and the [Artisan output instructions](#required-outputs-and-result-template). |
+| `prompt.md` | The attempt identity (repository, task, step, kind and version, attempt number, profile), the task title (`Stage.Title`) when there is one, then for a retried attempt (`Stage.Retry`) a "Why this is a retry" section, for a slice of a multi-PR task (`Stage.Slice`) a [`## Slice` section](#slice-section), the role prompt, the stage guide, the step's `instructions`, the repository's [policies](#repository-policies) when it has any, the input documents by name and digest, the standards in full, the skills by path and tree digest, and the [Artisan output instructions](#required-outputs-and-result-template). |
 | `inputs/<recorded-name>` | A byte-identical, digest-verified copy of each input document. |
 | `skills/<name>/` | A copy of each skill the step names in `skills`, in order. |
 
@@ -27,6 +27,16 @@ Prompts without `Stage.Retry` have no such section.
 The task title is quoted after the attempt identity under `Task title:`, in a `text` fence longer than any backtick run inside it, so a Director-written title cannot open a prompt section; an empty title renders nothing.
 The task's detail, its full statement, follows under `Task detail:`, fenced the same way, in every stage's prompt; an empty detail renders nothing.
 The interpreter passes the task's title and detail; it is not part of the manifest's `identity`, so the manifest schema is unchanged ([decision](decisions/task-kinds.md)).
+
+### Slice section
+
+An Artisan prompt whose `Stage.Slice` lists more than one slice has a `## Slice` section after "Why this is a retry" and "Behind main" and before the role, so it is read before the stage guide and the spec ([multi-PR tasks](tasks.md#multi-pr-tasks)).
+It says `This attempt is for slice N of M:` with the slice's title, then quotes the slice's `## Slices` entry; both are spec text, each in a `text` fence, so they cannot open a section or override the result template.
+From slice 2 on it says the earlier slices have merged and are on main, to build on and not redo.
+Before the last slice it lists each later slice as `- slice k: <title>` in one `text` fence, out of scope for later pull requests; the last slice is called the final slice.
+It then says to use the full spec for context but scope the work to this slice's entry only, and a `review` prompt also says to raise work belonging to a later slice as a finding.
+A nil `Stage.Slice` or one entry renders nothing, and `Stage.Slice` is not part of the manifest's `identity`.
+The interpreter sets it for a multi-PR task's steps inside the bound slice range only, read from the records as the attempt is prepared; steps before the range and rebase-reviews get none.
 
 ### Repository policies
 

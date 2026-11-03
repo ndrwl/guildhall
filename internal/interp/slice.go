@@ -12,6 +12,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/forge"
+	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/spec"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
@@ -173,6 +174,24 @@ func (r *run) sliceCount() int {
 
 // branch is the current slice's branch.
 func (r *run) branch() string { return SliceBranch(r.task.ID, r.slice.current) }
+
+// renderSlice is the slice a prompt of step id names: the current slice with the accepted list, for a multi-PR task's
+// step inside the bound slice range; nil otherwise, so steps before the range and rebase-reviews, whose base id is no
+// range step, render no slice section. It reads the slices from the history as it stands, not from r.slice, which was
+// worked out as the advance began: slice 1's build launches in the advance that records the spec's acceptance.
+func (r *run) renderSlice(id string) (*render.Slice, error) {
+	if base, _ := workflow.ParseSliceStep(id); !r.base.InSlices(base) {
+		return nil, nil
+	}
+	st, err := slicesOf(r.base, r.history)
+	if err != nil {
+		return nil, fmt.Errorf("interp: %s/%s slices: %w", r.task.Repository, r.task.ID, err)
+	}
+	if !st.multi() {
+		return nil, nil
+	}
+	return &render.Slice{Current: st.current, Entries: st.entries}, nil
+}
 
 // sliceTitle is a multi-PR task's pull request title for the current slice, "<slice title> (slice k of n)".
 func (r *run) sliceTitle() string {

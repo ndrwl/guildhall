@@ -78,6 +78,10 @@ type Stage struct {
 	// Branch is the task branch an Artisan commits a code head on, a multi-PR task's slice branch; empty is
 	// guildhall/<task>. It is not part of the manifest's Identity.
 	Branch string
+	// Slice, when present with more than one entry, is the slice of a multi-PR task this attempt is for: Prompt
+	// renders a "## Slice" section naming it, quoting its entry and putting the later slices out of scope. Nil or one
+	// entry renders nothing. It is not part of the manifest's Identity.
+	Slice *Slice
 	// Dir is the attempt directory Prompt writes into; it must not exist or be empty.
 	// Question ignores it.
 	Dir string
@@ -92,6 +96,13 @@ type Stage struct {
 	// Empty leaves it out, as for a spec with no readable section. The caller reads the spec; other kinds and Prompt
 	// ignore it.
 	Questions string
+}
+
+// Slice is the slice of a multi-PR task an attempt is for: Current, from 1, indexes Entries, the accepted spec's whole
+// `## Slices` list, so the later slices can be named.
+type Slice struct {
+	Current int
+	Entries []spec.Slice
 }
 
 // Retry is what the Director's retry of the previous attempt tells the next one.
@@ -282,7 +293,7 @@ func Prompt(stage Stage, inputs []Input, baseline Baseline, roots []SkillRoot) (
 	if err != nil {
 		return Rendered{}, err
 	}
-	if err := r.write(&m, inputData, found, stage.Title, stage.Detail, stage.Step.Instructions(), role, guide, standards, stage.Step.Actor(), stage.Revisions, stage.ReviewBase, stage.Retry, stage.Main, stage.Branch, surface, baseline); err != nil {
+	if err := r.write(&m, inputData, found, stage.Title, stage.Detail, stage.Step.Instructions(), role, guide, standards, stage.Step.Actor(), stage.Revisions, stage.ReviewBase, stage.Retry, stage.Main, stage.Branch, stage.Slice, surface, baseline); err != nil {
 		_ = os.RemoveAll(r.PromptPath)
 		_ = os.RemoveAll(r.SkillsPath)
 		_ = os.RemoveAll(filepath.Join(stage.Dir, InputsDir))
@@ -295,7 +306,7 @@ func Prompt(stage Stage, inputs []Input, baseline Baseline, roots []SkillRoot) (
 	return r, nil
 }
 
-func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, title, detail, instructions, role, guide string, standards []string, actor workflow.Actor, revisions *workflow.Revisions, reviewBase string, retry *Retry, main *Main, branch string, surface Surface, baseline Baseline) error {
+func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, title, detail, instructions, role, guide string, standards []string, actor workflow.Actor, revisions *workflow.Revisions, reviewBase string, retry *Retry, main *Main, branch string, slice *Slice, surface Surface, baseline Baseline) error {
 	inputsPath := filepath.Join(filepath.Dir(r.PromptPath), InputsDir)
 	if err := os.Mkdir(inputsPath, 0o755); err != nil {
 		return fmt.Errorf("render: %w", err)
@@ -327,7 +338,7 @@ func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, tit
 		}
 		m.Skills = append(m.Skills, skill)
 	}
-	text := composePrompt(m, title, detail, instructions, role, guide, standards, reviewBase, retry, main, surface, baseline.Policies, baseline.PolicyError)
+	text := composePrompt(m, title, detail, instructions, role, guide, standards, reviewBase, retry, main, slice, surface, baseline.Policies, baseline.PolicyError)
 	if actor == workflow.ArtisanActor {
 		text += outputInstructions(m.Identity, revisions, branch, surface)
 	}
@@ -339,7 +350,7 @@ func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, tit
 	return nil
 }
 
-func composePrompt(m *Manifest, title, detail, instructions, role, guide string, standards []string, reviewBase string, retry *Retry, main *Main, surface Surface, policies []string, policyError string) string {
+func composePrompt(m *Manifest, title, detail, instructions, role, guide string, standards []string, reviewBase string, retry *Retry, main *Main, slice *Slice, surface Surface, policies []string, policyError string) string {
 	var b strings.Builder
 	id := m.Identity
 	fmt.Fprintf(&b, "# Guildhall attempt\n\nRepository: %s\nTask: %s\nStep: %s (%s version %d)\nAttempt: %d\n",
@@ -366,6 +377,9 @@ func composePrompt(m *Manifest, title, detail, instructions, role, guide string,
 	}
 	if main != nil && (main.Behind > 0 || main.Kept != "") {
 		section("Behind main", mainSection(main))
+	}
+	if slice != nil && len(slice.Entries) > 1 {
+		section("Slice", sliceSection(slice, id.Kind == "review"))
 	}
 	section("Role", role)
 	section("Stage guide", guide)
@@ -425,6 +439,40 @@ func retrySection(retry *Retry) string {
 	}
 	quote("Previous summary:", retry.Summary, "None recorded.")
 	b.WriteString("Address this in your attempt; the stage guide and required outputs still apply.\n")
+	return b.String()
+}
+
+// sliceSection names the slice of a multi-PR task an attempt is for, quotes its `## Slices` entry and lists the later
+// slices as out of scope; a review is also told to raise later-slice work as a finding. Titles and the entry are
+// agent-written spec text, so they are fenced as text and cannot open a section or override the result template.
+func sliceSection(slice *Slice, review bool) string {
+	var b strings.Builder
+	n, total := slice.Current, len(slice.Entries)
+	var entry spec.Slice
+	if n >= 1 && n <= total {
+		entry = slice.Entries[n-1]
+	}
+	fmt.Fprintf(&b, "This attempt is for slice %d of %d:\n\n%s\n\n", n, total, fenced(entry.Title))
+	fmt.Fprintf(&b, "Its entry in the accepted spec's `## Slices` list:\n\n%s\n\n", fenced(entry.Body))
+	switch {
+	case n == 2:
+		b.WriteString("Slice 1 has merged and is on main; build on it, do not redo it.\n\n")
+	case n > 2:
+		fmt.Fprintf(&b, "Slices 1 to %d have merged and are on main; build on them, do not redo them.\n\n", n-1)
+	}
+	if n >= 1 && n < total {
+		var later strings.Builder
+		for k, e := range slice.Entries[n:] {
+			fmt.Fprintf(&later, "- slice %d: %s\n", n+1+k, e.Title)
+		}
+		fmt.Fprintf(&b, "Out of scope: later slices, which later pull requests deliver; do not build them:\n\n%s\n\n", fenced(later.String()))
+		b.WriteString("Use the full spec for context, but scope your work to this slice's entry only.\n")
+	} else {
+		b.WriteString("This is the final slice: use the full spec for context, but scope your work to this slice's entry only.\n")
+	}
+	if review {
+		b.WriteString("Raise any work in the head that belongs to a later slice as a finding: it must be removed and left for that slice.\n")
+	}
 	return b.String()
 }
 
