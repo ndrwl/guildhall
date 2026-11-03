@@ -8,3 +8,7 @@ Commit your work with clear messages; the final commit you leave at HEAD is your
 Stay on the task's branch; to move between branches use `git switch`, not `git checkout`, and do not push, since publishing is a later stage.
 Leave no uncommitted tracked changes, staged or unstaged: Guildhall refuses them rather than dropping work from the output.
 Untracked notes alone do not block intake.
+
+When an earlier slice or a merged pull request already delivered everything the current slice asks for, commit nothing and report `failed`.
+Start the summary with `Already delivered by slice <j>` or `Already delivered by <pr url>`, then give the evidence: which item each named slice or pull request delivers.
+The Director confirms it with `guildhall slice delivered`, which closes the slice.

@@ -51,6 +51,8 @@ type prSlice struct {
 	spec.Slice
 	// Merged is the merged pull request's URL, or "".
 	Merged string
+	// Delivered, for a slice closed as already delivered, is what delivered it: "slice <j>" or a pull request's URL.
+	Delivered string
 }
 
 // pullRequestText returns the title and body of the pull request for p. It is deterministic: the same p gives
@@ -208,6 +210,8 @@ func sliceSection(p prText) string {
 		switch {
 		case s.Merged != "":
 			state = "merged in " + s.Merged
+		case s.Delivered != "":
+			state = "already delivered by " + s.Delivered
 		case s.Index == p.Slice:
 			state = "this pull request"
 		}

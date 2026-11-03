@@ -271,6 +271,9 @@ type statusSlice struct {
 	Title       string             `json:"title"`
 	State       string             `json:"state"`
 	PullRequest *statusPullRequest `json:"pull_request,omitempty"`
+	// DeliveredBy, for a slice in state delivered, is what already delivered its work: "slice <j>" or a pull
+	// request's URL.
+	DeliveredBy string `json:"delivered_by,omitempty"`
 }
 
 // statusPullRequest is a slice's pull request as Guildhall last recorded it.
@@ -303,7 +306,7 @@ func readTaskSlices(s *store.Store, v store.DirectorView, documents string, work
 		}
 		sl := &statusSlices{Current: p.Current, Total: p.Total, Items: []statusSlice{}}
 		for _, it := range p.Items {
-			item := statusSlice{Index: it.Index, Title: it.Title, State: it.State}
+			item := statusSlice{Index: it.Index, Title: it.Title, State: it.State, DeliveredBy: it.DeliveredBy}
 			if pr := it.PullRequest; pr != nil {
 				item.PullRequest = &statusPullRequest{Number: pr.Number, URL: pr.URL}
 			}

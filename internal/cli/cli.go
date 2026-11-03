@@ -119,6 +119,8 @@ Commands:
                  hold a failed or stopped attempt on purpose, out of needs_me, until lifted or until the named tasks merge
   step unpark --repo <id> --task <id> --step <id> --attempt <n> [--copy <dir> | --store <path> --config <file> --state <dir>]
                  lift a park, so the attempt is back in needs_me
+  slice delivered --repo <id> --task <id> --slice <k> (--by-slice <j> | --by-pr <url>) --reason <text> [--copy <dir> | --store <path> --config <file> --state <dir>]
+                 close a multi-PR task's current slice that an earlier slice or a merged pull request already delivered
   decide list|show|answer --store <path> ...
                  list open decisions, show one and record the Guildmaster's answer
   decide open --store <path> --repo <id> --task <id> (--question <text> | --question-file <path|->) [--option <text>]...
@@ -407,6 +409,8 @@ func (a *App) Run(args []string) int {
 		return a.task(rest)
 	case "step":
 		return a.step(rest)
+	case "slice":
+		return a.slice(rest)
 	case "decide":
 		return a.decide(rest)
 	case "director":

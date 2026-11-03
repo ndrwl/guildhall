@@ -168,6 +168,24 @@ Both commands refuse a repository the config does not list, as every command tha
 See the command guide for admission requirements, prepared-input refusals, replay semantics and downstream review behaviour.
 This is one option after a `pr-blocked` or `rebase-stuck` report, when Guildhall could not [rebase the pull request itself](interpreter.md#tiered-rebase); holding the task or leaving it unadvanced are alternatives.
 
+## `slice delivered`
+
+```sh
+guildhall slice delivered --repo <id> --task <id> --slice <k> (--by-slice <j> | --by-pr <url>) --reason <text> [--copy <dir> | --store <path> --config <file> --state <dir>]
+```
+
+`slice delivered` closes a multi-PR task's current slice whose work an earlier slice or a merged pull request already delivered, so its build had nothing to commit ([a slice already delivered](tasks.md#a-slice-already-delivered)).
+A build in that case reports `failed` with a summary starting `Already delivered by slice <j>` or `Already delivered by <pr url>`; the Director checks the evidence and runs this command, rather than retrying the same empty work or cancelling a task whose work merged.
+It feeds [`slice-delivered`](interpreter.md#events) under the same flags, task lock and admission gates as `task start`.
+It is valid only when the task is open and has more than one slice, `--slice` is its current slice and has no merge record, none of its attempts is running, `--reason` is not empty, and exactly one piece of evidence is given: `--by-slice <j>`, an earlier slice of the task with a merge record, or `--by-pr <url>`, a pull request of the task's repository that the forge reports merged.
+`--by-pr` reads the pull request numbered by the URL's last segment from the repository's remote, and refuses one whose URL the forge reports differently or that is not merged; a forge that cannot read pull requests refuses `--by-pr`, while `--by-slice` still works.
+Anything else exits 1 and records nothing; missing or malformed flags exit 2.
+
+The engine records `delivered--s<k>-1-delivery` and closes the slice as a merge would, with nothing merged: it voids the slice's open decisions, sends the Director `<repo>.<task>.slice-delivered.delivered--s<k>-1`, type `slice-delivered`, naming what delivered it, retires the slice's branch and worktree at the base its build started from (a branch with commits of its own is kept, with a `workspace-kept` message), and takes the task out of the merge queue.
+For a slice before the last, the same advance starts the next slice and prints what it waits for, such as `{"wait":"attempt","step":"build--s3","attempt":1}`; for the last, the task is done and it prints `{"wait":"done","step":"deliver--s<k>"}`, so `--depends-on`, `--until-merged` and `handoff_after_tasks` release as for any done task.
+A `slice-delivered` message is not a `merged` one, so it does not count toward `hallmark_after_merges`.
+Running the command again after the close records and sends nothing new and prints where the task waits.
+
 ## `task design`
 
 `guildhall task design --repo <id> --task <id> --surface web-page|cli|chat|none --brief <file|->` adds a [design round](tasks.md#design-rounds) to a feature task after its grill and before its first build: it feeds `design-requested` with the brief, its first line `Surface: <surface>` and a blank line before the brief's text, under the same flags, task lock and admission gates as `task start`, and prints where the task waits.

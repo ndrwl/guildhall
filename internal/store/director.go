@@ -540,6 +540,10 @@ const (
 	MessageMergeHeld        = "merge-held"
 	MessageMergeRefused     = "merge-refused"
 	MessageMerged           = "merged"
+	// MessageSliceDelivered: the Director closed a multi-PR task's slice as already delivered by an earlier slice or a
+	// merged pull request (`guildhall slice delivered`); no code merged, so it is never a merged message and counts
+	// toward no maintenance cadence.
+	MessageSliceDelivered = "slice-delivered"
 	// MessageFinished: a task whose workflow has no deliver step, such as a hallmark, ran every step and is done,
 	// with no pull request; it is never a merged message, so it counts toward no maintenance cadence.
 	MessageFinished      = "finished"
@@ -582,7 +586,7 @@ var MessageTypes = map[string]string{
 	MessageChecksPassed: "engine", MessageChecksPending: "engine", MessageFlake: "engine", MessagePRBlocked: "engine", MessageDecision: "engine",
 	MessageDependencyHeld: "engine", MessageBranchKept: "engine",
 	MessageDirectorStage: "engine", MessageLoopExitRejected: "engine", MessageMergeHeld: "engine",
-	MessageMergeRefused: "engine", MessageMerged: "engine", MessageFinished: "engine", MessagePublished: "engine", MessageStall: "engine",
+	MessageMergeRefused: "engine", MessageMerged: "engine", MessageSliceDelivered: "engine", MessageFinished: "engine", MessagePublished: "engine", MessageStall: "engine",
 	MessageWorkerStalled: "engine and launcher", MessageWorkspaceKept: "engine",
 	MessageMergeQueued: "engine", MessageRebased: "engine", MessageRebaseEscalated: "engine", MessageRebaseStuck: "engine",
 	MessageApprovalCarried: "engine",

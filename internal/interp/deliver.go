@@ -174,6 +174,12 @@ func (r *run) prText(s workflow.Step, h string) (prText, error) {
 					return prText{}, err
 				}
 				item.Merged = pr.URL
+			} else if r.sliceDelivery(e.Index) >= 0 {
+				d, err := r.delivery(e.Index)
+				if err != nil {
+					return prText{}, err
+				}
+				item.Delivered = d.by()
 			}
 			p.Slices = append(p.Slices, item)
 		}
