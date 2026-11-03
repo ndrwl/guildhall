@@ -46,6 +46,12 @@ var fixtureFiles = map[string]string{
 	"tasks/guildhall/d122/review-2/outcome.json": `{"verdict":"changes_requested"}`,
 	"tasks/guildhall/d122/design-1/design.html":  "<!doctype html><p>a design</p><script>alert(1)</script>",
 	"tasks/guildhall/d105/design-3/design.md":    "# d105 design-3\n",
+	"tasks/guildhall/d122/designer-4/design.md":  "# The task page's answers\n",
+	"tasks/guildhall/d122/designer-4/mockup.html": `<!doctype html><div style="display:flex;flex-wrap:wrap;gap:16px">` +
+		`<iframe style="width:1280px;height:800px" srcdoc="&lt;p&gt;desktop&lt;/p&gt;"></iframe>` +
+		`<iframe style="width:390px;height:800px" srcdoc="&lt;p&gt;phone&lt;/p&gt;"></iframe></div>`,
+	"tasks/guildhall/d122/designer-5/design.md": "# task design's output\n",
+	"tasks/guildhall/d122/designer-5/mockup.md": "Run `task design`:\n\n```\n$ guildhall task design d122 --surface cli\ndesign-5 brief recorded\n```\n",
 }
 
 // writeFixtureFiles writes fixtureFiles under a new document directory and returns it with each file's sha256.
@@ -104,6 +110,12 @@ func fixtureTask(sums map[string]string) Task {
 			{ID: "accept--s2-1", Kind: "approval", Question: "Approval needed for guildhall/d122, step accept--s2 (guildmaster-approval version 1), attempt 1.\n\nInputs:\n- spec: tasks/guildhall/d122/plan-1/spec.md\n\nAnswer with one of: approved, changes_requested.",
 				Options: []string{"approved", "changes_requested"}, Subject: "sha256:" + sums["tasks/guildhall/d122/plan-1/spec.md"], SubjectDocument: "plan-1-spec", Deferred: true, OpenedAt: at("2026-11-04 14:33")},
 			{ID: "deliver-1", Kind: "merge", Question: "Merge d122?", Options: []string{"merge", "hold", "later"}, Deferred: true, OpenedAt: at("2026-11-04 14:35")},
+			// Two design rounds' asks: one with an HTML mock-up, linked to its frame, and one with a Markdown mock-up
+			// of CLI output, shown inline.
+			{ID: "design-4", Kind: "approval", Question: "Approve design round 4 of guildhall/d122?", Options: []string{"approved", "changes_requested"},
+				Subject: "sha256:" + sums["tasks/guildhall/d122/designer-4/design.md"], SubjectDocument: "designer-4-design", Mockup: "designer-4-design-2", Deferred: true, OpenedAt: at("2026-11-04 14:36")},
+			{ID: "design-5", Kind: "approval", Question: "Approve design round 5 of guildhall/d122?", Options: []string{"approved", "changes_requested"},
+				Subject: "sha256:" + sums["tasks/guildhall/d122/designer-5/design.md"], SubjectDocument: "designer-5-design", Mockup: "designer-5-design-2", Deferred: true, OpenedAt: at("2026-11-04 14:37")},
 		},
 		DirectorStage: "grill",
 		DirectorWaits: []string{"checks of PR #251 are pending"},
@@ -119,6 +131,10 @@ func fixtureTask(sums map[string]string) Task {
 			doc("review-1-outcome", "tasks/guildhall/d122/review-1/outcome.json", "Review", "review", 1, "2026-11-04 11:40"),
 			doc("review--s2-2-outcome", "tasks/guildhall/d122/review-2/outcome.json", "Review", "review", 2, "2026-11-04 14:20"),
 			doc("design-1-design", "tasks/guildhall/d122/design-1/design.html", "Design", "design", 1, "2026-10-31 13:00"),
+			doc("designer-4-design", "tasks/guildhall/d122/designer-4/design.md", "Design", "designer", 4, "2026-11-04 14:36"),
+			doc("designer-4-design-2", "tasks/guildhall/d122/designer-4/mockup.html", "Design", "designer", 4, "2026-11-04 14:36"),
+			doc("designer-5-design", "tasks/guildhall/d122/designer-5/design.md", "Design", "designer", 5, "2026-11-04 14:37"),
+			doc("designer-5-design-2", "tasks/guildhall/d122/designer-5/mockup.md", "Design", "designer", 5, "2026-11-04 14:37"),
 			{Repository: "guildhall", TaskID: "d105", Name: "design-3-design", Path: "tasks/guildhall/d105/design-3/design.md", SHA256: sums["tasks/guildhall/d105/design-3/design.md"], Kind: "Linked", Step: "design", Attempt: 3, RecordedAt: at("2026-10-31 14:26")},
 		},
 		Story: []Node{

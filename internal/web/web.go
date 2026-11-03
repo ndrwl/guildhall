@@ -157,6 +157,9 @@ type Ask struct {
 	Deferred bool
 	// Findings are the subject review's open findings, for a review loop exit.
 	Findings []Finding
+	// Mockup is the name of the task document holding a design ask's mock-up, the asked designer attempt's second
+	// design output, designer-<k>-design-2; "" for any other ask and for a design with no mock-up.
+	Mockup string
 }
 
 // Finding is one review finding; Rule is its rule or severity label, and Fixed says a later round resolved it.

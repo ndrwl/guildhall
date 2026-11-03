@@ -79,7 +79,10 @@ func TestTaskPageFixture(t *testing.T) {
 		`<li class="old"><span class="k"></span><a href="/guildhall/d122/doc/review-1-outcome">review-1-outcome</a>`,
 		`<li><span class="k">Grill</span><a href="/guildhall/d122/doc/grill-3-notes">grill-3-notes</a>`,
 		`<li><span class="k">d105</span><a href="/guildhall/d105/doc/design-3-design">design-3-design</a>`,
-		`Documents <span class="n">8</span>`,
+		`Documents <span class="n">12</span>`,
+		// a design ask's HTML mock-up opens from its frame route in a new tab; a Markdown one shows inline
+		`<p class="subj">About <code>`, `<a href="/guildhall/d122/doc/designer-4-design">read designer-4-design</a> · <a href="/guildhall/d122/doc/designer-4-design-2/frame" target="_blank" rel="noopener">Open mock-up</a></p>`,
+		`<div class="plan md"><p class="ph">Mock-up</p><p>Run <code>task design</code>:</p>` + "\n" + `<pre><code>$ guildhall task design d122 --surface cli` + "\n" + `design-5 brief recorded` + "\n" + `</code></pre>` + "\n" + `</div>`,
 		// now: the asks in full, read-only, with anchors, meanings and tones
 		`<span class="st">waiting on you · 2 asks</span><time>since 4 Nov 14:20</time>`,
 		`? The Director runs grill with you in its session; answer it there.`,
@@ -270,7 +273,10 @@ func TestDocuments(t *testing.T) {
 		t.Errorf("an HTML document is not shown only in its sandboxed frame:\n%s", html.Body)
 	}
 	frame := get(t, s, "/guildhall/d122/doc/design-1-design/frame")
-	if frame.Code != 200 || frame.Header().Get("Content-Security-Policy") != FrameCSP || frame.Header().Get("Content-Type") != "text/html; charset=utf-8" {
+	// The frame loads nothing from the network: no script, nothing but inline styles, data: images and fonts, and
+	// srcdoc frames, such as a design mock-up's desktop and phone frames.
+	const noNetwork = "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; frame-src 'self' about:"
+	if frame.Code != 200 || frame.Header().Get("Content-Security-Policy") != noNetwork || frame.Header().Get("Content-Type") != "text/html; charset=utf-8" {
 		t.Errorf("frame: %d, CSP %q, type %q", frame.Code, frame.Header().Get("Content-Security-Policy"), frame.Header().Get("Content-Type"))
 	}
 	json := get(t, s, "/guildhall/d122/doc/review-1-outcome")

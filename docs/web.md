@@ -82,7 +82,8 @@ Tapping twice records the first answer once.
 
 Every document link opens `http://<address>/<repo>/<task>/doc/<name>`: the document, rendered from Markdown with goldmark at its safe defaults ([decision](decisions/goldmark-for-documents.md)), with the open asks, answerable as on the task page, and Status beside it and a way back to the task.
 **Raw** gives the file as plain text.
-An HTML document is shown only in a sandboxed frame, and any other file as plain text.
+An HTML document is shown only in a sandboxed frame that runs no script and loads nothing from the network, and any other file as plain text.
+A design ask shows the design's mock-up: a web-page mock-up is an **Open mock-up** link beside the link that reads the design, which opens it in that frame in a new tab at the full window width, and sample CLI or chat output is shown in the ask as preformatted text.
 A document is shown only when its file still matches the sha256 recorded for it; a missing or changed file is refused with a page that says which.
 
 ## Limits

@@ -115,6 +115,58 @@ func TestWebSourceAsksFollowClerk(t *testing.T) {
 	}
 }
 
+// TestWebSourceDesignMockup: a design round's approval, bound to a designer attempt's design, carries that attempt's
+// second design output as its mock-up; an approval bound to a designer attempt with no mock-up, or to another step's
+// document with a -2 output, carries none.
+func TestWebSourceDesignMockup(t *testing.T) {
+	dir := clerkFixture(t)
+	src := webSourceFor(t, dir)
+	s, err := store.Open(filepath.Join(dir, "director.store"), store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := func(c byte) string { return strings.Repeat(string(c), 64) }
+	for _, d := range []store.DocumentRef{
+		{Name: "designer-1-design", Path: "tasks/app/a-approve/designer-1/design.md", SHA256: sum('1')},
+		{Name: "designer-1-design-2", Path: "tasks/app/a-approve/designer-1/mockup.html", SHA256: sum('2')},
+		{Name: "designer-2-design", Path: "tasks/app/a-approve/designer-2/design.md", SHA256: sum('3')},
+		{Name: "plan-1-spec", Path: "tasks/app/a-approve/plan-1/spec.md", SHA256: sum('4')},
+		{Name: "plan-1-spec-2", Path: "tasks/app/a-approve/plan-1/extra.md", SHA256: sum('5')},
+	} {
+		d.Repository, d.TaskID = "app", "a-approve"
+		if _, err := s.PutDocument("doc:"+d.Name, d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for id, c := range map[string]byte{"design-1": '1', "design-2": '3', "accept-9": '4'} {
+		d := store.Decision{Repository: "app", TaskID: "a-approve", ID: id, Kind: store.DecisionApproval,
+			Subject: &store.Subject{Kind: store.SubjectDocument, Digest: "sha256:" + sum(c)}, Options: []string{"approved", "changes_requested"}, Question: "Approve?"}
+		if _, err := s.OpenDecision("open:"+id, d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	task, err := src.Task("app", "a-approve")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]web.Ask{}
+	for _, a := range task.Asks {
+		got[a.ID] = a
+	}
+	if a := got["design-1"]; a.SubjectDocument != "designer-1-design" || a.Mockup != "designer-1-design-2" {
+		t.Errorf("design-1 ask = %+v, want its designer's mock-up", a)
+	}
+	if a := got["design-2"]; a.SubjectDocument != "designer-2-design" || a.Mockup != "" {
+		t.Errorf("design-2 ask = %+v, want no mock-up", a)
+	}
+	if a := got["accept-9"]; a.SubjectDocument != "plan-1-spec" || a.Mockup != "" {
+		t.Errorf("accept-9 ask = %+v, want no mock-up", a)
+	}
+}
+
 // TestWebSourceDecisionTone: an answered decision's step and story node take their state from the page's option
 // table, so a merge hold and a follow-ups none are done with their word, not sent back; and a question with options
 // answered in free text shows the text.
