@@ -3,9 +3,11 @@ package git_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -45,7 +47,27 @@ func TestWorkspaceContract(t *testing.T) {
 					}
 					return f.Commit(dir)
 				},
-				Contains: func(t *testing.T, repository, head string) bool { return f.Contains(repository, head) },
+				Contains:   func(t *testing.T, repository, head string) bool { return f.Contains(repository, head) },
+				Regenerate: f.Regenerate,
+				ArrangeRegeneration: func(t *testing.T, w git.Workspace) (git.Regeneration, git.Regeneration, string) {
+					const golden = "digests/x.sha256"
+					onto := f.Head(w.Dir)
+					marked := func(head string) string {
+						f.SetRebase(onto, head, git.Rebased{Marked: strings.Repeat(head[:1], 40),
+							Conflicts: []git.Conflict{{Path: golden, Lines: 2, Markers: true}}})
+						r, err := f.Rebase(context.Background(), git.Replay{Repository: w.Repository, Base: onto, Head: head})
+						if err != nil {
+							t.Fatal(err)
+						}
+						return r.Marked
+					}
+					rewrite := git.Regeneration{Repository: w.Repository, Marked: marked(strings.Repeat("c", 40)), Onto: onto,
+						Take: []string{golden}, Commands: [][]string{{"regenerate"}}, Dir: w.Dir + ".regen"}
+					f.SetRegenerate(rewrite.Marked, git.Regenerated{Changed: []string{golden}})
+					fail := rewrite
+					fail.Marked = marked(strings.Repeat("d", 40))
+					return rewrite, fail, golden
+				},
 			}
 		})
 	})
@@ -93,6 +115,153 @@ func programHarness(t *testing.T, repositories func(*testing.T) (string, string,
 		Contains: func(t *testing.T, repository, head string) bool {
 			return exec.Command("git", "-C", repository, "cat-file", "-e", head+"^{commit}").Run() == nil
 		},
+		Regenerate: git.Program{}.Regenerate,
+		ArrangeRegeneration: func(t *testing.T, w git.Workspace) (git.Regeneration, git.Regeneration, string) {
+			g := arrangeRegeneration(t, global, w.Repository, repo{t, w.Dir, global}.run("rev-parse", "HEAD"))
+			fail := g
+			fail.Commands = [][]string{helperCommand(t, "write", g.Take[0], "partial\n"), helperCommand(t, "fail")}
+			return g, fail, g.Take[0]
+		},
+	}
+}
+
+// regenerateHelper, as this test binary's first argument, makes it a regenerate command (see regenerate).
+const regenerateHelper = "regenerate-helper"
+
+// regenerate is the regenerate helper: "write <path> <data>" writes data to path, and "fail" says so and exits 3.
+func regenerate(args []string) int {
+	switch {
+	case len(args) == 3 && args[0] == "write":
+		if err := os.WriteFile(filepath.FromSlash(args[1]), []byte(args[2]), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		fmt.Println("wrote", args[1])
+		return 0
+	case len(args) == 1 && args[0] == "fail":
+		fmt.Println("the golden generator failed")
+		return 3
+	}
+	fmt.Fprintln(os.Stderr, "regenerate helper: unknown arguments", args)
+	return 2
+}
+
+// helperCommand is an argv that runs this test binary as the regenerate helper with args.
+func helperCommand(t *testing.T, args ...string) []string {
+	t.Helper()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return append([]string{exe, regenerateHelper}, args...)
+}
+
+// arrangeRegeneration makes, in repository, two commits on base that both change the golden digests/x.sha256 and
+// replays one onto the other, and returns a regeneration of the marked replay, in a scratch directory beside the
+// repository, whose command writes the golden.
+func arrangeRegeneration(t *testing.T, global, repository, base string) git.Regeneration {
+	t.Helper()
+	const golden = "digests/x.sha256"
+	side := filepath.Join(t.TempDir(), "side")
+	r := repo{t, repository, global}
+	r.run("worktree", "add", "--detach", "--quiet", side, base)
+	defer r.run("worktree", "remove", "--force", side)
+	digests := func() {
+		if err := os.MkdirAll(filepath.Join(side, "digests"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	digests()
+	s := repo{t, side, global}
+	onto := s.commit("main's golden", map[string]string{golden: "main\n"})
+	s.run("reset", "-q", "--hard", base)
+	digests()
+	task := s.commit("the task's golden", map[string]string{golden: "task\n", "a.go": "package a\n"})
+	rebased, err := git.Program{}.Rebase(context.Background(), git.Replay{Repository: repository, Base: onto, Head: task})
+	if err != nil || rebased.Marked == "" || len(rebased.Conflicts) != 1 || !rebased.Conflicts[0].Markers {
+		t.Fatalf("Rebase = %+v, %v; want one conflict with markers", rebased, err)
+	}
+	return git.Regeneration{Repository: repository, Marked: rebased.Marked, Onto: onto, Take: []string{golden},
+		Commands: [][]string{helperCommand(t, "write", golden, "regenerated\n")}, Dir: filepath.Join(filepath.Dir(repository), "scratch", "work.regen")}
+}
+
+// TestRegenerateProgram pins what only git shows: the regenerated golden holds the command's output and no
+// markers, the base side of each Take path is what the command starts from, and a failing command's output and exit
+// status are reported.
+func TestRegenerateProgram(t *testing.T) {
+	ctx := context.Background()
+	global := isolate(t)
+	w, base := arrangeWorkspace(t, gittest.Repositories(t))
+	if err := (git.Program{}).Ensure(ctx, w); err != nil {
+		t.Fatal(err)
+	}
+	g := arrangeRegeneration(t, global, w.Repository, base)
+	r := repo{t, w.Repository, global}
+	// A command that does nothing leaves the base side: the conflict is gone, with main's line.
+	g.Commands = [][]string{helperCommand(t, "write", "other.txt", "x\n")}
+	got, err := git.Program{}.Regenerate(ctx, g)
+	if err != nil || got.Failed != "" {
+		t.Fatalf("Regenerate = %+v, %v", got, err)
+	}
+	if b := r.run("show", got.Commit+":digests/x.sha256"); b != "main" {
+		t.Errorf("golden after taking the base side = %q, want main", b)
+	}
+	if !slices.Equal(got.Changed, []string{"digests/x.sha256", "other.txt"}) {
+		t.Errorf("Changed = %q, want the golden and the untracked file the command wrote", got.Changed)
+	}
+	if b := r.run("show", got.Commit+":a.go"); b != "package a" {
+		t.Errorf("a.go = %q, want the task's", b)
+	}
+	if r.run("log", "-1", "--format=%s", got.Commit) != "the task's golden" || r.run("rev-parse", got.Commit+"^") != g.Marked {
+		t.Errorf("regenerated commit %s does not take the marked commit's message and parent", got.Commit)
+	}
+	// The generator's output replaces the golden, with no markers.
+	g = arrangeRegeneration(t, global, w.Repository, base)
+	got, err = git.Program{}.Regenerate(ctx, g)
+	if err != nil || got.Failed != "" {
+		t.Fatalf("Regenerate = %+v, %v", got, err)
+	}
+	if b := r.run("show", got.Commit+":digests/x.sha256"); b != "regenerated" || strings.Contains(b, "<<<<<<<") {
+		t.Errorf("regenerated golden = %q, want the generator's output", b)
+	}
+	if !strings.Contains(string(got.Output), "wrote digests/x.sha256") {
+		t.Errorf("Output = %q, want the command's output", got.Output)
+	}
+	// A failing command names itself and its exit status, with its output.
+	g.Commands = [][]string{helperCommand(t, "fail")}
+	got, err = git.Program{}.Regenerate(ctx, g)
+	if err != nil || got.Commit != "" || !strings.Contains(got.Failed, "exit status 3") || !strings.Contains(got.Failed, regenerateHelper) ||
+		!strings.Contains(string(got.Output), "the golden generator failed") {
+		t.Errorf("Regenerate with a failing command = %+v, %v", got, err)
+	}
+	// A command that cannot start fails the same way.
+	g.Commands = [][]string{{filepath.Join(t.TempDir(), "no-such-generator")}}
+	if got, err := (git.Program{}).Regenerate(ctx, g); err != nil || got.Failed == "" {
+		t.Errorf("Regenerate with a missing command = %+v, %v", got, err)
+	}
+	// A leftover scratch worktree from a crashed run is replaced.
+	if err := os.MkdirAll(g.Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(g.Dir, "stale.txt"), "stale\n")
+	g.Commands = [][]string{helperCommand(t, "write", "digests/x.sha256", "again\n")}
+	if got, err := (git.Program{}).Regenerate(ctx, g); err != nil || !slices.Equal(got.Changed, []string{"digests/x.sha256"}) {
+		t.Errorf("Regenerate over a leftover directory = %+v, %v", got, err)
+	}
+	if _, err := os.Stat(g.Dir); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("scratch worktree left behind: %v", err)
+	}
+	for name, bad := range map[string]func(*git.Regeneration){
+		"short marked":  func(g *git.Regeneration) { g.Marked = "HEAD" },
+		"relative dir":  func(g *git.Regeneration) { g.Dir = "work.regen" },
+		"no commands":   func(g *git.Regeneration) { g.Commands = nil },
+		"empty command": func(g *git.Regeneration) { g.Commands = [][]string{{}} },
+	} {
+		v := g
+		bad(&v)
+		if _, err := (git.Program{}).Regenerate(ctx, v); err == nil {
+			t.Errorf("%s: Regenerate succeeded", name)
+		}
 	}
 }
 

@@ -138,6 +138,14 @@ func (r *run) resolveRebase(owner workflow.Step, repo config.Repository, l rebas
 	if err != nil {
 		return Next{}, nil, err
 	}
+	// A marked replay whose conflicts all lie under declared generated paths is regenerated with no model; a
+	// regeneration that failed, or changed an undeclared path, falls through to the rebaser.
+	if cmds, regen := repo.Merge.RegenerateFor(files); l.doc.Marked != "" && regen && (!ok || res.Rebaser == "") {
+		done, err := r.regenerateLink(repo, l, files, cmds, ok, res)
+		if err != nil || done {
+			return Next{}, nil, err
+		}
+	}
 	if !ok {
 		res = resolvedDoc{Schema: resolutionSchema, Marked: l.doc.Marked, Resolved: l.doc.Rebased, Reason: l.doc.Reason}
 		from := l.doc.From
@@ -253,6 +261,121 @@ func (r *run) resolveRebase(owner workflow.Step, repo config.Repository, l rebas
 	}
 	c := coverageDoc{Schema: coverageSchema, Head: res.Resolved, Outcome: od.Name, Findings: len(o.Findings) + len(o.Suggestions)}
 	return Next{}, nil, r.putJSONDoc(l.name+"-covered", l.name, "covered.json", c)
+}
+
+// regenerationDoc is <link>-regeneration: the mechanical regeneration of a marked replay whose conflicts all lie under
+// the repository's declared generated paths (docs/interpreter.md#tiered-rebase). OK says its commit may stand: no
+// command failed and every changed path lies under a matching entry's prefix; otherwise Reason says why, and the
+// conflicts go to the rebaser.
+type regenerationDoc struct {
+	Schema   string     `json:"schema"`
+	Commands [][]string `json:"commands"`
+	Commit   string     `json:"commit,omitempty"`
+	Changed  []string   `json:"changed"`
+	OK       bool       `json:"ok"`
+	Reason   string     `json:"reason"`
+}
+
+// regenerationSchema is the schema of <link>-regeneration.
+const regenerationSchema = "guildhall.rebase-regeneration/1"
+
+// regenerateLink resolves the marked link l, whose conflicts files all lie under the declared entries cmds, with no
+// model: it records, once, the regeneration of the marked replay in a scratch worktree, and when that may stand,
+// squashes it onto the base tip, moves the worktree there and records the link resolved and covered, the coverage
+// naming the regeneration rather than a narrowed review. resolved and res are the link's <link>-resolved, if any.
+// It reports true once the link is covered, and false when the regeneration cannot stand, for the rebaser to take
+// the conflicts as it would without regeneration.
+func (r *run) regenerateLink(repo config.Repository, l rebaseLink, files []string, cmds []config.Regenerate, resolved bool, res resolvedDoc) (bool, error) {
+	name := l.name + "-regeneration"
+	var g regenerationDoc
+	ok, err := r.readJSONDoc(name, &g)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		// The task's worktree has not moved yet, so a crash before this record only runs the commands again.
+		if err := r.refuseRunning(); err != nil {
+			return false, err
+		}
+		g = regenerationDoc{Schema: regenerationSchema, Changed: []string{}}
+		for _, c := range cmds {
+			g.Commands = append(g.Commands, slices.Clone(c.Command))
+		}
+		out, err := r.e.Workspaces.Regenerate(r.ctx, git.Regeneration{Repository: repo.Path, Marked: l.doc.Marked, Onto: l.doc.Onto,
+			Take: files, Commands: g.Commands, Dir: r.workPath() + ".regen"})
+		if err != nil {
+			return false, err
+		}
+		if out.Changed != nil {
+			g.Changed = out.Changed
+		}
+		var undeclared []string
+		for _, p := range g.Changed {
+			if !slices.ContainsFunc(cmds, func(c config.Regenerate) bool { return c.Covers(p) }) {
+				undeclared = append(undeclared, p)
+			}
+		}
+		switch {
+		case out.Failed != "":
+			g.Reason = fmt.Sprintf("regenerating %s failed: %s", strings.Join(files, ", "), out.Failed)
+			if tail := strings.TrimSpace(string(out.Output)); tail != "" {
+				g.Reason += "\n\n" + tail
+			}
+		case !digest.ValidHead(out.Commit):
+			g.Reason = fmt.Sprintf("regenerating %s made no commit", strings.Join(files, ", "))
+		case len(undeclared) > 0:
+			g.Commit = out.Commit
+			g.Reason = fmt.Sprintf("regenerating %s changed paths outside the declared generated files: %s", strings.Join(files, ", "), strings.Join(undeclared, ", "))
+		default:
+			g.Commit, g.OK = out.Commit, true
+			g.Reason = fmt.Sprintf("regenerated %s with %s, changing %s", strings.Join(files, ", "), regenerateCommands(cmds), strings.Join(g.Changed, ", "))
+		}
+		if err := r.putJSONDoc(name, l.name, "regeneration.json", g); err != nil {
+			return false, err
+		}
+	}
+	if g.Schema != regenerationSchema {
+		return false, fmt.Errorf("document %s is not a %s record", name, regenerationSchema)
+	}
+	if !g.OK {
+		if resolved {
+			return false, fmt.Errorf("document %s-resolved has no rebaser commit, and regeneration %s did not stand", l.name, name)
+		}
+		return false, nil
+	}
+	if !resolved {
+		if err := r.refuseRunning(); err != nil {
+			return false, err
+		}
+		squashed, err := r.e.Workspaces.Squash(r.ctx, repo.Path, l.doc.Onto, g.Commit)
+		if err != nil {
+			return false, err
+		}
+		if err := r.adopt(repo, l.doc.From, squashed); err != nil {
+			return false, err
+		}
+		res = resolvedDoc{Schema: resolutionSchema, Marked: l.doc.Marked, Resolved: squashed, Reason: "regenerated with no model: " + g.Reason}
+		if err := r.putJSONDoc(l.name+"-resolved", l.name, "resolved.json", res); err != nil {
+			return false, err
+		}
+	}
+	c := coverageDoc{Schema: coverageSchema, Head: res.Resolved, Outcome: name, Findings: 0}
+	return true, r.putJSONDoc(l.name+"-covered", l.name, "covered.json", c)
+}
+
+// regenerateCommands names the commands of entries for a reason, each in backquotes.
+func regenerateCommands(entries []config.Regenerate) string {
+	var names []string
+	for _, e := range entries {
+		names = append(names, "`"+strings.Join(e.Command, " ")+"`")
+	}
+	return strings.Join(names, " and ")
+}
+
+// regenerable reports whether every conflict in files lies under the repository's declared generated paths.
+func regenerable(repo config.Repository, files []string) bool {
+	_, ok := repo.Merge.RegenerateFor(files)
+	return ok
 }
 
 // rebaseSpec is the accepted spec the build that produced step owner's head was given, the rebaser's and the narrowed

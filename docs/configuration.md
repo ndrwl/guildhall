@@ -243,6 +243,28 @@ minor_conflict_lines   = 50
 - `reapprove_after_rebase` matters only where `guildmaster_approval` is required; without it, Guildhall merges a rebased head by itself whenever the requirements hold.
 - Red checks and review findings on a rebased head always reach the Guildmaster, whatever the threshold.
 
+A repository's generated files, such as committed digest goldens, may be declared with the commands that rewrite them, one `[[repository.merge.regenerate]]` table each:
+
+```toml
+[[repository.merge.regenerate]]
+paths   = ["skills/testdata/digests/"]
+command = ["go", "test", "./skills/", "-update"]
+
+[[repository.merge.regenerate]]
+paths   = ["baseline/testdata/digests/"]
+command = ["go", "test", "./baseline/", "-update"]
+```
+
+| Key | Meaning |
+|---|---|
+| `paths` | Directory prefixes of the generated files, each relative, clean, without `..` and ending in `/`; a file lies under a prefix when its repository path starts with it. At least one. |
+| `command` | The argv that rewrites them, run with no shell from the root of a scratch worktree ([Regenerate](contracts/git.md#regenerate)). Not empty. |
+
+- A marked rebase whose conflicts all have markers and all lie under declared paths is `minor_conflicts` whatever `minor_conflict_files` and `minor_conflict_lines` say, and is [regenerated with no model](interpreter.md#tiered-rebase): the base side of each file is taken, the matching commands run, and the pushed head's required CI judges the result. A failed command, or a changed path outside the declared ones, sends the conflicts to the rebaser instead.
+- None is declared by default, and a repository without any is rebased exactly as it would be without the key.
+- The commands come only from this config, which the Guildmaster controls, never from the repository: running one runs code the task changed, on the Director's machine, under a ten-minute bound.
+- A path that is absolute, has `..`, does not end in `/` or is not clean, an entry without paths and an empty command are refused when the config is parsed; like the rest of `[repository.merge]`, the entries cannot be overridden per task.
+
 A `minor_conflicts` rebase is resolved by an Artisan run under the profile named [`rebaser`](#profiles), the shipped one unless the copy declares its own, so every Director copy resolves minor conflicts.
 A config without a `rebaser` profile, which only a config built in memory can be, escalates every minor rebase to `major_conflicts`, a build send-back, and tells the Director why.
 

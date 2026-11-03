@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -337,6 +338,82 @@ func TestRebaseSettings(t *testing.T) {
 				t.Fatalf("error %v does not mention %q", err, c.want)
 			}
 		})
+	}
+}
+
+// TestRegenerateSettings: [[repository.merge.regenerate]] decodes in order under its repository; a config without it
+// encodes no regenerate field, so its digest is unchanged; and a path that is absolute, has .., lacks a trailing / or
+// is unclean, an entry without paths and an empty command are refused.
+func TestRegenerateSettings(t *testing.T) {
+	const entries = "[[repository.merge.regenerate]]\npaths = [\"skills/testdata/digests/\"]\ncommand = [\"go\", \"test\", \"./skills/\", \"-update\"]\n\n" +
+		"[[repository.merge.regenerate]]\npaths = [\"baseline/testdata/digests/\"]\ncommand = [\"go\", \"test\", \"./baseline/\", \"-update\"]\n\n"
+	with := strings.Replace(director(t), "[repository.merge.requires]\n", entries+"[repository.merge.requires]\n", 1)
+	cfg, err := Parse([]byte(with))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Regenerate{
+		{Paths: []string{"skills/testdata/digests/"}, Command: []string{"go", "test", "./skills/", "-update"}},
+		{Paths: []string{"baseline/testdata/digests/"}, Command: []string{"go", "test", "./baseline/", "-update"}},
+	}
+	if got := cfg.Repositories[1].Merge.Regenerate; !reflect.DeepEqual(got, want) {
+		t.Fatalf("regenerate = %+v, want %+v", got, want)
+	}
+	plain, err := Parse([]byte(director(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := json.Marshal(plain); err != nil || strings.Contains(string(b), "regenerate") {
+		t.Fatalf("config JSON without regenerate = %s, %v", b, err)
+	}
+	if b, err := json.Marshal(cfg); err != nil || !strings.Contains(string(b), `"regenerate":[{"paths":["skills/testdata/digests/"]`) {
+		t.Fatalf("config JSON with regenerate = %s, %v", b, err)
+	}
+	for name, c := range map[string]struct{ entry, want string }{
+		"absolute":      {"paths = [\"/abs/\"]\ncommand = [\"x\"]", `path "/abs/" must be a relative path`},
+		"dotdot":        {"paths = [\"a/../b/\"]\ncommand = [\"x\"]", `path "a/../b/" must not contain ..`},
+		"dotdot only":   {"paths = [\"../\"]\ncommand = [\"x\"]", `path "../" must not contain ..`},
+		"no slash":      {"paths = [\"skills/testdata/digests\"]\ncommand = [\"x\"]", "must end in /"},
+		"unclean":       {"paths = [\"a//b/\"]\ncommand = [\"x\"]", "must be a clean path"},
+		"dot":           {"paths = [\"./a/\"]\ncommand = [\"x\"]", "must be a clean path"},
+		"root":          {"paths = [\"/\"]\ncommand = [\"x\"]", "must not be empty"},
+		"no paths":      {"paths = []\ncommand = [\"x\"]", "paths must name at least one directory prefix"},
+		"empty command": {"paths = [\"a/\"]\ncommand = []", "merge.regenerate[0]: command must be a non-empty argv"},
+		"blank argv0":   {"paths = [\"a/\"]\ncommand = [\"\"]", "command must be a non-empty argv"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			data := strings.Replace(director(t), "[repository.merge.requires]\n", "[[repository.merge.regenerate]]\n"+c.entry+"\n\n[repository.merge.requires]\n", 1)
+			_, err := Parse([]byte(data))
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("error %v does not mention %q", err, c.want)
+			}
+		})
+	}
+}
+
+// TestRegenerateFor: ok only when entries exist and every path lies under one; the matched entries come in declared
+// order, once each.
+func TestRegenerateFor(t *testing.T) {
+	skills := Regenerate{Paths: []string{"skills/testdata/digests/"}, Command: []string{"skills"}}
+	baseline := Regenerate{Paths: []string{"baseline/testdata/digests/", "baseline/more/"}, Command: []string{"baseline"}}
+	m := MergeOptions{Regenerate: []Regenerate{skills, baseline}}
+	for name, c := range map[string]struct {
+		m     MergeOptions
+		paths []string
+		want  []Regenerate
+		ok    bool
+	}{
+		"all under one":  {m, []string{"skills/testdata/digests/a.sha256", "skills/testdata/digests/b.sha256"}, []Regenerate{skills}, true},
+		"declared order": {m, []string{"baseline/more/x", "skills/testdata/digests/a.sha256", "baseline/testdata/digests/r.sha256"}, []Regenerate{skills, baseline}, true},
+		"mixed":          {m, []string{"skills/testdata/digests/a.sha256", "a.go"}, nil, false},
+		"prefix not dir": {m, []string{"skills/testdata/digestsx/a"}, nil, false},
+		"no entries":     {MergeOptions{}, []string{"skills/testdata/digests/a.sha256"}, nil, false},
+		"no paths":       {m, nil, nil, false},
+	} {
+		got, ok := c.m.RegenerateFor(c.paths)
+		if ok != c.ok || !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s: RegenerateFor = %+v, %v; want %+v, %v", name, got, ok, c.want, c.ok)
+		}
 	}
 }
 

@@ -23,6 +23,9 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "hanging git: not ended at its timeout")
 		os.Exit(1)
 	}
+	if len(os.Args) > 1 && os.Args[1] == regenerateHelper {
+		os.Exit(regenerate(os.Args[2:]))
+	}
 	os.Exit(m.Run())
 }
 

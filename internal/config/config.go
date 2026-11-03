@@ -13,6 +13,7 @@ import (
 	"maps"
 	"net/url"
 	"path"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -55,6 +56,66 @@ type MergeOptions struct {
 	// lines. Read them through MinorFiles and MinorLines.
 	MinorConflictFiles *int `toml:"minor_conflict_files" json:"minor_conflict_files,omitempty"`
 	MinorConflictLines *int `toml:"minor_conflict_lines" json:"minor_conflict_lines,omitempty"`
+	// Regenerate declares the repository's generated files and the commands that rewrite them,
+	// [[repository.merge.regenerate]]: a rebase whose only conflicts lie under these paths is resolved by running the
+	// commands, with no model (docs/configuration.md#rebase-settings). Read it through RegenerateFor.
+	Regenerate []Regenerate `toml:"regenerate" json:"regenerate,omitempty"`
+}
+
+// Regenerate is one [[repository.merge.regenerate]] entry: directory prefixes of generated files, each relative,
+// clean and ending in /, and the argv, run with no shell from the worktree root, that rewrites them.
+type Regenerate struct {
+	Paths   []string `toml:"paths" json:"paths"`
+	Command []string `toml:"command" json:"command"`
+}
+
+// Covers reports whether path lies under one of the entry's prefixes.
+func (r Regenerate) Covers(path string) bool {
+	return slices.ContainsFunc(r.Paths, func(prefix string) bool { return strings.HasPrefix(path, prefix) })
+}
+
+// RegenerateFor returns the regenerate entries that cover paths, in declared order and without duplicates. ok is true
+// only when at least one entry is declared, paths is not empty, and every path lies under some entry's prefix.
+func (m MergeOptions) RegenerateFor(paths []string) (cmds []Regenerate, ok bool) {
+	if len(m.Regenerate) == 0 || len(paths) == 0 {
+		return nil, false
+	}
+	used := make([]bool, len(m.Regenerate))
+	for _, p := range paths {
+		hit := false
+		for i, r := range m.Regenerate {
+			if r.Covers(p) {
+				used[i], hit = true, true
+			}
+		}
+		if !hit {
+			return nil, false
+		}
+	}
+	for i, r := range m.Regenerate {
+		if used[i] {
+			cmds = append(cmds, r)
+		}
+	}
+	return cmds, true
+}
+
+// regeneratePathProblem says what is wrong with a regenerate path prefix, or "" when it is relative, clean, free of
+// .. and ends in /.
+func regeneratePathProblem(p string) string {
+	switch trimmed := strings.TrimSuffix(p, "/"); {
+	case p == "" || trimmed == "":
+		return "must not be empty"
+	case !strings.HasSuffix(p, "/"):
+		return "must end in /"
+	case path.IsAbs(p) || filepath.IsAbs(p) || filepath.VolumeName(p) != "" || strings.Contains(p, `\`):
+		return "must be a relative path with / separators"
+	case slices.Contains(strings.Split(trimmed, "/"), ".."):
+		return "must not contain .."
+	case path.Clean(trimmed) != trimmed:
+		return "must be a clean path"
+	}
+	return ""
 }
 
 // RebaseKind is how hard a rebase onto the base tip was (docs/interpreter.md#tiered-rebase), and, as
@@ -862,6 +923,20 @@ func (c *Config) validate() []string {
 		}
 		if p := m.MinorConflictLines; p != nil && *p < 1 {
 			add("%s: merge.minor_conflict_lines must be at least 1", name)
+		}
+		for i, g := range m.Regenerate {
+			where := fmt.Sprintf("%s: merge.regenerate[%d]", name, i)
+			if len(g.Paths) == 0 {
+				add("%s: paths must name at least one directory prefix", where)
+			}
+			for _, p := range g.Paths {
+				if problem := regeneratePathProblem(p); problem != "" {
+					add("%s: path %q %s", where, p, problem)
+				}
+			}
+			if len(g.Command) == 0 || g.Command[0] == "" {
+				add("%s: command must be a non-empty argv", where)
+			}
 		}
 		for _, profile := range slices.Sorted(maps.Keys(r.Profiles)) {
 			where := fmt.Sprintf("%s: profile %q", name, profile)

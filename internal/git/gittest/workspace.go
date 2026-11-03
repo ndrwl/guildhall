@@ -43,6 +43,12 @@ type WorkspaceHarness struct {
 	Commit func(t *testing.T, dir, name string) string
 	// Contains reports whether head is a commit of the repository at repository.
 	Contains func(t *testing.T, repository, head string) bool
+	// Regenerate is the implementation's git.Program.Regenerate.
+	Regenerate func(ctx context.Context, g git.Regeneration) (git.Regenerated, error)
+	// ArrangeRegeneration, given a workspace Ensure made, makes a marked replay in its repository whose only conflict,
+	// with markers, is the file golden, and returns two regenerations of it in a scratch directory that does not
+	// exist yet: rewrite, whose commands rewrite golden alone, and fail, whose command fails.
+	ArrangeRegeneration func(t *testing.T, w git.Workspace) (rewrite, fail git.Regeneration, golden string)
 }
 
 // RunWorkspaceContract runs the workspace contract (git.Program.Ensure, FastForward and Retire) against harnesses from newHarness.
@@ -405,6 +411,49 @@ func RunWorkspaceContract(t *testing.T, newHarness func(t *testing.T) WorkspaceH
 		h.Commit(t, r.Dir, "later.txt")
 		kept(t, h, r)
 	})
+	t.Run("regenerates a conflicting golden in a scratch worktree", func(t *testing.T) {
+		h := newHarness(t)
+		w, _ := h.Arrange(t)
+		ensure(t, h, w)
+		tip := h.Head(t, w.Dir)
+		rewrite, fail, golden := h.ArrangeRegeneration(t, w)
+		unmoved := func(t *testing.T, g git.Regeneration) {
+			t.Helper()
+			if _, err := os.Stat(g.Dir); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("the scratch worktree %s is left behind: %v", g.Dir, err)
+			}
+			if got := h.Head(t, w.Dir); got != tip {
+				t.Errorf("the task's worktree moved to %s, want %s", got, tip)
+			}
+			if got, err := h.Tip(ctx, w.Repository, w.Branch); err != nil || got != tip {
+				t.Errorf("the task branch is at %s, %v; want it unmoved at %s", got, err, tip)
+			}
+		}
+		got, err := h.Regenerate(ctx, rewrite)
+		if err != nil || got.Failed != "" || got.Commit == "" {
+			t.Fatalf("Regenerate = %+v, %v; want a commit", got, err)
+		}
+		if !slices.Equal(got.Changed, []string{golden}) {
+			t.Errorf("Changed = %q, want only %s", got.Changed, golden)
+		}
+		if !h.Contains(t, w.Repository, got.Commit) {
+			t.Errorf("regenerated commit %s is not a commit of the repository", got.Commit)
+		}
+		if ok, err := h.IsAncestor(ctx, w.Repository, rewrite.Marked, got.Commit); err != nil || !ok {
+			t.Errorf("regenerated commit %s is not on the marked commit %s: %v, %v", got.Commit, rewrite.Marked, ok, err)
+		}
+		unmoved(t, rewrite)
+		failed, err := h.Regenerate(ctx, fail)
+		if err != nil || failed.Failed == "" || failed.Commit != "" {
+			t.Fatalf("Regenerate with a failing command = %+v, %v; want Failed and no commit", failed, err)
+		}
+		unmoved(t, fail)
+		ended, cancel := context.WithCancel(ctx)
+		cancel()
+		if _, err := h.Regenerate(ended, rewrite); err == nil {
+			t.Error("Regenerate with an ended context succeeded")
+		}
+	})
 	t.Run("refuses an invalid retirement or a plain directory", func(t *testing.T) {
 		h := newHarness(t)
 		w, base := h.Arrange(t)
@@ -456,6 +505,8 @@ type Workspaces struct {
 	n        int
 	// replay holds the scripted replays and diffs of Rebase and Diff.
 	replay rebases
+	// regen holds the scripted regenerations of Regenerate.
+	regen regenerations
 }
 
 // tree is one working directory the double created: its repository, branch and the commit it is at.
