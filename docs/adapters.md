@@ -335,6 +335,7 @@ Package `internal/adapter/runtimes` is the one owner of the runtimes Guildhall c
 `launch.Process` passes the engine's adapter name through unchanged, so an unknown name is refused by the `artisan start` process it starts and reported as that process exiting before it owns the attempt, with its log, as every other startup failure is.
 The names are spelled once, as `adapter.FakeName` and `adapter.ClaudeName` in the leaf package every party imports; the lookup is keyed by them and `interp.FakeAdapter` and `interp.ClaudeAdapter` refer to them.
 A new runtime is added to that package and nowhere else; the interpreter's test-binary guard, `interp.CheckAdapter`, stays in the interpreter.
+No Codex runtime exists yet (R1.22): with codex-cli 0.163.0, neither exec-policy rules ([evidence](evidence/codex-exec-policy-2026-11-03.txt)) nor a pre-tool hook ([evidence](evidence/codex-hooks-2026-11-03.txt), VERDICT: NO-GO, because a failing, malformed, missing or timed-out hook lets the command run) can enforce a deny-by-default allow-list.
 
 `guildhall artisan start --adapter fake --task <id> --attempt <id> --prompt <file> --result <file> --workdir <dir> --herdr-session <name> --herdr-workspace <id>` launches one attempt in a new tab of that workspace and waits for its result file.
 

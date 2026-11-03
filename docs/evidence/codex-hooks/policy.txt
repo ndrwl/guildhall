@@ -1,0 +1,6 @@
+# d108 spike policy: exact <argv> or prefix <argv>
+prefix git status
+prefix git log
+exact sh check.sh
+exact cat
+exact sh tamper.sh
