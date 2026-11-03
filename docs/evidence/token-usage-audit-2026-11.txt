@@ -1,0 +1,304 @@
+# token-usage-audit-2026-11 evidence
+
+ran_at: 2026-11-03T20:59:40Z
+store_read_only_held: 61ms
+attempts: 1296 (first start 2026-10-23T20:30:10Z, last start 2026-11-03T20:58:32Z)
+tasks: 171
+
+
+## Profiles in config.toml today (model and effort are inferred from these)
+
+PROFILE             ADAPTER  MODEL            EFFORT
+builder             claude   adapter default  medium
+designer            claude   adapter default  high
+planner             claude   adapter default  medium
+rebaser             claude   adapter default  medium
+researcher          claude   adapter default  medium
+reviewer            claude   adapter default  medium
+(director session)  claude   adapter default  medium
+
+## Totals (all attempts in the store)
+
+attempts 1296; cost known 1134, cost unknown 162; tokens unknown 162
+cost_usd 1414.593350 (measured 0.000000, estimated 1414.593350)
+tokens 2048938584: input 52062, output 13006997, cache_creation 55758326, cache_read 1980121199
+
+## Prices implied by Claude Code's total_cost_usd per attempt ($ per million tokens)
+
+implied input $/MTok at ratio 1 : 5 : 1.25 : 0.1 (5-minute cache writes): p05 3.110  p25 3.527  median 3.813  p75 4.112  p95 22.004
+implied input $/MTok at ratio 1 : 5 : 2 : 0.1 (1-hour cache writes): p05 2.824  p25 3.060  median 3.196  p75 3.361  p95 20.330
+attempts within -20%/+25% of the median rate: 1064 of 1134
+attempts whose cost is over 1.5x what their recorded tokens price at (tokens under-recorded): 66, cost $326.32 (23.1% of Claude cost)
+under-recorded attempts by step: build 46, review 11, hallmark 5, research 4
+price table used below (cost-weighted rate at the 1-hour ratio over attempts that are not under-recorded): input 2.961  output 14.804  cache_creation 5.922  cache_read 0.296
+per-attempt relative residual: p05 -0.8544  median -0.0736  p95 +0.0483  min -0.9935  max +0.2433
+price table on summed tokens: $1109.14; summed cost_usd: $1414.59; gap -305.45 (-21.593%)
+same, without the under-recorded attempts: $1088.28 vs $1088.28 (-0.00%)
+reference ratio 1:5:1.25:0.1 at $5 input on summed tokens: $1663.99 (+17.6% vs cost_usd)
+reference ratio 1:5:1.25:0.1 at $3 input on summed tokens: $998.39 (-29.4% vs cost_usd)
+dollar share by token type (price table): input 0.0%  output 17.4%  cache_creation 29.8%  cache_read 52.9%
+
+## By step (slice suffix removed)
+
+KEY                        ATTEMPTS  COST_UNKNOWN  COST_USD  SHARE  $/ATTEMPT  TOKENS      OUTPUT   CACHE_CREATE  CACHE_READ
+build                      367       18            843.08    59.6%  2.42       1355105852  6697785  22353418      1326029061
+review                     334       2             206.42    14.6%  0.62       258983907   1795629  13464651      243712859
+research                   148       1             193.52    13.7%  1.32       266817475   2178922  10359395      254270686
+plan                       190       5             84.63     6.0%   0.46       70002749    1336704  5660113       63002518
+hallmark                   7         0             27.58     1.9%   3.94       17134004    155757   523020        16454815
+designer                   9         0             20.93     1.5%   2.33       26834469    439464   878976        25515433
+validate-rebase            29        0             11.35     0.8%   0.39       16284096    124562   721127        15437563
+deliver-rebase-review      25        0             9.62      0.7%   0.38       13591156    92986    648280        12849224
+deliver-rebase             17        0             7.75      0.5%   0.46       11463910    80225    495867        10887258
+validate-rebase-review     26        0             6.48      0.5%   0.25       8028226     71427    443479        7512818
+deliver--s2-rebase         4         1             1.33      0.1%   0.44       1899610     12965    88544         1797999
+deliver--s3-rebase-review  2         0             1.08      0.1%   0.54       1688915     11149    66218         1611476
+deliver--s2-rebase-review  2         0             0.50      0.0%   0.25       576329      5636     34785         535872
+deliver--s3-rebase         1         0             0.34      0.0%   0.34       527886      3786     20453         503617
+grill                      135       135           0.00      0.0%   0.00       0           0        0             0
+
+## By profile
+
+KEY          ATTEMPTS  COST_UNKNOWN  COST_USD  SHARE  $/ATTEMPT  TOKENS      OUTPUT   CACHE_CREATE  CACHE_READ
+builder      367       18            843.08    59.6%  2.42       1355105852  6697785  22353418      1326029061
+reviewer     389       2             224.09    15.8%  0.58       282868533   1976827  14657413      266222249
+researcher   155       1             221.09    15.6%  1.44       283951479   2334679  10882415      270725501
+planner      190       5             84.63     6.0%   0.46       70002749    1336704  5660113       63002518
+designer     9         0             20.93     1.5%   2.33       26834469    439464   878976        25515433
+rebaser      51        1             20.77     1.5%   0.42       30175502    221538   1325991       28626437
+unavailable  135       135           0.00      0.0%   0.00       0           0        0             0
+
+## By role
+
+KEY                ATTEMPTS  COST_UNKNOWN  COST_USD  SHARE   $/ATTEMPT  TOKENS      OUTPUT    CACHE_CREATE  CACHE_READ
+roles/artisan.md   1161      27            1414.59   100.0%  1.25       2048938584  13006997  55758326      1980121199
+roles/director.md  135       135           0.00      0.0%    0.00       0           0         0             0
+
+## By runtime (claude-settings.json present = claude; Director stage = director; else the profile's adapter)
+
+KEY       ATTEMPTS  COST_UNKNOWN  COST_USD  SHARE   $/ATTEMPT  TOKENS      OUTPUT    CACHE_CREATE  CACHE_READ
+claude    1161      27            1414.59   100.0%  1.25       2048938584  13006997  55758326      1980121199
+director  135       135           0.00      0.0%    0.00       0           0         0             0
+
+## By inferred model and effort (today's profile)
+
+KEY                       ATTEMPTS  COST_UNKNOWN  COST_USD  SHARE  $/ATTEMPT  TOKENS      OUTPUT    CACHE_CREATE  CACHE_READ
+adapter default / medium  1152      27            1393.67   98.5%  1.24       2022104115  12567533  54879350      1954605766
+adapter default / high    9         0             20.93     1.5%   2.33       26834469    439464    878976        25515433
+director session / -      135       135           0.00      0.0%   0.00       0           0         0             0
+
+## By repository
+
+KEY        ATTEMPTS  COST_UNKNOWN  COST_USD  SHARE   $/ATTEMPT  TOKENS      OUTPUT    CACHE_CREATE  CACHE_READ
+guildhall  1296      162           1414.59   100.0%  1.25       2048938584  13006997  55758326      1980121199
+
+## By outcome
+
+KEY        ATTEMPTS  COST_UNKNOWN  COST_USD  SHARE  $/ATTEMPT  TOKENS      OUTPUT    CACHE_CREATE  CACHE_READ
+succeeded  1214      123           1378.78   97.5%  1.26       1987038822  12605212  53776403      1920607161
+failed     33        6             25.54     1.8%   0.95       50466095    287599    1247991       48928961
+refused    16        0             10.27     0.7%   0.64       11433667    114186    733932        10585077
+running    5         5             0.00      0.0%   0.00       0           0         0             0
+stopped    28        28            0.00      0.0%   0.00       0           0         0             0
+
+## By task state
+
+KEY        ATTEMPTS  COST_UNKNOWN  COST_USD  SHARE  $/ATTEMPT  TOKENS      OUTPUT    CACHE_CREATE  CACHE_READ
+done       1146      121           1263.49   89.3%  1.23       1846089343  11428085  49802994      1784811096
+open       108       26            117.70    8.3%   1.44       158730724   1097804   4410003       153219155
+cancelled  42        15            33.41     2.4%   1.24       44118517    481108    1545329       42090948
+
+## By attempt number
+
+KEY  ATTEMPTS  COST_UNKNOWN  COST_USD  SHARE  $/ATTEMPT  TOKENS      OUTPUT   CACHE_CREATE  CACHE_READ
+1    828       141           1087.13   76.9%  1.58       1502547929  9420276  38462562      1454631817
+2    221       10            149.73    10.6%  0.71       240868488   1758242  8251946       230849848
+4+   139       5             111.30    7.9%   0.83       205559623   1124153  5356354       199072844
+3    108       6             66.43     4.7%   0.65       99962544    704326   3687464       95566690
+
+## By day (UTC start receipt), last 14 days
+
+DAY         ATTEMPTS  UNKNOWN  COST_USD  TOKENS     OUTPUT   CACHE_CREATE  CACHE_READ
+2026-10-21  0         0        0.00      0          0        0             0
+2026-10-22  0         0        0.00      0          0        0             0
+2026-10-23  1         1        0.00      0          0        0             0
+2026-10-24  2         0        1.33      1249487    18487    90931         1140009
+2026-10-25  2         0        2.58      4385129    35298    128464        4221243
+2026-10-26  8         1        3.72      4829547    39745    252548        4537026
+2026-10-27  67        13       70.56     61975755   476331   2557935       58939465
+2026-10-28  147       23       140.29    218638140  1343491  5932515       211356548
+2026-10-29  189       16       231.20    436832480  2368193  9998210       424456359
+2026-10-30  294       31       301.20    451374816  2926530  12979906      435456056
+2026-10-31  375       48       425.33    555660934  3683026  14820390      537143650
+2026-11-01  18        1        15.38     28473265   171394   806458        27494631
+2026-11-02  0         0        0.00      0          0        0             0
+2026-11-03  193       28       223.01    285519031  1944502  8190969       275376212
+before 2026-10-21: 0 attempts, $0.00; without a start receipt: 0
+mean $/day over the last 7 days: 190.92; last 14 days: 101.04
+
+## Cost per attempt (attempts with a known cost)
+
+n 1134  mean 1.247  median 0.586  p90 2.401  p99 10.223  max 25.622
+RANK  ATTEMPT           OUTCOME    COST_USD  TOKENS    OUTPUT  CACHE_CREATE  CACHE_READ
+1     d87/build-1       succeeded  25.62     521827    258     1328          520235
+2     d88/build-1       succeeded  24.63     84394052  195173  497737        83700642
+3     d23/build-5       succeeded  20.10     47122122  147987  399828        46573919
+4     d63/build-1       succeeded  14.82     381188    112     833           380239
+5     d122/build-1      succeeded  14.72     2376721   2344    3991          2370372
+6     d124/build--s2-1  succeeded  13.70     1124231   2388    2533          1119302
+7     d96/build-1       succeeded  13.04     376413    311     923           375175
+8     d127/build--s2-1  succeeded  11.76     949094    1707    1144          946235
+9     d25/build-1       succeeded  11.36     31020453  133286  322191        30564688
+10    d74/build-1       succeeded  10.63     32442205  92001   296703        32053183
+top 10 share of total cost: 11.3%
+
+## Cost per attempt by step: median and p90
+
+STEP                       N    MEDIAN  P90   MAX    MEDIAN_OUTPUT  MEDIAN_CACHE_READ
+build                      349  0.98    7.02  25.62  7153           1104327
+review                     332  0.55    0.97  5.37   5152           664463
+research                   147  1.19    1.80  6.52   14141          1601897
+plan                       185  0.43    0.64  1.50   6891           276441
+hallmark                   7    4.50    5.70  6.25   20181          2708364
+designer                   9    1.93    3.33  4.40   43462          2638251
+validate-rebase            29   0.35    0.58  0.77   3600           492934
+deliver-rebase-review      25   0.28    0.75  0.82   3287           367548
+deliver-rebase             17   0.45    0.62  0.87   4608           598180
+validate-rebase-review     26   0.24    0.29  0.44   2559           272796
+deliver--s2-rebase         3    0.43    0.49  0.51   5058           606493
+deliver--s3-rebase-review  2    0.54    0.74  0.79   5574           805738
+deliver--s2-rebase-review  2    0.25    0.25  0.25   2818           267936
+deliver--s3-rebase         1    0.34    0.34  0.34   3786           503617
+
+## Per task and per delivered slice
+
+tasks: done 130, open 21, cancelled 20
+spend on done tasks $1263.49, open $117.70, cancelled $33.41
+cost per done task: mean 9.72  median 6.93  p90 18.65  max 46.63
+done tasks with a build: 123, slices built 137 (mean 1.11, max 5 per task)
+cost per done task with a build: mean 10.05  median 7.07  p90 19.10; per delivered slice $9.02
+all spend (including open, cancelled and no-build tasks) per delivered slice: $10.33
+
+## Tool calls per attempt by step (workbench.jsonl; attempts that have one)
+
+STEP                    N   MEDIAN_CALLS  P90_CALLS  MEDIAN_RESULT_KB  ERROR_SHARE  MEDIAN_$/CALL
+build                   40  68            174        114               12.7%        0.030
+review                  38  18            28         68                27.8%        0.031
+research                20  29            45         100               13.1%        0.036
+plan                    26  8             12         38                15.0%        0.048
+hallmark                1   171           171        357               7.0%         0.028
+designer                4   53            70         101               21.8%        0.041
+validate-rebase         1   14            14         15                21.4%        0.017
+deliver-rebase-review   4   12            23         26                30.6%        0.020
+deliver-rebase          3   16            23         41                26.8%        0.024
+validate-rebase-review  1   11            11         17                18.2%        0.021
+attempts with a workbench log: 138; tool calls 5446; cost $189.78; mean $/tool call 0.035
+same attempts: mean tool calls 39.5, cache read per tool call 43230 tokens (about the context each API call re-reads), cache creation per attempt 50139, output per attempt 11911
+
+## Cache behaviour by step (measured Claude attempts)
+
+STEP                       N    CACHE_CREATE  CACHE_READ  READ/CREATE  CREATE_SHARE_OF_INPUT  MEDIAN_CREATE  MIN_CREATE
+build                      349  22353418      1326029061  59.3         1.7%                   36230          352
+review                     332  13464651      243712859   18.1         5.2%                   36453          652
+research                   147  10359395      254270686   24.5         3.9%                   68429          1700
+plan                       185  5660113       63002518    11.1         8.2%                   28918          12924
+hallmark                   7    523020        16454815    31.5         3.1%                   96274          18624
+designer                   9    878976        25515433    29.0         3.3%                   79007          65333
+validate-rebase            29   721127        15437563    21.4         4.5%                   21090          15629
+deliver-rebase-review      25   648280        12849224    19.8         4.8%                   19203          14323
+deliver-rebase             17   495867        10887258    22.0         4.4%                   26990          15035
+validate-rebase-review     26   443479        7512818     16.9         5.6%                   16256          13948
+deliver--s2-rebase         3    88544         1797999     20.3         4.7%                   28877          25670
+deliver--s3-rebase-review  2    66218         1611476     24.3         3.9%                   33109          17107
+deliver--s2-rebase-review  2    34785         535872      15.4         6.1%                   17392          16505
+deliver--s3-rebase         1    20453         503617      24.6         3.9%                   20453          20453
+cache creation per attempt: min 352  p05 9299  p10 16230  median 34596  p90 91262
+short attempts (output < 3000 tokens, n=173): cache creation min 352  median 15241; cache read min 48602  median 317222
+fixed-overhead model: every measured Claude attempt (n=1134) pays its fixed context once as cache creation; at 10k / 20k / 30k fixed tokens that is $67.15 / $134.30 / $201.45 over the store at the price table's cache-creation price
+each fixed token is also re-read on every later API call: cache read / cache creation over all Claude attempts = 35.5
+
+## Rendered prompt size by step (prompt/prompt.md; median bytes per section, ~4 bytes per token)
+
+STEP                       N    TOTAL_BYTES  ~TOKENS  (preamble)  Why this is a retry  Role  Stage guide  Repository policies  Inputs  Standards  Skills  Required outputs  Result template  other
+build                      367  4308         1077     337         0                    742   892          341                  357     21         18      783               621              0
+review                     334  7363         1840     394         0                    742   1212         341                  480     21         18      3444              666              0
+research                   148  3423         855      645         0                    742   421          341                  18      21         18      420               664              0
+plan                       190  4273         1068     621         0                    742   664          341                  362     21         18      418               659              0
+hallmark                   7    4220         1055     172         0                    742   776          341                  374     21         203     422               666              503
+designer                   9    5001         1250     1060        0                    742   628          341                  619     21         18      422               666              0
+validate-rebase            29   5029         1257     706         0                    742   1051         341                  370     21         18      1102              674              0
+deliver-rebase-review      25   7487         1871     518         0                    742   1212         341                  509     21         18      3444              682              0
+deliver-rebase             17   5026         1256     705         0                    742   1051         341                  371     21         18      1103              674              0
+validate-rebase-review     26   7580         1895     610         0                    742   1212         341                  508     21         18      3444              682              0
+deliver--s2-rebase         4    5860         1465     1528        0                    742   1051         341                  375     21         18      1106              678              0
+deliver--s3-rebase-review  2    8179         2044     1198        0                    742   1212         341                  517     21         18      3444              686              0
+deliver--s2-rebase-review  2    8568         2142     1587        0                    742   1212         341                  517     21         18      3444              686              0
+deliver--s3-rebase         1    5468         1367     1136        0                    742   1051         341                  375     21         18      1106              678              0
+grill                      135  6397         1599     432         0                    3733  879          341                  18      21         326     0                 0                0
+attempts whose manifest lists standards: 0; prompts with a retry section: 53
+
+## Wasted spend
+
+CATEGORY                                             ATTEMPTS  COST_UNKNOWN  COST_USD  SHARE
+A refused at intake                                  16        0             10.27     0.7%
+A failed                                             33        6             25.54     1.8%
+A stopped                                            28        28            0.00      0.0%
+B succeeded, then the step ran again                 402       3             706.88    50.0%
+C rerun after a failed, stopped or refused attempt   66        9             80.29     5.7%
+D rerun after a succeeded attempt (send-back round)  402       12            247.17    17.5%
+E any attempt of a cancelled task                    42        15            33.41     2.4%
+F still running (excluded)                           5         5             0.00      0.0%
+A rows (work thrown away outright, no overlap): $35.81 (2.5% of all spend)
+D by step: build $123.94; review $87.51; plan $19.68; research $0.00; designer $10.42;
+spend on attempt numbers above 1: $327.47 (23.1%)
+intake refusals by step: review 10, plan 6
+
+## How often each loop fires: attempts per (task, slice) for each step
+
+STEP                       INSTANCES  1    2   3   4+  MEAN  EXTRA_ATTEMPT_COST
+build                      156        71   34  19  32  2.35  188.49
+review                     151        70   36  22  23  2.21  93.44
+research                   144        140  4   0   0   1.03  4.70
+plan                       144        115  19  6   4   1.32  24.80
+hallmark                   7          7    0   0   0   1.00  0.00
+designer                   6          4    1   1   0   1.50  10.42
+validate-rebase            23         17   6   0   0   1.26  2.16
+deliver-rebase-review      24         23   1   0   0   1.04  0.77
+deliver-rebase             17         17   0   0   0   1.00  0.00
+validate-rebase-review     20         14   6   0   0   1.30  1.39
+deliver--s2-rebase         3          2    1   0   0   1.33  0.51
+deliver--s3-rebase-review  1          0    1   0   0   2.00  0.79
+deliver--s2-rebase-review  2          2    0   0   0   1.00  0.00
+deliver--s3-rebase         1          1    0   0   0   1.00  0.00
+grill                      129        124  4   1   0   1.05  0.00
+example: d165 plan attempts: plan-1 refused $0.34; plan-2 succeeded $0.20;
+
+## The Director's own session (read from Claude Code transcripts, not measured by Guildhall)
+
+transcript files 39; API messages 6005
+models (API messages): claude-opus-5-5 6005
+DAY         API_CALLS  WAKES  SIDECHAIN_CALLS  INPUT  OUTPUT   CACHE_CREATE  CACHE_READ  CC_1H    EST_USD
+2026-10-21  0          0      0                0      0        0             0           0        0.00
+2026-10-22  0          0      0                0      0        0             0           0        0.00
+2026-10-23  21         3      0                44     4738     41710         1078736     41710    0.64
+2026-10-24  17         6      0                34     6398     35970         866671      35970    0.56
+2026-10-25  42         5      0                84     11480    90303         2336945     90303    1.40
+2026-10-26  102        19     0                206    30700    156312        6707187     156312   3.37
+2026-10-27  445        154    31               1096   172728   551514        56859965    479689   22.66
+2026-10-28  622        179    0                1660   193614   683908        80302670    683908   30.70
+2026-10-29  803        234    0                2090   283131   766164        114584582   766164   42.66
+2026-10-30  1237       376    0                3276   396682   1435780       208334800   1435780  76.07
+2026-10-31  1697       519    0                4490   563348   1494309       263727558   1494309  95.28
+2026-11-01  93         44     0                274    27782    44808         23286628    44808    7.57
+2026-11-02  0          0      0                0      0        0             0           0        0.00
+2026-11-03  926        261    0                2432   279835   671847        123555501   671847   44.71
+ALL         6005              31               15686  1970436  5972625       881641243   5900800  325.62
+estimated $ uses the price table above (an inference: the Director and Artisans run the same default model)
+mean est $/day over the last 7 days: 42.43; last 14 days: 23.26
+per API call: mean est $0.0542; mean cache read 146817; mean cache creation 994; mean output 328
+main-thread API calls by gap since the session's previous call:
+GAP            CALLS  CACHE_CREATE  CACHE_READ  MEAN_CREATE  EST_USD
+< 5m           5758   4559843       846712889   791          306.14
+5m-1h          165    58325         31786296    353          10.27
+>= 1h          13     974537        442447      74964        5.95
+session start  38     308095        1316831     8107         2.26
