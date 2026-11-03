@@ -1,5 +1,7 @@
 // Package atomicfile publishes a file by renaming a complete copy over it and
-// reads one that may be republished at the same instant.
+// reads one that may be republished at the same instant. Rename moves a file
+// or a directory with the same retry, for a rename that may meet a handle
+// another process still holds.
 //
 // A reader sees no file, the whole earlier content or the whole later
 // content, never a torn one. An open or rename that fails for a transient
@@ -16,6 +18,7 @@ package atomicfile
 import (
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -66,6 +69,20 @@ func Read(path string) ([]byte, error) {
 	// The file was opened read-only, so a close error loses nothing.
 	defer func() { _ = f.Close() }()
 	return io.ReadAll(f)
+}
+
+// Rename renames oldpath to newpath, a file or a directory, retrying a
+// transient failure within the same bounds as Write. A missing oldpath is
+// returned at once. It takes no lock.
+func Rename(oldpath, newpath string) error {
+	return renameWith(os.Rename, transient, oldpath, newpath)
+}
+
+// renameWith is Rename with its rename and its transient test supplied.
+func renameWith(op func(string, string) error, isTransient func(error) bool, oldpath, newpath string) error {
+	return retry(func() error { return op(oldpath, newpath) }, func(err error) bool {
+		return !errors.Is(err, fs.ErrNotExist) && isTransient(err)
+	})
 }
 
 // retry runs op until it succeeds, fails for a reason isTransient refuses, or

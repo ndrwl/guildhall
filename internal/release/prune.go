@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/ndrwl/guildhall/internal/atomicfile"
 )
 
 // Keep is how many installed releases, newest install first, prune always keeps; retention is fixed, not a setting
@@ -85,7 +87,7 @@ func (h Home) RemoveLocked(version string) error {
 		return err
 	}
 	gone := filepath.Join(tmp, version)
-	if err := os.Rename(h.ReleaseDir(version), gone); err != nil {
+	if err := atomicfile.Rename(h.ReleaseDir(version), gone); err != nil {
 		_ = os.Remove(tmp)
 		return err
 	}

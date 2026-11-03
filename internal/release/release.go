@@ -429,7 +429,7 @@ func (h Home) install(ctx context.Context, version, from, label, sum string, pro
 	if res, done, err := h.installed(version, sum); done || err != nil {
 		return res, err
 	}
-	if err := os.Rename(tmp, h.ReleaseDir(version)); err != nil {
+	if err := atomicfile.Rename(tmp, h.ReleaseDir(version)); err != nil {
 		return InstallResult{}, err
 	}
 	r, err := h.Check(version)
