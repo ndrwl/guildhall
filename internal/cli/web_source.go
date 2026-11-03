@@ -30,17 +30,115 @@ type webSource struct {
 	c clerkPaths
 }
 
-// Task reads repo/id's page model.
-func (w webSource) Task(repo, id string) (web.Task, error) {
-	busy := func(err error) error {
-		if errors.Is(err, store.ErrLocked) {
-			return web.ErrBusy
-		}
-		return err
-	}
+// Tasks reads the task list's model: every task open or closed in the last 7 days, as Clerk's /guild all lists them,
+// each with its where-it-stands sentence, its group and since when; the open ones in Clerk's order, by priority
+// then id, and the finished ones newest first.
+func (w webSource) Tasks() (web.TaskList, error) {
 	d, err := w.a.clerkReadWait(context.Background(), w.c, webLockWait)
 	if err != nil {
-		return web.Task{}, busy(err)
+		return web.TaskList{}, webBusy(err)
+	}
+	var shown []clerkTask
+	for _, v := range d.tasks {
+		ct := d.byKey[v.Repository+"/"+v.ID]
+		if v.State != store.TaskOpen && (ct.closedAt.IsZero() || d.now.Sub(ct.closedAt) > clerkWindow) {
+			continue
+		}
+		shown = append(shown, ct)
+	}
+	slices.SortStableFunc(shown, func(a, b clerkTask) int {
+		ao, bo := a.view.State == store.TaskOpen, b.view.State == store.TaskOpen
+		switch {
+		case ao && !bo:
+			return -1
+		case !ao && bo:
+			return 1
+		case !ao:
+			return cmp.Or(b.closedAt.Compare(a.closedAt), strings.Compare(a.view.ID, b.view.ID))
+		}
+		return cmp.Or(cmp.Compare(a.view.Priority, b.view.Priority), strings.Compare(a.view.ID, b.view.ID), strings.Compare(a.view.Repository, b.view.Repository))
+	})
+	out := web.TaskList{ReadAt: d.now}
+	for _, ct := range shown {
+		b := webBuilder{d: d, ct: ct, state: w.c.state}
+		if d.resolver != nil {
+			b.def, _ = d.resolver(ct.view.Repository)(ct.view.Workflow)
+		}
+		out.Tasks = append(out.Tasks, b.listed())
+	}
+	return out, nil
+}
+
+// listed is the task's row of the task list. It reads no history: its asks are the status feed's, and its words
+// those of the where-it-stands line.
+func (b webBuilder) listed() web.Listed {
+	v := b.ct.view
+	l := web.Listed{Repository: v.Repository, ID: v.ID, Title: oneLine(v.Title), Stands: b.d.stands(b.ct)}
+	if v.State != store.TaskOpen {
+		at := b.ct.closedAt
+		l.Group, l.Where, l.Since = web.GroupFinished, b.where(nil, "", nil), &at
+		return l
+	}
+	asks := b.asks(nil)
+	l.Where = b.where(asks, b.directorStage(), b.directorWaits())
+	l.Group = b.group(l.Where)
+	for _, a := range asks {
+		if l.Group == web.GroupYou && !a.Deferred && a.OpenedAt != nil && (l.Since == nil || a.OpenedAt.Before(*l.Since)) {
+			l.Since = a.OpenedAt
+		}
+	}
+	if at := b.ct.changedAt; l.Since == nil && !at.IsZero() {
+		l.Since = &at
+	}
+	return l
+}
+
+// group is the task list's group of an open task: waiting for the Guildmaster when its where-it-stands sentence
+// says so; moving while an attempt starts or runs, it waits for a slot, CI or the merge queue; otherwise waiting on
+// something else, such as its dependencies, the Director, a pause or its first start.
+func (b webBuilder) group(w web.Where) web.Group {
+	if w.You {
+		return web.GroupYou
+	}
+	n, ok := b.next()
+	if !ok {
+		return web.GroupOther
+	}
+	switch interp.Wait(n.Wait) {
+	case interp.WaitAttempt, interp.WaitQueued, interp.WaitChecks, interp.WaitMergeQueue:
+		return web.GroupMoving
+	}
+	return web.GroupOther
+}
+
+// directorWaits are the task's needs_me reasons that wait on the Director: all but its decisions and the install
+// item.
+func (b webBuilder) directorWaits() []string {
+	v := b.ct.view
+	var out []string
+	for _, it := range b.d.status.NeedsMe {
+		if it.Repository != v.Repository || it.TaskID != v.ID || it.Kind == decisionKind || it.Kind == installKind {
+			continue
+		}
+		out = append(out, oneLine(it.Reason))
+	}
+	return out
+}
+
+// directorStage is the step of the Director stage the open task waits on, such as grill, "" when it waits on none.
+func (b webBuilder) directorStage() string {
+	if n, ok := b.next(); ok && b.ct.view.State == store.TaskOpen && interp.Wait(n.Wait) == interp.WaitDirectorStage {
+		base, _ := workflow.ParseSliceStep(n.Step)
+		return base
+	}
+	return ""
+}
+
+// Task reads repo/id's page model.
+func (w webSource) Task(repo, id string) (web.Task, error) {
+	d, err := w.a.clerkReadWait(context.Background(), w.c, webLockWait)
+	if err != nil {
+		return web.Task{}, webBusy(err)
 	}
 	ct, ok := d.byKey[repo+"/"+id]
 	if !ok {
@@ -53,7 +151,7 @@ func (w webSource) Task(repo, id string) (web.Task, error) {
 		return web.Task{}, web.ErrNotFound
 	}
 	if err != nil {
-		return web.Task{}, busy(err)
+		return web.Task{}, webBusy(err)
 	}
 	var def *workflow.Definition
 	if d.resolver != nil {
@@ -80,16 +178,8 @@ func (b webBuilder) task() web.Task {
 	t.Related = b.related()
 	t.Documents = b.documents()
 	t.Asks = b.asks(t.Documents)
-	for _, it := range b.d.status.NeedsMe {
-		if it.Repository != v.Repository || it.TaskID != v.ID || it.Kind == decisionKind || it.Kind == installKind {
-			continue
-		}
-		t.DirectorWaits = append(t.DirectorWaits, oneLine(it.Reason))
-	}
-	if n, ok := b.next(); ok && v.State == store.TaskOpen && interp.Wait(n.Wait) == interp.WaitDirectorStage {
-		base, _ := workflow.ParseSliceStep(n.Step)
-		t.DirectorStage = base
-	}
+	t.DirectorWaits = b.directorWaits()
+	t.DirectorStage = b.directorStage()
 	for _, c := range b.tl.Context {
 		t.Context = append(t.Context, web.Quote{Text: c.Text, Author: c.Author, At: c.AddedAt})
 	}

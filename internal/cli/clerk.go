@@ -218,14 +218,15 @@ func clerkResolvers(byRepo func(repo string) func(workflow.Revision) (*workflow.
 }
 
 // clerkTask is one task's facts: its view and status, its latest recorded pull request, whether it merged or is
-// merging, the type of its newest checks message and when it closed.
+// merging, the type of its newest checks message, when it closed and when anything of it was last committed.
 type clerkTask struct {
-	view     taskView
-	status   statusTask
-	pr       *interp.RecordedPullRequest
-	merging  bool
-	checks   string
-	closedAt time.Time
+	view      taskView
+	status    statusTask
+	pr        *interp.RecordedPullRequest
+	merging   bool
+	checks    string
+	closedAt  time.Time
+	changedAt time.Time
 }
 
 func (a *App) clerkRead(ctx context.Context, c clerkPaths) (clerkData, error) {
@@ -299,6 +300,8 @@ func (a *App) clerkReadWait(ctx context.Context, c clerkPaths, wait time.Duratio
 			if !ok {
 				continue
 			}
+			ct.changedAt = r.CommittedAt
+			d.byKey[key] = ct
 			switch r.Operation {
 			case "set-task-state":
 				ct.closedAt = r.CommittedAt

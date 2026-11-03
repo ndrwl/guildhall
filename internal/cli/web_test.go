@@ -3,6 +3,7 @@ package cli
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/config"
+	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/testenv"
 	"github.com/ndrwl/guildhall/internal/web"
@@ -328,6 +330,112 @@ func TestWebSourceStagesSlicesAndRefusals(t *testing.T) {
 	defer func() { webLockWait = old }()
 	if _, err := src.Task("app", "a-grill"); !errors.Is(err, web.ErrBusy) {
 		t.Errorf("held store: %v, want ErrBusy", err)
+	}
+}
+
+// TestWebSourceTaskList: the task list holds every open task and those closed in the last 7 days, as Clerk's
+// /guild all does; each wait and stage lands in its group, with its where-it-stands sentence and since when; the
+// open ones are in Clerk's order and the finished one last; a held store is ErrBusy.
+func TestWebSourceTaskList(t *testing.T) {
+	dir := clerkFixture(t)
+	src := webSourceFor(t, dir)
+	l, err := src.Tasks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !l.ReadAt.Equal(clerkNow) {
+		t.Errorf("read at %v", l.ReadAt)
+	}
+	want := map[string]web.Group{
+		"app/a-approve": web.GroupYou, "app/a-grill": web.GroupYou,
+		"app/a-build": web.GroupMoving, "app/a-q1": web.GroupMoving, "app/a-q2": web.GroupMoving, "app/a-q3": web.GroupMoving,
+		"lib/l-front": web.GroupMoving, "app/a-checks": web.GroupMoving, "app/a-sliced": web.GroupMoving, "app/a-queued": web.GroupMoving,
+		"app/a-deps": web.GroupOther, "app/a-bug": web.GroupOther, "app/a-long": web.GroupOther, "app/a-new": web.GroupOther,
+		"lib/a-new": web.GroupOther, "app/a-odd": web.GroupOther,
+		"app/a-merged2": web.GroupFinished,
+	}
+	var order []string
+	byKey := map[string]web.Listed{}
+	for _, x := range l.Tasks {
+		key := x.Repository + "/" + x.ID
+		order = append(order, key)
+		byKey[key] = x
+		if g, ok := want[key]; !ok || g != x.Group {
+			t.Errorf("%s is in group %q, want %q", key, x.Group, g)
+		}
+		if x.Where.Lead == "" || x.Title == "" || x.Since == nil {
+			t.Errorf("%s has no sentence, title or since: %+v", key, x)
+		}
+	}
+	if len(l.Tasks) != len(want) {
+		t.Errorf("listed %v, want %d tasks", order, len(want))
+	}
+	if _, ok := byKey["app/a-merged9"]; ok {
+		t.Error("a task closed nine days ago is listed")
+	}
+	if wantOrder := []string{"app/a-bug", "app/a-q1", "app/a-build"}; len(order) < 3 || strings.Join(order[:3], " ") != strings.Join(wantOrder, " ") || order[len(order)-1] != "app/a-merged2" {
+		t.Errorf("order = %v", order)
+	}
+	if a := byKey["app/a-approve"]; a.Where.Lead != "Waiting for you on 1 ask:" || a.Where.Rest != "approval of the plan." || !a.Where.You || a.Stands != "waiting for your approval" {
+		t.Errorf("a-approve = %+v", a)
+	}
+	if g := byKey["app/a-grill"]; g.Where.Lead != "Waiting for you in the Director's session:" {
+		t.Errorf("a-grill = %+v", g)
+	}
+	if c := byKey["app/a-checks"]; c.Where.Rest != "CI is running on PR #212." {
+		t.Errorf("a-checks = %+v", c)
+	}
+	if m := byKey["app/a-merged2"]; m.Where.Lead != "Done:" || m.Since == nil || clerkNow.Sub(*m.Since) > 7*24*time.Hour {
+		t.Errorf("a-merged2 = %+v", m)
+	}
+
+	held, err := store.Open(filepath.Join(dir, "director.store"), store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = held.Close() }()
+	old := webLockWait
+	// timing:allow deliberate refusal input: the writer holds the lock for the whole call, so any wait is refused.
+	webLockWait = 10 * time.Millisecond
+	defer func() { webLockWait = old }()
+	if _, err := src.Tasks(); !errors.Is(err, web.ErrBusy) {
+		t.Errorf("held store: %v, want ErrBusy", err)
+	}
+}
+
+// TestWebListGroups pins the task list's group for every wait, a Director stage and an open or deferred ask.
+func TestWebListGroups(t *testing.T) {
+	task := func(wait string) webBuilder {
+		ct := clerkTask{view: taskView{Task: store.Task{Repository: "app", ID: "t1", State: store.TaskOpen}}}
+		if wait != "" {
+			ct.status.Next, _ = json.Marshal(clerkNext{Step: "build", Wait: wait, Attempt: 1})
+		}
+		return webBuilder{d: clerkData{now: clerkNow}, ct: ct}
+	}
+	for _, c := range []struct {
+		wait string
+		want web.Group
+	}{
+		{string(interp.WaitAttempt), web.GroupMoving}, {string(interp.WaitQueued), web.GroupMoving},
+		{string(interp.WaitChecks), web.GroupMoving}, {string(interp.WaitMergeQueue), web.GroupMoving},
+		{string(interp.WaitDecision), web.GroupOther}, {string(interp.WaitDirector), web.GroupOther},
+		{string(interp.WaitPaused), web.GroupOther}, {string(interp.WaitDependencies), web.GroupOther},
+		{string(interp.WaitDone), web.GroupOther}, {"mystery", web.GroupOther}, {"", web.GroupOther},
+	} {
+		b := task(c.wait)
+		if got := b.group(b.where(nil, "", nil)); got != c.want {
+			t.Errorf("wait %q: group %q, want %q", c.wait, got, c.want)
+		}
+	}
+	b := task(string(interp.WaitDirectorStage))
+	if got := b.group(b.where(nil, b.directorStage(), nil)); got != web.GroupYou {
+		t.Errorf("Director stage: group %q, want you", got)
+	}
+	for _, asks := range [][]web.Ask{{{ID: "accept-1", Kind: "approval"}}, {{ID: "deliver-1", Kind: "merge", Deferred: true}}} {
+		b := task(string(interp.WaitMergeQueue))
+		if got := b.group(b.where(asks, "", nil)); got != web.GroupYou {
+			t.Errorf("asks %+v: group %q, want you", asks, got)
+		}
 	}
 }
 

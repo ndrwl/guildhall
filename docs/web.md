@@ -1,6 +1,6 @@
 # Task pages
 
-Each task has a web page: what needs you, the task in your words, where it stands and its story, with every document one tap away.
+A task list shows every task, grouped by who it waits on, and each task has a web page: what needs you, the task in your words, where it stands and its story, with every document one tap away.
 The pages are served privately on your tailnet while a Director session runs, or while you run `guildhall web`; there is no always-on service ([R1.29](requirements.md)).
 They work on a phone as well as a desktop, follow your system's light or dark setting, and run no script.
 
@@ -35,11 +35,26 @@ With no session running, serve the pages by hand from inside the copy, or with `
 guildhall web [--copy <dir>]
 ```
 
+## The task list
+
+Open `http://<address>/`, such as `http://andrew-lap-wsl.tail5da40a.ts.net:4388/`, for every task of the copy, in every repository it serves, grouped by who it waits on:
+
+- **Waiting for you**, marked amber: a task with an open or deferred ask, or a grill the Director runs with you in its session.
+- **Moving**: a task whose step is starting or running, waits for a free slot, or waits for CI or the merge queue; it needs nobody.
+- **Waiting on something else**: a task waiting on its dependencies or the Director, paused, or not started.
+- **Finished in the last 7 days**, folded last: the tasks done or cancelled this week, as Clerk's `/guild all` lists them.
+
+The band counts them, such as "3 tasks wait for you · 5 are moving · 3 wait on something else".
+Each row names the task, linked to its page, its title, its where-it-stands sentence, the same one its page shows, and since when: the oldest open ask's opening for a task waiting for you, the closing for a finished one, and otherwise the last change recorded on the task.
+Open tasks are listed in Clerk's order, by priority then id; finished ones newest first.
+The list has no forms: answer on each task's page.
+Every task page's crumb starts with **All tasks**, a link back to the list.
+
 ## The task page
 
 Open `http://<address>/<repo>/<task>`, such as `http://andrew-lap-wsl.tail5da40a.ts.net:4388/guildhall/d122`; each ask has its own anchor, `#<decision-id>`.
 
-- **The band** names the repository, task, state and related tasks, the title, one sentence on where the task stands, such as "**Waiting for you on 2 asks:** whether to go on after the slice 2 review, and approval of the plan for slice 2.", with the slice, pull request and CI after it in grey, and a stepper with one entry per step of the task's workflow: ✓ finished, ↩ sent back, ▸ running, ? waiting on you, and later steps hollow. A decision's mark comes from its answer's tone in the option table: a positive answer is ✓, a negative one ✗, and a carry-on or neutral answer, such as a merge hold or follow-ups none, shows ✓ with its word; ↩ marks an answer the table does not know for its kind, or an attempt sent back. A multi-PR task shows its current slice's steps.
+- **The band** names the list, the repository, task, state and related tasks, the title, one sentence on where the task stands, such as "**Waiting for you on 2 asks:** whether to go on after the slice 2 review, and approval of the plan for slice 2.", with the slice, pull request and CI after it in grey, and a stepper with one entry per step of the task's workflow: ✓ finished, ↩ sent back, ▸ running, ? waiting on you, and later steps hollow. A decision's mark comes from its answer's tone in the option table: a positive answer is ✓, a negative one ✗, and a carry-on or neutral answer, such as a merge hold or follow-ups none, shows ✓ with its word; ↩ marks an answer the table does not know for its kind, or an attempt sent back. A multi-PR task shows its current slice's steps.
 - **The rail**, on the left, keeps Status (where it stands, step and round, the last attempt, pull request, CI, slices and related tasks, and when the page was read), the Needs you index, the task in your words with what the grill decided, and the documents grouped by kind, newest first.
 - **Now** holds every open ask in full: its kind, id and when it opened, the question, for a plan approval the plan's summary from the spec (goal, size, slices, what changed since the grill and the open questions with their recommendations) or a link to the spec when it has none, what it is about with a link to that document, the open findings for a review loop exit, and one tile per option saying what it does, coloured green when it ends the ask well, red when it stops the work and blue when it carries on. Deferred asks follow, marked deferred. A grill the Director runs with you in its session is shown as such, not as an ask.
 - **The story**, newest first, shows each attempt, decision, slice merge and send-back as a sentence, such as "You approved the plan" or "The review sent the build back (round 1)", with the attempt's own summary, findings, your answers and the Director's feedback quoted, and a folded "Raw events" list of the records it was made from; the six newest show and the rest fold away.
@@ -118,7 +133,7 @@ A document is shown only when its file still matches the sha256 recorded for it;
 
 ## Limits
 
-- No grills on the page, no front page of everything waiting and no browsing of all tasks: these come later. A grill round is still answered in the Director's session.
+- No grills on the page: a grill round is still answered in the Director's session.
 - The conversation is read on the page; you write to it with Send words only on an ask. A box for talk on the current stage, confirming a Director's recommendation in one click, and a bar that shows a new reply without reloading come later.
 - HTTP only, inside the tailnet; no HTTPS.
 - The Steward serves no pages.

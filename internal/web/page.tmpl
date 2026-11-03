@@ -80,7 +80,7 @@ that shows questions or answers draws them through these two, so a change here c
 {{define "task"}}{{template "head" (printf "%s · %s" .T.ID .T.Title)}}<style>{{.Style}}</style></head>
 <body>
 <header class="band">
-<div class="crumb"><span>{{.T.Repository}}</span><span class="sep">/</span><b>{{.T.ID}}</b><span class="sep">·</span><span>{{.T.State}}</span>{{range .Crumbs}}<span class="sep">·</span><span>{{.Label}} <a href="{{.Href}}">{{.Name}}</a></span>{{end}}</div>
+<div class="crumb"><a href="/">All tasks</a><span class="sep">/</span><span>{{.T.Repository}}</span><span class="sep">/</span><b>{{.T.ID}}</b><span class="sep">·</span><span>{{.T.State}}</span>{{range .Crumbs}}<span class="sep">·</span><span>{{.Label}} <a href="{{.Href}}">{{.Name}}</a></span>{{end}}</div>
 <h1>{{.T.Title}}</h1>
 {{template "where" .}}
 {{template "chips" .}}
@@ -136,6 +136,26 @@ that shows questions or answers draws them through these two, so a change here c
 <div class="endback"><a class="backto" href="{{.Base}}">← Back to the task</a></div>
 </aside>
 </div>
+</body></html>
+{{end}}
+
+{{define "row"}}<li class="row{{if .Where.You}} you{{end}}"><a class="tid" href="{{.Href}}">{{.Name}}</a><div class="tb"><p class="tt">{{.Title}}</p>{{if .Where.Lead}}<p class="tw"><b>{{.Where.Lead}}</b>{{if .Where.Rest}} {{.Where.Rest}}{{end}}</p>{{end}}</div>{{if .Since}}<time>{{.Since}}</time>{{end}}</li>{{end}}
+
+{{define "list"}}{{template "head" "All tasks"}}<style>{{.Style}}</style></head>
+<body>
+<header class="band list">
+<div class="crumb"><b>All tasks</b></div>
+<h1>All tasks</h1>
+<p class="ws{{if .You}} you{{end}}"><b>{{if .You}}? {{end}}{{.Count}}</b></p>
+</header>
+<main class="tl">
+{{range .Groups}}<section class="tg {{.Class}}"><h2>{{.Title}} <span class="n{{if eq .Class "you"}} you{{end}}">{{len .Rows}}</span></h2><ul class="rows">{{range .Rows}}{{template "row" .}}{{end}}</ul></section>
+{{end}}
+{{- if .Finished}}<details class="fold tg finished"><summary>Finished in the last 7 days · {{len .Finished}}</summary><ul class="rows">{{range .Finished}}{{template "row" .}}{{end}}</ul></details>
+{{end}}
+{{- if not (or .Groups .Finished)}}<p class="empty">No task is open, and none finished in the last 7 days.</p>{{end}}
+<p class="asof">Read from the store at {{.ReadAt}} · reload for newer</p>
+</main>
 </body></html>
 {{end}}
 
