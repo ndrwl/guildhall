@@ -1,0 +1,164 @@
+d108 build-2, spec section 1 spike: Codex exec-policy limits
+=============================================================
+
+Date: 2026-11-03
+Host: Linux (WSL2 6.18.54.1), zsh
+Codex: `codex --version` -> codex-cli 0.163.0
+Login: `codex login status` -> "Logged in using ChatGPT" (exit 0)
+Workdir: the d108 git worktree (base 8d87c243), with a temporary,
+untracked project rules file at .codex/rules/default.rules. The rules file
+and the test script were removed after the spike.
+
+Common flags on every run:
+  codex exec --json --ephemeral --sandbox workspace-write -C <worktree> \
+    -c sandbox_workspace_write.network_access=false \
+    -c model_reasoning_effort=low "<prompt>" < /dev/null
+
+VERDICT: NO DENY-BY-DEFAULT. The build stops here, as spec section 1 says,
+and the adapter is not written. Open question 1 goes back to the Guildmaster.
+
+
+1. Can a rules file deny by default?  NO
+----------------------------------------
+
+The rules language has three decisions, allow, prompt and forbidden, and
+each one applies only to a command whose prefix matches a listed pattern.
+A command that matches no rule gets no decision from the policy. It falls
+through to the approval policy and the sandbox, and it runs.
+
+`codex execpolicy check` with rules file a.rules:
+
+  prefix_rule(pattern=["git", "status"], decision="allow")
+  prefix_rule(pattern=["sh", "check.sh"], decision="allow")
+
+  $ codex execpolicy check -r a.rules git status
+  {"matchedRules":[{"prefixRuleMatch":{"matchedPrefix":["git","status"],"decision":"allow"}}],"decision":"allow"}
+  $ codex execpolicy check -r a.rules ls
+  {"matchedRules":[]}                      <- no decision at all for an unlisted command
+
+A catch-all rule cannot be written:
+
+  prefix_rule(pattern=["git", "status"], decision="allow")
+  prefix_rule(pattern=[], decision="forbidden")
+
+  $ codex execpolicy check -r b.rules ls
+  Error: failed to parse policy at b.rules
+      error: invalid pattern element: pattern cannot be empty
+
+Real exec runs confirm it. With a.rules loaded as project rules:
+
+  run 1, default approval policy (never):
+    git status --short     exit 0  (allowed rule)
+    sh check.sh            exit 0  (allowed rule)
+    ls docs                exit 0  (NO rule: ran anyway)
+    cat /etc/hostname      exit 0  (NO rule: ran anyway; outside the workdir)
+    head -c 100 <attempt dir>/prompt.md   exit 0  (NO rule: ran; outside the workdir)
+
+  run 2, -c approval_policy="on-request":
+    python3 -c 'print(41+1)'   exit 0, output 42   (NO rule: ran anyway)
+    go version                 exit 0              (NO rule: ran anyway)
+    ls docs, cat /etc/hostname exit 0              (NO rule: ran anyway)
+
+  -c approval_policy="untrusted" is refused by 0.163.0:
+    Error: approval_policy = "untrusted" is no longer supported; remove this setting
+
+So neither approval policy that 0.163.0 accepts turns "no matching rule" into
+a refusal. The only way to approximate deny-by-default would be to enumerate
+every program as `forbidden`, which is not an enforced allow-list.
+
+
+2. Are the rules loaded and enforced at all?  YES, for listed prefixes
+----------------------------------------------------------------------
+
+Run 3 used this project rules file:
+
+  prefix_rule(pattern=["git", "status"], decision="allow")
+  prefix_rule(pattern=["sh", "check.sh"], decision="allow")
+  prefix_rule(pattern=["python3"], decision="forbidden")
+  prefix_rule(pattern=["go"], decision="prompt")
+
+  python3 -c 'print(41+1)'  refused: "Policy rejected commands starting with `python3`"
+  go version                refused: "approval required by policy, but AskForApproval is set to Never"
+  ls docs                   exit 0   (no rule: ran)
+
+The two refused commands produced NO item.started or item.completed event in
+the --json stream. Only the agent's own text reports them (see run 3 below).
+A decoder therefore cannot name a policy denial from the event stream alone.
+
+
+3. Can exact rules such as Bash(sh check.sh) be expressed?  NO
+--------------------------------------------------------------
+
+prefix_rule is the only rule form, and it matches by prefix:
+
+  $ codex execpolicy check -r a.rules sh check.sh extra
+  {"matchedRules":[{"prefixRuleMatch":{"matchedPrefix":["sh","check.sh"],"decision":"allow"}}],"decision":"allow"}
+
+An exact Guildhall rule would be widened to a prefix rule.
+
+
+4. Network and reads outside the workdir
+----------------------------------------
+
+Network is off with sandbox_workspace_write.network_access=false:
+  curl -sS -m 5 https://example.com -o /dev/null
+  -> exit 6, "curl: (6) Could not resolve host: example.com"
+
+Reads outside the workdir are allowed under workspace-write:
+  cat /etc/hostname                    exit 0
+  head -c 100 <attempt dir>/prompt.md  exit 0
+so `guildhall review check` and the copy's store would be readable.
+
+
+5. --json event shapes and usage (0.163.0)
+------------------------------------------
+
+Every shell command is wrapped as `/usr/bin/zsh -lc '<command>'` in the
+command field. A tool item goes item.started (status in_progress,
+exit_code null) and then item.completed (status completed or failed, with
+exit_code and aggregated_output). agent_message appears only as
+item.completed. Usage is on turn.completed:
+
+  {"type":"turn.completed","usage":{"input_tokens":128317,"cached_input_tokens":114944,
+   "cache_write_input_tokens":0,"output_tokens":699,"reasoning_output_tokens":54}}
+
+Note the field cache_write_input_tokens and reasoning_output_tokens, which the
+spec's usage mapping does not mention.
+
+Run 3, complete stream (verbatim; the long ls output is cut with "..."):
+
+{"type":"thread.started","thread_id":"01a1a09c-a5b0-7c40-811d-7afc2d4c145d"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"🟢 I’ll run the three commands in order and report each output and exit code.\n"}}
+{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"/usr/bin/zsh -lc 'ls docs'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"/usr/bin/zsh -lc 'ls docs'","aggregated_output":"adapters.md\narchitecture.md\n...","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"🟢 1. `python3 -c 'print(41+1)'`\n\nOutput: Policy rejected commands starting with `python3`.\nExit code: unavailable; command did not start.\n\n2. `go version`\n\nOutput: `approval required by policy, but AskForApproval is set to Never`\nExit code: unavailable; command did not start.\n\n3. `ls docs`\n\nExit code: `0`\nOutput: ..."}}
+{"type":"turn.completed","usage":{"input_tokens":72065,"cached_input_tokens":60032,"cache_write_input_tokens":0,"output_tokens":327,"reasoning_output_tokens":0}}
+
+A failed command (run 1, network off):
+
+{"type":"item.completed","item":{"id":"item_4","type":"command_execution","command":"/usr/bin/zsh -lc 'curl -sS -m 5 https://example.com -o /dev/null'","aggregated_output":"curl: (6) Could not resolve host: example.com\n","exit_code":6,"status":"failed"}}
+
+
+6. Not pinned by this spike
+---------------------------
+
+- Effort levels (minimal, low, medium, high, xhigh): only `low` was run.
+- How exec chooses which rules file to load. The spike used project rules at
+  <workdir>/.codex/rules/; codex exec has no flag that names a rules file
+  (it has only --ignore-rules).
+- codex-cli 0.163.0 lists a stable `hooks` feature. A pre-tool hook might be
+  able to enforce an allow-list, but that is a different mechanism from the
+  spec's rules file and was not tested.
+
+
+Options for the Guildmaster (spec open question 1)
+--------------------------------------------------
+
+a. Accept sandbox-only limits for Codex review and judge profiles. This is a
+   widening, and it needs an explicit decision.
+b. Run those profiles in the read-only sandbox. Every command would still run
+   with no allow-list, but nothing could write.
+c. Wait for Codex to support deny-by-default.
+d. Re-plan around a different enforcement mechanism, such as a Codex hook,
+   once it has been spiked.
