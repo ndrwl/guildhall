@@ -126,11 +126,18 @@ Restarting the Director's own session is `guildhall director reload`, built as [
 
 ## Lessons
 
-Lessons are recorded the same way in both modes: `guildhall lesson propose` stores a lesson document with its evidence and limits in the Director's store (R1.32).
+Lessons are recorded the same way in both modes: `guildhall lesson propose <file|->` stores a Markdown lesson, with a `# ` title and `## Evidence` and `## Limits` sections, inline in the Director's store (R1.32).
+Its id is `--id`, or `l-` and 12 hex digits of its content's sha256; filing the same lesson again returns the same receipt, and another lesson under the same id is refused.
+A lesson's state is `proposed`, `collected`, `adopted` or `declined`.
+`guildhall lesson list [--json] [--pending]` shows the copy's lessons, `--pending` only those not yet collected, and the JSON form also the copy's queue origin; a pending JSON list is capped at 1 MiB, with `truncated` set when lessons were left for a later list.
+These commands find the copy without configuration admission, as `director mode` does, so they work on a refused copy; they refuse a Steward copy ([store records](store.md#lessons-and-incidents), [commands](contracts/cli.md#lessons-and-incidents)).
 
-- Standalone, the lesson stays local and the Guildmaster decides whether to adopt it into that Director's own config.
+- Standalone, the lesson stays local and the Guildmaster decides whether to adopt it into that Director's own config: `guildhall lesson resolve <id> adopted|declined` records that decision, and is refused once the lesson is `collected`, because from then on the Steward's queue owns it.
 - Managed, the Steward collects proposed lessons over SSH on request, drafts the change and the Guildmaster approves it (R1.32).
   The Director never connects to the Steward, so Director machines still need no access to the private repository (R1.8).
+  Collection is d124's second slice; until it ships, a managed copy's lessons wait in its local queue.
+
+The lesson shape does not read `quality_skill_edits_need_approval`: applying that setting to lessons that edit skill text stays later work ([configuration](configuration.md), [quality](quality.md)).
 
 Lessons are never broadcast from one Director to others.
 
@@ -156,12 +163,15 @@ CI makes no model calls and uses no SSH: the Steward's commands are replaced by 
 | `guildhall director mode` | Prints the mode, Steward label, managed digest and the last revision event. |
 | `guildhall config reload --copy <dir>` | Validates and records the published managed revision; run by the Steward over SSH or by hand. |
 | `guildhall lesson propose <lesson-file\|->` | Records a lesson for local adoption or Steward collection. |
+| `guildhall lesson list\|resolve` | Lists the copy's lessons, or records the Guildmaster's local decision on one not collected. |
+| `guildhall incident file\|observe\|list\|resolve` | Files a [maintenance incident](messaging.md#maintenance-tickets-to-the-steward), links later evidence, lists them, or records the local decision on one not collected. |
 
 | Store record | Contract |
 |---|---|
 | Enrolment event | `enrolled` with the Steward label and managed digest, or `left` with the preserved revision name; ordered by sequence, never changed. |
 | Managed revision event | New and previous digest, source `reload`, `observed-untrusted` or `guildmaster-approved`, and the time; never changed. A rollout authorizes through the `reload` it runs, since the Steward never writes a Director's store. Authorization must be recorded in the receiving store; observation records no authorization. Approval names the alert decision and exact approved digest. |
-| Lesson | A document reference with evidence and limits, and a state `proposed`, `collected`, `adopted` or `declined`. |
+| Lesson | The Markdown body inline, at most 64 KiB, with its title, evidence and limits, the copy's origin, the body's digest, and a state `proposed`, `collected`, `adopted` or `declined`. |
+| Incident | The strict-JSON report inline, never changed, with linked observations, the copy's origin, the report's digest, and a state `open`, `collected`, `accepted`, `deferred` or `declined`. |
 
 ## Conflicts resolved
 

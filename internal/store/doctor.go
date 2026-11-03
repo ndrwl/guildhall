@@ -16,7 +16,11 @@ type Report struct {
 	// DirectorSessions and Wakes count the Director's session and wake records (docs/store.md#director-sessions).
 	DirectorSessions int
 	Wakes            int
-	Repositories     []RepositoryCounts
+	// Lessons, Incidents and IncidentObservations count the copy's local queue (docs/store.md#lessons-and-incidents).
+	Lessons              int
+	Incidents            int
+	IncidentObservations int
+	Repositories         []RepositoryCounts
 	// Problems lists bbolt integrity errors and undecodable records; empty means none were found.
 	Problems []string
 }
@@ -104,6 +108,9 @@ func (s *Store) Doctor() (Report, error) {
 			{bucketManagedRevisions, nil, func() any { return new(ManagedRevision) }},
 			{bucketReleasePins, nil, func() any { return new(ReleasePin) }},
 			{bucketReleasePrunes, nil, func() any { return new(ReleasePruned) }},
+			{bucketLessons, &rep.Lessons, func() any { return new(Lesson) }},
+			{bucketIncidents, &rep.Incidents, func() any { return new(Incident) }},
+			{bucketIncidentObservations, &rep.IncidentObservations, func() any { return new(IncidentObservation) }},
 		} {
 			if b := directorBucket(tx, d.name); b != nil {
 				_ = b.ForEach(func(k, v []byte) error {

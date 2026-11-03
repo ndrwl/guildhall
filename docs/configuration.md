@@ -155,7 +155,7 @@ A copy that sets none of them gets the defaults below, with self-review and refe
 | `quality_skill_edits_need_approval` | `on`, the default for the first cycle, treats an edit to the review, build or spec skill text as a design change that needs the Guildmaster's approval; `off` treats it as any other lesson. |
 
 `quality_self_review` and the size budget are read by the self-review skill and the judge settings by [`quality judge`](quality.md#running-it) ([decision](decisions/quality-rubric.md)); the deprecated `quality_audit_sample` is read by nothing, and the other settings are read by nothing yet.
-The reference-run and skill-edit settings are parsed and validated so a copy can set them now; the reference runner and the lesson-proposal shape that will read them are later work.
+The reference-run and skill-edit settings are parsed and validated so a copy can set them now; the reference runner and applying `quality_skill_edits_need_approval` to lessons are later work: the [lesson](director-modes.md#lessons) that `guildhall lesson propose` files does not read it.
 
 ### Repositories
 

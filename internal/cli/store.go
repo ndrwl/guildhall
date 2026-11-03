@@ -183,6 +183,7 @@ func (a *App) storeDoctor(path string) int {
 	}
 	fmt.Fprintf(&b, "receipts: %d\nworkflow approvals: %d\n", rep.Receipts, rep.WorkflowApprovals)
 	fmt.Fprintf(&b, "director: sessions %d, wakes %d\n", rep.DirectorSessions, rep.Wakes)
+	fmt.Fprintf(&b, "queue: lessons %d, incidents %d, incident observations %d\n", rep.Lessons, rep.Incidents, rep.IncidentObservations)
 	for _, r := range rep.Repositories {
 		fmt.Fprintf(&b, "repository %s: tasks %d, attempts %d, documents %d, pane bindings %d, decisions %d, rulings %d, task contexts %d, task links %d, task overrides %d, task dependencies %d, owners %d (%d starting without containment), messages %d (%d unread), pruned tasks %d\n",
 			r.Repository, r.Tasks, r.Attempts, r.Documents, r.PaneBindings, r.Decisions, r.Rulings, r.TaskContexts, r.TaskLinks, r.TaskOverrides, r.TaskDependencies, r.Owners, r.UncontainedStarting, r.Messages, r.UnreadMessages, r.Pruned)

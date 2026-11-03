@@ -165,6 +165,20 @@ Commands:
                  return a managed copy to standalone, keeping its managed values in [local]
   config reload --copy <dir>
                  authorize a managed copy's published managed.toml, as a Steward rollout runs it over SSH
+  lesson propose [--id <id>] <file|-> --copy <dir>
+                 file a Markdown lesson, a proposed change to shared practice with its evidence and limits
+  lesson list [--json] [--pending] --copy <dir>
+                 print the copy's lessons, or only those not yet collected
+  lesson resolve <id> adopted|declined --copy <dir>
+                 record the Guildmaster's local decision on a lesson not yet collected
+  incident file <file|-> --copy <dir>
+                 file a strict-JSON maintenance incident: a dead end, unexpected state or workaround
+  incident observe <id> <file|-> --copy <dir>
+                 link later evidence to a filed incident, never changing it
+  incident list [--json] [--pending] --copy <dir>
+                 print the copy's incidents, or only those not yet collected
+  incident resolve <id> accepted|deferred|declined --copy <dir>
+                 record the Guildmaster's local decision on an incident not yet collected
   clerk guild|decisions|task|inspect|queue [--all] [<id>] [--copy <dir>]
                  print the Guildmaster's read-only answers behind the Clerk plugin's slash commands;
                  guild takes --all, task and inspect take a task id
@@ -387,6 +401,10 @@ func (a *App) Run(args []string) int {
 		return a.director(rest)
 	case "config":
 		return a.configCmd(rest)
+	case "lesson":
+		return a.lesson(rest)
+	case "incident":
+		return a.incident(rest)
 	case "quality":
 		return a.qualityCmd(rest)
 	case "review":

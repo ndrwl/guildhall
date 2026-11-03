@@ -79,6 +79,7 @@ These are your tools; the store records everything they do.
 - Stopping work: `artisan stop` stops one attempt.
 - Ending a task: `task cancel` ends one task for good, with the Guildmaster's reason.
 - Granting tools: `task grant create` asks for extra allowed tools for one task's step, and `task grant revoke` withdraws them.
+- Recording what you learn: when you hit an engine dead end, an unexpected state or a workaround, even one you resolved, file it with `incident file`, and when shared practice should change, file `lesson propose` with its evidence and limits; filing launches nothing and never holds up the task.
 
 Open a task grant only when the Guildmaster asks for one, never on your own judgement or because an Artisan asked.
 Answer its `grant-<id>` decision `approve` only with the Guildmaster's own words; anything else is `reject`.

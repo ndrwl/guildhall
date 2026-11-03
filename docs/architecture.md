@@ -149,8 +149,8 @@ Each step names who fulfils it: an Artisan, the Guildmaster, the Director or Gui
 The design is [rails, not tracks](decisions/rails-not-tracks.md): workflows and step kinds explain their purpose, the default sequence and bounded loops supply the normal route, and the Director can choose recorded alternatives without weakening delivery invariants.
 The engine must preserve the accepted specification, independent final-code review, required validation, merge authorization under repository policy, and full records and custody regardless of route.
 Guildmaster steps remain durable pauses that spend no model tokens.
-Unexpected waits and refusals must reach the Director with the facts and safe tools; edge cases and workarounds also become maintenance tickets for the Steward's private queue or a standalone Director's local queue.
-The [workflow interpreter](interpreter.md) currently executes a supported ordered subset; general route-changing tools, purpose text and maintenance tickets are follow-up work, not shipped behavior.
+Unexpected waits and refusals must reach the Director with the facts and safe tools; edge cases and workarounds also become maintenance tickets, filed locally with `guildhall incident file` in every copy ([maintenance tickets](messaging.md#maintenance-tickets-to-the-steward)), for the Steward's private queue or a standalone Director's local queue.
+The [workflow interpreter](interpreter.md) currently executes a supported ordered subset; general route-changing tools, purpose text and Steward collection of maintenance tickets are follow-up work, not shipped behavior.
 The [escape-path audit](evidence/rails-not-tracks-audit-2026-10-26.md) identifies the current gaps, including enforcement that still depends on workflow shape.
 The default workflow is shown under [the walkthrough](walkthrough.md#2-give-it-work).
 

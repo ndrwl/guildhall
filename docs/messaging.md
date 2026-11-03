@@ -472,19 +472,28 @@ All are new records in the receiver's or sender's existing store, keyed outside 
 A ticket's decision is a decision of kind `question` with options `accept` and `decline`, and the inbox alert one with options `reopen` and `keep-closed`.
 Decisions are keyed by repository and task today, so both need the decision record's key to admit a ticket or the inbox as its subject; that is the first contract the ticket slice changes.
 
-### Maintenance tickets to the Steward (designed, not built)
+### Maintenance tickets to the Steward
 
 The [rails, not tracks decision](decisions/rails-not-tracks.md) extends the ticket model with Director-filed maintenance incidents: engine dead ends, unexpected states and workarounds, including incidents the Director resolved successfully.
 This is a separate maintenance intake, not a new sender or recipient accepted by today's local inbox or by the Director-to-Director envelope above.
-The existing proposed `ticket file --from-message` form admits only `handoff-offer` and `dependency-notice`; it does not yet file maintenance incidents.
-A follow-up contract must add local incident filing and inspection and Steward collection, rather than overloading `question` or pretending a ticket starts a task.
+The existing proposed `ticket file --from-message` form admits only `handoff-offer` and `dependency-notice`; it does not file maintenance incidents.
+Local filing, listing and triage are built as the `incident` command, named so because `director maintenance` already means note audit and hallmark and `ticket` is the designed Director-messaging command; Steward collection, its schedule and the Steward's triage are d124's second slice.
 
-The incident record needs:
+- `guildhall incident file <file|->` files a strict-JSON report, schema `guildhall.incident/1`, with the fields below, as `open`.
+  Filing the same report again returns the same receipt, and another report under the same id is refused; a report over 64 KiB is refused with its size.
+- `guildhall incident observe <id> <file|->` links later evidence, schema `guildhall.incident-observation/1` with `observed_at`, a `note` and `evidence`, as the incident's next observation; it never overwrites the report.
+  An incident and its observations together hold at most 512 KiB, so it always fits in a pending list; an observation past that is refused with the size, and a new incident that names the old one carries further evidence.
+- `guildhall incident list [--json] [--pending]` shows the local queue, `--pending` only incidents not yet collected, and the JSON form each incident with its observations and the copy's queue origin; a pending JSON list is capped at 1 MiB, with `truncated` set when incidents were left for a later list.
+- `guildhall incident resolve <id> accepted|deferred|declined` records the Guildmaster's local decision; a deferred incident may later be accepted or declined, and a `collected` one is refused, because from then on the Steward's queue owns it.
 
-- a stable originating Director identity and ticket id, repository/task/step/attempt references, or an explicit not-applicable value for a pre-task failure;
-- release and workflow revisions, the observed state and time, exact error, and evidence references with digests;
-- what the Director tried, what it actually did, the workaround if any, and remaining risk;
-- collection state and receipt, plus a link to the Steward's queue item when collected.
+These commands find the copy without configuration admission, so an incident about an untrusted managed digest can still be filed, and they refuse a Steward copy ([store records](store.md#lessons-and-incidents), [commands](contracts/cli.md#lessons-and-incidents)).
+
+The incident record has:
+
+- a stable originating Director identity, the copy's random queue origin, and the ticket `id`; `repository`, `task`, `step` and `attempt` references, each `"n/a"` for a pre-task failure;
+- `release` and `workflow` revisions, the `observed_state` and `observed_at` time, the exact `error`, and `evidence` references, each a `ref` with its `digest`, `sha256:<64 hex>`;
+- what the Director `tried`, what it actually `done`, the `workaround` if any, and the remaining `risk`;
+- collection state and receipt, `collected` with the private-repository commit, plus a link to the Steward's queue item when collected.
 
 Evidence capture must exclude credentials and unrelated private data; large evidence stays referenced rather than copied into a message body.
 The queue is durable locally before any collection, and repeated delivery of the same origin/id returns the same receipt; conflicting content under that identity is refused, while later observations are linked as new evidence rather than overwriting the original.
@@ -500,7 +509,7 @@ The Guildmaster may accept, defer or decline the proposed maintenance work, with
 Filing a ticket launches no Artisan, changes no policy and grants no task or merge approval; it must not block an otherwise safe continuation of the originating task.
 Acceptance leads to separately scoped work under the ordinary task, approval and rollout rules; it does not retroactively approve the originating task or authorize an install.
 This reuses the ordinary ticket principle that a proposal is not a task, but needs a maintenance-specific triage lifecycle and a subject independent of an existing task, as ordinary tickets already require.
-Filing, listing, evidence capture, collection, receipts, private-queue persistence and triage still need to be built and contract-tested, including offline retry and standalone operation.
+Filing, listing, evidence references, local triage and the collected mark are built and contract-tested in standalone and managed copies; collection, private-queue persistence, offline retry and the Steward's triage are d124's second slice.
 Nothing polls or spends model tokens merely because a ticket is queued.
 
 ### Conflicts to resolve

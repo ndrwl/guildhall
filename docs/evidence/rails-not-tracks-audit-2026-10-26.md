@@ -256,7 +256,7 @@ A refusal that protects custody or approvals should remain a refusal, but must i
 2. **Minimum route toolbox:** A02 plus A03/A04/A15, with append-only records, new-attempt instructions, per-task holds and preserved abandonment.
 3. **Evidence recovery and invariant enforcement:** A05–A07/A14/A16–A17/A20–A21/A29, preserving exact subjects and immutable history.
 4. **Operational recovery:** A08/A13/A18–A19/A22–A24/A26–A28, strengthening diagnostics and only then adding supported recovery actions.
-5. **Maintenance capture and collection:** every incident above can produce the evidence-backed local ticket and later private Steward queue entry described in [messaging](../messaging.md#maintenance-tickets-to-the-steward-designed-not-built), without blocking a safe current-task recovery on Steward availability.
+5. **Maintenance capture and collection:** every incident above can produce the evidence-backed local ticket and later private Steward queue entry described in [messaging](../messaging.md#maintenance-tickets-to-the-steward), without blocking a safe current-task recovery on Steward availability.
 
 For each slice, define the behavior and seam first and add executable contract tests for its state transitions, refusal output, duplicate request, partial-write replay and authority boundaries before implementation.
 The four D3 cases are useful acceptance scenarios, but this audit deliberately does not claim new red/green test evidence or complete live recovery coverage.
