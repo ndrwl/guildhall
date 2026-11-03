@@ -20,20 +20,31 @@ import (
 // hallmarkKindType is the step type of a read-only report stage (docs/decisions/report-only-workflows.md).
 const hallmarkKindType = "hallmark"
 
-// hallmarkReadOnly is the start of every refusal of a hallmark result that changed the project.
-const hallmarkReadOnly = "hallmarks must not change the project"
+// readOnly names, by read-only kind, the start of every refusal of its result that changed the project and the
+// kind as the refusal's ending names it: a hallmark (docs/decisions/report-only-workflows.md) and a design round's
+// designer (docs/interpreter.md#design-rounds).
+var readOnly = map[string]struct{ refusal, noun string }{
+	hallmarkKindType: {"hallmarks must not change the project", "a hallmark"},
+	designKindType:   {"designs must not change the project", "a design"},
+}
 
-// preparedName is the document holding the commit the worktree was at when attempt n of hallmark step was launched,
-// <step>-<n>-prepared.
+// readOnlyKind reports whether attempts of step kind kind must leave the project unchanged.
+func readOnlyKind(kind string) bool {
+	_, ok := readOnly[kind]
+	return ok
+}
+
+// preparedName is the document holding the commit the worktree was at when attempt n of a read-only step was
+// launched, <step>-<n>-prepared.
 func preparedName(step string, n int) string {
 	return documentName(place{step: step, round: n, part: "prepared"})
 }
 
-// recordPrepared records, once, the HEAD of the task's worktree as attempt n of hallmark step s is launched, after
-// the task branch was fast-forwarded; a relaunch keeps the first record, so intake compares the result with the
-// commit the attempt started at. Without Workspaces nothing is recorded.
+// recordPrepared records, once, the HEAD of the task's worktree as attempt n of read-only step s, a hallmark or a
+// designer, is launched, after the task branch was fast-forwarded; a relaunch keeps the first record, so intake
+// compares the result with the commit the attempt started at. Without Workspaces nothing is recorded.
 func (r *run) recordPrepared(s workflow.Step, n int) error {
-	if r.e.Workspaces == nil || s.Type != hallmarkKindType {
+	if r.e.Workspaces == nil || !readOnlyKind(s.Type) {
 		return nil
 	}
 	name := preparedName(s.ID, n)
@@ -52,12 +63,14 @@ func (r *run) recordPrepared(s workflow.Step, n int) error {
 	}, data)
 }
 
-// checkReadOnly refuses, as the result's fault, a result of attempt n of hallmark step s that leaves a staged or
-// unstaged tracked change in the worktree, or whose HEAD is not the commit recorded when the attempt was prepared.
-// Untracked files, such as the report and test caches, are allowed. Without Workspaces nothing is checked, and
-// without a prepared record only the tracked changes are. A git failure is an operational error, never a rejection.
+// checkReadOnly refuses, as the result's fault, a result of attempt n of read-only step s, a hallmark or a designer,
+// that leaves a staged or unstaged tracked change in the worktree, or whose HEAD is not the commit recorded when the
+// attempt was prepared; the refusal starts with the kind's message (readOnly). Untracked files, such as the report,
+// the design, its mock-up and test caches, are allowed. Without Workspaces nothing is checked, and without a prepared
+// record only the tracked changes are. A git failure is an operational error, never a rejection.
 func (r *run) checkReadOnly(s workflow.Step, n int) error {
-	if r.e.Workspaces == nil {
+	ro, ok := readOnly[s.Type]
+	if r.e.Workspaces == nil || !ok {
 		return nil
 	}
 	work := r.workPath()
@@ -66,7 +79,7 @@ func (r *run) checkReadOnly(s workflow.Step, n int) error {
 		return err
 	}
 	if len(changes) > 0 {
-		return rejectOutput(fmt.Errorf("%s: uncommitted tracked changes: %q; a hallmark is read-only, so it fails", hallmarkReadOnly, changes))
+		return rejectOutput(fmt.Errorf("%s: uncommitted tracked changes: %q; %s is read-only, so it fails", ro.refusal, changes, ro.noun))
 	}
 	d := r.document(preparedName(s.ID, n))
 	if d == nil {
@@ -82,7 +95,7 @@ func (r *run) checkReadOnly(s workflow.Step, n int) error {
 		return err
 	}
 	if head != prepared {
-		return rejectOutput(fmt.Errorf("%s: HEAD moved from %s, where the attempt was prepared, to %s; a hallmark is read-only, so it fails", hallmarkReadOnly, short(prepared), short(head)))
+		return rejectOutput(fmt.Errorf("%s: HEAD moved from %s, where the attempt was prepared, to %s; %s is read-only, so it fails", ro.refusal, short(prepared), short(head), ro.noun))
 	}
 	return nil
 }

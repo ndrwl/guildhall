@@ -170,9 +170,10 @@ This is one option after a `pr-blocked` or `rebase-stuck` report, when Guildhall
 
 ## `task design`
 
-`guildhall task design --repo <id> --task <id> --brief <file|->` adds a [design round](tasks.md#design-rounds) to a feature task after its grill and before its first build: it feeds `design-requested` with the brief, under the same flags, task lock and admission gates as `task start`, and prints where the task waits.
-The round's designer is an Artisan attempt, so it waits for the task's dependencies, the pause hold and the attempt caps as any attempt does, and prints `{"wait":"attempt","step":"designer","attempt":<k>}` once launched; its design is then asked as the decision `design-<n>`, answered with `decide answer` and fed with `task start --decision design-<n>`.
-A missing or empty brief and bad flags exit 2 before the store is opened; the [refusals](tasks.md#design-rounds), such as a bug task or a started build, exit 1 and record nothing.
+`guildhall task design --repo <id> --task <id> --surface web-page|cli|chat|none --brief <file|->` adds a [design round](tasks.md#design-rounds) to a feature task after its grill and before its first build: it feeds `design-requested` with the brief, its first line `Surface: <surface>` and a blank line before the brief's text, under the same flags, task lock and admission gates as `task start`, and prints where the task waits.
+The surface decides the mock-up the designer writes beside `design.md`: an HTML page in a desktop and a phone frame for `web-page`, the exact sample output in fenced blocks for `cli` and `chat`, and none for `none`.
+The round's designer is an Artisan attempt, so it waits for the task's dependencies, the pause hold and the attempt caps as any attempt does, and prints `{"wait":"attempt","step":"designer","attempt":<k>}` once launched; its design is then asked as the decision `design-<n>`, which the Guildmaster reads, with its mock-up, from the design ask on the task page, answered with `decide answer` and fed with `task start --decision design-<n>`.
+A missing or empty brief, a missing or unknown surface and bad flags exit 2 before the store is opened; the [refusals](tasks.md#design-rounds), such as a bug task or a started build, exit 1 and record nothing.
 
 ## `ci log`
 

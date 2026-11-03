@@ -29,7 +29,7 @@ Every command takes `--store <path>`, an existing store file made by [`guildhall
 - `guildhall task link add|remove --store <path> --repo <id> --document <repo>/<task>/<name> (--text <text> | --file <path>) <task>` links another task's recorded document to a task, or unlinks it, as a [task link](#task-links) and prints its receipt; `add` also takes `--state <dir>`; `guildhall task link list --store <path> --repo <id> <task> --json` prints the task's link records.
 - `guildhall task depends add|remove --store <path> --repo <id> --reason <text> <task> <repo>/<dependency>` adds a dependency to an open task, or removes one, after creation, as described in [changing dependencies](#changing-dependencies), and prints its receipt.
 - `guildhall task override set --store <path> --config <director.toml> --repo <id> --key <key> --value <value> --text <text> <task>` gives a task its own value for a task-scoped setting as a [task override](#task-overrides) and prints its receipt; `unset` removes it and takes no `--config` or `--value`; `guildhall task override list --store <path> --repo <id> <task> --json` prints the task's override records.
-- `guildhall task design --repo <id> --task <id> --brief <file|-> [--copy <dir> | --store <path> --config <file> --state <dir>]` adds a [design round](#design-rounds) to a feature task and advances it, printing where the task waits as [`task start`](running.md#task-start) does; it takes `--task <id>` rather than a positional task.
+- `guildhall task design --repo <id> --task <id> --surface web-page|cli|chat|none --brief <file|-> [--copy <dir> | --store <path> --config <file> --state <dir>]` adds a [design round](#design-rounds) to a feature task and advances it, printing where the task waits as [`task start`](running.md#task-start) does; it takes `--task <id>` rather than a positional task.
 
 For every command but `list`, the positional task id may appear before or after flags.
 `show`, `list`, `timeline`, `files` and `context list` open the store read-only and change nothing.
@@ -451,13 +451,20 @@ A design round asks for a design of a feature task before anyone builds it, for 
 The Director runs one when the Guildmaster, or the Director itself, wants a design before build; whether to run one, and how many, is the Director's call, and there is no cap.
 
 ```
-guildhall task design --repo <id> --task <id> --brief <file|-> [--copy <dir> | --store <path> --config <file> --state <dir>]
+guildhall task design --repo <id> --task <id> --surface web-page|cli|chat|none --brief <file|-> [--copy <dir> | --store <path> --config <file> --state <dir>]
 ```
 
 The brief says what the design must show and why; `-` reads it from standard input, with the same rules as `--detail-file`.
-A missing, unreadable or empty brief, or a bad flag, is a usage error, exit 2, before the store is opened.
-The command records the brief as round `n`'s and advances the task under the task lock and the admission gates, printing where it waits, as `task start` does.
-Running it again with an identical brief is a safe replay that records nothing while the round is open; once the round's decision is answered, the same brief asks for the next round.
+`--surface` names what the change shows the Guildmaster, and so the mock-up the designer writes beside `design.md`:
+
+- `web-page`: `mockup.html`, the real task page, built from its golden rendering with sample data, in a desktop frame 1280px wide and a phone frame 390px wide;
+- `cli` or `chat`: `mockup.md`, the exact sample command-line output or chat reply in fenced code blocks;
+- `none`: no mock-up.
+
+The surface is recorded as the brief's first line, `Surface: <surface>`, then a blank line and the brief, so the brief stays one recorded document.
+A missing, unreadable or empty brief, a missing or unknown surface, or a bad flag, is a usage error, exit 2, before the store is opened.
+The command records the composed brief as round `n`'s and advances the task under the task lock and the admission gates, printing where it waits, as `task start` does.
+Running it again with an identical surface and brief is a safe replay that records nothing while the round is open; once the round's decision is answered, the same request asks for the next round.
 
 It is refused with exit 1, recording nothing:
 
@@ -469,9 +476,12 @@ It is refused with exit 1, recording nothing:
 - for a done or cancelled task.
 
 Each accepted request is one round, whatever its outcome.
-The round's designer Artisan, `designer-<k>`, runs under the shipped `designer` profile at effort `high`, given the brief and the latest grill notes, research notes and spec, and writes a design: the options, mock-ups as text or diagrams, and the trade-offs.
+The round's designer Artisan, `designer-<k>`, runs under the shipped `designer` profile at effort `high`, given the brief and the latest grill notes, research notes and spec, and writes a design, `design.md`: the options, the trade-offs and the written decisions, and the mock-up its brief's surface asks for.
+It changes nothing in the repository: a designer that leaves a tracked change or moves HEAD fails, "designs must not change the project".
+A designer whose result lacks the mock-up, lists another file, or hands in a mock-up that breaks its rules fails too, as any failed designer does, and waits for the Director.
 It waits for the task's [dependencies](#dependencies) and the pause hold, and counts against the attempt caps; a failed designer is retried with `step retry --step designer`, within the same round.
-The design is then asked as the Guildmaster decision `design-<n>`, and `task start --decision design-<n>` moves the task on once it is answered:
+The design is then asked as the Guildmaster decision `design-<n>`, bound to `design.md` and listing the mock-up's digest; the Guildmaster opens the mock-up from the design ask on the [task page](web.md), the only place it is shown.
+`task start --decision design-<n>` moves the task on once it is answered:
 
 - `approved`: plan is given the design; if plan already ran, it runs again with it and its acceptance is asked again on the new spec.
 - `changes_requested`: the grill reopens, handed to the Director with the answer as `feedback`, its notes as `previous` and the design as `reviewed`; once it finishes, the Director may ask for another round.

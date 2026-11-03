@@ -10,6 +10,8 @@ The [required outputs and result template contract](../rendering.md#required-out
 `TreeDigest(files []File) digest.Digest` is shared by skill copying and interpreter preparation verification for the [skill tree digest](../rendering.md#skills).
 It accepts files in any order without modifying the input slice.
 `DecisionOptions()` returns a copy of the option set each Guildmaster question offers, by the step kind that opens it, and `"design"` for a design round's, for the task page's option-meanings table ([`internal/web`](web.md)).
+`BriefSurface` is the one parser of a design brief's first line, `Surface: <surface>` ([design rounds](../interpreter.md#design-rounds)), shared by the request, designer intake and `Prompt`: a brief with no such line reads as `none`, and an unknown surface is an error. `ComposeBrief` writes that line before the Director's text for `task design`, `ParseSurface` checks a flag value and `MockupFile` names a surface's mock-up file.
+For a `design` attempt, `Prompt` names the surface of its `brief` input beside it in the Inputs list and, for `web-page`, `cli` or `chat`, adds an "### Also `mockup.html`" or "### Also `mockup.md`" section after the `design` port and lists the mock-up second in the result template; it adds none for `none`, and refuses a brief naming an unknown surface. `DesignQuestion` lists whatever inputs it is given, so the mock-up's digest appears beside the brief and the design.
 
 ## Tests
 
@@ -21,6 +23,7 @@ The notes section ([D94](../decisions/director-reload-and-notes.md)) replaced th
 `render_test.go`: golden prompts and manifests per Artisan kind and golden questions per Guildmaster kind (`testdata/golden`), CRLF and CR sources against real temporary files, refusals.
 `TestBugPromptsCarryTheirInstructions` renders the shipped `bug` workflow's research, plan, build and review steps and finds each step's instructions in its prompt.
 `TestPromptFencesTheTitle` sees a title holding a backtick run and a `## ` line quoted in a longer `text` fence before the first section, and no title block for an empty title; the golden prompts carry a title, and the manifest goldens changed only in their prompt digests.
+`surface_test.go`: `BriefSurface` over valid, missing and unknown surface lines, CRLF included; the designer prompt for each surface, with the surface beside the brief, the matching "Also" section and result outputs, none for `none` or a pre-surface brief, no surface in other kinds' prompts, an unknown surface refused leaving nothing behind; and `DesignQuestion` listing the mock-up after the design.
 `TestManifestRecordsBaselineRoots` sees each role, guide and standard keep the root its source names.
 `TestTreeDigestIgnoresInputOrder` pins the fixture skill's recorded digest, input-order independence and preservation of the input order.
 The independent oracle remains in `skills/skills_test.go`; interpreter preparation refusal cases remain in `internal/interp/prepare_test.go`.

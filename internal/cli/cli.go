@@ -97,7 +97,7 @@ Commands:
                  give a task its own value for a task-scoped setting, on the Guildmaster's word, remove it and list them
   task start --store <path> --config <file> --state <dir> ...
                  advance a task, launching its next ready stage
-  task design --repo <id> --task <id> --brief <file|-> [--copy <dir> | --store <path> --config <file> --state <dir>]
+  task design --repo <id> --task <id> --surface web-page|cli|chat|none --brief <file|-> [--copy <dir> | --store <path> --config <file> --state <dir>]
                  add a design round to a feature task before its first build, for the Guildmaster to decide on
   task cancel --store <path> --config <file> --state <dir> --reason <text> ...
                  end an open task for good, closing its pull request and voiding its decisions
