@@ -58,11 +58,15 @@ func TestTaskPageFixture(t *testing.T) {
 		// the band: crumbs, title, chips, slice and the stepper's states
 		`<b>d122</b>`, `linked from <a href="/guildhall/d105">d105</a>`, `depends on <a href="/other/d7">other/d7</a>`,
 		`<h1>Guildmaster task page: one web page per task with context, status and answerable decisions</h1>`,
-		`<li class="c-you">? Review · round 2 · waiting on you</li>`, `PR #251</a> open`, `CI <span class="c-ok">✓ passed</span>`,
-		`<span class="sliceof">slice 2 of 2</span>`,
+		// where it stands, then in grey the slice, PR and CI; the phone's chips keep only the PR and CI
+		`<p class="ws you"><b>? Waiting for you on 2 asks:</b> whether to go on after the slice 2 review, and a grant for an attempt.<span class="m">Slice 2 of 2 · PR #251 open · CI passed</span></p>`,
+		`<ul class="chips"><li><a href="https://github.com/ndrwl/guildhall/pull/251">PR #251</a> open</li><li>CI <span class="c-ok">✓ passed</span></li></ul>`,
 		`<li class="ok"><b>Grill</b>3 rounds</li>`, `<li class="you"><b>Review</b>waiting on you</li>`, `<li class="later"><b>Deliver</b>later</li>`,
+		// the stepper names a decision by its words, its record id kept in the title
+		`<li class="ok" title="accept-2 approved"><b>Accept</b>plan approved</li>`,
 		// status
-		`<span class="tag you">? Waiting on you</span> · 2 asks`, `<b>Review · round 2</b> · slice 2 of 2`, `review--s2-2 · succeeded 4 Nov 14:20`,
+		`<dt>Where it stands</dt><dd><span class="tag you">? Waiting for you</span> · 2 asks</dd>`, `<b>Slice 2 review, round 2</b> · slice 2 of 2`,
+		`<dt>Last attempt</dt><dd><span title="review--s2-2">Slice 2 review, attempt 2</span> · finished 4 Nov 14:20</dd>`,
 		`<a href="https://github.com/ndrwl/guildhall/pull/251">#251</a> · open`, `<span class="tag ok">✓ passed</span>`,
 		`1. Serve read-only task and reader pages on the tailnet · merged · <a href="https://github.com/ndrwl/guildhall/pull/247">#247</a>`,
 		`<li class="cur">2. Answer decisions on the task page · current`,
@@ -73,12 +77,13 @@ func TestTaskPageFixture(t *testing.T) {
 		// the task in your words, and the newest grill's decisions
 		`“Perhaps its better if we move things like grills and decisions for me into a web interface”<cite>31 Oct 09:12 · task context · recorded by director</cite>`,
 		`<cite>31 Oct 09:12 · task context</cite>`,
-		`What the grill decided · 3 decisions`, `<strong>Rendering:</strong> goldmark with <code>tables</code>.`, `Read grill-3-notes`,
-		// documents grouped, newest first, older dimmer, linked documents under their task
-		`<li><span class="k">Review</span><a href="/guildhall/d122/doc/review--s2-2-outcome">review--s2-2-outcome</a><span class="d">4 Nov</span></li>`,
-		`<li class="old"><span class="k"></span><a href="/guildhall/d122/doc/review-1-outcome">review-1-outcome</a>`,
-		`<li><span class="k">Grill</span><a href="/guildhall/d122/doc/grill-3-notes">grill-3-notes</a>`,
-		`<li><span class="k">d105</span><a href="/guildhall/d105/doc/design-3-design">design-3-design</a>`,
+		`What the grill decided · 3 decisions`, `<strong>Rendering:</strong> goldmark with <code>tables</code>.`, `Read grill notes, round 3`,
+		// documents grouped, newest first, older dimmer, linked documents under their task, each by its friendly
+		// name with its record name as the title
+		`<li><span class="k">Review</span><a href="/guildhall/d122/doc/review--s2-2-outcome" title="review--s2-2-outcome">Slice 2 review, round 2</a><span class="d">4 Nov</span></li>`,
+		`<li class="old"><span class="k"></span><a href="/guildhall/d122/doc/review-1-outcome" title="review-1-outcome">Review</a>`,
+		`<li><span class="k">Grill</span><a href="/guildhall/d122/doc/grill-3-notes" title="grill-3-notes">Grill notes, round 3</a>`,
+		`<li><span class="k">d105</span><a href="/guildhall/d105/doc/design-3-design" title="design-3-design">d105&#39;s design, round 3</a>`,
 		`Documents <span class="n">12</span>`,
 		// a design ask's HTML mock-up opens from its frame route in a new tab; a Markdown one shows inline
 		`<p class="subj">About <code>`, `<a href="/guildhall/d122/doc/designer-4-design">read designer-4-design</a> · <a href="/guildhall/d122/doc/designer-4-design-2/frame" target="_blank" rel="noopener">Open mock-up</a></p>`,
@@ -98,16 +103,20 @@ func TestTaskPageFixture(t *testing.T) {
 		`<p class="who">Only the Guildmaster's Tailscale login can answer here. Answer in chat or with <code>guildhall decide answer</code>.</p>`,
 		// the story: the key, newest first, states, findings fixed, the void acceptance, slice merge, the fold
 		`<li><span class="dot back">↩&#xFE0E;</span>sent back</li>`, `<li><span class="dot later"></span>later</li>`,
-		`<li class="node later"><div class="nh"><span class="t">Later</span><span class="st">not started</span></div><div class="nb">Publish · Deliver</div></li>`,
-		`<li class="node you"><div class="nh"><span class="t">Grant · grant-1</span><span class="st">waiting on you</span><time>4 Nov 14:31</time></div><div class="links"><a class="flag" href="#grant-1">Answer #grant-1 above ↑</a></div></li>`,
-		`<span class="t">Review · round 2 · slice 2</span><span class="st">changes requested · waiting on you</span><time>4 Nov 13:58–14:20</time>`,
-		`<li class="node ok"><div class="nh"><span class="t">Slice 1 merged</span>`,
-		`<li class="node back"><div class="nh"><span class="t">Review · round 1</span><span class="st">changes requested · sent back to build</span>`,
+		`<li class="node later"><div class="nh"><span class="t">Publish and deliver come next</span><span class="st">not started</span></div></li>`,
+		`<li class="node you"><div class="nh"><span class="t" title="grant-1">An attempt asked for a grant</span><span class="st">waiting on you</span><time>4 Nov 14:31</time></div><div class="links"><a class="flag" href="#grant-1">Answer #grant-1 above ↑</a></div>` +
+			`<details class="fold raw"><summary>Raw events · 1</summary><pre>14:31 decision grant-1 opened · grant</pre></details></li>`,
+		`<span class="t" title="review--s2-2">The slice 2 review asked for changes (round 2)</span><span class="st">changes requested · waiting on you</span><time>4 Nov 13:58–14:20</time>`,
+		"<summary>Raw events · 2</summary><pre>13:58 attempt review--s2-2 started · review\n14:20 attempt review--s2-2 succeeded</pre>",
+		`<li class="node ok"><div class="nh"><span class="t" title="deliver-1-merge">Slice 1 was merged</span>`,
+		`<li class="node back"><div class="nh"><span class="t" title="review-1">The review sent the build back (round 1)</span><span class="st">changes requested · sent back to build</span>`,
 		`<span class="fx">fixed</span>`,
 		`<details class="older"><summary>5 earlier entries · from 31 Oct</summary>`,
-		`<li class="node void"><div class="nh"><span class="t">Approval · accept-1</span><span class="st">void</span>`, `void: superseded: the spec changed`,
+		`<li class="node void"><div class="nh"><span class="t" title="accept-1">An earlier approval of the plan was withdrawn</span><span class="st">void</span>`, `void: superseded: the spec changed`,
+		// an event of no known time shows with none
+		"<pre>16:15 decision accept-1 opened · approval\ndecision accept-1 void · superseded: the spec changed</pre>",
 		`<div class="said">“approve all”<small>answered via the Director or decide answer</small></div>`,
-		`<a class="att" href="/guildhall/d122/doc/plan-1-spec">plan-1-spec</a>`,
+		`<a class="att" href="/guildhall/d122/doc/plan-1-spec" title="plan-1-spec">Spec</a>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("task page lacks %s", want)
@@ -127,7 +136,7 @@ func TestTaskPageFixture(t *testing.T) {
 	if n := strings.Count(shown, `<li class="node`); n != storyShown+1 {
 		t.Errorf("%d nodes before the fold, want the later node and %d", n, storyShown)
 	}
-	if strings.Index(shown, "Grant · grant-1") > strings.Index(shown, "Slice 1 merged") {
+	if strings.Index(shown, "An attempt asked for a grant") > strings.Index(shown, "Slice 1 was merged") {
 		t.Error("the story is not newest first")
 	}
 	if strings.Index(body, `id="grant-1"`) > strings.Index(body, `id="deliver-1"`) {
@@ -165,6 +174,12 @@ func TestTaskPageEscapes(t *testing.T) {
 	task.DirectorWaits = []string{hostile}
 	task.Story[0].Title, task.Story[0].Body = hostile, hostile
 	task.Story[5].Said[0].Text = hostile
+	task.Where.Lead, task.Where.Rest = hostile, hostile
+	task.Steps[3].Raw = `"><script>alert(1)</script>`
+	task.Status.Attempt.Name = hostile
+	task.Documents[0].Label = hostile
+	task.Story[1].Raw = `"><script>alert(1)</script>`
+	task.Story[1].Events = []Event{{Text: hostile}}
 	task.Documents[3].Name = `"><script>alert(1)</script>`
 	task.Status.PR.URL = "javascript:alert(1)"
 	task.Slices.Items[1].PR.URL = "javascript:alert(2)"
@@ -189,7 +204,9 @@ func TestTaskPageEmpty(t *testing.T) {
 		t.Fatalf("status %d", w.Code)
 	}
 	for _, want := range []string{"Nothing needs you on this task.", "No words of yours are recorded on this task.", "No documents yet.",
-		`<span class="st">nothing waits on you</span>`, `<p class="empty">not started.</p>`, "<dt>PR</dt><dd>none</dd>", "no checks recorded"} {
+		`<span class="st">nothing waits on you</span>`, `<p class="empty">Not started.</p>`, "<dt>PR</dt><dd>none</dd>", "no checks recorded",
+		// with no sentence from the Source, the band says Clerk's phrase
+		`<p class="ws"><b>Not started.</b></p>`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("empty page lacks %s", want)
 		}
@@ -342,7 +359,7 @@ func TestGrillFold(t *testing.T) {
 	task.Documents[2].SHA256 = "2c0c5e4a3e1cd2f3e2fb2b0a0c0d4f1ad5a3b1c9e5b2a8b5f7c9d0e1f2a3b4c5"
 	s := New(Options{Source: &fakeSource{tasks: map[string]Task{"guildhall/d122": task}}, Documents: dir, Host: testHost})
 	body := get(t, s, "/guildhall/d122").Body.String()
-	if !strings.Contains(body, `<a class="flink" href="/guildhall/d122/doc/grill-3-notes">What the grill decided · read grill-3-notes</a>`) {
+	if !strings.Contains(body, `<a class="flink" href="/guildhall/d122/doc/grill-3-notes">What the grill decided · read grill notes, round 3</a>`) {
 		t.Error("the grill fold is not a link when the document cannot give its decisions")
 	}
 }

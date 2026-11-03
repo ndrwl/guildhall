@@ -4,11 +4,13 @@
 <title>{{.}}</title>
 {{end}}
 
-{{define "chips"}}<ul class="chips">{{if .Open}}<li class="c-you">? {{if .Status.Step}}{{.Status.Step}} · {{end}}waiting on you</li>{{else if .Status.Step}}<li>{{.Status.Step}}</li>{{end}}{{with .Status.PR}}<li>{{if $.Status.PRHref}}<a href="{{$.Status.PRHref}}">PR #{{.Number}}</a>{{else}}PR #{{.Number}}{{end}} {{if .Merged}}merged{{else}}open{{end}}</li>{{end}}{{if .Status.CI}}<li>CI <span class="c-{{.Status.CIClass}}">{{.Status.CI}}</span></li>{{end}}</ul>{{end}}
+{{define "where"}}{{with .Where}}{{if .Lead}}<p class="ws{{if .You}} you{{end}}"><b>{{if .You}}? {{end}}{{.Lead}}</b>{{if .Rest}} {{.Rest}}{{end}}{{if .Meta}}<span class="m">{{.Meta}}</span>{{end}}</p>{{end}}{{end}}{{end}}
 
-{{define "status"}}<dl class="kv"><dt>State</dt><dd>{{if .Open}}<span class="tag you">? Waiting on you</span> · {{.Open}} {{plural .Open "ask" "asks"}}{{else}}{{.Status.Stands}}{{end}}</dd>
+{{define "chips"}}{{if or .Status.PR .Status.CI}}<ul class="chips">{{with .Status.PR}}<li>{{if $.Status.PRHref}}<a href="{{$.Status.PRHref}}">PR #{{.Number}}</a>{{else}}PR #{{.Number}}{{end}} {{if .Merged}}merged{{else}}open{{end}}</li>{{end}}{{if .Status.CI}}<li>CI <span class="c-{{.Status.CIClass}}">{{.Status.CI}}</span></li>{{end}}</ul>{{end}}{{end}}
+
+{{define "status"}}<dl class="kv"><dt>Where it stands</dt><dd>{{if .Open}}<span class="tag you">? Waiting for you</span> · {{.Open}} {{plural .Open "ask" "asks"}}{{else}}{{.Status.Stands}}{{end}}</dd>
 {{- if .Status.Step}}<dt>Step</dt><dd><b>{{.Status.Step}}</b>{{if .SliceOf}} · {{.SliceOf}}{{end}}</dd>{{end}}
-{{- if .Status.Attempt}}<dt>Attempt</dt><dd>{{.Status.Attempt}}</dd>{{end}}
+{{- if .Status.Attempt}}<dt>Last attempt</dt><dd><span title="{{.Status.AttemptRaw}}">{{.Status.Attempt}}</span> · {{.Status.AttemptWhen}}</dd>{{end}}
 <dt>PR</dt><dd>{{with .Status.PR}}{{if $.Status.PRHref}}<a href="{{$.Status.PRHref}}">#{{.Number}}</a>{{else}}#{{.Number}}{{end}} · {{if .Merged}}merged{{else}}open{{end}}{{else}}none{{end}}</dd>
 <dt>CI</dt><dd>{{if .Status.CI}}<span class="tag {{.Status.CIClass}}">{{.Status.CI}}</span>{{else}}no checks recorded{{end}}</dd>
 {{- if .Status.Slices}}<dt>Slices</dt><dd><ul class="sl">{{range .Status.Slices}}<li{{if .Current}} class="cur"{{end}}>{{.Index}}. {{.Title}} · {{.State}}{{if .PR}} · {{if .PRHref}}<a href="{{.PRHref}}">#{{.PR.Number}}</a>{{else}}#{{.PR.Number}}{{end}}{{end}}</li>{{end}}</ul></dd>{{end}}
@@ -45,20 +47,22 @@
 {{- if .Words}}<p class="yw">Your words, kept</p><textarea rows="3" readonly>{{.Words}}</textarea>{{end}}
 </div>{{end}}
 
-{{define "node"}}<li class="node {{.Class}}"><div class="nh"><span class="t">{{.Title}}</span>{{if .Word}}<span class="st">{{.Word}}</span>{{end}}{{if .Time}}<time>{{.Time}}</time>{{end}}</div>
+{{define "node"}}<li class="node {{.Class}}"><div class="nh"><span class="t"{{if .Raw}} title="{{.Raw}}"{{end}}>{{.Title}}</span>{{if .Word}}<span class="st">{{.Word}}</span>{{end}}{{if .Time}}<time>{{.Time}}</time>{{end}}</div>
 {{- if .Body}}<div class="nb">{{.Body}}</div>{{end}}
 {{- if .Findings}}<ul class="find">{{range .Findings}}<li>{{if .Rule}}<span class="sev">{{.Rule}}</span>{{end}}<span><b>{{.ID}}</b> {{.Summary}}</span>{{if .Fixed}}<span class="fx">fixed</span>{{end}}</li>{{end}}</ul>{{end}}
 {{- range .Said}}<div class="said{{if .Back}} back{{end}}">“{{.Text}}”{{if .Where}}<small>{{.Where}}</small>{{end}}</div>{{end}}
-{{- if or .Docs .Ask}}<div class="links">{{range .Docs}}<a class="att" href="{{.Href}}">{{.Name}}</a>{{end}}{{if .Ask}}<a class="flag" href="#{{.Ask}}">Answer #{{.Ask}} above ↑</a>{{end}}</div>{{end}}</li>{{end}}
+{{- if or .Docs .Ask}}<div class="links">{{range .Docs}}<a class="att" href="{{.Href}}" title="{{.Name}}">{{.Label}}</a>{{end}}{{if .Ask}}<a class="flag" href="#{{.Ask}}">Answer #{{.Ask}} above ↑</a>{{end}}</div>{{end}}
+{{- if .Events}}<details class="fold raw"><summary>Raw events · {{len .Events}}</summary><pre>{{range $i, $e := .Events}}{{if $i}}
+{{end}}{{$e}}{{end}}</pre></details>{{end}}</li>{{end}}
 
 {{define "task"}}{{template "head" (printf "%s · %s" .T.ID .T.Title)}}<style>{{.Style}}</style></head>
 <body>
 <header class="band">
 <div class="crumb"><span>{{.T.Repository}}</span><span class="sep">/</span><b>{{.T.ID}}</b><span class="sep">·</span><span>{{.T.State}}</span>{{range .Crumbs}}<span class="sep">·</span><span>{{.Label}} <a href="{{.Href}}">{{.Name}}</a></span>{{end}}</div>
 <h1>{{.T.Title}}</h1>
+{{template "where" .}}
 {{template "chips" .}}
-{{if .SliceOf}}<span class="sliceof">{{.SliceOf}}</span>{{end}}
-<ol class="steps">{{range .Steps}}<li class="{{.State}}"><b>{{.Name}}</b>{{.Note}}</li>{{end}}</ol>
+<ol class="steps">{{range .Steps}}<li class="{{.State}}"{{if .Raw}} title="{{.Raw}}"{{end}}><b>{{.Name}}</b>{{.Note}}</li>{{end}}</ol>
 </header>
 <div class="c2-body">
 <aside class="c2-rail">
@@ -70,13 +74,13 @@
 {{range .Context}}<blockquote class="w">“{{.Text}}”<cite>{{.Cite}}</cite></blockquote>{{else}}<p class="empty">No words of yours are recorded on this task.</p>{{end}}
 {{with .Grill}}{{if .HTML}}<details class="fold"><summary>What the grill decided · {{.Count}} {{plural .Count "decision" "decisions"}}</summary><div class="grill md">{{.HTML}}</div><a class="flink" href="{{.Href}}">Read {{.Name}}</a></details>{{else}}<a class="flink" href="{{.Href}}">What the grill decided · read {{.Name}}</a>{{end}}{{end}}
 </section>
-<section class="r-docs"><h2>Documents <span class="n">{{.DocCount}}</span></h2>{{if .Docs}}<ul class="dix">{{range .Docs}}{{$k := .Kind}}{{range $i, $d := .Docs}}<li{{if $d.Old}} class="old"{{end}}><span class="k">{{if not $i}}{{$k}}{{end}}</span><a href="{{$d.Href}}">{{$d.Name}}</a><span class="d">{{$d.Day}}</span></li>{{end}}{{end}}</ul>{{else}}<p class="empty">No documents yet.</p>{{end}}</section>
+<section class="r-docs"><h2>Documents <span class="n">{{.DocCount}}</span></h2>{{if .Docs}}<ul class="dix">{{range .Docs}}{{$k := .Kind}}{{range $i, $d := .Docs}}<li{{if $d.Old}} class="old"{{end}}><span class="k">{{if not $i}}{{$k}}{{end}}</span><a href="{{$d.Href}}" title="{{$d.Name}}">{{$d.Label}}</a><span class="d">{{$d.Day}}</span></li>{{end}}{{end}}</ul>{{else}}<p class="empty">No documents yet.</p>{{end}}</section>
 </aside>
 <section class="c2-now"><ol class="spine"><li class="node {{if .Open}}you{{else}}ok{{end}}"><div class="nh"><span class="t">Now</span><span class="st">{{if .Open}}waiting on you · {{.Open}} {{plural .Open "ask" "asks"}}{{else}}nothing waits on you{{end}}</span>{{if .Since}}<time>{{.Since}}</time>{{end}}</div>
 {{if .Status.Stage}}<p class="stage">? The Director runs {{.Status.Stage}} with you in its session; answer it there.</p>{{end}}
 {{with .Gone}}{{template "gone" .}}{{end}}
 {{range .Asks}}{{template "ask" .}}{{end}}
-{{if not .Asks}}{{if not .Status.Stage}}<p class="empty">{{.Status.Stands}}.</p>{{end}}{{end}}
+{{if not .Asks}}{{if not .Status.Stage}}<p class="empty">{{.Status.Stands}}</p>{{end}}{{end}}
 </li></ol></section>
 <section class="c2-story"><h2>The story · newest first</h2>
 <ul class="key"><li><span class="dot">✓</span>finished</li><li><span class="dot back">↩&#xFE0E;</span>sent back</li><li><span class="dot run">▸</span>running</li><li><span class="dot you">?</span>waiting on you</li><li><span class="dot later"></span>later</li></ul>

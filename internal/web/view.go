@@ -28,6 +28,7 @@ type taskView struct {
 	Crumbs   []relatedView
 	Steps    []Step
 	SliceOf  string
+	Where    whereView
 	Asks     []askView
 	Open     int
 	Status   statusView
@@ -49,13 +50,29 @@ type relatedView struct {
 	Label, Name, Href string
 }
 
+// whereView is the band's where-it-stands line: the sentence, then in grey the slice, pull request and checks.
+type whereView struct {
+	Lead, Rest, Meta string
+	You              bool
+}
+
+// Sentence is the line's sentence as plain text, for the Status rail and an empty Now.
+func (w whereView) Sentence() string {
+	if w.Rest == "" {
+		return w.Lead
+	}
+	return w.Lead + " " + w.Rest
+}
+
 type statusView struct {
-	Stands, Step, Attempt, CI, CIClass string
-	PR                                 *PullRequest
-	PRHref                             string
-	Slices                             []sliceView
-	Waits                              []string
-	Stage                              string
+	// Attempt is the latest attempt as the page names it, AttemptRaw its record id, shown as its title, and
+	// AttemptWhen its outcome and time, such as "finished 4 Nov 14:20".
+	Stands, Step, Attempt, AttemptRaw, AttemptWhen, CI, CIClass string
+	PR                                                          *PullRequest
+	PRHref                                                      string
+	Slices                                                      []sliceView
+	Waits                                                       []string
+	Stage                                                       string
 }
 
 type sliceView struct {
@@ -123,20 +140,23 @@ type docGroup struct {
 }
 
 type docView struct {
-	Name, Href, Day, Kind string
-	Old                   bool
-	Step                  string
-	Recorded              string
-	SHA                   string
-	RawHref, FrameHref    string
+	// Name is the document's store name and Label the name the task page shows, Name when it has none.
+	Name, Label, Href, Day, Kind string
+	Old                          bool
+	Step                         string
+	Recorded                     string
+	SHA                          string
+	RawHref, FrameHref           string
 }
 
 type nodeView struct {
-	Title, Class, Word, Time, Body string
-	Findings                       []Finding
-	Said                           []Said
-	Docs                           []docView
-	Ask                            string
+	Title, Raw, Class, Word, Time, Body string
+	Findings                            []Finding
+	Said                                []Said
+	Docs                                []docView
+	Ask                                 string
+	// Events are the node's raw records, each "15:04 <record>", for its Raw events fold.
+	Events []string
 }
 
 // readerView is the reader page's model: the task page's, the document, and its content as goldmark HTML, plain
@@ -191,6 +211,8 @@ func (s *Server) taskView(t Task, st pageState) taskView {
 		}
 	}
 	v.Status = s.statusView(t, v.Open)
+	v.Where = whereLine(t, v.Status, v.SliceOf)
+	v.Status.Stands = v.Where.Sentence()
 	for _, q := range t.Context {
 		cite := "task context"
 		if !q.At.IsZero() {
@@ -223,9 +245,40 @@ func (s *Server) taskView(t Task, st pageState) taskView {
 		}
 	}
 	if len(later) > 0 && t.State == "open" {
-		v.Story = append([]nodeView{{Title: "Later", Class: string(StateLater), Word: "not started", Body: strings.Join(later, " · ")}}, v.Story...)
+		title := later[0] + " comes next"
+		if n := len(later); n > 1 {
+			title = strings.ToLower(strings.Join(later[:n-1], ", ") + " and " + later[n-1] + " come next")
+			title = upperFirst(title)
+		}
+		v.Story = append([]nodeView{{Title: title, Class: string(StateLater), Word: "not started"}}, v.Story...)
 	}
 	return v
+}
+
+// whereLine is the band's where-it-stands line: the Source's sentence, or Clerk's phrase when it gives none, then
+// the slice, pull request and checks.
+func whereLine(t Task, st statusView, sliceOf string) whereView {
+	w := whereView{Lead: t.Where.Lead, Rest: t.Where.Rest, You: t.Where.You}
+	if w.Lead == "" && t.Stands != "" {
+		w.Lead = upperFirst(t.Stands) + "."
+	}
+	var meta []string
+	if sliceOf != "" {
+		meta = append(meta, upperFirst(sliceOf))
+	}
+	if pr := st.PR; pr != nil {
+		state := "open"
+		if pr.Merged {
+			state = "merged"
+		}
+		meta = append(meta, "PR #"+strconv.Itoa(pr.Number)+" "+state)
+	}
+	switch t.Status.CI {
+	case CIPassed, CIFailed, CIPending:
+		meta = append(meta, "CI "+t.Status.CI)
+	}
+	w.Meta = strings.Join(meta, " · ")
+	return w
 }
 
 // relatedName names a related task by id, or <repo>/<id> when it is in another repository.
@@ -244,23 +297,29 @@ func (s *Server) statusView(t Task, open int) statusView {
 	if t.Status.Step != "" {
 		st.Step = t.Status.Step
 		if t.Status.Round > 0 {
-			st.Step += " · round " + strconv.Itoa(t.Status.Round)
+			st.Step += ", round " + strconv.Itoa(t.Status.Round)
 		}
 	}
 	if a := t.Status.Attempt; a != nil {
-		st.Attempt = a.Step + "-" + strconv.Itoa(a.Number) + " · "
+		st.AttemptRaw = a.Step + "-" + strconv.Itoa(a.Number)
+		st.Attempt = cmp.Or(a.Name, st.AttemptRaw)
+		var outcome string
 		switch a.Outcome {
 		case "":
-			st.Attempt += "running"
+			outcome = "running"
 			if a.At != nil {
-				st.Attempt += " since " + s.clock(*a.At)
+				outcome += " since " + s.clock(*a.At)
 			}
 		default:
-			st.Attempt += a.Outcome
+			outcome = a.Outcome
+			if a.Outcome == "succeeded" {
+				outcome = "finished"
+			}
 			if a.At != nil {
-				st.Attempt += " " + s.when(*a.At)
+				outcome += " " + s.when(*a.At)
 			}
 		}
+		st.AttemptWhen = outcome
 	}
 	if pr := t.Status.PR; pr != nil {
 		st.PR, st.PRHref = pr, safeURL(pr.URL)
@@ -527,6 +586,22 @@ func KindName(kind string) string {
 	return OptionWord(kind)
 }
 
+// upperFirst is s with its first letter upper-cased.
+func upperFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+// lowerFirst is s with its first letter lower-cased.
+func lowerFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToLower(s[:1]) + s[1:]
+}
+
 // OptionWord is an option as a tile says it: its first letter upper-cased and its - and _ made spaces, so
 // changes_requested is "Changes requested".
 func OptionWord(o string) string {
@@ -554,7 +629,7 @@ func (s *Server) grill(t Task) *grillView {
 	if newest == nil {
 		return nil
 	}
-	g := &grillView{Name: newest.Name, Href: docHref(t.Repository, t.ID, newest.Name)}
+	g := &grillView{Name: lowerFirst(cmp.Or(newest.Label, newest.Name)), Href: docHref(t.Repository, t.ID, newest.Name)}
 	body, status, _ := s.verified(*newest)
 	if status != http.StatusOK {
 		return g
@@ -582,7 +657,7 @@ func compareDocs(a, b Document) int {
 }
 
 func (s *Server) docView(t Task, d Document) docView {
-	v := docView{Name: d.Name, Href: docHref(d.Repository, d.TaskID, d.Name), Kind: d.Kind, SHA: d.SHA256}
+	v := docView{Name: d.Name, Label: cmp.Or(d.Label, d.Name), Href: docHref(d.Repository, d.TaskID, d.Name), Kind: d.Kind, SHA: d.SHA256}
 	v.RawHref, v.FrameHref = v.Href+"/raw", v.Href+"/frame"
 	if d.RecordedAt != nil {
 		v.Day, v.Recorded = s.day(*d.RecordedAt), s.when(*d.RecordedAt)
@@ -656,7 +731,14 @@ func (s *Server) docGroups(t Task) ([]docGroup, int) {
 }
 
 func (s *Server) nodeView(t Task, n Node) nodeView {
-	v := nodeView{Title: n.Title, Class: string(n.State), Word: n.Word, Body: n.Body, Findings: n.Findings, Said: n.Said, Ask: n.Ask}
+	v := nodeView{Title: n.Title, Raw: n.Raw, Class: string(n.State), Word: n.Word, Body: n.Body, Findings: n.Findings, Said: n.Said, Ask: n.Ask}
+	for _, e := range n.Events {
+		line := e.Text
+		if e.At != nil {
+			line = s.clock(*e.At) + " " + line
+		}
+		v.Events = append(v.Events, line)
+	}
 	switch {
 	case n.Start != nil && n.End != nil && !n.End.Equal(*n.Start):
 		if s.day(*n.Start) == s.day(*n.End) {

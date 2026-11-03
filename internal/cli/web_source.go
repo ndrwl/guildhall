@@ -93,6 +93,7 @@ func (b webBuilder) task() web.Task {
 	for _, c := range b.tl.Context {
 		t.Context = append(t.Context, web.Quote{Text: c.Text, Author: c.Author, At: c.AddedAt})
 	}
+	t.Where = b.where(t.Asks, t.DirectorStage, t.DirectorWaits)
 	t.Slices = b.slices()
 	t.Status = b.status()
 	t.Steps = b.steps()
@@ -205,18 +206,29 @@ func (b webBuilder) docKind(name string) (kind, step string, round int) {
 func (b webBuilder) documents() []web.Document {
 	v := b.ct.view
 	var out []web.Document
+	rounds := map[string]int{}
+	for _, d := range b.fl.Documents {
+		if p, ok := interp.RecordPlace(d.Name); ok {
+			rounds[docRoundKey(p)]++
+		}
+	}
 	for _, d := range b.fl.Documents {
 		if recordPlace(d.Name).Part == "inputs" {
 			continue
 		}
 		kind, step, round := b.docKind(d.Name)
-		out = append(out, web.Document{Repository: v.Repository, TaskID: v.ID, Name: d.Name, Path: d.Path, SHA256: d.SHA256, Kind: kind, Step: step, Attempt: round, RecordedAt: d.RecordedAt})
+		out = append(out, web.Document{Repository: v.Repository, TaskID: v.ID, Name: d.Name, Label: b.docLabel(d.Name, rounds), Path: d.Path, SHA256: d.SHA256, Kind: kind, Step: step, Attempt: round, RecordedAt: d.RecordedAt})
 	}
 	for _, l := range b.activeLinks() {
 		s := l.Source
 		at := l.AddedAt
 		_, step, round := b.docKind(s.Name)
-		out = append(out, web.Document{Repository: s.Repository, TaskID: s.TaskID, Name: s.Name, Path: s.Path, SHA256: s.SHA256, Kind: "Linked", Step: step, Attempt: round, RecordedAt: &at})
+		// Another task's document is named by that task and the round it is from, its workflow unread.
+		label := (webBuilder{}).docLabel(s.Name, nil)
+		if label != s.Name {
+			label = s.TaskID + "'s " + lowerFirst(label)
+		}
+		out = append(out, web.Document{Repository: s.Repository, TaskID: s.TaskID, Name: s.Name, Label: label, Path: s.Path, SHA256: s.SHA256, Kind: "Linked", Step: step, Attempt: round, RecordedAt: &at})
 	}
 	return out
 }
@@ -317,7 +329,7 @@ func (b webBuilder) status() web.Status {
 	var st web.Status
 	if n, ok := b.next(); ok && n.Step != "" {
 		base, k := workflow.ParseSliceStep(n.Step)
-		st.Step = webStepName(base)
+		st.Step = placeName(b.stepWordsOf(base).noun, k)
 		for _, at := range b.tl.Attempts {
 			if s, sk := workflow.ParseSliceStep(at.Step); s == base && sk == k {
 				st.Round = max(st.Round, at.Number)
@@ -326,7 +338,7 @@ func (b webBuilder) status() web.Status {
 	}
 	if len(b.tl.Attempts) > 0 {
 		at := b.tl.Attempts[len(b.tl.Attempts)-1]
-		a := &web.Attempt{Step: at.Step, Number: at.Number, Outcome: string(at.Outcome), At: cmp.Or(at.FinishedAt, at.StartedAt)}
+		a := &web.Attempt{Step: at.Step, Name: b.attemptName(at.Step, at.Number), Number: at.Number, Outcome: string(at.Outcome), At: cmp.Or(at.FinishedAt, at.StartedAt)}
 		st.Attempt = a
 	}
 	if pr := b.ct.pr; pr != nil {
@@ -390,13 +402,14 @@ func (b webBuilder) steps() []web.Step {
 			case dec.Void:
 			case dec.Choice != "":
 				// No positive or negative option has a _, so this keeps their words raw as before.
-				st.State, st.Note = web.DecisionState(string(dec.Kind), dec.Choice), dec.ID+" "+strings.ReplaceAll(dec.Choice, "_", " ")
+				word := strings.ReplaceAll(dec.Choice, "_", " ")
+				st.State, st.Note, st.Raw = web.DecisionState(string(dec.Kind), dec.Choice), b.decisionNoun(dec.Decision)+" "+word, dec.ID+" "+word
 			case dec.Answered:
-				st.State, st.Note = web.StateDone, dec.ID+" answered"
+				st.State, st.Note, st.Raw = web.StateDone, b.decisionNoun(dec.Decision)+" answered", dec.ID+" answered"
 			}
 		}
 		if st.State == web.StateYou {
-			st.Note = "waiting on you"
+			st.Note, st.Raw = "waiting on you", ""
 		}
 		out = append(out, st)
 	}
@@ -421,7 +434,7 @@ func (b webBuilder) story(docs []web.Document) []web.Node {
 	var nodes []web.Node
 	if len(b.h.Receipts) > 0 {
 		at := b.h.Receipts[0].CommittedAt
-		n := web.Node{Title: "Task added", State: web.StateDone, Word: "finished", Start: &at}
+		n := web.Node{Title: "You added the task", State: web.StateDone, Word: "finished", Start: &at, Events: []web.Event{{At: &at, Text: "task " + v.ID + " added"}}}
 		if len(b.tl.Context) > 0 {
 			n.Body = "with your words, shown under “The task”"
 		}
@@ -437,11 +450,8 @@ func (b webBuilder) story(docs []web.Document) []web.Node {
 		return out
 	}
 	for i, at := range b.tl.Attempts {
-		base, k := workflow.ParseSliceStep(at.Step)
-		n := web.Node{Title: webStepName(base) + " · round " + strconv.Itoa(at.Number), Start: at.StartedAt, End: at.FinishedAt}
-		if k > 1 {
-			n.Title += " · slice " + strconv.Itoa(k)
-		}
+		id := interp.DecisionID(at.Step, at.Number, false)
+		n := web.Node{Raw: id, Start: at.StartedAt, End: at.FinishedAt, Events: b.attemptEvents(at, id)}
 		switch {
 		case at.IntakeRejection != "":
 			n.State, n.Word, n.Body = web.StateFailed, "refused at intake", oneLine(at.IntakeRejection)
@@ -458,22 +468,27 @@ func (b webBuilder) story(docs []web.Document) []web.Node {
 				n.Body = webCut(oneLine(s), 400)
 			}
 		}
-		prefix := interp.DecisionID(at.Step, at.Number, false) + "-"
+		prefix := id + "-"
 		n.Documents = own(prefix)
+		back, findings := "", false
 		if f := b.findingsOf(prefix); f != nil && len(f.Findings) > 0 {
+			findings = true
 			n.Findings = b.fixed(i, at.Step, f)
-			if back := b.sentBackTo(i); back != "" && at.Outcome == store.AttemptSucceeded {
+			if back = b.sentBackTo(i); back != "" && at.Outcome == store.AttemptSucceeded {
 				n.State, n.Word = web.StateBack, "changes requested · sent back to "+strings.ToLower(webStepName(back))
 			}
 		}
+		n.Title = b.attemptSentence(at, back, findings)
 		if fb := b.feedback(at.Step, at.Number); fb != "" {
+			name := interp.SendBackName(at.Step, at.Number)
 			n.Said = append(n.Said, web.Said{Text: fb, Where: "the Director's feedback, sent back to " + at.Step, Back: true})
-			n.Documents = append(n.Documents, interp.SendBackName(at.Step, at.Number))
+			n.Documents = append(n.Documents, name)
+			n.Events = append(n.Events, web.Event{At: b.recordedAt(name), Text: "document " + name + " recorded"})
 		}
 		nodes = append(nodes, n)
 	}
 	for _, dec := range b.tl.Decisions {
-		n := web.Node{Title: web.KindName(string(dec.Kind)) + " · " + dec.ID, Start: dec.OpenedAt, End: dec.AnsweredAt}
+		n := web.Node{Title: b.decisionSentence(dec), Raw: dec.ID, Start: dec.OpenedAt, End: dec.AnsweredAt, Events: decisionEvents(dec)}
 		switch {
 		case dec.Void:
 			n.State, n.Word = web.StateVoid, "void"
@@ -518,18 +533,24 @@ func (b webBuilder) story(docs []web.Document) []web.Node {
 		if !interp.IsMergeRecord(d.Name) {
 			continue
 		}
-		title := "Merged"
+		title := "The work was merged"
 		if b.ct.status.Slices != nil {
-			title = "Slice " + strconv.Itoa(interp.DocumentSlice(d.Name)) + " merged"
+			title = "Slice " + strconv.Itoa(interp.DocumentSlice(d.Name)) + " was merged"
 		}
-		nodes = append(nodes, web.Node{Title: title, State: web.StateDone, Word: "merged", Start: d.RecordedAt, Documents: []string{d.Name}})
+		nodes = append(nodes, web.Node{Title: title, Raw: d.Name, State: web.StateDone, Word: "merged", Start: d.RecordedAt, Documents: []string{d.Name},
+			Events: []web.Event{{At: d.RecordedAt, Text: "document " + d.Name + " recorded"}}})
 	}
 	if v.State == store.TaskCancelled {
 		at := v.CancelledAt
-		n := web.Node{Title: "Cancelled", State: web.StateFailed, Word: "cancelled", Body: oneLine(v.CancelReason)}
+		n := web.Node{Title: "The task was cancelled", State: web.StateFailed, Word: "cancelled", Body: oneLine(v.CancelReason)}
+		ev := web.Event{Text: "task " + v.ID + " cancelled"}
 		if !at.IsZero() {
-			n.Start = &at
+			n.Start, ev.At = &at, &at
 		}
+		if r := oneLine(v.CancelReason); r != "" {
+			ev.Text += " · " + r
+		}
+		n.Events = []web.Event{ev}
 		nodes = append(nodes, n)
 	}
 	slices.SortStableFunc(nodes, func(x, y web.Node) int { return webNodeTime(x).Compare(webNodeTime(y)) })
@@ -646,4 +667,70 @@ func webCut(s string, n int) string {
 		cut = cut[:len(cut)-1]
 	}
 	return cut + "…"
+}
+
+// attemptEvents are the raw records behind an attempt's story node: its start and its finish or intake refusal.
+func (b webBuilder) attemptEvents(at timedAttempt, id string) []web.Event {
+	started := "attempt " + id + " started"
+	base, _ := workflow.ParseSliceStep(at.Step)
+	if typ := b.stepType(base); typ != "" {
+		started += " · " + typ
+	}
+	out := []web.Event{{At: at.StartedAt, Text: started}}
+	switch {
+	case at.IntakeRejection != "":
+		out = append(out, web.Event{At: at.FinishedAt, Text: "attempt " + id + " refused at intake · " + oneLine(at.IntakeRejection)})
+	case at.Outcome != "":
+		out = append(out, web.Event{At: at.FinishedAt, Text: "attempt " + id + " " + string(at.Outcome)})
+	}
+	return out
+}
+
+// decisionEvents are the raw records behind a decision's story node: its opening, with its kind and subject, and its
+// answer or void.
+func decisionEvents(dec timedDecision) []web.Event {
+	opened := "decision " + dec.ID + " opened"
+	if dec.Kind != "" {
+		opened += " · " + string(dec.Kind)
+	}
+	if s := dec.Subject; s != nil && s.Digest != "" {
+		opened += " · subject " + webShortDigest(s.Digest)
+	}
+	out := []web.Event{{At: dec.OpenedAt, Text: opened}}
+	switch {
+	case dec.Void:
+		text := "decision " + dec.ID + " void"
+		if r := oneLine(dec.VoidReason); r != "" {
+			text += " · " + r
+		}
+		out = append(out, web.Event{Text: text})
+	case dec.Answered:
+		text := "decision " + dec.ID + " answered"
+		if dec.Choice != "" {
+			text += " " + dec.Choice
+		}
+		if dec.AnsweredVia == store.AnsweredViaPage {
+			text += " · on the task page by " + dec.AnsweredBy
+		}
+		out = append(out, web.Event{At: dec.AnsweredAt, Text: text})
+	}
+	return out
+}
+
+// webShortDigest is a digest as a raw event names it: a document digest's first 12 hex, a head's first 7.
+func webShortDigest(d string) string {
+	if hexPart, ok := strings.CutPrefix(d, "sha256:"); ok {
+		return "sha256:" + hexPart[:min(12, len(hexPart))]
+	}
+	return d[:min(7, len(d))]
+}
+
+// recordedAt is when the task's document name was recorded, nil when it holds none or the time is unknown.
+func (b webBuilder) recordedAt(name string) *time.Time {
+	for _, d := range b.fl.Documents {
+		if d.Name == name {
+			return d.RecordedAt
+		}
+	}
+	return nil
 }

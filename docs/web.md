@@ -39,17 +39,21 @@ guildhall web [--copy <dir>]
 
 Open `http://<address>/<repo>/<task>`, such as `http://andrew-lap-wsl.tail5da40a.ts.net:4388/guildhall/d122`; each ask has its own anchor, `#<decision-id>`.
 
-- **The band** names the repository, task, state and related tasks, the title, and a stepper with one entry per step of the task's workflow: ✓ finished, ↩ sent back, ▸ running, ? waiting on you, and later steps hollow. A decision's mark comes from its answer's tone in the option table: a positive answer is ✓, a negative one ✗, and a carry-on or neutral answer, such as a merge hold or follow-ups none, shows ✓ with its word; ↩ marks an answer the table does not know for its kind, or an attempt sent back. A multi-PR task shows its current slice's steps and "slice k of n".
-- **The rail**, on the left, keeps Status (state, step and round, latest attempt, pull request, CI, slices and related tasks, and when the page was read), the Needs you index, the task in your words with what the grill decided, and the documents grouped by kind, newest first.
+- **The band** names the repository, task, state and related tasks, the title, one sentence on where the task stands, such as "**Waiting for you on 2 asks:** whether to go on after the slice 2 review, and approval of the plan for slice 2.", with the slice, pull request and CI after it in grey, and a stepper with one entry per step of the task's workflow: ✓ finished, ↩ sent back, ▸ running, ? waiting on you, and later steps hollow. A decision's mark comes from its answer's tone in the option table: a positive answer is ✓, a negative one ✗, and a carry-on or neutral answer, such as a merge hold or follow-ups none, shows ✓ with its word; ↩ marks an answer the table does not know for its kind, or an attempt sent back. A multi-PR task shows its current slice's steps.
+- **The rail**, on the left, keeps Status (where it stands, step and round, the last attempt, pull request, CI, slices and related tasks, and when the page was read), the Needs you index, the task in your words with what the grill decided, and the documents grouped by kind, newest first.
 - **Now** holds every open ask in full: its kind, id and when it opened, the question, for a plan approval the plan's summary from the spec (goal, size, slices, what changed since the grill and the open questions with their recommendations) or a link to the spec when it has none, what it is about with a link to that document, the open findings for a review loop exit, and one tile per option saying what it does, coloured green when it ends the ask well, red when it stops the work and blue when it carries on. Deferred asks follow, marked deferred. A grill the Director runs with you in its session is shown as such, not as an ask.
-- **The story**, newest first, shows each attempt, decision, slice merge and send-back, with findings, your answers and the Director's feedback quoted; the six newest show and the rest fold away.
+- **The story**, newest first, shows each attempt, decision, slice merge and send-back as a sentence, such as "You approved the plan" or "The review sent the build back (round 1)", with the attempt's own summary, findings, your answers and the Director's feedback quoted, and a folded "Raw events" list of the records it was made from; the six newest show and the rest fold away.
+
+The page names records in words: the stepper says "plan approved" for `accept-2 approved`, Status says "Slice 2 review, attempt 2" for `review--s2-2`, and Documents says "Grill notes, round 3" for `grill-3-notes`.
+Each keeps its record id as its title, shown when you hover over it, and in the story's Raw events, so nothing is lost.
+These words are fixed templates the page fills in; they cost no tokens, and Clerk's own words are unchanged.
 
 Only your open decisions are asks, as in Clerk's `/guild`: an answered decision the Director has not yet continued, a void decision and Guildhall's own install notice are not.
 The pull request and CI are the latest the store holds; the page makes no forge call.
 Nothing updates by itself: the rail says when the page was read, so reload for newer.
 When the Director is writing, a page may say the store is busy; reload in a moment.
 
-On a phone the band carries chips for the step, the pull request and CI, the stepper becomes a thin progress bar, and the asks come first, then the story, then the task, the documents and Status.
+On a phone the band carries the where-it-stands sentence and chips for the pull request and CI, the stepper becomes a thin progress bar, and the asks come first, then the story, then the task, the documents and Status.
 
 ## Answering
 
