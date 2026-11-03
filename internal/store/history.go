@@ -36,6 +36,8 @@ type TaskHistory struct {
 	FullReviews []FullReview
 	// Contexts are the task's context entries, by number.
 	Contexts []TaskContext
+	// Conversation is the task's conversation entries, by number.
+	Conversation []ConversationEntry
 	// Links are the task's link records, by number.
 	Links []TaskLink
 	// Overrides are the task's override records, by number.
@@ -58,7 +60,7 @@ type TaskHistory struct {
 // TaskHistory reads one task's history without writing; it returns ErrNotFound for an unknown task.
 // It scans every receipt in the store, so its cost grows with the store's mutation count.
 func (s *Store) TaskHistory(repository, taskID string) (TaskHistory, error) {
-	h := TaskHistory{Attempts: []StageAttempt{}, Documents: []DocumentRef{}, Decisions: []Decision{}, Rulings: []Ruling{}, FullReviews: []FullReview{}, Contexts: []TaskContext{}, Links: []TaskLink{}, Overrides: []TaskOverride{}, Dependencies: []TaskDependency{}, Receipts: []Receipt{}}
+	h := TaskHistory{Attempts: []StageAttempt{}, Documents: []DocumentRef{}, Decisions: []Decision{}, Rulings: []Ruling{}, FullReviews: []FullReview{}, Contexts: []TaskContext{}, Conversation: []ConversationEntry{}, Links: []TaskLink{}, Overrides: []TaskOverride{}, Dependencies: []TaskDependency{}, Receipts: []Receipt{}}
 	err := s.view(func(tx *bolt.Tx) error {
 		var err error
 		if h.Task, err = getTask(tx, repository, taskID); err != nil {
@@ -81,6 +83,9 @@ func (s *Store) TaskHistory(repository, taskID string) (TaskHistory, error) {
 			return err
 		}
 		if err := scan(repoBucket(tx, repository, bucketTaskContexts), prefix, &h.Contexts); err != nil {
+			return err
+		}
+		if err := scan(repoBucket(tx, repository, bucketConversation), prefix, &h.Conversation); err != nil {
 			return err
 		}
 		if err := scan(repoBucket(tx, repository, bucketTaskLinks), prefix, &h.Links); err != nil {

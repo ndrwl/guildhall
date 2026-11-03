@@ -181,6 +181,8 @@ func openDecisions(s *store.Store, repo string) ([]store.Decision, error) {
 // as any other. via and by are where the answer was given and the login that gave it, both "" for decide answer and
 // store.AnsweredViaPage with the Tailscale login for the task page; the mutation id is the same for both, so an
 // answer is recorded once whichever way it comes, and a retry of the same answer from the same place replays it.
+// An answer given in chat, via "", is also recorded on the task page's conversation as the Guildmaster's words in
+// chat, tagged with the decision, in the same transaction as the answer (docs/web.md#the-conversation).
 func answerDecision(s *store.Store, repo, task, id, answer, via, by string) (store.Receipt, error) {
 	t, err := s.Task(repo, task)
 	if err != nil {
@@ -189,7 +191,11 @@ func answerDecision(s *store.Store, repo, task, id, answer, via, by string) (sto
 	if t.State == store.TaskCancelled {
 		return store.Receipt{}, fmt.Errorf("task %s/%s is cancelled (%s); its decisions are not answered", repo, task, t.CancelReason)
 	}
-	return s.AnswerDecisionVia(mutationID("decision-answer", repo, task, id), repo, task, id, answer, via, by)
+	var say *store.Saying
+	if via == "" {
+		say = &store.Saying{Author: store.ConversationGuildmasterChat, Tag: id, Kind: store.ConversationSay, Text: answer}
+	}
+	return s.AnswerDecisionSaying(mutationID("decision-answer", repo, task, id), repo, task, id, answer, via, by, say)
 }
 
 func findDecision(s *store.Store, repo, task, id string) (store.Decision, error) {

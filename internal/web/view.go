@@ -43,6 +43,11 @@ type taskView struct {
 	// Gone is a refusal about a decision that is no longer an ask, such as one answered meanwhile, shown at the top
 	// of Now with the words kept; nil when there is none.
 	Gone *askView
+	// Talks are the talk shown on Now under the asks: the current stage's first, then any whose tag has no ask or
+	// story node to show under.
+	Talks []talkView
+	// Closed is what Now says on a closed task that has talk, "" otherwise.
+	Closed string
 }
 
 type relatedView struct {
@@ -72,6 +77,8 @@ type statusView struct {
 	Slices                                                      []sliceView
 	Waits                                                       []string
 	Stage                                                       string
+	// Talk is the rail's Talk line, "" for a task with no talk.
+	Talk string
 }
 
 type sliceView struct {
@@ -116,6 +123,11 @@ type askView struct {
 	// Refused is why the last answer to this ask wrote nothing, Words the words it kept, and Sent the id of the
 	// note words only just sent.
 	Refused, Words, Sent string
+	// Chip is the ask's tag chip and ChipHref where it links; Talk is the talk on the ask, shown inside its card at
+	// the anchor TalkID, <id>-talk.
+	Chip, ChipHref string
+	Talk           []messageView
+	TalkID         string
 }
 
 type tileView struct {
@@ -159,6 +171,9 @@ type nodeView struct {
 	Ask                                 string
 	// Events are the node's raw records, each "15:04 <record>", for its Raw events fold.
 	Events []string
+	// ID is the node's anchor, story-<tag>; TalkNote says its talk is on Now, and Talk is its talk folded under it.
+	ID, TalkNote string
+	Talk         []messageView
 }
 
 // readerView is the reader page's model: the task page's, the document, and its content as goldmark HTML, plain
@@ -191,9 +206,11 @@ func (s *Server) taskView(t Task, st pageState) taskView {
 	}
 	var since *time.Time
 	found := false
+	talk := newTalkPlan(t, st)
 	for _, a := range t.Asks {
 		av := s.askView(t, a)
 		s.askState(&av, v.Base, st)
+		s.askTalk(t, talk, a, &av)
 		found = found || a.ID == st.Decision
 		if !a.Deferred {
 			v.Open++
@@ -215,6 +232,10 @@ func (s *Server) taskView(t Task, st pageState) taskView {
 	v.Status = s.statusView(t, v.Open)
 	v.Where = whereLine(t, v.Status, v.SliceOf)
 	v.Status.Stands = v.Where.Sentence()
+	if stage := s.stageTalk(t, talk); stage != nil {
+		v.Talks = append(v.Talks, *stage)
+	}
+	v.Closed = closedLine(t)
 	for _, q := range t.Context {
 		cite := "task context"
 		if !q.At.IsZero() {
@@ -229,8 +250,11 @@ func (s *Server) taskView(t Task, st pageState) taskView {
 	v.Docs, v.DocCount = s.docGroups(t)
 	nodes := make([]nodeView, 0, len(t.Story))
 	for i := len(t.Story) - 1; i >= 0; i-- {
-		nodes = append(nodes, s.nodeView(t, t.Story[i]))
+		nv := s.nodeView(t, t.Story[i])
+		s.nodeTalk(t, talk, t.Story[i], &nv)
+		nodes = append(nodes, nv)
 	}
+	v.Talks = append(v.Talks, s.otherTalk(t, talk)...)
 	if len(nodes) > storyShown {
 		v.Story, v.Older = nodes[:storyShown], nodes[storyShown:]
 		if first := t.Story[0].Start; first != nil {
@@ -292,7 +316,7 @@ func relatedName(repo string, r Related) string {
 }
 
 func (s *Server) statusView(t Task, open int) statusView {
-	st := statusView{Stands: t.Stands, Waits: t.DirectorWaits, Stage: t.DirectorStage}
+	st := statusView{Stands: t.Stands, Waits: t.DirectorWaits, Stage: t.DirectorStage, Talk: s.talkLine(t)}
 	if open > 0 {
 		st.Stands = "waiting on you"
 	}
@@ -784,10 +808,5 @@ func (s *Server) nodeView(t Task, n Node) nodeView {
 
 // funcs are the templates' helpers.
 var funcs = template.FuncMap{
-	"plural": func(n int, one, many string) string {
-		if n == 1 {
-			return one
-		}
-		return many
-	},
+	"plural": plural,
 }

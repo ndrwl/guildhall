@@ -54,6 +54,21 @@ guildhall messages ack director app.t-1.attempt-failed.build-1
 | `merge-refused` | The forge refused the merge, with its reason: decide how to handle it; `guildhall-director-tasks` describes sending finished work back, holding it and rechecking. |
 | Anything else | Read it, judge whether it needs work or a Guildmaster decision, and act or tell the Guildmaster. |
 
+## Talk on the task page
+
+Each task's page holds its conversation with the Guildmaster, and is the full record of what was said about the task; chat still says when something needs them, with the link.
+`guildhall decide answer` records their chat answer there, `guildhall decide open` your question, and Send words only on the page their note, each by itself.
+A question of your own about a task is an ask on its page: open it with `guildhall decide open` before you ask, so they can answer it there or in chat.
+When the Guildmaster says something about a task in chat that no command records, quote their words on its page under the attempt or decision it is about:
+
+```sh
+guildhall task say --repo app --task t-1 --tag grill-2 --author guildmaster-chat --text-file - <<'WORDS'
+keep the old flag for one release
+WORDS
+```
+
+When you reply about a task, to a note or in chat, put your reply on its page too, under the same tag, with `guildhall task say --repo <repo> --task <task> --tag <attempt|decision> --text-file -`, in Markdown.
+
 A wake gets a reply of its own only when something needs the Guildmaster, merges, fails or is stuck: `merged`, `decision`, a `question` whose answer is theirs, an `attempt-failed` that retrying will not help, `rebase-stuck`, `merge-refused`, `pr-blocked`, `merge-held`, failed checks and a new or changed `install` item.
 Everything else you handle quietly, and it shows as a line in the Routine box of your next reply.
 An `install` item never starts an upgrade by itself: a standalone Director runs `guildhall release install`, `guildhall release use` and `guildhall director reload` only on the Guildmaster's word for that upgrade, and a managed one leaves upgrades to the Steward.

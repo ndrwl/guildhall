@@ -97,6 +97,8 @@ Commands:
                  add or remove a dependency of an open task after creation, with a reason
   task override set|unset|list --store <path> --repo <id> ...
                  give a task its own value for a task-scoped setting, on the Guildmaster's word, remove it and list them
+  task say --store <path> --repo <id> --task <id> --tag <attempt|decision> --text-file <path|-> [--author director|guildmaster-chat]
+                 write on a task page's conversation: the Director's words, or the Guildmaster's from chat, quoted
   task start --store <path> --config <file> --state <dir> ...
                  advance a task, launching its next ready stage
   task design --repo <id> --task <id> --surface web-page|cli|chat|none --brief <file|-> [--copy <dir> | --store <path> --config <file> --state <dir>]

@@ -57,6 +57,7 @@ records `pick` as the choice and `H1, H3` as the note, and creates no task: the 
 The answer is recorded with mutation id `decision-answer:<repo>:<task>:<decision>`, or `decision-answer:sha256:<hex>` of that text when it is longer than 128 bytes.
 Repeating the same answer prints the original receipt; a different answer to an answered decision is refused, so a decision is answered once.
 Answering records the answer only: it never advances, resumes or launches a task.
+On an open task the answer is also recorded, in the same transaction, on the task page's [conversation](web.md#the-conversation) as the Guildmaster's words in chat under the decision, so the page holds what was said in chat too.
 
 ## decide open
 
@@ -69,6 +70,7 @@ The Guildmaster's reply is recorded with `decide answer` like any other, and fre
 - The decision id is chosen for you: `q<n>`, one more than the highest `q<n>` on the task, starting at `q1`. An id with no `-` is never read as a step round or loop exit, and does not clash with the engine's own decisions.
 - An open question decision on the task with the same question and options is printed instead, and nothing is written, so a retry opens no second question; otherwise the decision is opened with mutation id `decision-open:<repo>:<task>:<id>`.
 - It prints the decision as one JSON document, as `show` does, and sends no `decision` message: the Director asked the question.
+- The question is also recorded, in the same transaction, as the Director's words under the decision on the task page's [conversation](web.md#the-conversation), where the Guildmaster can answer it.
 
 A question decision appears wherever open decisions do: `decide list`, Clerk's `/decisions`, `director status` `needs_me` (where `decide defer` can hold it) and `task show`.
 It never blocks or advances its task: the merge requirement `nothing_open` does not count it, a dependent task's dependency state does not report it as waiting for the Guildmaster, and a merge-queue front task is not `waiting_on` it.

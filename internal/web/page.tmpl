@@ -11,6 +11,7 @@
 {{define "status"}}<dl class="kv"><dt>Where it stands</dt><dd>{{if .Open}}<span class="tag you">? Waiting for you</span> · {{.Open}} {{plural .Open "ask" "asks"}}{{else}}{{.Status.Stands}}{{end}}</dd>
 {{- if .Status.Step}}<dt>Step</dt><dd><b>{{.Status.Step}}</b>{{if .SliceOf}} · {{.SliceOf}}{{end}}</dd>{{end}}
 {{- if .Status.Attempt}}<dt>Last attempt</dt><dd><span title="{{.Status.AttemptRaw}}">{{.Status.Attempt}}</span> · {{.Status.AttemptWhen}}</dd>{{end}}
+{{- if .Status.Talk}}<dt>Talk</dt><dd>{{.Status.Talk}}</dd>{{end}}
 <dt>PR</dt><dd>{{with .Status.PR}}{{if $.Status.PRHref}}<a href="{{$.Status.PRHref}}">#{{.Number}}</a>{{else}}#{{.Number}}{{end}} · {{if .Merged}}merged{{else}}open{{end}}{{else}}none{{end}}</dd>
 <dt>CI</dt><dd>{{if .Status.CI}}<span class="tag {{.Status.CIClass}}">{{.Status.CI}}</span>{{else}}no checks recorded{{end}}</dd>
 {{- if .Status.Slices}}<dt>Slices</dt><dd><ul class="sl">{{range .Status.Slices}}<li{{if .Current}} class="cur"{{end}}>{{.Index}}. {{.Title}} · {{.State}}{{if .PR}} · {{if .PRHref}}<a href="{{.PRHref}}">#{{.PR.Number}}</a>{{else}}#{{.PR.Number}}{{end}}{{end}}</li>{{end}}</ul></dd>{{end}}
@@ -21,13 +22,14 @@
 
 {{define "ask"}}<div class="ask{{if .Deferred}} def{{end}}{{if .Refused}} refused{{end}}{{if .Sent}} sent{{end}}" id="{{.ID}}">
 {{- if .Form}}<form method="post" action="{{.Action}}"><input type="hidden" name="decision" value="{{.ID}}"><input type="hidden" name="subject" value="{{.Digest}}"><input type="hidden" name="token" value="{{.Token}}">{{end}}
-<div class="ah"><span class="kind">{{.KindName}}</span><a class="aid" href="#{{.ID}}">#{{.ID}}</a>{{if .Deferred}}<span class="tag you">deferred</span>{{end}}{{if .Since}}<span class="since">{{.Since}}</span>{{end}}</div>
+<div class="ah"><span class="kind">{{.KindName}}</span><a class="aid" href="#{{.ID}}">#{{.ID}}</a>{{if .Chip}}<a class="tg" href="{{.ChipHref}}">{{.Chip}}</a>{{end}}{{if .Deferred}}<span class="tag you">deferred</span>{{end}}{{if .Since}}<span class="since">{{.Since}}</span>{{end}}</div>
 <p class="q">{{.First}}</p>
 {{- if .Plan}}{{if .Summary}}<div class="plan md"><p class="ph">Summary</p>{{.Summary}}{{with .Questions}}{{template "questions" .}}{{end}}</div>{{else}}<p class="subj"><a href="{{.SubjectHref}}">No summary in this spec · read {{.SubjectName}}</a></p>{{with .Questions}}<div class="plan md">{{template "questions" .}}</div>{{end}}{{end}}{{else}}{{with .Questions}}<div class="plan md">{{template "questions" .}}</div>{{end}}{{end}}
 {{- if or .Subject .ReadLink .MockupHref}}<p class="subj">{{if .Subject}}About <code>{{.Subject}}</code>{{end}}{{if .ReadLink}}{{if .Subject}} · {{end}}<a href="{{.SubjectHref}}">read {{.SubjectName}}</a>{{end}}{{if .MockupHref}}{{if or .Subject .ReadLink}} · {{end}}<a href="{{.MockupHref}}" target="_blank" rel="noopener">{{.MockupLabel}}</a>{{end}}</p>{{end}}
 {{- if .Mockup}}<div class="plan md"><p class="ph">Mock-up</p>{{.Mockup}}</div>{{end}}
 {{- if .Rest}}<details class="ctx"><summary>The rest of the question</summary><div><pre>{{.Rest}}</pre></div></details>{{end}}
 {{- if .Findings}}<details class="ctx"><summary>{{.FindingsSummary}}</summary><div><ul class="find">{{range .Findings}}<li>{{if .Rule}}<span class="sev">{{.Rule}}</span>{{end}}<span><b>{{.ID}}</b> {{.Summary}}</span></li>{{end}}</ul></div></details>{{end}}
+{{- if .Talk}}<div class="talk" id="{{.TalkID}}"><p class="pick">Talk on #{{.ID}}</p>{{range .Talk}}{{template "msg" .}}{{end}}</div>{{end}}
 {{- if .Refused}}<p class="state bad"><b>Refused · nothing written:</b> {{.Refused}}.</p>{{end}}
 {{- if .Sent}}<p class="state ok"><b>Words only sent:</b> your words reached the Director as a message; nothing is answered.</p>{{end}}
 {{- if .Form}}<label class="yw" for="w-{{.ID}}">Your words <span>{{.Hint}}</span></label><textarea id="w-{{.ID}}" name="text" rows="3">{{.Words}}</textarea>
@@ -52,6 +54,12 @@ that shows questions or answers draws them through these two, so a change here c
 <div class="opts">{{range .Tiles}}{{if $.Form}}<button class="opt{{if .Tone}} {{.Tone}}{{end}}{{if .Rec}} rec{{end}}" type="submit" name="option" value="{{.Option}}">{{else}}<button class="opt{{if .Tone}} {{.Tone}}{{end}}{{if .Rec}} rec{{end}}" type="button" disabled>{{end}}<b>{{.Word}}{{if .Rec}} <i class="badge">Recommended</i>{{end}}</b>{{if .Text}}<span>{{.Text}}</span>{{end}}</button>{{end}}</div>{{end}}
 {{- if and .Form (not .Tiles)}}<div class="opts"><button class="opt pos" type="submit" name="send" value="answer"><b>Answer with your words</b><span>your words are the answer</span></button></div>{{end}}{{end}}
 
+{{define "msg"}}<div class="{{.Class}}"><div class="mh"><b>{{.Who}}</b>{{if .Src}}<span class="src">{{.Src}}</span>{{end}}{{if .Time}}<time>{{.Time}}</time>{{end}}</div><div class="mb">{{.Body}}</div></div>{{end}}
+
+{{define "talk"}}<div class="talk" id="{{.ID}}"><p class="th">Talk on <a class="tg" href="#{{.ID}}">{{.Chip}}</a> · oldest first</p>
+{{- if .Earlier}}<details class="fold"><summary>{{len .Earlier}} earlier {{plural (len .Earlier) "message" "messages"}} on {{.Tag}}</summary><div class="talk">{{range .Earlier}}{{template "msg" .}}{{end}}</div></details>{{end}}
+{{- range .Shown}}{{template "msg" .}}{{end}}</div>{{end}}
+
 {{define "gone"}}<div class="ask refused" id="{{if .ID}}{{.ID}}{{else}}not-recorded{{end}}">
 <div class="ah"><span class="kind">{{.KindName}}</span>{{if .ID}}<a class="aid" href="#{{.ID}}">#{{.ID}}</a>{{end}}</div>
 <p class="q">{{.First}}</p>
@@ -59,10 +67,12 @@ that shows questions or answers draws them through these two, so a change here c
 {{- if .Words}}<p class="yw">Your words, kept</p><textarea rows="3" readonly>{{.Words}}</textarea>{{end}}
 </div>{{end}}
 
-{{define "node"}}<li class="node {{.Class}}"><div class="nh"><span class="t"{{if .Raw}} title="{{.Raw}}"{{end}}>{{.Title}}</span>{{if .Word}}<span class="st">{{.Word}}</span>{{end}}{{if .Time}}<time>{{.Time}}</time>{{end}}</div>
+{{define "node"}}<li class="node {{.Class}}"{{if .ID}} id="{{.ID}}"{{end}}><div class="nh"><span class="t"{{if .Raw}} title="{{.Raw}}"{{end}}>{{.Title}}</span>{{if .Word}}<span class="st">{{.Word}}</span>{{end}}{{if .Time}}<time>{{.Time}}</time>{{end}}</div>
 {{- if .Body}}<div class="nb">{{.Body}}</div>{{end}}
 {{- if .Findings}}<ul class="find">{{range .Findings}}<li>{{if .Rule}}<span class="sev">{{.Rule}}</span>{{end}}<span><b>{{.ID}}</b> {{.Summary}}</span>{{if .Fixed}}<span class="fx">fixed</span>{{end}}</li>{{end}}</ul>{{end}}
 {{- range .Said}}<div class="said{{if .Back}} back{{end}}">“{{.Text}}”{{if .Where}}<small>{{.Where}}</small>{{end}}</div>{{end}}
+{{- if .TalkNote}}<div class="nb">{{.TalkNote}}</div>{{end}}
+{{- if .Talk}}<details class="fold talkf"><summary>Talk · {{len .Talk}} {{plural (len .Talk) "message" "messages"}}</summary><div class="talk">{{range .Talk}}{{template "msg" .}}{{end}}</div></details>{{end}}
 {{- if or .Docs .Ask}}<div class="links">{{range .Docs}}<a class="att" href="{{.Href}}" title="{{.Name}}">{{.Label}}</a>{{end}}{{if .Ask}}<a class="flag" href="#{{.Ask}}">Answer #{{.Ask}} above ↑</a>{{end}}</div>{{end}}
 {{- if .Events}}<details class="fold raw"><summary>Raw events · {{len .Events}}</summary><pre>{{range $i, $e := .Events}}{{if $i}}
 {{end}}{{$e}}{{end}}</pre></details>{{end}}</li>{{end}}
@@ -92,7 +102,8 @@ that shows questions or answers draws them through these two, so a change here c
 {{if .Status.Stage}}<p class="stage">? The Director runs {{.Status.Stage}} with you in its session; answer it there.</p>{{end}}
 {{with .Gone}}{{template "gone" .}}{{end}}
 {{range .Asks}}{{template "ask" .}}{{end}}
-{{if not .Asks}}{{if not .Status.Stage}}<p class="empty">{{.Status.Stands}}</p>{{end}}{{end}}
+{{if .Closed}}<p class="stage done">{{.Closed}}</p>{{else if not .Asks}}{{if not .Status.Stage}}<p class="empty">{{.Status.Stands}}</p>{{end}}{{end}}
+{{range .Talks}}{{template "talk" .}}{{end}}
 </li></ol></section>
 <section class="c2-story"><h2>The story · newest first</h2>
 <ul class="key"><li><span class="dot">✓</span>finished</li><li><span class="dot back">↩&#xFE0E;</span>sent back</li><li><span class="dot run">▸</span>running</li><li><span class="dot you">?</span>waiting on you</li><li><span class="dot later"></span>later</li></ul>

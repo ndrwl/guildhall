@@ -98,7 +98,26 @@ func (b webBuilder) task() web.Task {
 	t.Status = b.status()
 	t.Steps = b.steps()
 	t.Story = b.story(t.Documents)
+	for _, e := range b.h.Conversation {
+		t.Conversation = append(t.Conversation, web.Message{Number: e.Number, Author: e.Author, Tag: e.Tag, Stage: webTagStage(e.Tag),
+			Kind: e.Kind, Text: e.Text, At: e.At})
+	}
+	if n := len(b.tl.Attempts); n > 0 && v.State == store.TaskOpen {
+		at := b.tl.Attempts[n-1]
+		t.Tag = interp.DecisionID(at.Step, at.Number, false)
+	}
 	return t
+}
+
+// webTagStage is the step a conversation tag or decision id belongs to, as its chip names it, such as grill for
+// grill-2 or accept for accept--s2-1; "" for a name of no step, such as a question q1.
+func webTagStage(tag string) string {
+	p, ok := interp.RecordPlace(tag)
+	if !ok {
+		return ""
+	}
+	base, _ := workflow.ParseSliceStep(p.Step)
+	return base
 }
 
 // next is the task's next.json, when it has one that reads.
@@ -242,7 +261,8 @@ func (b webBuilder) asks(docs []web.Document) []web.Ask {
 		if dec.Repository != v.Repository || dec.TaskID != v.ID {
 			continue
 		}
-		a := web.Ask{ID: dec.ID, Kind: string(dec.Kind), Question: dec.Question, Options: dec.Options, OpenedAt: dec.OpenedAt, Deferred: dec.Deferred}
+		a := web.Ask{ID: dec.ID, Kind: string(dec.Kind), Question: dec.Question, Options: dec.Options, OpenedAt: dec.OpenedAt, Deferred: dec.Deferred,
+			Stage: webTagStage(dec.ID)}
 		if s := dec.Subject; s != nil {
 			a.Subject = s.Digest
 			a.SubjectDocument = subjectDocument(docs, v, *s)
@@ -451,7 +471,7 @@ func (b webBuilder) story(docs []web.Document) []web.Node {
 	}
 	for i, at := range b.tl.Attempts {
 		id := interp.DecisionID(at.Step, at.Number, false)
-		n := web.Node{Raw: id, Start: at.StartedAt, End: at.FinishedAt, Events: b.attemptEvents(at, id)}
+		n := web.Node{Raw: id, Start: at.StartedAt, End: at.FinishedAt, Events: b.attemptEvents(at, id), Tag: id}
 		switch {
 		case at.IntakeRejection != "":
 			n.State, n.Word, n.Body = web.StateFailed, "refused at intake", oneLine(at.IntakeRejection)
@@ -488,7 +508,7 @@ func (b webBuilder) story(docs []web.Document) []web.Node {
 		nodes = append(nodes, n)
 	}
 	for _, dec := range b.tl.Decisions {
-		n := web.Node{Title: b.decisionSentence(dec), Raw: dec.ID, Start: dec.OpenedAt, End: dec.AnsweredAt, Events: decisionEvents(dec)}
+		n := web.Node{Title: b.decisionSentence(dec), Raw: dec.ID, Start: dec.OpenedAt, End: dec.AnsweredAt, Events: decisionEvents(dec), Tag: dec.ID}
 		switch {
 		case dec.Void:
 			n.State, n.Word = web.StateVoid, "void"

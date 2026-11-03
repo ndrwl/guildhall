@@ -167,8 +167,21 @@ func ackMutationID(id string) string  { return "message-ack:" + id }
 // The sender is not part of the request: resending the same message from elsewhere returns the original receipt
 // and keeps the first sender, and a message with no sender digests as it did before senders were recorded.
 func (s *Store) SendMessage(m Message) (Receipt, error) {
+	return s.SendMessageSaying(m, nil)
+}
+
+// SendMessageSaying is SendMessage that also appends say, when it is not nil, to the conversation of the message's
+// task in the same transaction, so the message and its entry are written together or not at all; a task that is not
+// open sends the message with no entry. say is not part of the request digest: it is derived from the message, so
+// resending replays as SendMessage's would.
+func (s *Store) SendMessageSaying(m Message, say *Saying) (Receipt, error) {
 	if err := ValidateMessage(m); err != nil {
 		return Receipt{}, err
+	}
+	if say != nil {
+		if err := validateSaying(*say); err != nil {
+			return Receipt{}, err
+		}
 	}
 	req := m
 	req.Sender = ""
@@ -202,7 +215,10 @@ func (s *Store) SendMessage(m Message) (Receipt, error) {
 		if err := inbox.Put(inboxKey(m.To(), m.Sequence), []byte(m.ID)); err != nil {
 			return err
 		}
-		return putJSON(messages, []byte(m.ID), m)
+		if err := putJSON(messages, []byte(m.ID), m); err != nil {
+			return err
+		}
+		return s.mirrorConversation(tx, r, m.Repository, m.TaskID, say)
 	})
 }
 

@@ -104,15 +104,15 @@ func TestTaskPageFixture(t *testing.T) {
 		// the story: the key, newest first, states, findings fixed, the void acceptance, slice merge, the fold
 		`<li><span class="dot back">↩&#xFE0E;</span>sent back</li>`, `<li><span class="dot later"></span>later</li>`,
 		`<li class="node later"><div class="nh"><span class="t">Publish and deliver come next</span><span class="st">not started</span></div></li>`,
-		`<li class="node you"><div class="nh"><span class="t" title="grant-1">An attempt asked for a grant</span><span class="st">waiting on you</span><time>4 Nov 14:31</time></div><div class="links"><a class="flag" href="#grant-1">Answer #grant-1 above ↑</a></div>` +
+		`<li class="node you" id="story-grant-1"><div class="nh"><span class="t" title="grant-1">An attempt asked for a grant</span><span class="st">waiting on you</span><time>4 Nov 14:31</time></div><div class="nb">Its talk is on Now, inside the ask: 2 messages.</div><div class="links"><a class="flag" href="#grant-1">Answer #grant-1 above ↑</a></div>` +
 			`<details class="fold raw"><summary>Raw events · 1</summary><pre>14:31 decision grant-1 opened · grant</pre></details></li>`,
 		`<span class="t" title="review--s2-2">The slice 2 review asked for changes (round 2)</span><span class="st">changes requested · waiting on you</span><time>4 Nov 13:58–14:20</time>`,
 		"<summary>Raw events · 2</summary><pre>13:58 attempt review--s2-2 started · review\n14:20 attempt review--s2-2 succeeded</pre>",
 		`<li class="node ok"><div class="nh"><span class="t" title="deliver-1-merge">Slice 1 was merged</span>`,
-		`<li class="node back"><div class="nh"><span class="t" title="review-1">The review sent the build back (round 1)</span><span class="st">changes requested · sent back to build</span>`,
+		`<li class="node back" id="story-review-1"><div class="nh"><span class="t" title="review-1">The review sent the build back (round 1)</span><span class="st">changes requested · sent back to build</span>`,
 		`<span class="fx">fixed</span>`,
 		`<details class="older"><summary>5 earlier entries · from 31 Oct</summary>`,
-		`<li class="node void"><div class="nh"><span class="t" title="accept-1">An earlier approval of the plan was withdrawn</span><span class="st">void</span>`, `void: superseded: the spec changed`,
+		`<li class="node void" id="story-accept-1"><div class="nh"><span class="t" title="accept-1">An earlier approval of the plan was withdrawn</span><span class="st">void</span>`, `void: superseded: the spec changed`,
 		// an event of no known time shows with none
 		"<pre>16:15 decision accept-1 opened · approval\ndecision accept-1 void · superseded: the spec changed</pre>",
 		`<div class="said">“approve all”<small>answered via the Director or decide answer</small></div>`,
