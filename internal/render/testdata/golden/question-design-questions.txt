@@ -1,20 +1,21 @@
 Design decision needed for app/t7, design round 1, decision design-1.
 
-Open questions in full:
+**Open questions · 3**
+
 **Q1. Design round**
 Does the page need a design round first?
-Options: (a) yes; (b) no.
-Recommended: (b).
+- ★ **(b) no** · Recommended.
+- (a) yes
 
 **Q2. Task list page**
 Should the task list get its own page?
-Options: (a) now; (b) later.
-Recommended: (b). It is its own task.
+- ★ **(b) later** · Recommended. It is its own task.
+- (a) now
 
 **Q3. Link handling**
 Which task tokens become links?
-Options: (a) full references only; (b) bare ids too.
-Recommended: (a).
+- ★ **(a) full references only** · Recommended.
+- (b) bare ids too
 
 approved makes the design an input to plan, which runs again if it already ran; changes_requested reopens the grill with your answer.
 

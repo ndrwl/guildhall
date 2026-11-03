@@ -26,6 +26,26 @@ The engine may need splitting.
 Options: (a) one slice; (b) two.
 Recommended: (a). About 200 lines fits one review.`
 
+// summarisedPart is summarisedQuestions as the approval question writes them: the recommended option first and
+// marked, and the reply line.
+const summarisedPart = `**Open questions · 3**
+
+**Q1. Which parser**
+The parser can be strict or lenient.
+- ★ **(a) strict** · Recommended. A strict parser names the line at fault.
+- (b) lenient
+
+**Q2. Where the views go**
+- ★ **(a) one package** · Recommended.
+- (b) one per view
+
+**Q3. Engine size**
+The engine may need splitting.
+- ★ **(a) one slice** · Recommended. About 200 lines fits one review.
+- (b) two
+
+Reply **approve** to take every recommendation, or name the answers to change, such as "Q2 (a)".`
+
 // summarisedSpec is threeSlices with a Summary block that counts three open questions, and the questions in full.
 var summarisedSpec = strings.Replace(strings.Replace(threeSlices, "- **Open questions:** None.", "- **Open questions:** 3.", 1),
 	"## Open questions\n\nNone.\n", "## Open questions\n\n"+summarisedQuestions+"\n", 1)
@@ -39,8 +59,8 @@ func TestApprovalCarriesPlanSummary(t *testing.T) {
 	for _, c := range []struct {
 		name, spec, has string
 	}{
-		{"three questions", summarisedSpec, "attempt 1.\n\nPlan summary:\n- **Goal:** deliver the large work.\n- **Open questions:** 3.\n\nOpen questions in full:\n" + summarisedQuestions + "\n\nInputs:\n"},
-		{"none", threeSlices, "attempt 1.\n\nPlan summary:\n- **Goal:** deliver the large work.\n- **Open questions:** None.\n\nOpen questions: none.\n\nInputs:\n"},
+		{"three questions", summarisedSpec, "attempt 1.\n\n**Summary**\n- **Goal:** deliver the large work.\n- **Open questions:** 3.\n\n" + summarisedPart + "\n\nInputs:\n"},
+		{"none", threeSlices, "attempt 1.\n\n**Summary**\n- **Goal:** deliver the large work.\n- **Open questions:** None.\n\nOpen questions: none.\n\nInputs:\n"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			for _, b := range backends {
@@ -69,6 +89,7 @@ func TestPlanCheckRefusesAnUnanswerableSpec(t *testing.T) {
 		{"prose", strings.Replace(threeSlices, "\nNone.\n", "\nOne, with a recommendation (see above).\n", 1), "neither \"None\" nor a **Qn. title** question"},
 		{"no recommendation", strings.Replace(summarisedSpec, "Recommended: (a).\n\n**Q3.", "\n**Q3.", 1), `Q2 "Where the views go" has no Recommended: line`},
 		{"no options", strings.Replace(summarisedSpec, "Options: (a) one slice; (b) two.\n", "", 1), `Q3 "Engine size" has no Options: line`},
+		{"free-text recommendation", strings.Replace(summarisedSpec, "Recommended: (a). About 200 lines", "Recommended: one slice. About 200 lines", 1), `Q3 "Engine size": its Recommended: line does not start with one of its option letters`},
 		{"a gap", strings.Replace(summarisedSpec, "**Q3.", "**Q4.", 1), "Q4 follows Q2"},
 	} {
 		t.Run(c.name, func(t *testing.T) {

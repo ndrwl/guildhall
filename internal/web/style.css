@@ -54,7 +54,7 @@ button{font:inherit;color:inherit}
 .since{color:var(--faint);margin-left:auto}
 .q{font:650 17px/1.4 system-ui,sans-serif;margin:10px 0 4px;letter-spacing:-.005em;overflow-wrap:anywhere}
 .subj{font-size:13.5px;color:var(--mut);margin:0 0 10px}
-.plan{margin:0 0 12px;padding:10px 14px;border-radius:8px;background:var(--bg2);border:1px solid var(--line);font-size:15px;line-height:1.55}.plan .ph{font-weight:650;margin:0 0 6px}.plan>:last-child{margin-bottom:0}.plan ul,.plan ol{margin:0 0 8px;padding-left:20px}.plan .qs p{white-space:pre-line}
+.plan{margin:0 0 12px;padding:10px 14px;border-radius:8px;background:var(--bg2);border:1px solid var(--line);font-size:15px;line-height:1.55}.plan .ph{font-weight:650;margin:0 0 6px}.plan>:last-child{margin-bottom:0}.plan ul,.plan ol{margin:0 0 8px;padding-left:20px}
 .ctx{margin:0 0 12px;font-size:14px;border-radius:8px;background:var(--bg2);border:1px solid var(--line)}
 .ctx>summary{padding:8px 12px;font-weight:600;color:var(--fg);min-height:44px;display:flex;align-items:center}
 .ctx>summary,.fold>summary{list-style:none}
@@ -176,6 +176,31 @@ button{font:inherit;color:inherit}
 .r-side .since{margin-left:0;flex-basis:100%}
 .endback{margin-top:20px}
 .endback .backto{background:var(--card);color:var(--fg)!important;border-color:var(--line2)}
+/* d153: an ask's open questions as cards, options as a list, the recommended option marked */
+.plan .oqh{display:flex;align-items:center;gap:8px;margin:14px 0 8px;padding-top:12px;border-top:1px solid var(--line)}
+.plan .oqh:first-child{margin-top:0;padding-top:0;border-top:0}
+.plan .oqh .n{font:700 12px/1 system-ui,sans-serif;padding:3px 7px;border-radius:999px;background:var(--line);color:var(--mut)}
+.oqs{display:grid;gap:8px}
+.oq{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px 12px;min-width:0}
+.oq .qt{font-weight:650;margin:0 0 2px;display:flex;align-items:baseline;gap:8px}
+.oq .qn{font:700 12px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--mut);background:var(--bg2);border:1px solid var(--line);padding:3px 6px;border-radius:5px}
+.oq .qb{margin:0 0 8px;color:var(--fg)}
+.oq .qb>:last-child,.oq .qm>:last-child,.oq .qv>:last-child{margin-bottom:0}
+.oq .qv p{white-space:pre-line}
+.oq .qm{margin-top:8px}
+.plan .ol{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.ol li{display:flex;align-items:flex-start;gap:8px;margin:0;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--card);font-size:14.5px;line-height:1.45}
+.ol .lt{font:600 13px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--mut);flex:none}
+.ol .ot{flex:1;min-width:0}
+.ol .why{display:block;font-size:13px;color:var(--mut)}
+.ol li.rec{background:var(--okbg);border-color:var(--ok);border-left:4px solid var(--ok);font-weight:600}
+.ol li.rec .lt{color:var(--ok)}
+.ol li.rec .why{font-weight:400}
+.oqs .cut{margin:0;color:var(--mut);font-size:13px}
+.badge{font:700 10.5px/1 system-ui,sans-serif;font-style:normal;text-transform:uppercase;letter-spacing:.06em;color:var(--on);background:var(--ok);padding:4px 7px;border-radius:5px;flex:none;align-self:center;white-space:nowrap}
+.opt.rec{grid-column:1/-1;background:var(--okbg);border-color:var(--ok);border-left-width:6px}
+.opt.rec b{display:flex;align-items:center;gap:8px}
+.opt.rec:not([disabled]):hover{background:var(--okbg);filter:brightness(.97)}
 /* goldmark's output: headings, lists, tables, fenced code, quotes */
 .md{font-size:16px;line-height:1.65;overflow-wrap:anywhere}
 .md h1{font:700 26px/1.25 system-ui,sans-serif;margin:0 0 14px;letter-spacing:-.015em}

@@ -24,8 +24,10 @@ var (
 	designBrief2 = "Surface: none\n\nShow the table of sort options with its column headings."
 	designOne    = []byte("# Design\n\nOption A: a drop-down of sort keys. Option B: a table. Recommend A.\n\n## Open questions\n\n" + designOneQ1 + "\n")
 	designOneQ1  = "**Q1. Which control sorts the list**\nThe list needs one control for its sort key.\nOptions: (a) a drop-down; (b) a table.\nRecommended: (a). It fits a phone."
-	designTwo    = []byte("# Design\n\nA table of sort options: key, order, default.\n\n## Open questions\n\nNone.\n")
-	researchSort = []byte("# Research\n\nThe list is sorted in the view.\n")
+	// designOneQ1Part is designOneQ1 as the design question writes it, its recommended option first and marked.
+	designOneQ1Part = "**Q1. Which control sorts the list**\nThe list needs one control for its sort key.\n- ★ **(a) a drop-down** · Recommended. It fits a phone.\n- (b) a table"
+	designTwo       = []byte("# Design\n\nA table of sort options: key, order, default.\n\n## Open questions\n\nNone.\n")
+	researchSort    = []byte("# Research\n\nThe list is sorted in the view.\n")
 )
 
 func designRequested(brief string) interp.Event {
@@ -183,7 +185,7 @@ func TestDesignRoundAfterTheGrill(t *testing.T) {
 				!slices.Equal(d.Options, []string{"approved", "changes_requested"}) {
 				t.Errorf("design-1 = %+v, want an approval of the design", d)
 			}
-			if !strings.Contains(d.Question, ", decision design-1.\n\nOpen questions in full:\n"+designOneQ1+"\n\napproved makes the design ") {
+			if !strings.Contains(d.Question, ", decision design-1.\n\n**Open questions · 1**\n\n"+designOneQ1Part+"\n\napproved makes the design ") {
 				t.Errorf("design-1 question does not carry the design's open questions in full:\n%s", d.Question)
 			}
 			if _, ok := e.messages(t)["app.t7.decision.design-1"]; !ok {

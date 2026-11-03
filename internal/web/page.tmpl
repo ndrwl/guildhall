@@ -23,22 +23,34 @@
 {{- if .Form}}<form method="post" action="{{.Action}}"><input type="hidden" name="decision" value="{{.ID}}"><input type="hidden" name="subject" value="{{.Digest}}"><input type="hidden" name="token" value="{{.Token}}">{{end}}
 <div class="ah"><span class="kind">{{.KindName}}</span><a class="aid" href="#{{.ID}}">#{{.ID}}</a>{{if .Deferred}}<span class="tag you">deferred</span>{{end}}{{if .Since}}<span class="since">{{.Since}}</span>{{end}}</div>
 <p class="q">{{.First}}</p>
-{{- if .Plan}}{{if .Summary}}<div class="plan md"><p class="ph">Plan summary</p>{{.Summary}}{{.Questions}}</div>{{else}}<p class="subj"><a href="{{.SubjectHref}}">No summary in this spec · read {{.SubjectName}}</a></p>{{if .Questions}}<div class="plan md">{{.Questions}}</div>{{end}}{{end}}{{else if .Questions}}<div class="plan md">{{.Questions}}</div>{{end}}
+{{- if .Plan}}{{if .Summary}}<div class="plan md"><p class="ph">Summary</p>{{.Summary}}{{with .Questions}}{{template "questions" .}}{{end}}</div>{{else}}<p class="subj"><a href="{{.SubjectHref}}">No summary in this spec · read {{.SubjectName}}</a></p>{{with .Questions}}<div class="plan md">{{template "questions" .}}</div>{{end}}{{end}}{{else}}{{with .Questions}}<div class="plan md">{{template "questions" .}}</div>{{end}}{{end}}
 {{- if or .Subject .ReadLink .MockupHref}}<p class="subj">{{if .Subject}}About <code>{{.Subject}}</code>{{end}}{{if .ReadLink}}{{if .Subject}} · {{end}}<a href="{{.SubjectHref}}">read {{.SubjectName}}</a>{{end}}{{if .MockupHref}}{{if or .Subject .ReadLink}} · {{end}}<a href="{{.MockupHref}}" target="_blank" rel="noopener">{{.MockupLabel}}</a>{{end}}</p>{{end}}
 {{- if .Mockup}}<div class="plan md"><p class="ph">Mock-up</p>{{.Mockup}}</div>{{end}}
 {{- if .Rest}}<details class="ctx"><summary>The rest of the question</summary><div><pre>{{.Rest}}</pre></div></details>{{end}}
 {{- if .Findings}}<details class="ctx"><summary>{{.FindingsSummary}}</summary><div><ul class="find">{{range .Findings}}<li>{{if .Rule}}<span class="sev">{{.Rule}}</span>{{end}}<span><b>{{.ID}}</b> {{.Summary}}</span></li>{{end}}</ul></div></details>{{end}}
 {{- if .Refused}}<p class="state bad"><b>Refused · nothing written:</b> {{.Refused}}.</p>{{end}}
 {{- if .Sent}}<p class="state ok"><b>Words only sent:</b> your words reached the Director as a message; nothing is answered.</p>{{end}}
-{{- if .Form}}<label class="yw" for="w-{{.ID}}">Your words <span>optional with an answer</span></label><textarea id="w-{{.ID}}" name="text" rows="3">{{.Words}}</textarea>
+{{- if .Form}}<label class="yw" for="w-{{.ID}}">Your words <span>{{.Hint}}</span></label><textarea id="w-{{.ID}}" name="text" rows="3">{{.Words}}</textarea>
 {{- else if .Words}}<p class="yw">Your words, kept</p><textarea rows="3" readonly>{{.Words}}</textarea>{{end}}
-{{- if .Tiles}}<p class="pick">Answer</p>
-<div class="opts">{{range .Tiles}}{{if $.Form}}<button class="opt{{if .Tone}} {{.Tone}}{{end}}" type="submit" name="option" value="{{.Option}}">{{else}}<button class="opt{{if .Tone}} {{.Tone}}{{end}}" type="button" disabled>{{end}}<b>{{.Word}}</b>{{if .Text}}<span>{{.Text}}</span>{{end}}</button>{{end}}</div>{{end}}
-{{- if and .Form (not .Tiles)}}<div class="opts"><button class="opt pos" type="submit" name="send" value="answer"><b>Answer with your words</b><span>your words are the answer</span></button></div>{{end}}
+{{- template "answers" .}}
 {{- if .Form}}<div class="wo"><button class="opt" type="submit" name="send" value="words"><b>Send words only</b><span>answers nothing; your words reach the Director as a message</span></button></div>{{end}}
 <p class="who">{{if .Deferred}}Deferred: still yours, for later. {{end}}{{if .Form}}Answering as <b>{{.Login}}</b> · your Tailscale login{{else}}Only the Guildmaster's Tailscale login can answer here{{if .Login}}; you are {{.Login}}{{end}}. Answer in chat or with <code>guildhall decide answer</code>.{{end}}</p>
 {{- if .Form}}</form>{{end}}
 </div>{{end}}
+
+{{/* questions and answers: the one layout of an ask's question cards and its answer row (questions.go); every ask
+that shows questions or answers draws them through these two, so a change here changes them all. */}}
+{{define "questions"}}{{if .None}}<p class="ph">Open questions: none.</p>{{else}}<p class="ph oqh">Open questions <span class="n">{{.Count}}</span></p><div class="oqs">
+{{- range .Cards}}
+<section class="oq"><p class="qt"><span class="qn">Q{{.N}}</span>{{.Title}}</p>{{if .Body}}<div class="qb">{{.Body}}</div>{{end}}
+{{- if .Rows}}<ul class="ol">{{range .Rows}}<li{{if .Rec}} class="rec"{{end}}>{{if .Mark}}<span class="lt">{{.Mark}}</span>{{end}}<span class="ot">{{.Text}}{{if .Why}}<span class="why">{{.Why}}</span>{{end}}</span>{{if .Rec}}<i class="badge">Recommended</i>{{end}}</li>{{end}}</ul>{{end}}
+{{- if .Verbatim}}<div class="qv">{{.Verbatim}}</div>{{end}}{{if .More}}<div class="qm">{{.More}}</div>{{end}}</section>
+{{- end}}
+{{- if .Cut}}<p class="cut">(cut; read the document)</p>{{end}}</div>{{end}}{{end}}
+
+{{define "answers"}}{{if .Tiles}}<p class="pick">Answer</p>
+<div class="opts">{{range .Tiles}}{{if $.Form}}<button class="opt{{if .Tone}} {{.Tone}}{{end}}{{if .Rec}} rec{{end}}" type="submit" name="option" value="{{.Option}}">{{else}}<button class="opt{{if .Tone}} {{.Tone}}{{end}}{{if .Rec}} rec{{end}}" type="button" disabled>{{end}}<b>{{.Word}}{{if .Rec}} <i class="badge">Recommended</i>{{end}}</b>{{if .Text}}<span>{{.Text}}</span>{{end}}</button>{{end}}</div>{{end}}
+{{- if and .Form (not .Tiles)}}<div class="opts"><button class="opt pos" type="submit" name="send" value="answer"><b>Answer with your words</b><span>your words are the answer</span></button></div>{{end}}{{end}}
 
 {{define "gone"}}<div class="ask refused" id="{{if .ID}}{{.ID}}{{else}}not-recorded{{end}}">
 <div class="ah"><span class="kind">{{.KindName}}</span>{{if .ID}}<a class="aid" href="#{{.ID}}">#{{.ID}}</a>{{end}}</div>

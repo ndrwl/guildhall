@@ -87,9 +87,10 @@ type Stage struct {
 	// NoSummary marks a plan approval whose spec has no Summary block, or one that could not be read: Question then
 	// writes a line pointing at the spec instead. It is ignored when Summary is set, and by other kinds and Prompt.
 	NoSummary bool
-	// Questions is a plan approval's open-questions part (spec.SpecPart): the spec's open questions in full, or the
-	// line saying it has none, which Question writes after the summary. Empty leaves it out, as for a spec with no
-	// readable section. The caller reads the spec; other kinds and Prompt ignore it.
+	// Questions is a plan approval's open-questions part (spec.PlanPart): the spec's open questions, each with its
+	// recommended option first and marked, or the line saying it has none, which Question writes after the summary.
+	// Empty leaves it out, as for a spec with no readable section. The caller reads the spec; other kinds and Prompt
+	// ignore it.
 	Questions string
 }
 

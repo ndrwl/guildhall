@@ -573,7 +573,7 @@ func TestQuestionGoldenPerKind(t *testing.T) {
 func TestQuestionSummary(t *testing.T) {
 	spec := input(t, "spec", "tasks/t7/spec.md", "spec.md")
 	accept := step(t, "accept", "guildmaster-approval", `{"instructions": "Check the scope."}`)
-	three, ok := gspec.SpecPart([]byte(threeQuestions))
+	three, ok := gspec.PlanPart([]byte(threeQuestions))
 	if !ok {
 		t.Fatal("the three-question fixture does not parse")
 	}
@@ -632,8 +632,9 @@ Options: (a) full references only; (b) bare ids too.
 Recommended: (a).
 `
 
-// TestQuestionOpenQuestions: a plan approval's open questions are copied byte for byte after the Summary block, and
-// questions over spec.QuestionsMax are cut at a question boundary with the marker while the Summary still shows.
+// TestQuestionOpenQuestions: a plan approval's open questions are copied byte for byte after the Summary block, each
+// with its recommended option first and marked, and questions over spec.QuestionsMax are cut at a question boundary
+// with the marker while the Summary still shows.
 func TestQuestionOpenQuestions(t *testing.T) {
 	in := input(t, "spec", "tasks/t7/spec.md", "spec.md")
 	stage := attempt(t, step(t, "accept", "guildmaster-approval", `{}`))
@@ -641,15 +642,18 @@ func TestQuestionOpenQuestions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stage.Summary, stage.Questions = "- **Goal:** g.", q.Part()
+	stage.Summary, stage.Questions = "- **Goal:** g.", q.PlanPart()
 	ask, err := Question(stage, []Input{in})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, it := range q.Items {
-		if !strings.Contains(ask.Question, it.Text) {
-			t.Errorf("the question lacks Q%d verbatim", it.N)
+		if !strings.Contains(ask.Question, it.Markdown()) {
+			t.Errorf("the question lacks Q%d as its part writes it", it.N)
 		}
+	}
+	if !strings.Contains(ask.Question, "\n- ★ **(b) later** · Recommended. It is its own task.\n- (a) now\n") || !strings.Contains(ask.Question, "\n\n"+gspec.ReplyLine+"\n") {
+		t.Errorf("the recommended option is not first and marked, or the reply line is missing:\n%s", ask.Question)
 	}
 	long := gspec.Questions{}
 	for i := 1; i <= 40; i++ {
@@ -660,7 +664,7 @@ func TestQuestionOpenQuestions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(ask.Question, "\nPlan summary:\n- **Goal:** g.\n\nOpen questions in full:\n**Q1. Q**") ||
+	if !strings.Contains(ask.Question, "\n**Summary**\n- **Goal:** g.\n\n**Open questions · 40**\n\n**Q1. Q**") ||
 		!strings.Contains(ask.Question, "Recommended: a.\n\n"+gspec.CutMarker+"\n") || strings.Contains(ask.Question, "**Q40.") {
 		t.Errorf("long questions are not cut at a boundary after the summary:\n%s", ask.Question)
 	}

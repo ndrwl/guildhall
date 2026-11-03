@@ -1350,7 +1350,7 @@ func (r *run) ask(s workflow.Step) (Next, error) {
 	return r.open(s, k, inputs, ask)
 }
 
-// summary reads the Summary block and the open-questions part (spec.SpecPart) of a plan approval's spec input from its
+// summary reads the Summary block and the open-questions part (spec.PlanPart) of a plan approval's spec input from its
 // verified bytes. A spec with no block, or one that cannot be read or fails its digest, has none: the ask still
 // opens, saying so. A spec with no readable open-questions section, such as one recorded before the plan check
 // required it, has no part.
@@ -1364,7 +1364,7 @@ func (r *run) summary(inputs []render.Input) (summary string, none bool, questio
 		return "", true, ""
 	}
 	s, ok := spec.Summary(data)
-	questions, _ = spec.SpecPart(data)
+	questions, _ = spec.PlanPart(data)
 	return s, !ok, questions
 }
 

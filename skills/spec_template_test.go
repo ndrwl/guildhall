@@ -44,7 +44,8 @@ func TestSpecTemplateSummary(t *testing.T) {
 	}
 	_, questions, ok := strings.Cut(tmpl, "\n## Open questions\n\n")
 	questions, _, _ = strings.Cut(questions, "```")
-	if !ok || !strings.HasPrefix(questions, "**Q1. <question title>**\n<question body>\nOptions: ") || !strings.Contains(questions, "\nRecommended: ") {
-		t.Errorf("the template's ## Open questions is not a **Q1.** question with Options: and Recommended: lines: %q", questions)
+	// The plan check refuses a Recommended: line that does not start with an option letter, so the template says so.
+	if !ok || !strings.HasPrefix(questions, "**Q1. <question title>**\n<question body>\nOptions: (a) ") || !strings.Contains(questions, "; (b) ") || !strings.Contains(questions, "\nRecommended: (<letter>). ") {
+		t.Errorf("the template's ## Open questions is not a **Q1.** question with lettered Options: and a Recommended: (<letter>) line: %q", questions)
 	}
 }
