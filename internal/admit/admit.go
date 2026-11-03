@@ -57,6 +57,67 @@ type Admission struct {
 	// inline is set when config.toml defines an inline [managed] table, and approved when the Guildmaster approved
 	// the observed digest's alert decision but its approval is not recorded as a revision yet.
 	inline, approved bool
+	// inlineErr is the error that left inline undecided: config.toml does not parse as TOML.
+	inlineErr error
+}
+
+// Inline reports whether the copy's config.toml defines an inline [managed] table, which the boundary refuses in
+// every mode, and the parse error that left it undecided.
+func (a Admission) Inline() (bool, error) { return a.inline, a.inlineErr }
+
+// mode is the mode table (docs/director-modes.md#mode): the mode of a copy with managed facts v and a managed.toml
+// present or not, the Steward it is enrolled with, and, for mode refused, the refusal. A managed copy's revision
+// trust and its pin are the caller's.
+func mode(v store.ManagedView, present bool) (m, steward, refusal string) {
+	enrolled := v.Enrolment != nil && v.Enrolment.Event == store.Enrolled
+	switch {
+	case enrolled && present:
+		return ModeManaged, v.Enrolment.Steward, ""
+	case enrolled:
+		return ModeRefused, v.Enrolment.Steward, fmt.Sprintf("this copy is enrolled with steward %q but %s is missing: the managed settings are missing; restore the %s the Steward published", v.Enrolment.Steward, ManagedFile, ManagedFile)
+	case !present:
+		return ModeStandalone, "", ""
+	case v.Enrolment == nil:
+		return ModeRefused, "", fmt.Sprintf("%s is present but this copy is not enrolled: run guildhall director enrol --steward <label>, or remove %s", ManagedFile, ManagedFile)
+	default:
+		return ModeRefused, "", fmt.Sprintf("this copy left managed mode (keeping %s) but a %s is present: a stale or unexpected managed file; remove it, or run guildhall director enrol --steward <label>", v.Enrolment.Revision, ManagedFile)
+	}
+}
+
+// Managed is the boundary's one managed verdict for the Director copy in dir, for commands that must refuse to act
+// on a managed copy: whether its mode is not standalone, from its managed.toml and the director.store beside it. It
+// reads no config.toml, loads no effective configuration and never writes. A copy the mode table refuses is
+// managed, with a RefusalError carrying the refusal; its pin never changes the verdict. A store or managed.toml
+// that cannot be read is its error, and the verdict stays what the file's presence alone says: a managed.toml that
+// exists but cannot be read, or one beside a store that cannot be read, is still managed.
+func Managed(dir string) (bool, error) {
+	b, err := ReadManaged(dir)
+	if err != nil {
+		// Any error other than the file not existing means it exists.
+		return true, err
+	}
+	v, _, err := managedFacts(filepath.Join(dir, "config.toml"))
+	if err != nil {
+		return b != nil, fmt.Errorf("managed mode: %w", err)
+	}
+	m, _, refusal := mode(v, b != nil)
+	if m == ModeRefused {
+		return true, RefusalError{refusal}
+	}
+	return m != ModeStandalone, nil
+}
+
+// ReadManaged reads the managed.toml in the copy directory dir: nil when it does not exist, and empty, not nil,
+// when it exists but is empty; any other read error is returned.
+func ReadManaged(dir string) ([]byte, error) {
+	b, err := os.ReadFile(filepath.Join(dir, ManagedFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err == nil && b == nil {
+		b = []byte{}
+	}
+	return b, err
 }
 
 // RefusalError is a refusal of the boundary, as Admit returns it.
@@ -83,10 +144,8 @@ func ReadFiles(cfgPath string) (Files, error) {
 	if f.Local, err = os.ReadFile(cfgPath); err != nil {
 		return f, err
 	}
-	if f.Managed, err = os.ReadFile(filepath.Join(f.Dir(), ManagedFile)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return f, err
-	}
-	return f, nil
+	f.Managed, err = ReadManaged(f.Dir())
+	return f, err
 }
 
 // Load is config.Load of the files read: the combined config with a managed.toml, and the config alone without.
@@ -143,31 +202,22 @@ func Judge(f Files, v store.ManagedView) Admission {
 			a.Refusal = fmt.Sprintf(format, args...)
 		}
 	}
-	if inline, err := config.InlineManaged(f.Local); err == nil && inline {
+	inline, err := config.InlineManaged(f.Local)
+	a.inlineErr = err
+	if err == nil && inline {
 		a.inline = true
 		refuse("%s has an inline [managed] section, which a Director copy refuses in every mode: move those settings to %s in the checksum-bearing format (examples/managed.toml)", f.CfgPath, ManagedFile)
 	}
-	enrolled := v.Enrolment != nil && v.Enrolment.Event == store.Enrolled
-	present := f.Managed != nil
-	switch {
-	case enrolled && present:
-		a.Mode, a.Steward = ModeManaged, v.Enrolment.Steward
+	var refusal string
+	a.Mode, a.Steward, refusal = mode(v, f.Managed != nil)
+	if refusal != "" {
+		refuse("%s", refusal)
+	} else if a.Mode == ModeManaged {
 		if auth := v.Authorization(a.ManagedDigest); auth != nil {
 			a.Authorized, a.Authorization = true, auth
 		} else {
 			refuse("%s %s is not authorized: this copy's store records no reload or Guildmaster approval of that digest, so its settings are not applied", ManagedFile, a.ManagedDigest)
 		}
-	case enrolled:
-		a.Mode, a.Steward = ModeRefused, v.Enrolment.Steward
-		refuse("this copy is enrolled with steward %q but %s is missing: the managed settings are missing; restore the %s the Steward published", v.Enrolment.Steward, ManagedFile, ManagedFile)
-	case !present:
-		a.Mode = ModeStandalone
-	case v.Enrolment == nil:
-		a.Mode = ModeRefused
-		refuse("%s is present but this copy is not enrolled: run guildhall director enrol --steward <label>, or remove %s", ManagedFile, ManagedFile)
-	default:
-		a.Mode = ModeRefused
-		refuse("this copy left managed mode (keeping %s) but a %s is present: a stale or unexpected managed file; remove it, or run guildhall director enrol --steward <label>", v.Enrolment.Revision, ManagedFile)
 	}
 	if pin := PinRefusal(f.Dir(), v.ReleasePin); pin != "" {
 		refuse("%s", pin)

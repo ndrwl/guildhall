@@ -253,8 +253,8 @@ func (a *App) releaseRollback(args []string) int {
 	if err != nil {
 		return fail(err)
 	}
-	if _, err := os.Lstat(filepath.Join(dir, managedFile)); err == nil {
-		return fail(fmt.Errorf("copy %s is managed: its release is a managed key, so the Steward rolls back by rollout of the previous %s revision, then guildhall config reload --copy and guildhall director reload --copy", dir, managedFile))
+	if why := managedRefusal(dir, fmt.Sprintf("its release is a managed key, so the Steward rolls back by rollout of the previous %s revision, then guildhall config reload --copy and guildhall director reload --copy", managedFile)); why != "" {
+		return fail(errors.New(why))
 	}
 	h, err := a.releaseHome()
 	if err != nil {

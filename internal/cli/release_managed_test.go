@@ -116,6 +116,41 @@ func TestConfigReloadPinsTheManagedRelease(t *testing.T) {
 	}
 }
 
+// TestReleaseRefusesAnEnrolledCopyWithoutManagedToml: a copy enrolled with a Steward whose managed.toml is then
+// removed is in mode refused, which is managed to release use and release rollback: both refuse it with the
+// boundary's reason and record no pin.
+func TestReleaseRefusesAnEnrolledCopyWithoutManagedToml(t *testing.T) {
+	t.Setenv(directorModeEnv, "")
+	f := newPinFixture(t)
+	f.tickingClock()
+	if code := f.run("release", "adopt", "--copy", f.copy); code != 0 {
+		t.Fatalf("release adopt = %d", code)
+	}
+	f.install("v1.1.0", "release v1.1.0", 1)
+	if code := f.run("release", "use", "v1.1.0", "--copy", f.copy); code != 0 {
+		t.Fatalf("release use = %d, %s", code, f.stderr)
+	}
+	writeManaged(t, f.copy, map[string]config.ManagedSetting{})
+	if code := f.run("director", "enrol", "--steward", "hq", "--copy", f.copy); code != 0 {
+		t.Fatalf("enrol = %d, %s", code, f.stderr)
+	}
+	if err := os.Remove(filepath.Join(f.copy, "managed.toml")); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"release", "use", "v1.0.0", "--copy", f.copy}, {"release", "rollback", "--copy", f.copy}} {
+		code := f.run(args...)
+		if errOut := f.stderr.String(); code != 1 || !strings.Contains(errOut, "is managed") || !strings.Contains(errOut, `enrolled with steward "hq"`) || !strings.Contains(errOut, "managed.toml is missing") {
+			t.Fatalf("%s on an enrolled copy without managed.toml = %d, %q", strings.Join(args[:2], " "), code, errOut)
+		}
+		if pins := f.pins(); len(pins) != 2 {
+			t.Fatalf("%s recorded a pin: %+v", strings.Join(args[:2], " "), pins)
+		}
+		if pin, _ := release.ReadPin(f.copy); pin != "v1.1.0" {
+			t.Fatalf("%s moved release.pin to %q", strings.Join(args[:2], " "), pin)
+		}
+	}
+}
+
 // TestConfigReloadRefusesAnUnverifiedRelease: a revision whose release cannot be verified, installed with another
 // sha256, neither installed nor in .incoming, or an .incoming copy with another sha256, leaves the pin unchanged,
 // naming the reason and that the revision stands authorized; a release key without its sha256 fails authorization

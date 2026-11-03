@@ -320,6 +320,10 @@ func TestStewardStartPreflight(t *testing.T) {
 		"a managed copy": {func(t *testing.T, dir string) {
 			writeFile(t, filepath.Join(dir, "managed.toml"), "schema_version = 1\n")
 		}, "a Steward copy is never managed", ""},
+		"an empty inline [managed]": {func(t *testing.T, dir string) {
+			path := filepath.Join(dir, "config.toml")
+			writeFile(t, path, readText(t, path)+"\n[managed]\n")
+		}, "inline [managed] settings: a Steward copy is never managed", ""},
 		"no store": {func(t *testing.T, dir string) {
 			if err := os.Remove(filepath.Join(dir, stewardStoreFile)); err != nil {
 				t.Fatal(err)

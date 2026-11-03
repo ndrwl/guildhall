@@ -94,8 +94,8 @@ func (a *App) releaseUse(args []string) int {
 	if err != nil {
 		return a.fail(fmt.Errorf("release use: %w", err))
 	}
-	if _, err := os.Lstat(filepath.Join(dir, managedFile)); err == nil {
-		return a.fail(fmt.Errorf("release use: copy %s is managed: its release is a managed key, release and release_sha256 in %s, which the Steward changes by rollout and guildhall config reload --copy applies", dir, managedFile))
+	if why := managedRefusal(dir, fmt.Sprintf("its release is a managed key, release and release_sha256 in %s, which the Steward changes by rollout and guildhall config reload --copy applies", managedFile)); why != "" {
+		return a.fail(errors.New("release use: " + why))
 	}
 	h, err := a.releaseHome()
 	if err != nil {

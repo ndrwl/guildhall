@@ -131,11 +131,12 @@ func (a *App) directorEnrol(args []string) int {
 	if err != nil {
 		return a.fail(fmt.Errorf("%s: %w", name, err))
 	}
-	switch inline, err := config.InlineManaged(f.Local); {
+	adm := judge(f, store.ManagedView{})
+	switch inline, err := adm.Inline(); {
 	case err != nil:
 		return a.fail(fmt.Errorf("%s: %w", name, err))
 	case inline:
-		return a.fail(fmt.Errorf("%s: %s", name, judge(f, store.ManagedView{}).Refusal))
+		return a.fail(fmt.Errorf("%s: %s", name, adm.Refusal))
 	case f.Managed == nil:
 		return a.fail(fmt.Errorf("%s: enrolment needs a valid %s beside %s, in the checksum-bearing format (examples/managed.toml)", name, managedFile, cfgPath))
 	}

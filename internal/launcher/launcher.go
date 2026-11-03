@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/admit"
 	"github.com/ndrwl/guildhall/internal/copydir"
 	"github.com/ndrwl/guildhall/internal/release"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -351,30 +352,39 @@ func Choose(o Options) (Choice, error) {
 	if !ok {
 		return recovery("no Guildhall copy selected: pass --copy <dir> or cd into a copy; the launcher runs the release a copy pins")
 	}
-	managed := false
-	if _, err := os.Lstat(filepath.Join(dir, "managed.toml")); err == nil {
-		managed = true
-	}
 	pin, err := release.ReadPin(dir)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		fix := "set one with guildhall release use <version>, or adopt releases with guildhall release adopt"
-		if managed {
-			fix = "a managed copy takes it from its rollout with guildhall config reload --copy " + dir
-		}
-		return recovery(fmt.Sprintf("copy %s has no release pin (%s); %s", dir, release.PinPath(dir), fix))
+		standalone := "set one with guildhall release use <version>, or adopt releases with guildhall release adopt"
+		managed := "a managed copy takes it from its rollout with guildhall config reload --copy " + dir
+		return recovery(fmt.Sprintf("copy %s has no release pin (%s); %s", dir, release.PinPath(dir), managedFix(dir, standalone, managed)))
 	case err != nil:
 		return recovery(fmt.Sprintf("copy %s: %v", dir, err))
 	}
 	if _, err := home.Runnable(pin); err != nil {
-		fix := "install it with guildhall release install " + pin
-		if managed {
-			fix += ", or, managed, by rollout"
-		}
-		return recovery(fmt.Sprintf("copy %s: its pinned %v; the launcher never falls back to another release: %s", dir, err, fix))
+		standalone := "install it with guildhall release install " + pin
+		return recovery(fmt.Sprintf("copy %s: its pinned %v; the launcher never falls back to another release: %s", dir, err, managedFix(dir, standalone, standalone+", or, managed, by rollout")))
 	}
 	c.Version, c.Binary = pin, home.Binary(pin)
 	return c, nil
+}
+
+// managedFix is the fix the launcher names for the copy in dir's unusable pin: managed when the boundary's verdict
+// (admit.Managed) is that the copy is managed, with its refusal when the mode table refuses it, standalone when it
+// is not, and both, with the error, when the verdict cannot be read. Only a failing launch asks, so a healthy launch
+// opens no store.
+func managedFix(dir, standalone, managed string) string {
+	is, err := admit.Managed(dir)
+	var refused admit.RefusalError
+	switch {
+	case errors.As(err, &refused):
+		return managed + " (" + refused.Text + ")"
+	case err != nil:
+		return fmt.Sprintf("if it is standalone, %s; if it is managed, %s (whether it is managed cannot be read: %v)", standalone, managed, err)
+	case is:
+		return managed
+	}
+	return standalone
 }
 
 // ChildEnv is env with every GUILDHALL_RELEASE and launcher probe entry removed and GUILDHALL_RELEASE set to

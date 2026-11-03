@@ -34,7 +34,7 @@ Task d127 builds this page in five slices, and all five are built. Slice 1 chang
 Slice 2 is built too: the pin, `release use`, the launcher and `release adopt`.
 
 - **The pin**: each pin change is a `release-pin` event in the copy's store ([store](store.md#release-pins)) with source `adopt` or `use`, then `release.pin` is written by rename; a copy whose file and newest event disagree is refused by the configuration-admission boundary, naming `guildhall release use`, and `release status` shows it (the system alert is not built yet).
-- **`guildhall release use <version>`** pins a standalone copy to an installed, intact release; a managed copy is refused, naming the rollout.
+- **`guildhall release use <version>`** pins a standalone copy to an installed, intact release; a managed copy, or one enrolled without its `managed.toml`, is refused, naming the rollout.
 - **The PATH launcher** is its own small program, `cmd/guildhall-launcher`, built by `go install github.com/ndrwl/guildhall/cmd/guildhall-launcher@<version>` beside `guildhall` ([decision](decisions/release-launcher-program.md)); it behaves as [below](#the-path-launcher), and recovery dispatch also runs `help` and `version` when no copy is selected.
   Every release refuses a `GUILDHALL_RELEASE` naming another version.
 - **`guildhall release adopt`** installs the `guildhall` on `PATH` as the copy's first release, pins and registers the copy, installs the launcher into `<home>/bin/` and replaces the `PATH` binary with it by rename, keeping the old one as `guildhall.pre-adopt` (`.exe` on Windows); on Windows it refuses while another Guildhall process runs from that path. A second run reports what is in place.
@@ -53,7 +53,7 @@ Slice 3 is built too: tasks record their release and run on it, as [tasks keep t
 
 Slice 4 is built too: [rollback](#rollback) and [pruning](#pruning) for a standalone copy.
 
-- **`guildhall release rollback [--copy <dir>]`** moves the pin to the previous version of the copy's newest `release-pin` event, with source `rollback`, so a second rollback undoes the first; the previous release must still be installed intact with the sha256 the event names, and the store-schema rule applies as to `release use`. A managed copy is refused, naming the rollout.
+- **`guildhall release rollback [--copy <dir>]`** moves the pin to the previous version of the copy's newest `release-pin` event, with source `rollback`, so a second rollback undoes the first; the previous release must still be installed intact with the sha256 the event names, and the store-schema rule applies as to `release use`. A managed copy, or one enrolled without its `managed.toml`, is refused, naming the rollout.
 - **`guildhall release prune [--dry-run] [--copy <dir>]`** runs after every pin change (`use`, `rollback` and a first `adopt`) and by hand, exactly as [pruning](#pruning) says, under the home lock; each removal is a `release-pruned` event in the store of the copy that ran it ([store](store.md#release-prunes)), and a stale `.incoming/` entry is one last changed more than a day ago. A prune refused after a pin change is a warning: the pin change stands.
 - **`guildhall release status`** lists, for each release past the newest three, why it is kept, across every inventoried copy, or that it is prunable, and which copies would make prune refuse.
 - **The applied `director-reload`** records the old and new config digest beside the old and new release and sha256.
@@ -63,7 +63,7 @@ Slice 5 is built too: the managed pin through `config reload`, and with it the m
 - **`managed.toml` carries `release` and `release_sha256`**, managed keys that go together, are never overridable and are refused as local settings, since a standalone copy's pin is set by `release use` ([settings](configuration.md#settings)).
 - **`guildhall config reload --copy <dir>`**, once it has authorized the revision, verifies the release it names, installed intact with `release_sha256`, or installs it from the rollout's copy at `releases/.incoming/<version>/guildhall` against `release_sha256`; only then does it record a `release-pin` event with source `reload` and write that copy's `release.pin`, under the home lock and the store-schema rule, and prune. A release it cannot verify leaves the pin as it was: the revision stays authorized, and a reload once the release is in place pins it.
 - **Recovery dispatch** runs an explicit `config reload --copy <dir>` on the newest installed, verified release when the copy's pin is absent or its release missing or damaged, so a rollout can give a managed copy its first pin or move it off a damaged release; a reload by copy discovery still refuses.
-- **The managed rollback** is the rollout of the previous `managed.toml` revision, then `config reload --copy` and `director reload --copy`; `release use` and `release rollback` refuse a managed copy, naming the rollout.
+- **The managed rollback** is the rollout of the previous `managed.toml` revision, then `config reload --copy` and `director reload --copy`; `release use` and `release rollback` refuse a managed copy, or one enrolled without its `managed.toml`, naming the rollout.
 
 Task d149, the first follow-up, builds a missing release from source, in three slices, all built ([building a missing release](#building-a-missing-release), [decision](decisions/release-install-builds-from-source.md)):
 
@@ -144,6 +144,7 @@ It is a small fixed program installed with the first release and replaced only b
 1. It resolves the selected copy before choosing an executable.
    For new work and Director commands it reads that copy's `release.pin`; for an existing task it reads the immutable version and sha256 from the task's owning store instead, using the store, repository and task arguments.
    It loads no effective configuration.
+   Only when the pin is absent or its release unusable does it ask the boundary whether the copy is managed (`admit.Managed`, which reads `managed.toml` and the copy's store, never `config.toml`), to name the fix.
    Missing or conflicting task identity is refused, never treated as new work.
 2. If `releases/<version>/guildhall` exists and matches its `SHA256` (and, for a task, the recorded sha256), it runs it with the same arguments and standard streams and returns its exit code (on Unix by `exec`).
 3. If the pinned release is missing or damaged, it never falls back to another release: it exits non-zero and prints the version, the path it checked and the fix (`guildhall release install <version>` or, managed, a rollout).
