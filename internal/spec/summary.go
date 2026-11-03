@@ -1,6 +1,13 @@
 package spec
 
-import "strings"
+import (
+	"errors"
+	"strings"
+)
+
+// ErrNoSummary reports a spec with no usable Summary block where one is required: the plan check refuses a spec a
+// Guildmaster approval will show without one.
+var ErrNoSummary = errors.New("spec has no summary")
 
 // SummaryHeading is the heading of a spec's Summary block: the short goal, size, slices, changes since the grill and
 // open questions that a plan approval ask shows.

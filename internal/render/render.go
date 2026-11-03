@@ -86,6 +86,10 @@ type Stage struct {
 	// NoSummary marks a plan approval whose spec has no Summary block, or one that could not be read: Question then
 	// writes a line pointing at the spec instead. It is ignored when Summary is set, and by other kinds and Prompt.
 	NoSummary bool
+	// Questions is a plan approval's open-questions part (spec.SpecPart): the spec's open questions in full, or the
+	// line saying it has none, which Question writes after the summary. Empty leaves it out, as for a spec with no
+	// readable section. The caller reads the spec; other kinds and Prompt ignore it.
+	Questions string
 }
 
 // Retry is what the Director's retry of the previous attempt tells the next one.
@@ -524,6 +528,9 @@ func Question(stage Stage, inputs []Input) (Ask, error) {
 				name = slashName(inputs[i].Name)
 			}
 			fmt.Fprintf(&b, "\nNo summary in this spec; read %s.\n", name)
+		}
+		if questions := strings.TrimSpace(normalise(stage.Questions)); questions != "" {
+			fmt.Fprintf(&b, "\n%s\n", questions)
 		}
 	}
 	if instructions := strings.TrimRight(normalise(stage.Step.Instructions()), "\n"); strings.TrimSpace(instructions) != "" {

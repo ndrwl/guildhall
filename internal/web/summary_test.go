@@ -68,7 +68,7 @@ func TestPlanSummary(t *testing.T) {
 		for name, q := range map[string]string{"question with a copy": approvalQuestion("Plan summary:\n" + block), "older question": approvalQuestion("")} {
 			page := summaryPage(t, "", q, false)
 			once(t, page, `<div class="plan md"><p class="ph">Plan summary</p>`)
-			once(t, page, "Q1 Which address?")
+			once(t, page, "Q1. Which address")
 			once(t, page, "<strong>Goal:</strong> one web page per task.")
 			once(t, page, "<strong>Changed since the grill:</strong>")
 			if strings.Contains(page, "No summary in this spec") || strings.Contains(page, "Plan summary:") {
@@ -138,15 +138,71 @@ func TestDesignRoundNoSummary(t *testing.T) {
 }
 
 func TestStripSummary(t *testing.T) {
-	for _, c := range []struct{ rest, summary, want string }{
-		{"Plan summary:\n- a\n\n- b\n\nInputs:\n- x", "- a\n\n- b", "Inputs:\n- x"},
-		{"Plan summary:\n- a, as stored\n\nAnswer with one of: y.", "- a", "Answer with one of: y."},
-		{"Plan summary:\n- a\n\nInputs:\n- x", "", "Plan summary:\n- a\n\nInputs:\n- x"},
-		{"No summary in this spec; read s.md.\n\nInputs:\n- x", "", "Inputs:\n- x"},
-		{"Inputs:\n- x", "- a", "Inputs:\n- x"},
+	const qs = "Open questions in full:\n**Q1. A**\nOptions: x; y.\nRecommended: x."
+	for _, c := range []struct{ rest, summary, questions, want string }{
+		{"Plan summary:\n- a\n\n- b\n\nInputs:\n- x", "- a\n\n- b", "", "Inputs:\n- x"},
+		{"Plan summary:\n- a, as stored\n\nAnswer with one of: y.", "- a", "", "Answer with one of: y."},
+		{"Plan summary:\n- a\n\nInputs:\n- x", "", "", "Plan summary:\n- a\n\nInputs:\n- x"},
+		{"No summary in this spec; read s.md.\n\nInputs:\n- x", "", "", "Inputs:\n- x"},
+		{"Inputs:\n- x", "- a", "", "Inputs:\n- x"},
+		{"Plan summary:\n- a\n\n" + qs + "\n\nInputs:\n- x", "- a", qs, "Inputs:\n- x"},
+		{"Plan summary:\n- a\n\nOpen questions: none.\n\nInputs:\n- x", "- a", "Open questions: none.", "Inputs:\n- x"},
+		{"Plan summary:\n- a\n\n" + qs + ", as stored\n\nInputs:\n- x", "- a", qs, "Inputs:\n- x"},
+		{"Plan summary:\n- a, as stored\n\n" + qs + "\n\nInputs:\n- x", "- a", qs, "Inputs:\n- x"},
+		{"No summary in this spec; read s.md.\n\n" + qs + "\n\nInputs:\n- x", "", qs, "Inputs:\n- x"},
+		{"Plan summary:\n- a\n\n" + qs + "\n\nInputs:\n- x", "- a", "", qs + "\n\nInputs:\n- x"},
 	} {
-		if got := stripSummary(c.rest, c.summary); got != c.want {
-			t.Errorf("stripSummary(%q, %q) = %q, want %q", c.rest, c.summary, got, c.want)
+		if got := stripSummary(c.rest, c.summary, c.questions); got != c.want {
+			t.Errorf("stripSummary(%q, %q, %q) = %q, want %q", c.rest, c.summary, c.questions, got, c.want)
 		}
 	}
+}
+
+// TestPlanSummaryQuestions: the summary box shows the spec's open questions in full after the Summary, each line as
+// written, once, and the rest of the question does not repeat them; a spec whose section says None says so, and an
+// older spec with no readable section shows no part.
+func TestPlanSummaryQuestions(t *testing.T) {
+	spec := fixtureFiles[specPath]
+	_, block, _ := strings.Cut(spec, "## Summary\n\n")
+	block, _, _ = strings.Cut(block, "\n\n## Goal")
+	_, qs, _ := strings.Cut(spec, "## Open questions\n\n")
+	part := "Open questions in full:\n" + strings.TrimSpace(qs)
+	t.Run("in full", func(t *testing.T) {
+		for name, q := range map[string]string{"question with a copy": approvalQuestion("Plan summary:\n" + block + "\n\n" + part), "older question": approvalQuestion("")} {
+			page := summaryPage(t, "", q, false)
+			box, rest, _ := strings.Cut(page, `class="ctx"`)
+			once(t, box, `<p class="ph">Open questions in full</p><div class="qs"><p><strong>Q1. Which address</strong>
+The page needs an address to be served on.
+Options: (a) the tailnet one; (b) localhost only.
+Recommended: (a). The Guildmaster reads it from a phone.</p>
+</div></div>`)
+			if p, o := strings.Index(box, "Plan summary"), strings.Index(box, "Open questions in full"); p < 0 || o < p {
+				t.Errorf("%s: the questions are not after the summary", name)
+			}
+			if strings.Contains(rest, "Which address") || strings.Contains(page, "Open questions in full:") {
+				t.Errorf("%s: the rest of the question repeats the questions", name)
+			}
+		}
+	})
+	t.Run("none", func(t *testing.T) {
+		none := strings.Replace(spec, "## Open questions\n\n"+qs, "## Open questions\n\nNone.\n", 1)
+		page := summaryPage(t, none, approvalQuestion("Plan summary:\n"+block+"\n\nOpen questions: none."), false)
+		once(t, page, `<p class="ph">Open questions: none.</p></div>`)
+		once(t, page, "Open questions: none.")
+	})
+	t.Run("no summary, questions", func(t *testing.T) {
+		bare := "# T\n\n## Open questions\n\n" + qs
+		page := summaryPage(t, bare, approvalQuestion("No summary in this spec; read "+specPath+".\n\n"+part), false)
+		once(t, page, "No summary in this spec · read plan-1-spec")
+		once(t, page, `<div class="plan md"><p class="ph">Open questions in full</p>`)
+		once(t, page, "Which address")
+	})
+	t.Run("older spec", func(t *testing.T) {
+		old := strings.Replace(spec, "Options:", "Choices:", 1)
+		page := summaryPage(t, old, approvalQuestion(""), false)
+		if strings.Contains(page, "Open questions in full") {
+			t.Error("a spec with no readable section shows an open-questions part")
+		}
+		once(t, page, `<div class="plan md"><p class="ph">Plan summary</p>`)
+	})
 }

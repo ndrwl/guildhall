@@ -123,6 +123,7 @@ For runtimes launched elsewhere, the supervisor supplies an absolute startup-fil
 `render.Question(stage, inputs)` refuses an Artisan stage (`ErrWrongActor`) and reads no files.
 The question names the task, step and attempt, carries the step's `instructions` and lists the inputs by name and recorded digest.
 A plan approval's question also carries, right after its first line, the spec's Summary block under `Plan summary:` from `Stage.Summary`, or, with `Stage.NoSummary`, the line `No summary in this spec; read <spec input name>.`; the engine reads the verified spec and passes the block in (`spec.Summary`), and a spec it cannot read counts as having none.
+After it comes `Stage.Questions`, the spec's open-questions part (`spec.SpecPart`): `Open questions in full:` and every `## Open questions` question copied byte for byte, cut at a question boundary with `(cut; read the spec)` past 16 KiB, or `Open questions: none.`; a spec with no readable section, such as one recorded before the plan check, has no part.
 The complete question text has CRLF and lone CR normalised to LF.
 
 | Kind | Options |

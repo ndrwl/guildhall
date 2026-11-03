@@ -242,7 +242,7 @@ func TestParseArgs(t *testing.T) {
 func TestRunOutputDirective(t *testing.T) {
 	work := t.TempDir()
 	t.Chdir(work)
-	args := setup(t, "Plan the change.\nguildhall-fake: output=notes/spec.md:Sort tasks by id.\n")
+	args := setup(t, "Plan the change.\nguildhall-fake: output=notes/spec.md:# Spec\\n\\nSort tasks by id.\n")
 	if _, err := run(t, args); err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +253,7 @@ func TestRunOutputDirective(t *testing.T) {
 	if r.Status != adapter.StatusSucceeded || len(r.Outputs) != 1 || r.Outputs[0].Path != "notes/spec.md" {
 		t.Errorf("result = %+v, want one output notes/spec.md", r)
 	}
-	if got, err := os.ReadFile(filepath.Join(work, "notes", "spec.md")); err != nil || string(got) != "Sort tasks by id.\n" {
+	if got, err := os.ReadFile(filepath.Join(work, "notes", "spec.md")); err != nil || string(got) != "# Spec\n\nSort tasks by id.\n" {
 		t.Errorf("output file = %q, %v", got, err)
 	}
 	for _, prompt := range []string{

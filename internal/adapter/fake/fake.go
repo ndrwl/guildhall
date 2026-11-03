@@ -294,7 +294,8 @@ func parseDirectives(prompt []byte) (directives, error) {
 			if !ok || !filepath.IsLocal(path) || filepath.IsAbs(path) || strings.Contains(path, `\`) || path != filepath.ToSlash(filepath.Clean(path)) {
 				return d, fmt.Errorf("output %q must be <relative slash-separated path>:<text>", value)
 			}
-			d.output, d.text = path, text
+			// A directive is one line, so `\n` in text writes a line break, as a Markdown document needs.
+			d.output, d.text = path, strings.ReplaceAll(text, `\n`, "\n")
 		default:
 			return d, fmt.Errorf("unknown directive %q", key)
 		}

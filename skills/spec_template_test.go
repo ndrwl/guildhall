@@ -38,4 +38,13 @@ func TestSpecTemplateSummary(t *testing.T) {
 	if want := []string{"Goal", "Size", "Slices", "Changed since the grill", "Open questions"}; strings.Join(labels, "|") != strings.Join(want, "|") {
 		t.Errorf("the Summary's parts are %q, want %q", labels, want)
 	}
+	// The ask copies the questions in full after the Summary, so the Summary only counts them.
+	if !strings.HasSuffix(summary, "\n- **Open questions:** <how many>, or \"None\".") {
+		t.Errorf("the Summary's open questions item is not a count only: %q", summary)
+	}
+	_, questions, ok := strings.Cut(tmpl, "\n## Open questions\n\n")
+	questions, _, _ = strings.Cut(questions, "```")
+	if !ok || !strings.HasPrefix(questions, "**Q1. <question title>**\n<question body>\nOptions: ") || !strings.Contains(questions, "\nRecommended: ") {
+		t.Errorf("the template's ## Open questions is not a **Q1.** question with Options: and Recommended: lines: %q", questions)
+	}
 }

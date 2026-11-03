@@ -11,7 +11,7 @@
   },
   "prompt": {
     "path": "prompt.md",
-    "digest": "sha256:6b39ec34297228ec130b6cf7897f0f973e108621a1c4a7e2c53ca2141ec81166"
+    "digest": "sha256:fdfe8ac971139ec98c0cf61bd0e132b75709f5361f24510ea3c05db09bd01454"
   },
   "role": {
     "path": "roles/artisan.md",
@@ -31,7 +31,7 @@
     {
       "port": "spec",
       "path": "tasks/t7/spec-v1.md",
-      "digest": "sha256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84"
+      "digest": "sha256:4a10390f1231da4013fc98b4fbfe893c412b042235465ced30acdcda7b5f265d"
     }
   ],
   "skills": [
