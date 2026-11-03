@@ -56,6 +56,7 @@ func TestTaskPageFixture(t *testing.T) {
 	for _, want := range []string{
 		`<meta name="viewport" content="width=device-width, initial-scale=1">`,
 		// the band: crumbs, title, chips, slice and the stepper's states
+		`<div class="crumb"><a href="/">All tasks</a><span class="sep">/</span><span>guildhall</span>`,
 		`<b>d122</b>`, `linked from <a href="/guildhall/d105">d105</a>`, `depends on <a href="/other/d7">other/d7</a>`,
 		`<h1>Guildmaster task page: one web page per task with context, status and answerable decisions</h1>`,
 		// where it stands, then in grey the slice, PR and CI; the phone's chips keep only the PR and CI
@@ -218,7 +219,7 @@ func TestTaskPageEmpty(t *testing.T) {
 func TestRoutes(t *testing.T) {
 	s, src, _, _ := fixtureServer(t)
 	for target, code := range map[string]int{
-		"/": 404, "/guildhall": 404, "/guildhall/d122/": 404, "/guildhall/d122/extra": 404, "/guildhall/d122/doc": 404,
+		"//": 404, "/guildhall": 404, "/guildhall/d122/": 404, "/guildhall/d122/extra": 404, "/guildhall/d122/doc": 404,
 		"/guildhall/d122/doc/plan-1-spec/other": 404, "/guildhall/nope": 404, "/guildhall/%2e%2e": 404, "/a%2Fb/c": 404, "/guildhall/..": 404,
 	} {
 		w := get(t, s, target)
@@ -233,6 +234,11 @@ func TestRoutes(t *testing.T) {
 	s.ServeHTTP(w, request(http.MethodPost, "/guildhall/d122", strings.NewReader("x=1")))
 	if w.Code != http.StatusNotFound {
 		t.Errorf("POST to the task page: status %d, want 404; answers go to /answer", w.Code)
+	}
+	w = httptest.NewRecorder()
+	s.ServeHTTP(w, request(http.MethodPost, "/", strings.NewReader("x=1")))
+	if w.Code != http.StatusNotFound {
+		t.Errorf("POST to the task list: status %d, want 404; it has no forms", w.Code)
 	}
 	w = httptest.NewRecorder()
 	s.ServeHTTP(w, request(http.MethodGet, "/guildhall/d122/answer", nil))

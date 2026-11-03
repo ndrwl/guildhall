@@ -19,11 +19,44 @@ var ErrNotFound = errors.New("no such task in this copy")
 // ErrBusy is a Source's answer when a writer holds the store's lock past the Source's bounded wait.
 var ErrBusy = errors.New("the store is busy")
 
-// Source reads one task's page model. Each call opens the store, reads, and closes it before returning, so no page
-// is rendered while the store is open. It returns ErrNotFound for an unknown task and ErrBusy for a store whose
-// lock it could not take in time; any other error is shown as a refusal with no detail.
+// Source reads one task's page model, and the task list's. Each call opens the store, reads, and closes it before
+// returning, so no page is rendered while the store is open. Task returns ErrNotFound for an unknown task, and
+// either returns ErrBusy for a store whose lock it could not take in time; any other error is shown as a refusal
+// with no detail.
 type Source interface {
 	Task(repo, id string) (Task, error)
+	Tasks() (TaskList, error)
+}
+
+// Group is the group of the task list a task is listed under.
+type Group string
+
+const (
+	// GroupYou is a task waiting on the Guildmaster: an open or deferred ask, or a Director stage run with them.
+	GroupYou Group = "you"
+	// GroupMoving is a task that moves on its own: a running or starting attempt, a slot, CI or the merge queue.
+	GroupMoving Group = "moving"
+	// GroupOther is a task waiting on something else: its dependencies, the Director, a pause, or not started.
+	GroupOther Group = "other"
+	// GroupFinished is a task done or cancelled in the last 7 days.
+	GroupFinished Group = "finished"
+)
+
+// TaskList is the task list's model: every task of the copy that is open or finished in the last 7 days, in the
+// order the list shows each group's rows, as the store held them when ReadAt was taken.
+type TaskList struct {
+	Tasks  []Listed
+	ReadAt time.Time
+}
+
+// Listed is one row of the task list: the task, its group, its where-it-stands sentence (Stands, Clerk's phrase, is
+// the fallback for an empty one) and since when it has stood so, nil when unknown.
+type Listed struct {
+	Repository, ID, Title string
+	Group                 Group
+	Where                 Where
+	Stands                string
+	Since                 *time.Time
 }
 
 // StepState is the state of a step in the stepper and of a node on the story's spine; each has its own colour, icon

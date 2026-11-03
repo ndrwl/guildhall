@@ -9,11 +9,20 @@ import (
 	"time"
 )
 
-// fakeSource is a Source holding fixed tasks, or failing with err.
+// fakeSource is a Source holding fixed tasks and a fixed task list, or failing with err.
 type fakeSource struct {
 	tasks map[string]Task
+	list  TaskList
 	err   error
 	calls int
+}
+
+func (f *fakeSource) Tasks() (TaskList, error) {
+	f.calls++
+	if f.err != nil {
+		return TaskList{}, f.err
+	}
+	return f.list, nil
 }
 
 func (f *fakeSource) Task(repo, id string) (Task, error) {

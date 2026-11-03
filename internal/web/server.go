@@ -58,8 +58,9 @@ type Options struct {
 	Answerer    Answerer
 }
 
-// Server serves the task pages and reader pages from its Source. Its routes are:
+// Server serves the task list, the task pages and reader pages from its Source. Its routes are:
 //
+//	GET /                               the task list, read-only
 //	GET /<repo>/<task>                  the task page
 //	GET /<repo>/<task>/doc/<name>       the reader page of one of the task's documents
 //	GET /<repo>/<task>/doc/<name>/raw   the document as text/plain
@@ -91,6 +92,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.Set("Cache-Control", "no-store")
 	if !sameHost(r.Host, s.o.Host) {
 		s.refuse(w, http.StatusMisdirectedRequest, "Wrong address", "Open this page by its [web] address, "+s.o.Host+".")
+		return
+	}
+	if r.URL.EscapedPath() == "/" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		s.taskList(w)
 		return
 	}
 	segs, ok := segments(r.URL.EscapedPath())
@@ -163,6 +168,21 @@ func (s *Server) read(w http.ResponseWriter, repo, id string) (Task, bool) {
 		return Task{}, false
 	}
 	return t, true
+}
+
+// taskList serves the task list, the same read-only page to everyone.
+func (s *Server) taskList(w http.ResponseWriter) {
+	l, err := s.o.Source.Tasks()
+	switch {
+	case errors.Is(err, ErrBusy):
+		s.refuse(w, http.StatusServiceUnavailable, "The store is busy", "The Director is writing to the store. Reload in a moment.")
+		return
+	case err != nil:
+		s.log("web: read the task list: " + err.Error())
+		s.refuse(w, http.StatusInternalServerError, "The task list could not be read", "Guildhall could not read the tasks from the store. Reload, or ask the Director.")
+		return
+	}
+	s.render(w, http.StatusOK, "list", s.listView(l))
 }
 
 // taskPage serves the task page to whoever r is from: with the forms for the Guildmaster's login, read-only for
