@@ -28,10 +28,12 @@ A missing section is `ErrNoOpenQuestions`; an empty section, text before the fir
 `Questions.Part()` is the part an approval ask shows after the Summary: `Open questions: none.`, or `Open questions in full:` then `Render(QuestionsMax)`, 16 KiB, a limit of its own so long questions never make the Summary disappear.
 `SpecPart(data)` is `SpecQuestions(data)`'s `Part()`, with `ok` false when the spec has no readable section, as with specs recorded before the plan check, so the ask leaves the part out.
 The interpreter's question text and `internal/web`'s summary box both call `SpecPart` on the verified spec, so chat and page show the same questions.
+A design round's design uses the spec's shape for its `## Open questions`, so the design check, the design ask's question text and its box on the task page call `SpecQuestions` and `SpecPart` on the verified design in the same way.
 All of these are pure functions of the bytes, safe to call at once, and a question is identified by its number in its section.
 
 The interpreter calls `Slices` and `CheckRevision` when it records a plan's spec ([decision](../decisions/multi-pr-tasks.md)), and works out the task's slices from the accepted spec with `Slices`.
 When a `guildmaster-approval` step of the task's workflow takes that spec as an input, it also refuses, before the spec is first recorded, a spec with no usable Summary block or whose `SpecQuestions` errors: the plan attempt fails with the reason and the planner runs again. A plan no approval shows, such as the bug workflow's, is not checked, and a spec already recorded is not checked again on replay.
+It refuses a designer's `design.md` whose `SpecQuestions` errors the same way, before it is first recorded, and a design already recorded is not checked again on replay ([design rounds](../interpreter.md#design-rounds)).
 One implementation and no interface, like `digest`.
 
 ## Tests

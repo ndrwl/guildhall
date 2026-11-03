@@ -10,6 +10,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/render"
+	"github.com/ndrwl/guildhall/internal/spec"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
@@ -58,6 +59,17 @@ func (r *run) checkMockup(s workflow.Step, n int, outputs []adapter.Output, cont
 		return err
 	}
 	return checkMockupFiles(surface, outputs, contents)
+}
+
+// checkDesignQuestions refuses, as the result's fault, a design whose `## Open questions` section is missing or is
+// neither "None" nor well-formed questions in the spec's shape (spec.SpecQuestions): the design ask copies each
+// question in full, so the Guildmaster can answer from the ask alone.
+func checkDesignQuestions(data []byte) error {
+	if _, err := spec.SpecQuestions(data); err != nil {
+		return rejectOutput(fmt.Errorf("%w; the design ask copies each open question in full, so give design.md an %s section that says \"None\" or holds **Qn. title** questions, each with Options: and Recommended: lines",
+			err, spec.OpenQuestionsHeading))
+	}
+	return nil
 }
 
 // checkMockupFiles is checkMockup's rule for a brief whose surface is surface.

@@ -552,10 +552,15 @@ var DesignOptions = []string{string(workflow.VerdictApproved), string(workflow.V
 
 // DesignQuestion renders the decision a design round opens, decision id, round n of the task's design rounds, once its
 // designer attempt wrote the design: it says what each answer does and lists the inputs, the brief and the design,
-// by name and recorded digest. It reads no files and has LF line endings.
-func DesignQuestion(repository, task, id string, n int, inputs []Input) Ask {
+// by name and recorded digest. Right after its first line it writes questions, the design's open-questions part
+// (spec.SpecPart) the caller read from the verified design, or nothing when it is empty, as for a design recorded
+// before the design check required the section. It reads no files and has LF line endings.
+func DesignQuestion(repository, task, id string, n int, questions string, inputs []Input) Ask {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Design decision needed for %s/%s, design round %d, decision %s.\n", repository, task, n, id)
+	if questions := strings.TrimSpace(normalise(questions)); questions != "" {
+		fmt.Fprintf(&b, "\n%s\n", questions)
+	}
 	b.WriteString("\napproved makes the design an input to plan, which runs again if it already ran; changes_requested reopens the grill with your answer.\n")
 	if len(inputs) > 0 {
 		b.WriteString("\nInputs:\n")

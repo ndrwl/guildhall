@@ -1141,10 +1141,13 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 			}
 		}
 	}
-	// A designer's mock-up is checked against its brief's surface before anything is recorded; a design already
-	// recorded stands on replay.
+	// A designer's mock-up is checked against its brief's surface, and its design for its open questions, before
+	// anything is recorded; a design already recorded stands on replay.
 	if s.Type == designKindType && r.document(documentName(place{step: s.ID, round: n, part: port.Name})) == nil {
 		if err := r.checkMockup(s, n, outputs, contents); err != nil {
+			return err
+		}
+		if err := checkDesignQuestions(contents[0]); err != nil {
 			return err
 		}
 	}

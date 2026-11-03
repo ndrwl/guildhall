@@ -143,7 +143,7 @@ func TestDesignerPromptSurface(t *testing.T) {
 
 // TestDesignQuestionListsTheMockup: a design question lists the mock-up's digest next to the brief and the design.
 func TestDesignQuestionListsTheMockup(t *testing.T) {
-	ask := DesignQuestion("app", "t7", "design-1", 1, []Input{
+	ask := DesignQuestion("app", "t7", "design-1", 1, "", []Input{
 		{Port: "brief", Name: "tasks/app/t7/design-1/brief.md", SHA256: strings.Repeat("cd", 32)},
 		{Port: "design", Name: "tasks/app/t7/designer-1/design.md", SHA256: strings.Repeat("ef", 32)},
 		{Port: "mockup", Name: "tasks/app/t7/designer-1/mockup.html", SHA256: strings.Repeat("ab", 32)},

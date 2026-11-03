@@ -209,8 +209,10 @@ While the latest round is open, the advance starts no workflow step:
    - `cli` or `chat`: exactly two outputs, `design.md` and then `mockup.md`, holding at least one fenced code block;
    - `none`: `design.md` alone.
 
+   It is rejected too when `design.md`'s `## Open questions` section is missing or is neither "None" nor `**Qn. title**` questions numbered from Q1 with no gaps, each with an `Options:` and a `Recommended:` line (`spec.SpecQuestions`), the error naming the question at fault; a design already recorded stands on replay, unchecked.
+
    The mock-up is output 2 of the `design` port, recorded as `<attempt>-<k>-design-2`; everything that reads the design, plan's `design` input, its staleness and the grill's `reviewed` input, reads `<attempt>-<k>-design`, `design.md`, alone.
-3. Once the designer succeeds, the engine opens decision `<decision>-<n>`, kind `approval`, options `approved` and `changes_requested`, bound to the design's digest, its question listing the brief, the design and the mock-up, when there is one, by digest, and waits; `task start --decision <decision>-<n>` moves the task on once it is answered.
+3. Once the designer succeeds, the engine opens decision `<decision>-<n>`, kind `approval`, options `approved` and `changes_requested`, bound to the design's digest, its question carrying, right after its first line, the design's open questions in full (`spec.SpecPart`, read from the verified design; none for a design recorded before the check) and listing the brief, the design and the mock-up, when there is one, by digest, and waits; `task start --decision <decision>-<n>` moves the task on once it is answered.
 
 **The answer.** `approved` closes the round: plan's binding gains the latest approved design on the engine-added `design` port.
 It is the one engine-added port [staleness](#rounds-and-loops) counts, and only for a `plan` step: a plan that already succeeded becomes stale, runs again with the design, and its acceptance is asked again on the new spec's digest: an acceptance still open on the old spec is voided as superseded, and the next round is asked on the new spec's digest.
