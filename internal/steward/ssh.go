@@ -32,6 +32,33 @@ var allowedCommands = []struct {
 	{args: []string{"director", "mode", "--json", "--copy"}},
 	// director reload restarts the copy's session on a new release (docs/releases.md); built by guildhall/d98.
 	{args: []string{"director", "reload", "--copy"}, reserved: "guildhall/d98"},
+	// lesson list and incident list --json --pending read the copy's lessons and incidents not yet collected,
+	// changing nothing (docs/decisions/steward-collection-commands.md).
+	{args: []string{"lesson", "list", "--json", "--pending", "--copy"}},
+	{args: []string{"incident", "list", "--json", "--pending", "--copy"}},
+	// director collected marks the items of the receipt the Steward copied to CollectReceiptPath as collected.
+	{args: []string{"director", "collected", "--copy"}},
+}
+
+// CollectReceiptPath is where, relative to a Director copy's directory, the Steward copies the receipt that
+// `director collected` reads, marks and deletes.
+const CollectReceiptPath = "state/steward/collect-receipt.json"
+
+// PendingLessonsCommand is the read-only remote command that prints a copy's lessons not yet collected as JSON:
+// `<guildhall> lesson list --json --pending --copy <copyDir>`.
+func PendingLessonsCommand(guildhall, copyDir string) []string {
+	return []string{guildhall, "lesson", "list", "--json", "--pending", "--copy", copyDir}
+}
+
+// PendingIncidentsCommand is the incident form of PendingLessonsCommand.
+func PendingIncidentsCommand(guildhall, copyDir string) []string {
+	return []string{guildhall, "incident", "list", "--json", "--pending", "--copy", copyDir}
+}
+
+// CollectedCommand is the remote command that marks the items of the receipt at CollectReceiptPath collected:
+// `<guildhall> director collected --copy <copyDir>`.
+func CollectedCommand(guildhall, copyDir string) []string {
+	return []string{guildhall, "director", "collected", "--copy", copyDir}
 }
 
 // ReloadCommand is the remote command that authorizes the managed.toml published to the Director copy in copyDir,
@@ -77,7 +104,8 @@ func validFile(path string) bool {
 }
 
 // Runner runs the fixed remote commands on enrolled machines: `config reload` after a rollout publishes a copy's
-// managed.toml, and the read-only `director mode --json`. SSH is the ssh implementation and stewardtest.Fleet an
+// managed.toml, the read-only `director mode --json`, and collection's read-only pending lists and
+// `director collected`. SSH is the ssh implementation and stewardtest.Fleet an
 // in-memory one; both pass stewardtest.RunRunnerContract.
 //
 // Run refuses an alias and argv that CheckRun refuses, with an error wrapping ErrNotAllowed, and runs nothing. Otherwise it runs argv as one fixed command on the machine

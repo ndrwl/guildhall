@@ -250,7 +250,9 @@ Filing works the same in a standalone and a managed copy and needs no enrolment.
 - `ResolveLesson` records `adopted` or `declined` on a `proposed` lesson under the mutation id `lesson-resolve:<id>`, and `ResolveIncident` records `accepted`, `deferred` or `declined` on an `open` incident, or `accepted` or `declined` on a `deferred` one, under `incident-resolve:<id>:<state>`; each sets `resolved`, its receipt and time.
   Resolving to the state the item is in returns it again; a collected item is `ErrInvalid`, because from then on the Steward's queue owns it, and so is any other move.
 - `MarkCollected` records that a Steward collected an item into a private-repository commit, under the mutation id `collected:<kind>:<id>:<first 16 hex digits of the digest>`: the item's `state` becomes `collected` and `collected` holds the `commit`, receipt and time, keeping any local resolution.
-  A digest that is not the item's is `ErrDigestMismatch` and leaves the item pending, and an item already collected is `ErrInvalid`; Steward collection, which calls it, is d124's second slice.
+  A digest that is not the item's is `ErrDigestMismatch` and leaves the item pending, and an item already collected is `ErrInvalid`; `guildhall director collected`, which a Steward's [collection](steward.md#collection) runs over SSH, calls it for each receipt item that is the copy's and not yet collected.
+
+A Steward store's own records follow the same rules: its reserved tasks `steward/incidents` and `steward/lessons` hold one triage decision per collected item ([triage](steward.md#triage)).
 
 `store doctor` counts and decodes the lessons, incidents and observations, and export and import carry the buckets as they carry every bucket.
 

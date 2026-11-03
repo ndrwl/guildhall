@@ -43,7 +43,7 @@ The rendered Director role explains the difference between those obligations and
 An unexpected state, failed advance or refusal must reach the Director with facts and available tools: the repository, task, step and attempt; the observed state and its age; relevant evidence; what the engine did or did not commit; and the safe next operations with their preconditions.
 It distinguishes a normal human or external wait, a recoverable error, and an unsupported or ambiguous state; lack of progress becomes an actionable observation, not an endless "pending".
 Failure reporting is durable and deduplicated and uses the existing inbox and wake path rather than spending model tokens on polling; if that path is unavailable, the command returns an explicit failure and preserves local diagnostic evidence.
-When an edge case needs intervention, the Director files a maintenance ticket to the Steward, even when it resolves the immediate task ([maintenance tickets](../messaging.md#maintenance-tickets-to-the-steward); local filing is built as `guildhall incident`, and Steward collection is d124's second slice).
+When an edge case needs intervention, the Director files a maintenance ticket to the Steward, even when it resolves the immediate task ([maintenance tickets](../messaging.md#maintenance-tickets-to-the-steward); local filing is built as `guildhall incident`, and Steward collection as `guildhall steward collect`).
 
 ## Consequences
 

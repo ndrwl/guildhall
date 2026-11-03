@@ -406,12 +406,24 @@ func contractList(t *testing.T, h Harness) {
 }
 
 // contractSteward: the Steward's inbox is one per store like the Director's, takes a message from the Guildmaster
-// only, and is kept apart from the Director's inbox and acknowledged only by the Steward (d96).
+// and, tagged director, from its collection round only, and is kept apart from the Director's inbox and acknowledged
+// only by the Steward (d96, d124).
 func contractSteward(t *testing.T, h Harness) {
 	b := h.Mailbox()
 	toSteward := Envelope("g-1", store.RecipientSteward)
 	toSteward.Step, toSteward.Attempt = "", 0
-	for _, sender := range []string{store.SenderOtherDirector, store.SenderArtisan, store.SenderDirector, store.SenderGuildhall, store.SenderUnknown, ""} {
+	collected := Envelope("c-1", store.RecipientSteward)
+	collected.Step, collected.Attempt = "", 0
+	if _, err := b.Send(Steward, store.SenderDirector, collected); err != nil {
+		t.Fatalf("steward message tagged director: %v", err)
+	}
+	if m, err := b.Read("c-1"); err != nil || m.Sender != store.SenderDirector {
+		t.Fatalf("Read director-tagged steward message = %+v, %v", m, err)
+	}
+	if _, err := b.Ack(Steward, "c-1"); err != nil {
+		t.Fatal(err)
+	}
+	for _, sender := range []string{store.SenderOtherDirector, store.SenderArtisan, store.SenderGuildhall, store.SenderUnknown, ""} {
 		if _, err := b.Send(Steward, sender, toSteward); !errors.Is(err, store.ErrInvalid) {
 			t.Errorf("steward message from %q: err = %v, want store.ErrInvalid", sender, err)
 		}

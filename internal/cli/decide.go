@@ -103,10 +103,15 @@ func (a *App) decide(args []string) int {
 	}
 	var answer string
 	if sub == "answer" {
-		// A rollout approval is the Guildmaster's own: an agent in a session, the Steward's among them, cannot record
-		// it for them (docs/steward.md#approval-in-a-steward-session).
-		if *repo == stewardRepository && *task == stewardRolloutsTask && filepath.Base(*path) == stewardStoreFile && a.inSession() {
-			return fail(fmt.Errorf("decision %s/%s/%s approves a rollout, and only the Guildmaster answers it, outside any Guildhall session", *repo, *task, *id))
+		// A rollout approval and a triage decision are the Guildmaster's own: an agent in a session, the Steward's among
+		// them, cannot record them for them (docs/steward.md#approval-in-a-steward-session, docs/steward.md#triage).
+		if *repo == stewardRepository && filepath.Base(*path) == stewardStoreFile && a.inSession() {
+			switch *task {
+			case stewardRolloutsTask:
+				return fail(fmt.Errorf("decision %s/%s/%s approves a rollout, and only the Guildmaster answers it, outside any Guildhall session", *repo, *task, *id))
+			case stewardIncidentsTask, stewardLessonsTask:
+				return fail(fmt.Errorf("decision %s/%s/%s is the Guildmaster's triage, and only the Guildmaster answers it, outside any Guildhall session", *repo, *task, *id))
+			}
 		}
 		var err error
 		if answer, err = a.readAnswer(*answerFile); err != nil {

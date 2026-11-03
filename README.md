@@ -175,6 +175,7 @@ The commands are the Director's tools; you can also call them yourself to script
 - `guildhall workflow approve|approvals`: approve workflow changes; see [workflow-edit authority](docs/configuration.md#workflow-edit-authority).
 - `guildhall steward start`, `guildhall steward status` and `guildhall steward approval request`: run the Steward session, which owns the roster and rollouts, see its roster and each copy's last rollout, and open the decision through which you approve a rollout plan; see [the Steward session](docs/steward.md#the-steward-session).
 - `guildhall steward rollout`: preview and apply shared settings to enrolled machines; see [Steward rollouts](docs/steward.md).
+- `guildhall steward collect`: collect the enrolled copies' lessons and incidents into the private config and open a triage decision for each; `guildhall director collected` is the fixed command it runs on each copy to mark them; see [collection](docs/steward.md#collection).
 - `guildhall render <request.json>`: render an agent prompt with its skills; see [prompt rendering](docs/rendering.md).
 - `guildhall store init <path>` and `guildhall store doctor <path>`: create an empty store file, or check one without changing it; see [the store](docs/store.md).
 - `guildhall help`: list the commands.

@@ -2,7 +2,7 @@
 
 The Steward looks after the guild's Director copies across its machines: it owns the roster and rolls out managed settings to enrolled Director copies over SSH (R1.7, R1.8, R1.31).
 It runs as the **Steward session**, a long-running agent session the Guildhall binary starts and supervises the same way it supervises a Director, and only the Guildmaster talks to it.
-This page describes the Steward session, what `guildhall steward rollout` does today and what is planned.
+This page describes the Steward session, what `guildhall steward rollout` and `guildhall steward collect` do today and what is planned.
 
 No Director feature requires a Steward.
 A standalone copy, one with no `managed.toml` and no enrolment, starts and behaves exactly as it does without one ([standalone and managed Directors](director-modes.md)).
@@ -12,7 +12,7 @@ A standalone copy, one with no `managed.toml` and no enrolment, starts and behav
 The Steward session is not a service or daemon (R1.29): it is an agent session in a Herdr tab, like a [Director session](director.md#start), that runs while the Guildmaster keeps it running.
 It only orchestrates.
 Every change it makes goes through a fixed `guildhall steward` command, and the Guildmaster approves every policy change and rollout digest ([approval in a Steward session](#approval-in-a-steward-session)).
-It never messages a Director, and no Director reaches it: it pushes only by rollout (R1.6, R1.8; [messaging](messaging.md#recipients)).
+It never messages a Director, and no Director reaches it: it pushes only by rollout, and reads Directors' lessons and incidents only by [collection](#collection) (R1.6, R1.8; [messaging](messaging.md#recipients)).
 
 ### The Steward copy
 
@@ -21,10 +21,10 @@ A Steward copy is one self-contained directory:
 | Path | What it is |
 |---|---|
 | `config.toml` | The Steward config: `mode = "steward"`, `[private_config]` and `[steward]`. |
-| `steward.store` | The Steward's store: its session records, notes, reloads, handoff triggers, inbox and rollout approvals, kept by the same store code as a `director.store`. Create it with `guildhall store init <dir>/steward.store`. |
+| `steward.store` | The Steward's store: its session records, notes, reloads, handoff triggers, inbox, rollout approvals and triage decisions, kept by the same store code as a `director.store`. Create it with `guildhall store init <dir>/steward.store`. |
 | `rollouts/` | One directory per rollout plan, where [`steward status`](#status) reads each copy's last receipt. |
 | `director/session-<n>/` | Each session's rendered role, startup and runtime files, as for a Director. |
-| the private config checkout | The checkout of the private config repository, such as `ndrwl/guildhall-config`, that `[private_config] location` names, holding [`roster.toml`](#rostertoml) and [`managed.toml`](#managedtoml). |
+| the private config checkout | The checkout of the private config repository, such as `ndrwl/guildhall-config`, that `[private_config] location` names, holding [`roster.toml`](#rostertoml), [`managed.toml`](#managedtoml) and the [collected](#collection) `lessons/` and `incidents/`. |
 
 Copy discovery finds a Steward copy as it finds a Director's, by its copy marker, and a copy that holds `steward.store` and no `director.store` is a Steward copy, whose store every command defaults to ([copies](running.md#copies)).
 The session's own hooks, such as `guildhall director turn-ended` and `guildhall director note add`, therefore work in a Steward copy unchanged and act on its `steward.store`.
@@ -44,10 +44,12 @@ name = "steward"
 adapter = "claude"
 model = "opus"
 effort = "high"
+collect_every = "6h"
 ```
 
 `[steward]` is valid only in a Steward config, and `[director]` only in a Director's.
 `name` labels the Steward's Herdr workspace and tab and is required to start a session; `adapter`, `model`, `effort` and `role` choose the session's runtime and role prompt as `[director]` does for a Director, and `role` is a config-relative path that replaces the release's `roles/steward.md`.
+`collect_every` is optional: a duration of at least a minute, validated like `[backup] every`, after which the session runs a [scheduled collection](#scheduled-collection); unset, the default, nothing is collected on a schedule.
 A config that only runs rollouts needs no `[steward]` table.
 The table has no `idle_after`, handoff or `wake_quiet` key: the Steward's session runs the defaults of those ([lifecycle](#lifecycle)).
 The table is an addition to schema version 1, so an older binary refuses it as an unknown key rather than guessing (R1.11).
@@ -62,9 +64,9 @@ guildhall steward start [runtime] [--tab] [--check] [--copy <dir>]
 `steward start` runs the same supervisor as [`director start`](director.md#start), with the Steward's own preflight and steps.
 Its preflight checks, in order: the config is a Steward config with a `[steward] name` and no `managed.toml` beside it, since a Steward copy is never managed; the runtime is known and on `PATH`; `guildhall` is on `PATH`; `steward.store` opens; the private config location is an absolute directory that is a Git work tree; its roster is valid; and `ssh` and `scp` are on `PATH`.
 `--check` runs the preflight only, and `--tab` opens the tab `steward <name>` in the Herdr workspace named by `[steward] name`, as a Director's tab opens in its own.
-Each session renders the release's `roles/steward.md`, or the copy's `baseline/roles/steward.md`, and every release skill, and its `startup.md` lists the live notes and the rollout approvals in flight: each one waiting for the Guildmaster and each one they approved.
+Each session renders the release's `roles/steward.md`, or the copy's `baseline/roles/steward.md`, and every release skill, and its `startup.md` lists the live notes and the decisions in flight: each rollout approval waiting for the Guildmaster, each one they approved, and each open [triage](#triage) decision.
 A session starts `recovering` and starts nothing new until `guildhall steward ready`.
-The Steward's session has no task steps: no workspace close sweep, prune, in-flight task snapshot, repository policies or task watchers.
+The Steward's session has no task steps: no workspace close sweep, prune, in-flight task snapshot, repository policies or task watchers; its only scheduled work is the optional [scheduled collection](#scheduled-collection).
 
 ### Lifecycle
 
@@ -83,11 +85,15 @@ A wake line ending `; handoff due (<reason>)` is answered by the `guildhall-stew
 
 ### Inbox
 
-The Steward's inbox is the `steward` recipient of its store, and it takes messages from the Guildmaster only: `guildhall messages send steward <envelope>` run outside any Guildhall session or attempt ([senders](messaging.md#senders)).
-A message to it from a Director, another Director or an Artisan is refused, and so is a `director` message to a Steward store or a `steward` message to any other store.
-Its envelope names the reserved task `steward/guildmaster`.
+The Steward's inbox is the `steward` recipient of its store, and it takes messages from two senders ([senders](messaging.md#senders)):
+
+- the Guildmaster: `guildhall messages send steward <envelope>` run outside any Guildhall session or attempt, whose envelope names the reserved task `steward/guildmaster`;
+- `director`: the `triage-opened` report of the Steward's own [scheduled collection](#scheduled-collection), naming `steward/incidents` or `steward/lessons`, sent by its supervisor and never by `messages send`.
+
+`messages send` to it from a Director, another Director, an Artisan or the Steward's own session is refused, and so is a `director` message to a Steward store or a `steward` message to any other store.
+No Director reaches the inbox: the `director` tag says the report is about items Directors filed, which the Steward read itself.
 A message wakes the Steward session as a Director's wakes a Director ([waking the Director](messaging.md#waking-the-director)).
-The sender list is the one place a later Steward-to-Director or Director-to-Steward path would extend; none exists today.
+The sender list is the one place a later Steward-to-Director path would extend; none exists today.
 
 ### Status
 
@@ -251,7 +257,7 @@ Applying an unchanged plan performs no remote writes and runs no remote command,
 
 The [managed-file checksum framing](configuration.md#config-file) makes combined loading explicitly refuse incomplete or corrupted transfers, including syntactically valid truncated TOML.
 This is integrity detection, not atomic publication: non-atomic scp may transiently refuse reads and does not prove uninterrupted config availability.
-The `.rollout.lock` file in the private config directory excludes concurrent applies using that directory on this Steward.
+The `.rollout.lock` file in the private config directory excludes concurrent applies and [collections](#collection) using that directory on this Steward.
 It does not protect against another host, another private directory or a manual managed-file writer; designate one Steward writer for each fleet and do not edit managed files during rollout.
 If a writer crashes, stop competing invocations and confirm that the owning process has exited before manually removing its stale lock.
 Never remove a lock held by another live writer; there is no automatic stale-lock deletion.
@@ -279,16 +285,59 @@ Each `scp` run is bounded by a two-minute timeout; a run stopped by its timeout 
 ### Remote commands
 
 Besides the copies, the Steward runs only fixed Guildhall commands on a machine, never a shell of its own: `ssh -o BatchMode=yes -- <ssh_alias> <guildhall> <command> --copy <copy_dir>`, run from `PATH` as an argument list, where `<guildhall>` is the machine's `guildhall_path` or `guildhall`.
-The allow-list is exactly ([decision](decisions/steward-fixed-remote-commands.md)):
+The allow-list is exactly ([decision](decisions/steward-fixed-remote-commands.md), [collection commands](decisions/steward-collection-commands.md)):
 
 - `config reload --copy <copy_dir>`, which [apply](#apply) runs on each copy it wrote;
 - `director mode --json --copy <copy_dir>`, which only reads the copy's mode and managed digest;
+- `lesson list --json --pending --copy <copy_dir>` and `incident list --json --pending --copy <copy_dir>`, which only read the copy's items not yet [collected](#collection);
+- `director collected --copy <copy_dir>`, which marks the items of the receipt collection copied to the copy as collected;
 - `director reload --copy <copy_dir>`, reserved for [release upgrades](releases.md#guildhall-director-reload) and refused until that is built.
 
 Any other command, flag or argument is refused before `ssh` runs, and so is an alias that is not a plain roster alias.
 `ssh` joins the arguments with spaces for the remote side, which then parses them again, through `cmd.exe` or PowerShell on a Windows OpenSSH server and a POSIX shell elsewhere; every value is restricted to letters, digits, `.`, `_`, `-`, `/` and a drive's `:`, which all of them read the same way, so nothing is quoted.
 Each `ssh` run is bounded by a two-minute timeout and is cancelled as `scp` is, killing its process group on Unix and its process elsewhere.
 A command that exits non-zero, a refusing machine and a timeout are each reported with their diagnostic.
+
+## Collection
+
+```sh
+guildhall steward collect [--machine <label>...] [--copy <dir>]
+```
+
+Directors file [lessons](director-modes.md#lessons) and [maintenance incidents](messaging.md#maintenance-tickets-to-the-steward) in their own copies, standalone or managed.
+`steward collect` brings those of the enrolled Director copies, on the named machines or every machine, into the private config checkout, as deterministic code that spends no model tokens.
+It reaches a copy only with the fixed [remote commands](#remote-commands) and `scp`, and a standalone copy, which is not in the roster, keeps its queue locally.
+One round:
+
+1. reads each copy's pending items with `lesson list --json --pending` and `incident list --json --pending` over SSH, each list capped at 1 MiB, the rest collected in later rounds;
+2. takes `.rollout.lock` in the private config, and stops with `busy`, changing nothing, when a rollout or another collection holds it;
+3. writes each item not yet committed to `lessons/<machine>/<origin>-<id>.md` or `incidents/<machine>/<origin>-<id>.json`, with its content digest, and commits only those files, one commit per machine, through a private index, so the Guildmaster's uncommitted `roster.toml` and `managed.toml` edits are never swept in;
+4. writes each [triage](#triage) answer recorded since into its item's file, in one more commit;
+5. pushes what the remote lacks, fast-forward only and bounded by a timeout; when the remote has moved ahead, it fetches it, replays its commits onto the new tip once and pushes again, and otherwise reports the failure;
+6. copies each copy a receipt, `state/steward/collect-receipt.json`, listing each item's origin, id, digest and the pushed commit, and runs `director collected` there, which marks the items whose origin and digest match as collected, reports any other, and deletes the receipt;
+7. opens one triage decision for each collected file that has none.
+
+An item already committed with the same digest is not written again; only its mark is sent again, which covers a crash between the commit and the mark and makes a second run change nothing.
+An unreachable machine, or a copy whose mark fails, is reported and retried in the next round without failing the others, and its items stay pending on the Director until a mark succeeds.
+A collected lesson file is a front matter of `key: "<JSON string>"` lines (`schema`, `machine`, `director`, `origin`, `id`, `digest`, `title`, `filed_at`, `collected_at` and `triage`) before the lesson's body as filed; a collected incident is one JSON document with the same fields, flat, and the incident with its observations.
+The command prints the round as JSON, `{commit, copies, answers, opened}`, each copy with its items, their `new`, `marked` and any `problem`, and its `error`; it exits 1 when the lock is busy, the round fails, or a copy or item was not collected.
+
+### Triage
+
+Collection opens one decision per collected item on two reserved tasks of the Steward store: `steward/incidents`, with the options `accept`, `defer` and `decline`, and `steward/lessons`, with `adopt` and `decline`.
+Each is an approval bound to the item's content digest, with the id `<kind>-<first 16 hex digits of the sha256 of the item's path>`, so an item has one decision however many rounds see it.
+Only the Guildmaster answers it, outside any session, with `guildhall decide answer --copy <dir> --repo steward --task incidents|lessons --decision <id> --answer-file -`; `decide answer` refuses it from inside one.
+The next round writes the answer into the item's file as `triage`, `triage_decision`, `triage_outcome` and `triage_note`.
+Triage authorises no work: an accepted incident is recorded as the Guildmaster's to create a task, and the Steward never acts on a Director; an adopted lesson is drafted by the Steward as an ordinary private-config change, which a later approved rollout ships (R1.32).
+The Director's own record stays `collected`.
+The `guildhall-steward-triage` skill presents each decision.
+
+### Scheduled collection
+
+With `[steward] collect_every` set, the Steward session runs a round at its start and then every `collect_every`, as the supervisor's deterministic code off its decision path, the way a Director runs its daily prune.
+Rounds run one at a time, a round that finds the lock busy is skipped, and failures are reported on the supervisor's standard error.
+A round that opens triage decisions sends the Steward's inbox one `triage-opened` message per kind, with the [`director` sender tag](#inbox), which wakes the session; a round with nothing new sends nothing and wakes nothing.
+Unset, the default, nothing is collected on a schedule, and nothing polls or spends model tokens because an item is queued (R1.7).
 
 ## Managing a Director copy
 
@@ -318,8 +367,8 @@ A revision naming a `release` moves the copy's pin at its reload, and active tas
 
 - The rest of R1.31, the release pin and side-by-side release installs designed in [release upgrades](releases.md): the Guildhall home, `guildhall release install` and `status`, the pin, `guildhall release use` and `adopt`, the PATH launcher, tasks recording and running on their release, a standalone copy's `guildhall release rollback` and `release prune`, and the managed pin, `release` and `release_sha256` in `managed.toml` applied by `config reload`, are [built](releases.md#built-so-far). A rollout of a new `release` changes the pin once the release is installed or its binary is in the machine's `releases/.incoming/<version>/`; the rollout copying that binary itself and the remote `director reload` are not built yet.
 - `rollback`, which will restore a preserved revision for new tasks.
-- Tool installs (`guildhall steward install`, R1.7, R1.50), audits and learnings (R1.32).
+- Tool installs (`guildhall steward install`, R1.7, R1.50) and audits (R1.32); learnings are [collected and triaged](#collection), and an adopted lesson ships by an ordinary rollout.
 - Enrolment through the setup wizard (R1.43-R1.51).
 - Platform support: tests replace `scp` and `ssh` with stubs on Linux, Windows and macOS, and no platform is claimed as supported for rollouts until acceptance passes there (R1.27).
 - The Steward session's live acceptance: CI runs it against a stand-in runtime only, so it is not claimed until the Guildmaster has run it once with three Director hosts (R1.27, R1.30).
-- Collection of lessons and maintenance tickets from Directors, and their triage, follow-up `guildhall/d103`.
+- Collection's live acceptance, d96's, which the Guildmaster runs once after `guildhall/d124` merges: collection is claimed on Windows only once it passes there (R1.27, R1.30).

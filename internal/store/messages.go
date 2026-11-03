@@ -53,10 +53,12 @@ const (
 // Steward's: one per store, spanning every repository, and the inbox a wake types into.
 func (r RecipientRole) SessionInbox() bool { return r == RecipientDirector || r == RecipientSteward }
 
-// StewardSenders are the senders the Steward's inbox takes. Only the Guildmaster talks to the Steward: no Director,
-// other Director or Artisan reaches it (docs/director-modes.md). This list is where a later path, such as a
-// Steward-to-Director or Director-to-Steward one, would add a sender.
-var StewardSenders = []string{SenderGuildmaster}
+// StewardSenders are the senders the Steward's inbox takes: the Guildmaster, and SenderDirector, the tag of the
+// scheduled collection round's report of the items it collected from Director copies (docs/steward.md#inbox). No
+// Director, other Director or Artisan reaches the inbox itself: `messages send` to it is the Guildmaster's only, and
+// only the Steward's own supervisor sends with the director tag. This list is where a later path, such as a
+// Steward-to-Director one, would add a sender.
+var StewardSenders = []string{SenderGuildmaster, SenderDirector}
 
 // Recipient names one inbox.
 // The Director has one inbox per store, so its other fields are empty.

@@ -26,6 +26,7 @@ The managed file's first line binds the exact remaining bytes by SHA-256; use `c
 | `mode` | `steward` or `director`. |
 | `name` | The Director's name; required in director mode. |
 | `[private_config] location` | Steward only: where the private config repository lives, as a path or remote; never a credential. |
+| `[steward]` | Steward only: the [Steward session](steward.md#config)'s `name`, `adapter`, `model`, `effort` and `role`, and `collect_every`, how often the session runs a [scheduled collection](steward.md#scheduled-collection) of lessons and incidents, a duration of at least a minute validated like `[backup] every`; unset, the default, nothing is collected on a schedule. |
 | `[managed.<key>]` | In the separate managed file for [Steward rollouts](steward.md): `value`, and `overridable` (default `false`). |
 | `[local]` | Owned by the copy: `<key> = "value"`. |
 | `[[repository]]` | Director only: one entry per repository the Director owns. |

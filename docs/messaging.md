@@ -39,10 +39,11 @@ There are three recipient forms:
 | Recipient | Inbox |
 |---|---|
 | `director` | The one Director that owns the store. It spans every repository in the store. |
-| `steward` | The [Steward session](steward.md#inbox) that owns a Steward copy's `steward.store`, and only there. It spans every repository in the store, and takes messages from the `guildmaster` sender only. |
+| `steward` | The [Steward session](steward.md#inbox) that owns a Steward copy's `steward.store`, and only there. It spans every repository in the store, and takes messages from the `guildmaster` sender and, from its own scheduled collection only, the `director` tag. |
 | `artisan:<repository>/<task>/<step>/<attempt>` | The Artisan running that stage attempt, for example `artisan:app/t-1/build/1`. |
 
-`messages send` refuses `director` to a `steward.store` and `steward` to any other store, and the store refuses a `steward` message from any sender but `guildmaster`, so no Director, other Director or Artisan reaches the Steward, and the Steward session's own sends are `director` sends that its inbox refuses.
+`messages send` refuses `director` to a `steward.store` and `steward` to any other store, and refuses a `steward` message from any sender but `guildmaster`, so no Director, other Director or Artisan reaches the Steward, and the Steward session's own sends are `director` sends that `messages send` refuses.
+The store takes a `steward` message from `guildmaster` and `director` only (`store.StewardSenders`); the `director` tag is the Steward supervisor's own, for the `triage-opened` report of its [scheduled collection](steward.md#scheduled-collection) about items Directors filed.
 A message to `steward` is woken for as a message to `director` is, and both are the store's session inbox.
 
 There is no Director or Artisan registry yet, so an Artisan is identified by the stage attempt it runs.
@@ -126,7 +127,7 @@ An envelope cannot declare its own sender: `sender` is not an envelope field, so
 |---|---|
 | `guildhall` | Guildhall sends in process: the engine's outbox, an attempt's launcher, a quality judge and the workspace close sweep. |
 | `artisan` | `messages send` runs with `GUILDHALL_ATTEMPT` set, which the launcher sets to `<repository>/<task>/<step>/<n>` for an attempt's launcher and worker. This takes precedence over every row below, since a worker started from a Director session inherits its session variables. |
-| `director` | `GUILDHALL_SESSION` is set and [copy discovery](running.md#copies) from where `messages send` runs finds the copy whose store the message is sent to. A Director session runs inside its copy; `--copy` does not choose the sender's copy. A Steward session sending to its own `steward.store` is `director` too. |
+| `director` | `GUILDHALL_SESSION` is set and [copy discovery](running.md#copies) from where `messages send` runs finds the copy whose store the message is sent to. A Director session runs inside its copy; `--copy` does not choose the sender's copy. A Steward session sending to its own `steward.store` is `director` too. In a Steward store it is also the tag of the scheduled collection's `triage-opened` report, which the Steward's supervisor sends in process. |
 | `other-director` | `GUILDHALL_SESSION` is set and copy discovery finds a different copy. |
 | `guildmaster` | Neither `GUILDHALL_SESSION` nor `GUILDHALL_ATTEMPT` is set, wherever it runs. |
 | `unknown` | Anything else, such as `GUILDHALL_SESSION` where copy discovery finds no copy. A message stored with no sender also reads as `unknown`. |
@@ -188,7 +189,7 @@ guildhall: 3 unread (merged 1, note 1 from artisan, note 1 from guildmaster)
 
 The sender is Guildhall's own word from the fixed vocabulary, never text a sender chose; a note with no recorded sender reads `note <n> from unknown`.
 A line with no unread note is unchanged.
-Because a sender chooses its message's type, the line names only the types in `store.MessageTypes`, the one registry of the types Guildhall sends, each with its sender: those the engine and the launcher send (`advance-failed`, `attempt-failed`, `attempt-retried`, `branch-kept`, `budget-refused`, `changes-requested`, `checks-failed`, `checks-passed`, `checks-pending`, `flake`, `decision`, `dependency-held`, `director-stage`, `finished`, `loop-exit-rejected`, `merge-held`, `merge-refused`, `merged`, `published`, `stall`, `worker-stalled`, `workspace-kept`, and the [merge queue](interpreter.md#the-merge-queue)'s `merge-queued`, `rebased`, `rebase-escalated`, `rebase-stuck` and `approval-carried`), those a [judge](quality.md) sends (`judge-failed`, `judgement`, `judgement-refused`), the session supervisor's `herdr-workspace-left-open`, `prune-workspace-kept` and `hold-released`, [`task cancel`](tasks.md#task-cancel)'s `dependency-cancelled`, id `<repo>.<task>.dependency-cancelled.<cancelled repo>.<cancelled task>` for each open dependent, the [task page](web.md#answering)'s `decision-answered`, and the local `question` and `note`; every other type counts as `other`, and `DirectorUnread` counts by the same registry.
+Because a sender chooses its message's type, the line names only the types in `store.MessageTypes`, the one registry of the types Guildhall sends, each with its sender: those the engine and the launcher send (`advance-failed`, `attempt-failed`, `attempt-retried`, `branch-kept`, `budget-refused`, `changes-requested`, `checks-failed`, `checks-passed`, `checks-pending`, `flake`, `decision`, `dependency-held`, `director-stage`, `finished`, `loop-exit-rejected`, `merge-held`, `merge-refused`, `merged`, `published`, `stall`, `worker-stalled`, `workspace-kept`, and the [merge queue](interpreter.md#the-merge-queue)'s `merge-queued`, `rebased`, `rebase-escalated`, `rebase-stuck` and `approval-carried`), those a [judge](quality.md) sends (`judge-failed`, `judgement`, `judgement-refused`), the session supervisor's `herdr-workspace-left-open`, `prune-workspace-kept` and `hold-released`, the Steward supervisor's `triage-opened`, [`task cancel`](tasks.md#task-cancel)'s `dependency-cancelled`, id `<repo>.<task>.dependency-cancelled.<cancelled repo>.<cancelled task>` for each open dependent, the [task page](web.md#answering)'s `decision-answered`, and the local `question` and `note`; every other type counts as `other`, and `DirectorUnread` counts by the same registry.
 The engine sends `dependency-held` while the [dependency gate](interpreter.md#the-dependency-gate) holds a task, once per state of its unmerged dependencies; it is not the between-Directors [`dependency-notice`](#message-types).
 It sends `branch-kept`, id `<repo>.<task>.branch-kept.<step>-<n>`, at most once per Artisan attempt, when the attempt's untouched task branch could not be fast-forwarded to the current main and the attempt runs on it as it is ([the working directory](interpreter.md#the-working-directory)); a branch with commits of its own sends nothing.
 It sends `flake`, id `<repo>.<task>.flake.<step>.<first 12 hex digits of the head>.<8 hex digits of the check name's digest>`, under [`flaky_checks`](configuration.md#repositories) `rerun-and-file`, once per check that failed and then passed on its one [rerun](interpreter.md#validate-reruns) on a head, before that head's `checks-passed`; its first line, `policy: rerun-and-file`, is the policy the Director's inbox skill acts on, and the rest is the evidence: check, platform, job, failed and passing runs, failing test names and the `guildhall ci log` command.
@@ -477,7 +478,7 @@ Decisions are keyed by repository and task today, so both need the decision reco
 The [rails, not tracks decision](decisions/rails-not-tracks.md) extends the ticket model with Director-filed maintenance incidents: engine dead ends, unexpected states and workarounds, including incidents the Director resolved successfully.
 This is a separate maintenance intake, not a new sender or recipient accepted by today's local inbox or by the Director-to-Director envelope above.
 The existing proposed `ticket file --from-message` form admits only `handoff-offer` and `dependency-notice`; it does not file maintenance incidents.
-Local filing, listing and triage are built as the `incident` command, named so because `director maintenance` already means note audit and hallmark and `ticket` is the designed Director-messaging command; Steward collection, its schedule and the Steward's triage are d124's second slice.
+Local filing, listing and triage are built as the `incident` command, named so because `director maintenance` already means note audit and hallmark and `ticket` is the designed Director-messaging command; Steward [collection](steward.md#collection), its schedule and the Steward's [triage](steward.md#triage) are built too.
 
 - `guildhall incident file <file|->` files a strict-JSON report, schema `guildhall.incident/1`, with the fields below, as `open`.
   Filing the same report again returns the same receipt, and another report under the same id is refused; a report over 64 KiB is refused with its size.
@@ -500,16 +501,16 @@ The queue is durable locally before any collection, and repeated delivery of the
 The local record remains until collection has a durable receipt.
 Transport failure leaves the ticket pending locally, never silently discarded or described as collected.
 
-The Steward collects proposed maintenance tickets on request over its existing SSH access to Director copies, as designed for [lessons](director-modes.md#lessons), and persists its maintenance queue in the private configuration repository.
-Directors need neither that repository nor a connection to the Steward, and the Steward does not gain a Director inbox sender type.
-A collection receipt is a command result, not a Steward message, acceptance of the proposed work or permission to act.
+The Steward [collects](steward.md#collection) proposed maintenance tickets with `guildhall steward collect`, on request or on its optional `collect_every` schedule, over its existing SSH access to enrolled Director copies, as for [lessons](director-modes.md#lessons), and persists its maintenance queue in the private configuration repository as `incidents/<machine>/<origin>-<id>.json`.
+Directors need neither that repository nor a connection to the Steward, and a Director's inbox gains no sender type.
+A collection receipt is a command result, the file `director collected` reads, not a Steward message, acceptance of the proposed work or permission to act.
 A standalone Director uses the identical local queue for its Guildmaster to triage and can have it collected later if a Steward is introduced.
 
 The Guildmaster may accept, defer or decline the proposed maintenance work, with the decision and evidence retained.
 Filing a ticket launches no Artisan, changes no policy and grants no task or merge approval; it must not block an otherwise safe continuation of the originating task.
 Acceptance leads to separately scoped work under the ordinary task, approval and rollout rules; it does not retroactively approve the originating task or authorize an install.
 This reuses the ordinary ticket principle that a proposal is not a task, but needs a maintenance-specific triage lifecycle and a subject independent of an existing task, as ordinary tickets already require.
-Filing, listing, evidence references, local triage and the collected mark are built and contract-tested in standalone and managed copies; collection, private-queue persistence, offline retry and the Steward's triage are d124's second slice.
+Filing, listing, evidence references, local triage and the collected mark are built and contract-tested in standalone and managed copies, and so are collection, private-queue persistence, offline retry and the Steward's triage, against stubbed `ssh` and `scp` and a local Git remote; collection's live acceptance waits for the Guildmaster's d96 run.
 Nothing polls or spends model tokens merely because a ticket is queued.
 
 ### Conflicts to resolve

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -246,6 +247,8 @@ func ensureStewardRecords(storePath string) error {
 		for _, t := range []store.Task{
 			{ID: stewardRolloutsTask, Title: "Rollout approvals", Detail: "The Guildmaster's approvals of rollout plan digests, one decision per plan."},
 			{ID: stewardGuildmasterTk, Title: "Messages from the Guildmaster", Detail: "The task the Guildmaster's messages to the Steward name."},
+			{ID: stewardIncidentsTask, Title: "Incident triage", Detail: "The Guildmaster's triage of collected incidents, one decision per incident: accept, defer or decline."},
+			{ID: stewardLessonsTask, Title: "Lesson triage", Detail: "The Guildmaster's triage of collected lessons, one decision per lesson: adopt or decline."},
 		} {
 			t.Repository = stewardRepository
 			t.Workflow = workflow.Revision{Name: "steward", Digest: stewardTaskDigest}
@@ -260,7 +263,9 @@ func ensureStewardRecords(storePath string) error {
 }
 
 // stewardSessionStart is the Steward's steps at the start of every session: its reserved records, then startup.md's
-// in-flight items, each rollout approval the Guildmaster has not answered and each one approved.
+// in-flight items, each rollout approval the Guildmaster has not answered and each one approved, and each open
+// triage decision; with [steward] collect_every set, the session collects at its start and then on that schedule,
+// off the decision path, and its end waits for a running round.
 func (a *App) stewardSessionStart(p startPlan, copyDir, storePath, state string) (sessionStart, error) {
 	if err := ensureStewardRecords(storePath); err != nil {
 		return sessionStart{}, err
@@ -271,7 +276,21 @@ func (a *App) stewardSessionStart(p startPlan, copyDir, storePath, state string)
 	if err != nil {
 		return sessionStart{}, fmt.Errorf("rollout approvals: %w", err)
 	}
+	triage, err := triageDecisions(storePath)
+	if err != nil {
+		return sessionStart{}, fmt.Errorf("triage decisions: %w", err)
+	}
 	var out sessionStart
+	for _, id := range slices.Sorted(maps.Keys(triage)) {
+		if d := triage[id]; d.Open() {
+			out.inFlight = append(out.inFlight, fmt.Sprintf("triage %s/%s/%s waits for the Guildmaster's answer (%s); present it with the guildhall-steward-triage skill",
+				d.Repository, d.TaskID, d.ID, strings.Join(d.Options, ", ")))
+		}
+	}
+	if out.collects, err = a.stewardCollection(p.cfg, storePath); err != nil {
+		return sessionStart{}, err
+	}
+	out.collects.tick(time.Now())
 	for _, d := range approvals {
 		plan := ""
 		if d.Subject != nil {
@@ -659,8 +678,11 @@ func (a *App) stewardApprovalCmd(args []string) int {
 }
 
 // StewardDecisionOptions returns the option sets of the decisions the Steward opens, by decision kind: a rollout
-// plan's approval, approve or decline, so a reader such as the task page's option-meanings table can check it covers
-// every one (docs/contracts/web.md). The Steward opens them in its own store, which a Director's page never reads.
+// plan's approval, approve or decline, an incident's triage, accept, defer or decline, and a lesson's, adopt or
+// decline, so a reader such as the task page's option-meanings table can check it covers every one
+// (docs/contracts/web.md). The Steward opens them in its own store, which a Director's page never reads.
 func StewardDecisionOptions() map[store.DecisionKind][][]string {
-	return map[store.DecisionKind][][]string{store.DecisionApproval: {{stewardApprove, stewardDecline}}}
+	return map[store.DecisionKind][][]string{store.DecisionApproval: {
+		{stewardApprove, stewardDecline}, {triageAccept, triageDefer, triageDecline}, {triageAdopt, triageDecline},
+	}}
 }

@@ -4,6 +4,7 @@ date: 2026-10-31
 topic: steward
 tasks: d102, d123
 amends: steward-rollouts-copy-with-scp.md
+amended-by: steward-collection-commands.md
 ---
 
 # The Steward runs only a fixed allow-list of Guildhall commands over ssh

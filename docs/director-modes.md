@@ -118,6 +118,8 @@ The Steward never messages a Director ([Director messaging](messaging.md#who-may
 1. it copies `managed.toml` as [rollouts](steward.md#apply) do today;
 2. it then runs `guildhall config reload --copy <dir>` on the copy with a fixed argument list.
 
+It reads lessons and incidents the same way, by [collection](steward.md#collection): the fixed read-only pending lists, then a receipt copied with `scp` and `guildhall director collected --copy <dir>`.
+
 `config reload` loads and validates the combined config, runs the migration and mode checks, and records a `managed-revision` event authorizing the rollout digest in the receiving store, with the new and previous digests and the source `reload`.
 A running Director applies the new revision at its next step boundary, for new tasks only (R1.31, R1.62); an active task keeps its bound configuration.
 If no reload runs and the receiving store has no authorization for the digest, the binary records it on first load as `observed-untrusted`, raises the alert and refuses to apply it.
@@ -133,9 +135,8 @@ A lesson's state is `proposed`, `collected`, `adopted` or `declined`.
 These commands find the copy without configuration admission, as `director mode` does, so they work on a refused copy; they refuse a Steward copy ([store records](store.md#lessons-and-incidents), [commands](contracts/cli.md#lessons-and-incidents)).
 
 - Standalone, the lesson stays local and the Guildmaster decides whether to adopt it into that Director's own config: `guildhall lesson resolve <id> adopted|declined` records that decision, and is refused once the lesson is `collected`, because from then on the Steward's queue owns it.
-- Managed, the Steward collects proposed lessons over SSH on request, drafts the change and the Guildmaster approves it (R1.32).
-  The Director never connects to the Steward, so Director machines still need no access to the private repository (R1.8).
-  Collection is d124's second slice; until it ships, a managed copy's lessons wait in its local queue.
+- Enrolled, the Steward [collects](steward.md#collection) proposed lessons over SSH with `guildhall steward collect`, on request or on its `collect_every` schedule, and the Guildmaster [triages](steward.md#triage) each; an adopted lesson is drafted by the Steward as a private-config change that a later approved rollout ships (R1.32).
+  The Director never connects to the Steward, so Director machines still need no access to the private repository (R1.8); collection only reads the pending list and runs `guildhall director collected`, which marks the collected lessons `collected`.
 
 The lesson shape does not read `quality_skill_edits_need_approval`: applying that setting to lessons that edit skill text stays later work ([configuration](configuration.md), [quality](quality.md)).
 
@@ -165,6 +166,7 @@ CI makes no model calls and uses no SSH: the Steward's commands are replaced by 
 | `guildhall lesson propose <lesson-file\|->` | Records a lesson for local adoption or Steward collection. |
 | `guildhall lesson list\|resolve` | Lists the copy's lessons, or records the Guildmaster's local decision on one not collected. |
 | `guildhall incident file\|observe\|list\|resolve` | Files a [maintenance incident](messaging.md#maintenance-tickets-to-the-steward), links later evidence, lists them, or records the local decision on one not collected. |
+| `guildhall director collected --copy <dir>` | Marks collected the items of the receipt a Steward's [collection](steward.md#collection) copied to the copy; run by the Steward over SSH. |
 
 | Store record | Contract |
 |---|---|
