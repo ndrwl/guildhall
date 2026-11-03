@@ -40,6 +40,7 @@ var taskUsage = `usage:
   guildhall task depends add|remove ... (guildhall task depends for its usage)
   guildhall task override set|unset|list ... (guildhall task override for its usage)
   guildhall task design --repo <id> --task <id> --surface <surface> --brief <file|-> ... (guildhall task design --help for its usage)
+  guildhall task say --store <path> --repo <id> --task <id> --tag <attempt|decision> --text-file <path|-> ... (guildhall task say --help for its usage)
 --copy <dir>, or the copy found from the current directory, may stand in for --store, --config and --state:
 the copy's director.store, config.toml and state
 --title is a short name of at most 100 characters; the full statement goes in --detail, or --detail-file reads it
@@ -176,6 +177,9 @@ func (a *App) task(args []string) int {
 	}
 	if sub == "design" {
 		return a.taskDesign(args[1:])
+	}
+	if sub == "say" {
+		return a.taskSay(args[1:])
 	}
 	if sub == "finding" {
 		if len(args) < 2 || args[1] != "rule" {

@@ -73,10 +73,10 @@ func writeFixtureFiles(t *testing.T) (string, map[string]string) {
 	return dir, sums
 }
 
-// fixtureTask is d122 as design-3's mock-up draws a task: two open asks (a review loop exit and a grant), a deferred
+// fixtureTalk is d122 as design-3's mock-up draws a task: two open asks (a review loop exit and a grant), a deferred
 // merge, three grill rounds, a review sent back to build, a void superseded acceptance, and two slices with slice 1
-// merged, while the Director also runs a grill stage with the Guildmaster.
-func fixtureTask(sums map[string]string) Task {
+// merged, while the Director also runs a grill stage with the Guildmaster, and the talk about it.
+func fixtureTalk(sums map[string]string) Task {
 	doc := func(name, label, p, kind, step string, round int, when string) Document {
 		return Document{Repository: "guildhall", TaskID: "d122", Name: name, Label: label, Path: p, SHA256: sums[p], Kind: kind, Step: step, Attempt: round, RecordedAt: at(when)}
 	}
@@ -165,8 +165,40 @@ func fixtureTask(sums map[string]string) Task {
 			{Title: "An attempt asked for a grant", Raw: "grant-1", State: StateYou, Word: "waiting on you", Start: at("2026-11-04 14:31"), Ask: "grant-1",
 				Events: []Event{ev("2026-11-04 14:31", "decision grant-1 opened · grant")}},
 		},
+		// The talk: two grill-2 messages and an accept-2 answer from chat fold under their story nodes, a page note
+		// and the Director's reply sit inside grant-1's ask, and the current stage's five messages sit under the
+		// asks, the earliest two folded.
+		Conversation: []Message{
+			{Number: 1, Author: AuthorDirector, Tag: "grill-2", Stage: "grill", Kind: "say", Text: "Round 2 is three questions on **access**.", At: *at("2026-10-31 11:05")},
+			{Number: 2, Author: AuthorGuildmasterChat, Tag: "grill-2", Stage: "grill", Kind: "say", Text: "tailnet only", At: *at("2026-10-31 11:20")},
+			{Number: 3, Author: AuthorGuildmasterChat, Tag: "accept-2", Stage: "accept", Kind: "say", Text: "approve all", At: *at("2026-10-31 17:05")},
+			{Number: 4, Author: AuthorDirector, Tag: "review--s2-2", Stage: "review", Kind: "say", Text: "Review round 2 found one medium finding, F4.", At: *at("2026-11-04 14:21")},
+			{Number: 5, Author: AuthorGuildmasterPage, Tag: "review--s2-2", Stage: "review", Kind: "say", Text: "Is F4 worth another build?", At: *at("2026-11-04 14:24")},
+			{Number: 6, Author: AuthorDirector, Tag: "review--s2-2", Stage: "review", Kind: "say", Text: "Yes: a 500 that names the state path leaks a local path.", At: *at("2026-11-04 14:26")},
+			{Number: 7, Author: AuthorGuildmasterPage, Tag: "grant-1", Stage: "grant", Kind: "say", Text: "Why does build-3 need the network?", At: *at("2026-11-04 14:40")},
+			{Number: 8, Author: AuthorDirector, Tag: "grant-1", Stage: "grant", Kind: "say", Text: "Its contract test calls `tailscale whois`, which needs the tailnet.", At: *at("2026-11-04 14:42")},
+			{Number: 9, Author: AuthorGuildmasterPage, Tag: "review--s2-2", Stage: "review", Kind: "say", Text: "Then continue the loop.", At: *at("2026-11-04 14:45")},
+			{Number: 10, Author: AuthorDirector, Tag: "review--s2-2", Stage: "review", Kind: "say", Text: "Understood:\n\n- answer **Continue** on #review--s2-x2\n- I start build round 3", At: *at("2026-11-04 14:46")},
+		},
+		Tag:    "review--s2-2",
 		ReadAt: *at("2026-11-04 14:52"),
 	}
+}
+
+// fixtureTask is fixtureTalk with its story nodes and asks given their tags and stages, as the Source gives them.
+func fixtureTask(sums map[string]string) Task {
+	t := fixtureTalk(sums)
+	for i := range t.Story {
+		// every node's record id is its attempt or decision but the merge's, which names a document
+		if n := &t.Story[i]; n.Raw != "deliver-1-merge" {
+			n.Tag = n.Raw
+		}
+	}
+	stages := map[string]string{"review--s2-x2": "review", "grant-1": "grant", "accept--s2-1": "accept", "deliver-1": "deliver", "design-4": "design", "design-5": "design"}
+	for i := range t.Asks {
+		t.Asks[i].Stage = stages[t.Asks[i].ID]
+	}
+	return t
 }
 
 // fixtureServer is a Server over the fixture, with its documents written, showing times in UTC.

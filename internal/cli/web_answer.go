@@ -70,7 +70,7 @@ func (w webAnswerer) Answer(x web.Answer) error {
 		if err := webRecordAnswer(s, x, answer); err != nil {
 			return struct{}{}, err
 		}
-		return struct{}{}, webSendDirector(s, env)
+		return struct{}{}, webSendDirector(s, env, nil)
 	})
 	if err != nil {
 		return webBusy(err)
@@ -85,10 +85,11 @@ func webEnvelope(x web.Answer, id, typ, text string) messaging.Envelope {
 		Recipient: store.RecipientDirector, Repository: x.Repository, Task: x.TaskID, Type: typ, Text: text}
 }
 
-// webSendDirector sends env to the Director, from the Guildmaster: the page checked their Tailscale login.
-func webSendDirector(s *store.Store, env messaging.Envelope) error {
+// webSendDirector sends env to the Director, from the Guildmaster: the page checked their Tailscale login. A say
+// that is not nil is recorded on the task's conversation in the same transaction as the message.
+func webSendDirector(s *store.Store, env messaging.Envelope, say *store.Saying) error {
 	box := messaging.StoreMailbox{Store: s}
-	_, err := box.Send(store.Recipient{Role: store.RecipientDirector}, store.SenderGuildmaster, env)
+	_, err := box.SendSaying(store.Recipient{Role: store.RecipientDirector}, store.SenderGuildmaster, env, say)
 	return err
 }
 
@@ -170,7 +171,9 @@ func (w webAnswerer) Send(x web.Answer) (string, error) {
 		} else if err != nil {
 			return struct{}{}, err
 		}
-		return struct{}{}, webSendDirector(s, env)
+		// The words are the Guildmaster's on the page, under the ask they are about, written with the note.
+		say := &store.Saying{Author: store.ConversationGuildmasterPage, Tag: x.Decision, Kind: store.ConversationSay, Text: text}
+		return struct{}{}, webSendDirector(s, env, say)
 	})
 	if err != nil {
 		return "", webBusy(err)

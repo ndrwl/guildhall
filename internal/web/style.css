@@ -279,3 +279,25 @@ button{font:inherit;color:inherit}
  .ws{font-size:14.5px;margin:0 0 10px}
  .ws .m{display:block;margin:2px 0 0}
 }
+/* the conversation (docs/web.md#the-conversation): ledger rows, tag chips, talk under its ask, on Now and in the story */
+.tg{display:inline-flex;align-items:center;font:12px/1 ui-monospace,Menlo,Consolas,monospace;color:var(--mut);background:var(--bg2);border:1px solid var(--line2);border-radius:999px;padding:4px 9px;text-decoration:none;white-space:nowrap}
+.talk{margin:0}
+.ask .talk{margin:14px 0 0;padding-top:12px;border-top:1px dashed var(--line2)}
+.ask .talk>.pick{margin-top:0}
+.msg{border-left:3px solid var(--line2);padding:3px 0 3px 12px;margin:0 0 12px}
+.msg.dir{border-left-color:var(--run)}
+.msg.wait{border-left-color:var(--youdot)}
+.mh{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;font-size:13px;color:var(--mut)}
+.mh b{color:var(--fg);font-weight:650}
+.mh .src{color:var(--faint)}
+.mh time{margin-left:auto;color:var(--faint);font-variant-numeric:tabular-nums;white-space:nowrap}
+.mb{font-size:14.5px;line-height:1.55;margin-top:2px;overflow-wrap:anywhere}
+.mb p{margin:0 0 6px}.mb>:last-child{margin-bottom:0}.mb ul,.mb ol{margin:0 0 6px;padding-left:20px}.mb li{margin:2px 0}
+.mb pre{overflow-x:auto;font-size:12.5px}
+.th{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font:650 12px/1.3 system-ui,sans-serif;text-transform:uppercase;letter-spacing:.09em;color:var(--mut);margin:24px 0 8px}
+.th .tg{text-transform:none;letter-spacing:0}
+.talk>.fold{margin:0 0 6px}
+.talk>.fold>.talk{padding-top:4px}
+.talkf{margin-top:6px}
+.talkf>.talk{padding:4px 0 0}
+.stage.done{background:var(--okbg);border-color:var(--line)}

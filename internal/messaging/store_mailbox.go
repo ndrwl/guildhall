@@ -16,12 +16,18 @@ var _ Mailbox = (*StoreMailbox)(nil)
 
 // Send implements Mailbox.Send.
 func (b *StoreMailbox) Send(to store.Recipient, sender string, e Envelope) (store.Receipt, error) {
+	return b.SendSaying(to, sender, e, nil)
+}
+
+// SendSaying is Send that also records say, when it is not nil, on the conversation of the message's task in the
+// same transaction as the message (store.Store.SendMessageSaying).
+func (b *StoreMailbox) SendSaying(to store.Recipient, sender string, e Envelope, say *store.Saying) (store.Receipt, error) {
 	m, err := Message(to, e)
 	if err != nil {
 		return store.Receipt{}, err
 	}
 	m.Sender = sender
-	r, err := b.Store.SendMessage(m)
+	r, err := b.Store.SendMessageSaying(m, say)
 	if err != nil {
 		return store.Receipt{}, fmt.Errorf("messaging: %w", err)
 	}

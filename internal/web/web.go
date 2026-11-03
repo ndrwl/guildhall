@@ -78,7 +78,12 @@ type Task struct {
 	// Documents are the task's recorded documents and the documents of other tasks linked to it.
 	Documents []Document
 	// Story is the task's history, oldest first; the page shows it newest first.
-	Story  []Node
+	Story []Node
+	// Conversation is the task's talk between the Guildmaster and the Director, oldest first.
+	Conversation []Message
+	// Tag is the current stage's attempt, such as grill-2, whose talk shows on Now; "" for a closed task or one with
+	// no attempt yet.
+	Tag    string
 	ReadAt time.Time
 }
 
@@ -87,6 +92,27 @@ type Task struct {
 type Where struct {
 	Lead, Rest string
 	You        bool
+}
+
+// The authors of a Message, the store's fixed vocabulary.
+const (
+	AuthorGuildmasterPage = "guildmaster-page"
+	AuthorGuildmasterChat = "guildmaster-chat"
+	AuthorDirector        = "director"
+)
+
+// KindRecommendation is the kind of a Message that recommends an answer to its ask.
+const KindRecommendation = "recommendation"
+
+// Message is one entry of the task's conversation: its number, who wrote it (an Author constant), the attempt or
+// decision it is about (its tag) and that tag's step (Stage, "" when the tag names none), its kind, its Markdown
+// text and when it was recorded.
+type Message struct {
+	Number           int
+	Author           string
+	Tag, Stage, Kind string
+	Text             string
+	At               time.Time
 }
 
 // Related is a task this task names, with how it is related, such as "depends on" or "fixes".
@@ -174,6 +200,8 @@ type Ask struct {
 	// part, designer-<k>-mockup, or for a mock-up recorded before that part, its legacy name designer-<k>-design-2;
 	// "" for any other ask and for a design with no mock-up.
 	Mockup string
+	// Stage is the step the decision belongs to, such as plan, for its tag chip; "" when its id names none.
+	Stage string
 }
 
 // Finding is one review finding; Rule is its rule or severity label, and Fixed says a later round resolved it.
@@ -221,6 +249,9 @@ type Node struct {
 	Ask string
 	// Events are the raw records the node was built from, oldest first, shown folded under it.
 	Events []Event
+	// Tag is the attempt (such as grill-2) or decision (such as accept-1) the node is, whose talk folds under it;
+	// "" for a node that is neither.
+	Tag string
 }
 
 // Event is one raw record behind a story node, such as "attempt review--s2-2 started · review", and when it was

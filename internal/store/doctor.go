@@ -35,6 +35,8 @@ type RepositoryCounts struct {
 	Decisions    int
 	Rulings      int
 	TaskContexts int
+	// Conversation counts task conversation entries (docs/store.md#task-conversation).
+	Conversation int
 	TaskLinks    int
 	// TaskOverrides counts task override records, sets and unsets alike.
 	TaskOverrides int
@@ -129,7 +131,7 @@ func (s *Store) Doctor() (Report, error) {
 			for name, n := range map[string]*int{
 				string(bucketTasks): &counts.Tasks, string(bucketAttempts): &counts.Attempts, string(bucketDocuments): &counts.Documents,
 				string(bucketPanes): &counts.PaneBindings, string(bucketDecisions): &counts.Decisions, string(bucketRulings): &counts.Rulings,
-				string(bucketTaskContexts): &counts.TaskContexts, string(bucketTaskLinks): &counts.TaskLinks,
+				string(bucketTaskContexts): &counts.TaskContexts, string(bucketConversation): &counts.Conversation, string(bucketTaskLinks): &counts.TaskLinks,
 				string(bucketTaskOverrides): &counts.TaskOverrides, string(bucketTaskDependencies): &counts.TaskDependencies,
 				string(bucketOwners): &counts.Owners, string(bucketMessages): &counts.Messages, string(bucketInbox): &counts.UnreadMessages,
 				string(bucketPruned): &counts.Pruned, string(bucketTaskReleases): &counts.TaskReleases,
@@ -174,6 +176,8 @@ func decodeRecord(bucket string, k, v []byte) (any, error) {
 		rec = new(Ruling)
 	case string(bucketTaskContexts):
 		rec = new(TaskContext)
+	case string(bucketConversation):
+		rec = new(ConversationEntry)
 	case string(bucketTaskLinks):
 		rec = new(TaskLink)
 	case string(bucketTaskReleases):

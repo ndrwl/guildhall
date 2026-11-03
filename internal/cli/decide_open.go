@@ -114,7 +114,9 @@ func openQuestion(s *store.Store, repo, task, question string, options []string)
 	}
 	d := store.Decision{Repository: repo, TaskID: task, ID: questionPrefix + strconv.Itoa(next), Kind: store.DecisionQuestion,
 		Options: options, Question: question}
-	if _, err := s.OpenDecision(mutationID("decision-open", repo, task, d.ID), d); err != nil {
+	// The question is the Director's words on the task page too, tagged with the new decision, written with it.
+	say := store.Saying{Author: store.ConversationDirector, Tag: d.ID, Kind: store.ConversationSay, Text: question}
+	if _, err := s.OpenDecisionSaying(mutationID("decision-open", repo, task, d.ID), d, &say); err != nil {
 		return store.Decision{}, err
 	}
 	return findDecision(s, repo, task, d.ID)

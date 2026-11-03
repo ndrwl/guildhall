@@ -554,11 +554,23 @@ func (s *Store) UnbindPane(mutationID, repository, taskID string) (Receipt, erro
 // options that are blank, multi-line, padded, duplicated, longer than MaxOptionBytes
 // or more than MaxDecisionOptions, and any answer fields; the decision id is unique within its task.
 func (s *Store) OpenDecision(mutationID string, d Decision) (Receipt, error) {
+	return s.OpenDecisionSaying(mutationID, d, nil)
+}
+
+// OpenDecisionSaying is OpenDecision that also appends say, when it is not nil, to the task's conversation in the
+// same transaction, so the decision and its entry are written together or not at all. say is not part of the
+// request digest: it is derived from the decision, so a retry replays as OpenDecision's would.
+func (s *Store) OpenDecisionSaying(mutationID string, d Decision, say *Saying) (Receipt, error) {
 	if err := validateIDs(d.Repository, d.TaskID, d.ID); err != nil {
 		return Receipt{}, err
 	}
 	if err := validateDecision(d); err != nil {
 		return Receipt{}, err
+	}
+	if say != nil {
+		if err := validateSaying(*say); err != nil {
+			return Receipt{}, err
+		}
 	}
 	repository, taskID, id := d.Repository, d.TaskID, d.ID
 	return s.mutate(mutationID, "open-decision", d, func(tx *bolt.Tx, r *Receipt) error {
@@ -574,7 +586,10 @@ func (s *Store) OpenDecision(mutationID string, d Decision) (Receipt, error) {
 		if decisions.Get(key) != nil {
 			return fmt.Errorf("%w: decision %q of %s/%s", ErrExists, id, repository, taskID)
 		}
-		return putJSON(decisions, key, d)
+		if err := putJSON(decisions, key, d); err != nil {
+			return err
+		}
+		return s.mirrorConversation(tx, r, repository, taskID, say)
 	})
 }
 
@@ -592,8 +607,21 @@ func (s *Store) AnswerDecision(mutationID, repository, taskID, id, answer string
 // place and login replays its receipt, and any other is ErrMutationConflict. With via "" it is AnswerDecision, with
 // the same request digest.
 func (s *Store) AnswerDecisionVia(mutationID, repository, taskID, id, answer, via, by string) (Receipt, error) {
+	return s.AnswerDecisionSaying(mutationID, repository, taskID, id, answer, via, by, nil)
+}
+
+// AnswerDecisionSaying is AnswerDecisionVia that also appends say, when it is not nil, to the task's conversation in
+// the same transaction, so the answer and its entry are written together or not at all; a task that is not open,
+// such as a done task answering its audit, records the answer with no entry. say is not part of the request digest:
+// it is derived from the answer, so a retry replays as AnswerDecisionVia's would.
+func (s *Store) AnswerDecisionSaying(mutationID, repository, taskID, id, answer, via, by string, say *Saying) (Receipt, error) {
 	if err := validateIDs(repository, taskID, id); err != nil {
 		return Receipt{}, err
+	}
+	if say != nil {
+		if err := validateSaying(*say); err != nil {
+			return Receipt{}, err
+		}
 	}
 	if err := validateText("answer", answer, MaxTextBytes); err != nil {
 		return Receipt{}, err
@@ -615,7 +643,10 @@ func (s *Store) AnswerDecisionVia(mutationID, repository, taskID, id, answer, vi
 			return err
 		}
 		d.AnsweredVia, d.AnsweredBy = via, by
-		return putJSON(decisions, key, d)
+		if err := putJSON(decisions, key, d); err != nil {
+			return err
+		}
+		return s.mirrorConversation(tx, r, repository, taskID, say)
 	})
 }
 

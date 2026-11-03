@@ -82,6 +82,32 @@ An answer is refused, with nothing written, the reason on the ask and your words
 Your words are normalised as `decide answer` reads an answer file: a byte order mark is dropped and Windows line endings become plain ones.
 Tapping twice records the first answer once.
 
+## The conversation
+
+Each task has one conversation: the talk between you and the Director about it, oldest first and append-only, kept in the store ([task conversation](store.md#task-conversation)).
+Each message is tagged with the attempt or decision it is about, such as `grill-2` or `accept-1`, and is Markdown, rendered as safely as the documents: goldmark at its safe defaults, so no raw HTML and no script.
+
+Messages get there wherever the words already pass through Guildhall, each written in the same store transaction as the record it goes with:
+
+- **Send words only** on an ask records your words, as you wrote them, under that ask, from the page;
+- an answer given in chat, which the Director records with `decide answer`, records your answer under its decision, from chat;
+- a question the Director opens with `decide open` records the question under it, from the Director;
+- `guildhall task say --repo <id> --task <id> --tag <attempt|decision> --text-file <path|->` writes the Director's own words, such as its reply to your note, under the attempt or decision; with `--author guildmaster-chat` it quotes words you said about the task in chat that no command records. A tag must name an attempt or decision of the task, and running the same command again writes nothing new.
+
+A tile answer on the page records no message: your answer and its words show on its story node.
+
+On the page each message is a full-width row: a head line with who wrote it (**You**, on your own login's page, or **Guildmaster**, with `page` or `chat`, or **Director**) and when, over its body, with a bar on its left, blue for the Director and grey for you.
+Where it shows follows its tag:
+
+- **Under its ask.** An open ask's talk sits inside its card, under "Talk on #<decision>", after the question and its summary and before **Your words** and the tiles, at the anchor `#<decision>-talk`.
+- **On Now.** The current stage's talk, on its latest attempt, sits under the asks as "Talk on <stage · attempt> · oldest first", its newest three messages shown and the earlier ones folded as "*n* earlier messages". Talk whose tag has neither an ask nor a story node also shows on Now, so nothing is left off the page.
+- **In the story.** Every other attempt's or decision's talk folds under its story node as "Talk · *n* messages", closed. A node whose talk is on Now says so.
+
+Each ask's header has a grey chip naming its stage and id, such as `review · review--s2-x2`, which links to its talk, or to its story node when it has none; each story node has the anchor `#story-<tag>`.
+The rail's Status gains a **Talk** line, "*n* messages · last *hh:mm*".
+
+A done or cancelled task's conversation stays readable and takes nothing new; Now says "This task is done and merged. Its talk stays below, read-only", or that it is cancelled, and its talk folds into its story.
+
 ## The reader page
 
 Every document link opens `http://<address>/<repo>/<task>/doc/<name>`: the document, rendered from Markdown with goldmark at its safe defaults ([decision](decisions/goldmark-for-documents.md)), with the open asks, answerable as on the task page, and Status beside it and a way back to the task.
@@ -93,5 +119,6 @@ A document is shown only when its file still matches the sha256 recorded for it;
 ## Limits
 
 - No grills on the page, no front page of everything waiting and no browsing of all tasks: these come later. A grill round is still answered in the Director's session.
+- The conversation is read on the page; you write to it with Send words only on an ask. A box for talk on the current stage, confirming a Director's recommendation in one click, and a bar that shows a new reply without reloading come later.
 - HTTP only, inside the tailnet; no HTTPS.
 - The Steward serves no pages.
