@@ -47,7 +47,7 @@ Any gh failure, such as an HTTP 403, 404 or 410, gh not signed in (exit 4) or a 
 A cancelled context is returned as it is.
 `Forge` itself does not change: `forgetest.Fake` and `forge.GitHub` implement `CheckLog`, and a forge without it gives no logs.
 
-`GitHub.RerunJob(ctx, Commit, job)` implements the optional `interp.CheckRerunner` ([reruns](../interpreter.md#validate-reruns), [decision](../decisions/flaky-check-reruns.md)): it asks GitHub Actions to re-run job `job` once, with `gh api repos/<owner>/<repo>/actions/jobs/<job>/rerun --method POST --hostname <host>`.
+`GitHub.RerunJob(ctx, Commit, job)` implements the optional `forge.CheckRerunner` ([reruns](../interpreter.md#validate-reruns), [decision](../decisions/flaky-check-reruns.md)): it asks GitHub Actions to re-run job `job` once, with `gh api repos/<owner>/<repo>/actions/jobs/<job>/rerun --method POST --hostname <host>`.
 GitHub runs it as a new check run of the same name, with a new run id and a new job id, which `Checks` then reports pending; the old job's log stays readable under the old id.
 An empty job or one that is not all digits is `ErrInvalid`, and so is an invalid commit, both without running gh.
 Any gh failure, such as GitHub's 403 for a workflow run still in progress or too old to re-run, a 404 for an unknown job or gh not signed in, is an error carrying gh's message, never `ErrInvalid`; a cancelled context is returned as it is.

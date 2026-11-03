@@ -102,7 +102,7 @@ func rerunName(step, h, check string) string {
 // rerunPolicy is the flaky_checks policy validate and deliver follow for repo: off, as it is, for a forge that cannot re-run a
 // job.
 func (r *run) rerunPolicy(repo config.Repository) config.FlakyChecks {
-	if _, ok := r.e.Forge.(CheckRerunner); !ok {
+	if _, ok := r.e.Forge.(forge.CheckRerunner); !ok {
 		return config.FlakyChecksOff
 	}
 	return repo.FlakyChecksPolicy()
@@ -144,9 +144,12 @@ func (r *run) putOnce(name, dir, file string, v any) error {
 // under repo's flaky_checks policy. A round is re-run only when every failing check is a GitHub Actions job not re-run
 // on this head before; the step then waits for every check of the head to finish, sending pendingText as its
 // checks-pending message, and re-runs each failing job once, recording its rerun record first, and waits for the new
-// runs. stop reports that the step waits, with next, and records nothing; otherwise the round is a real failure, recorded as it is, with v.Reruns naming the checks that
-// failed again after their rerun. A rerun the forge refuses is recorded with why, and the round is a real failure in
-// the same advance.
+// runs. While some check of the head is pending, a round with a rerun record on this head that the forge did not
+// refuse also waits, eligible or not, so a rerun still running is never counted on a read that lags it. stop reports
+// that the step waits, with next, and records nothing; otherwise the round is a real failure, recorded as it is, with
+// v.Reruns naming the checks that failed again after their rerun. A rerun the forge refuses is recorded with why and
+// nothing more is re-run; the round is a real failure in the same advance, unless an earlier rerun of the round was
+// accepted, when the step waits for it and records the failure from a read once it has finished.
 func (r *run) rerunFailed(s workflow.Step, repo config.Repository, pr *pullRequestDoc, h string, v *validationDoc, pendingText string) (stop bool, next Next, err error) {
 	policy := r.rerunPolicy(repo)
 	if policy == config.FlakyChecksOff {
@@ -179,18 +182,35 @@ func (r *run) rerunFailed(s workflow.Step, repo config.Repository, pr *pullReque
 	if len(v.Reruns) > 0 {
 		v.FlakyChecks = policy
 	}
+	wait := Next{Wait: WaitChecks, Step: s.ID}
+	waitPending := func() (bool, Next, error) {
+		return true, wait, r.notify(fmt.Sprintf("checks-pending.%s.%s", s.ID, h[:12]), store.MessageChecksPending, pendingText)
+	}
+	if pending && !eligible {
+		// A rerun asked for on this head and not refused may still be running: the round waits for it, whatever
+		// state its check shows now, rather than being counted on a read that lags it.
+		for _, c := range v.Checks {
+			d, refused, err := r.rerunRecord(s, h, c.Name)
+			if err != nil {
+				return false, Next{}, err
+			}
+			if d != nil && !refused {
+				return waitPending()
+			}
+		}
+	}
 	if !eligible {
 		return false, Next{}, nil
 	}
-	wait := Next{Wait: WaitChecks, Step: s.ID}
 	if pending {
 		// GitHub re-runs no job of a workflow run still in progress: the rerun waits for the head's other checks.
-		return true, wait, r.notify(fmt.Sprintf("checks-pending.%s.%s", s.ID, h[:12]), store.MessageChecksPending, pendingText)
+		return waitPending()
 	}
 	c := forge.Commit{Repository: repo.Path, Remote: pr.Remote, Head: h}
 	reader, _ := r.e.Forge.(CheckLogReader)
-	rerunner := r.e.Forge.(CheckRerunner)
+	rerunner := r.e.Forge.(forge.CheckRerunner)
 	dir := cilog.Dir(r.e.StateDir, r.task.Repository, r.task.ID)
+	accepted := false
 	for i, ch := range failing {
 		d := rerunDoc{Schema: rerunSchema, Step: s.ID, Head: h, Check: ch.Name, FailedRun: ch.ID, Job: ch.Job, URL: ch.URL, Tests: []string{}, RequestedAt: r.now().UTC()}
 		switch {
@@ -217,13 +237,18 @@ func (r *run) rerunFailed(s workflow.Step, repo config.Repository, pr *pullReque
 			if r.ctx.Err() != nil {
 				return false, Next{}, r.ctx.Err()
 			}
-			// CI trouble never stalls a task: the round is a real failure now.
+			// The refused check makes the round a real failure, so nothing more is re-run. CI trouble never stalls a
+			// task: the failure is recorded now, or once the reruns already accepted have finished.
 			out := rerunOutcomeDoc{Schema: rerunOutcomeSchema, Record: name, Error: err.Error()}
 			if err := r.putOnce(name+"-outcome", name, "outcome.json", out); err != nil {
 				return false, Next{}, err
 			}
+			if accepted {
+				return true, wait, nil
+			}
 			return false, Next{}, nil
 		}
+		accepted = true
 	}
 	return true, wait, nil
 }

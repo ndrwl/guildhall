@@ -26,11 +26,6 @@ type PullRequestReader interface {
 	PullRequest(ctx context.Context, v forge.View) (forge.PullRequest, error)
 }
 
-// CheckRerunner is the optional rerun of a failed Actions job under the contract: forge.GitHub's and Fake's.
-type CheckRerunner interface {
-	RerunJob(ctx context.Context, c forge.Commit, job string) error
-}
-
 // Harness is one forge under the contract suite, over a repository whose remote's default branch is Base, at
 // BaseHead.
 type Harness struct {
@@ -339,9 +334,9 @@ func RunForgeContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 		}
 	})
 
-	rerunner := func(t *testing.T, h Harness) CheckRerunner {
+	rerunner := func(t *testing.T, h Harness) forge.CheckRerunner {
 		t.Helper()
-		r, ok := h.Forge.(CheckRerunner)
+		r, ok := h.Forge.(forge.CheckRerunner)
 		if !ok || h.SetChecks == nil {
 			t.Skip("this forge cannot re-run jobs or be given checks")
 		}

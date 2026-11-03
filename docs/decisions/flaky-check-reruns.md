@@ -3,7 +3,7 @@ status: accepted
 date: 2026-10-31
 topic: ci
 tasks: d112
-amended-by: flaky-check-reruns-queue-front.md
+amended-by: flaky-check-reruns-queue-front.md, flaky-check-reruns-in-progress.md
 ---
 
 # Validate re-runs a failed CI job once before sending the task back to build
@@ -20,7 +20,7 @@ A repository key, `flaky_checks = "off" | "rerun" | "rerun-and-file"`, sets the 
 Under `rerun` and `rerun-and-file`, a failed validate round whose failing checks are all GitHub Actions jobs not yet re-run on that head is not recorded: validate waits until no check of the head is pending, writes a write-once rerun record per failing check with the failed run, job, URL and the failing test names read from the job's log, then asks the forge to re-run each job (`forge.GitHub.RerunJob`, `gh api --method POST repos/<owner>/<repo>/actions/jobs/<job>/rerun`) and waits on the checks ([reruns](../interpreter.md#validate-reruns)).
 There is one rerun per check per head, keyed by head and check name rather than run id, so a second failure is a real failure that goes through the failed loop as before; a rerun spends no round of the loop's `max`.
 A pass after a rerun is a flake: the passed result names it, and under `rerun-and-file` the engine sends the Director a `flake` message whose first line is the policy and whose text is the evidence, and the Director files a p3 bug or adds the evidence to an open bug naming the same test, reporting it in the Routine box ([inbox skill](../../skills/guildhall-director-inbox/SKILL.md)).
-A rerun the forge refuses records why and falls through to the failed round in the same advance; a crash after the record and before the forge answered counts the rerun as spent, so the forge is never asked twice for one check on one head.
+A rerun the forge refuses records why and falls through to the failed round in the same advance ([unless an earlier rerun of the round was accepted, which d163 waits for](flaky-check-reruns-in-progress.md)); a crash after the record and before the forge answered counts the rerun as spent, so the forge is never asked twice for one check on one head.
 A rerun never marks a check passed: a passed result still needs every check of the head passed, and `validated`, `ci_green` and the merge requirements are unchanged.
 
 ## Alternatives rejected
