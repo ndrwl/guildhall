@@ -190,7 +190,7 @@ func TestArtisanOwnedCommandUsage(t *testing.T) {
 	for _, bad := range [][]string{
 		{"artisan", "start", "--adapter", "fake"},
 		o.args("start", "--result", filepath.Join(o.workdir, "r.json")),
-		o.args("start", "--adapter", "codex"),
+		o.args("start", "--adapter", "gemini"),
 		o.args("start", "--timeout", "-1s"),
 		append(o.args("status")[:12], "0"),
 		append(o.args("stop")[:12], "one"),
@@ -213,13 +213,13 @@ func TestArtisanOwnedCommandUsage(t *testing.T) {
 func TestArtisanStartRefusesAnUnknownAdapterByName(t *testing.T) {
 	o := newOwnedAttempt(t, "x")
 	for _, args := range [][]string{
-		o.args("start", "--adapter", "codex"),
-		{"artisan", "start", "--adapter", "codex", "--task", "t-1", "--attempt", "a-1", "--prompt", o.prompt,
+		o.args("start", "--adapter", "gemini"),
+		{"artisan", "start", "--adapter", "gemini", "--task", "t-1", "--attempt", "a-1", "--prompt", o.prompt,
 			"--result", filepath.Join(o.workdir, "r.json"), "--workdir", o.workdir, "--herdr-session", "lab", "--herdr-workspace", "w1"},
 	} {
 		app, _, stderr := newArtisanApp(t)
-		if code := app.Run(args); code != 2 || !strings.Contains(stderr.String(), `"codex"`) || !strings.Contains(stderr.String(), "claude, fake") {
-			t.Errorf("%q: exit %d, stderr %q; want 2 naming \"codex\" and listing claude, fake", args, code, stderr)
+		if code := app.Run(args); code != 2 || !strings.Contains(stderr.String(), `"gemini"`) || !strings.Contains(stderr.String(), "claude, codex, fake") {
+			t.Errorf("%q: exit %d, stderr %q; want 2 naming \"gemini\" and listing claude, codex, fake", args, code, stderr)
 		}
 	}
 }

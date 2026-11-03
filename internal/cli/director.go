@@ -766,7 +766,7 @@ func (a *App) resolveRuntime(p *startPlan) (string, error) {
 	}
 	if p.runtime, err = runtimes.LookupSession(p.name, exe); err != nil {
 		if p.name == "" {
-			err = fmt.Errorf("no runtime: name one, or set [%s] adapter; the adapters are %s", role.command, strings.Join(runtimes.Names(), ", "))
+			err = fmt.Errorf("no runtime: name one, or set [%s] adapter; the adapters are %s", role.command, strings.Join(runtimes.SessionNames(), ", "))
 		}
 		return "", err
 	}

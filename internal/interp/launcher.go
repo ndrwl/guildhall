@@ -99,7 +99,7 @@ type Handle struct {
 }
 
 // Test-only adapters: the only adapters CheckAdapter allows inside a test binary, with ClaudeAdapter
-// over a stub.
+// and CodexAdapter over a stub.
 const (
 	// MockAdapter is the scripted in-process double, interptest.Script.
 	MockAdapter = "mock"
@@ -114,12 +114,20 @@ const ClaudeAdapter = adapter.ClaudeName
 // installed (claudetest.Install); CheckAdapter allows ClaudeAdapter only while `claude` on PATH is it.
 const ClaudeStubEnv = "GUILDHALL_TEST_CLAUDE_STUB"
 
+// CodexAdapter is the Codex CLI adapter for read-only steps, package adapter/codex, which runs the `codex` program.
+const CodexAdapter = adapter.CodexName
+
+// CodexStubEnv names, inside a test binary, the absolute path of the stub Codex CLI a test installed;
+// CheckAdapter allows CodexAdapter only while `codex` on PATH is it.
+const CodexStubEnv = "GUILDHALL_TEST_CODEX_STUB"
+
 // ErrAdapterRefused reports an adapter that may not be constructed here.
 var ErrAdapterRefused = errors.New("adapter refused")
 
 // CheckAdapter is the guard every Launcher must call before it constructs or runs an adapter.
 // Inside a test binary (testing.Testing) it refuses every adapter but MockAdapter and FakeAdapter,
-// and ClaudeAdapter while `claude` on PATH resolves to the stub ClaudeStubEnv names, never a real one.
+// ClaudeAdapter while `claude` on PATH resolves to the stub ClaudeStubEnv names, and CodexAdapter while `codex` on
+// PATH resolves to the stub CodexStubEnv names, never a real one.
 // It guards callers of this seam, not direct adapter construction elsewhere.
 // Outside tests it allows any name; whether the adapter exists is the launcher's concern.
 func CheckAdapter(name string) error {
@@ -127,16 +135,17 @@ func CheckAdapter(name string) error {
 }
 
 func checkAdapter(name string, inTest bool) error {
-	if !inTest || slices.Contains([]string{MockAdapter, FakeAdapter}, name) || name == ClaudeAdapter && claudeStubbed() {
+	if !inTest || slices.Contains([]string{MockAdapter, FakeAdapter}, name) ||
+		name == ClaudeAdapter && stubbed(ClaudeAdapter, ClaudeStubEnv) || name == CodexAdapter && stubbed(CodexAdapter, CodexStubEnv) {
 		return nil
 	}
-	return fmt.Errorf("%w: %q in a test binary; only %q, %q and a stubbed %q run under test", ErrAdapterRefused, name, MockAdapter, FakeAdapter, ClaudeAdapter)
+	return fmt.Errorf("%w: %q in a test binary; only %q, %q, a stubbed %q and a stubbed %q run under test", ErrAdapterRefused, name, MockAdapter, FakeAdapter, ClaudeAdapter, CodexAdapter)
 }
 
-// claudeStubbed reports whether `claude` on PATH is the stub ClaudeStubEnv names.
-func claudeStubbed() bool {
-	stub := os.Getenv(ClaudeStubEnv)
-	got, err := exec.LookPath(ClaudeAdapter)
+// stubbed reports whether program on PATH is the stub the environment variable env names.
+func stubbed(program, env string) bool {
+	stub := os.Getenv(env)
+	got, err := exec.LookPath(program)
 	return stub != "" && filepath.IsAbs(stub) && err == nil && filepath.Clean(got) == filepath.Clean(stub)
 }
 

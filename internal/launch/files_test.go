@@ -39,7 +39,7 @@ func TestMain(m *testing.M) {
 	if os.Getenv(guildhallEnv) != "" {
 		os.Exit(cli.New().Run(os.Args[1:]))
 	}
-	os.Exit(testenv.RunWithClaudeGuard(m))
+	os.Exit(testenv.RunWithGuards(m))
 }
 
 var id = adapter.Identity{TaskID: "t-1", AttemptID: "build-1"}

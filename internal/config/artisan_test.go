@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,6 +51,86 @@ func TestArtisanAdapterAdmission(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCodexRefusedOnEveryWorkflowStep: a codex profile is refused on every workflow step kind, named or by role,
+// with a message naming the step, the profile and the read-only reason, since no kind is yet admitted as read-only;
+// admitting a kind admits a codex profile on it and on nothing else.
+func TestCodexRefusedOnEveryWorkflowStep(t *testing.T) {
+	def, err := workflow.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[string]bool{}
+	for _, s := range def.Steps {
+		if s.Actor() == workflow.ArtisanActor {
+			kinds[s.Type] = true
+		}
+	}
+	for _, kind := range []string{"build", "review", "plan"} {
+		if !kinds[kind] {
+			t.Fatalf("the default workflow has no %s step", kind)
+		}
+	}
+	base := &Config{Profiles: map[string]Profile{"researcher": {Adapter: "fake"}, "planner": {Adapter: "fake"}, "builder": {Adapter: "fake"},
+		"reviewer": {Adapter: "fake"}, "rebaser": {Adapter: "fake"}, "judge-codex": {Adapter: "codex"}}}
+	if err := base.CheckArtisanAdapters(def); err != nil {
+		t.Fatalf("no step on codex: %v", err)
+	}
+	for i, s := range def.Steps {
+		if s.Actor() != workflow.ArtisanActor {
+			continue
+		}
+		t.Run(s.ID+" by profile", func(t *testing.T) {
+			named, err := workflow.Default()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if named.Steps[i].Settings == nil {
+				named.Steps[i].Settings = map[string]json.RawMessage{}
+			}
+			named.Steps[i].Settings["profile"] = json.RawMessage(`"judge-codex"`)
+			err = base.CheckArtisanAdapters(named)
+			if !errors.Is(err, ErrReadOnlyAdapter) || !strings.Contains(err.Error(), `step "`+s.ID+`": profile judge-codex`) || !strings.Contains(err.Error(), "a "+s.Type+" step may write") {
+				t.Errorf("err = %v, want ErrReadOnlyAdapter naming the step, profile and kind", err)
+			}
+		})
+		role := workflow.EffectiveProfile(s)
+		if role == "" {
+			continue
+		}
+		t.Run(s.ID+" by role", func(t *testing.T) {
+			c := &Config{Profiles: maps.Clone(base.Profiles)}
+			c.Profiles[role] = Profile{Adapter: "codex"}
+			if err := c.CheckArtisanAdapters(def); !errors.Is(err, ErrReadOnlyAdapter) {
+				t.Errorf("err = %v, want ErrReadOnlyAdapter", err)
+			}
+		})
+	}
+	// The engine runs rebase and design steps under the rebaser and designer profiles, with no workflow step.
+	for _, role := range []string{"rebaser", "designer"} {
+		t.Run(role, func(t *testing.T) {
+			c := &Config{Profiles: maps.Clone(base.Profiles)}
+			c.Profiles[role] = Profile{Adapter: "codex"}
+			if err := c.CheckArtisanAdapters(def); !errors.Is(err, ErrReadOnlyAdapter) || !strings.Contains(err.Error(), "profile "+role+" runs the engine's") {
+				t.Errorf("err = %v, want ErrReadOnlyAdapter naming %s", err, role)
+			}
+		})
+	}
+	t.Run("an admitted kind", func(t *testing.T) {
+		saved := codexStepKinds
+		t.Cleanup(func() { codexStepKinds = saved })
+		codexStepKinds = []string{"review"}
+		c := &Config{Profiles: maps.Clone(base.Profiles)}
+		c.Profiles["reviewer"] = Profile{Adapter: "codex"}
+		if err := c.CheckArtisanAdapters(def); err != nil {
+			t.Errorf("codex reviewer with review admitted: %v", err)
+		}
+		c.Profiles["builder"] = Profile{Adapter: "codex"}
+		if err := c.CheckArtisanAdapters(def); !errors.Is(err, ErrReadOnlyAdapter) || !strings.Contains(err.Error(), "a build step may write") {
+			t.Errorf("codex builder with review admitted: %v", err)
+		}
+	})
 }
 
 func TestShippedDirectorSelectsRealArtisan(t *testing.T) {

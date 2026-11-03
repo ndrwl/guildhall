@@ -301,6 +301,8 @@ A tool one task needs for a while, such as a probe build's `Bash(go:*)`, is a [t
 The rules belong to the Director whose copy's `config.toml` sets them, the copy `--copy` or [copy discovery](running.md#copies) selects: two Directors on one machine grant their Artisans different sets, and no machine-wide file, shared file or Steward-managed value grants them.
 `config.CheckProfiles` refuses a workflow whose steps name a profile the config does not declare and Guildhall does not ship, listing every such step.
 `config.CheckArtisanAdapters` additionally refuses an Artisan stage that resolves no profile, before task creation or advance mutates task records.
+It also refuses a `codex` profile on any workflow step, and as the `rebaser` or `designer` profile: Codex runs only in its read-only sandbox, so for now only the [quality judge](quality.md) runs on it ([runtimes](adapters.md#running-an-attempt)).
+A `codex` profile that sets `allowed_tools`, even `[]`, is refused when the config loads.
 Director, Guildmaster and engine stages do not require an Artisan adapter.
 
 Profiles keep role names, and each step type with a role has a **role profile**:

@@ -23,6 +23,8 @@ const (
 	FakeName = "fake"
 	// ClaudeName is the Claude Code adapter, package adapter/claude.
 	ClaudeName = "claude"
+	// CodexName is the Codex CLI adapter for read-only steps, package adapter/codex.
+	CodexName = "codex"
 )
 
 // Spec is what Guildhall gives an Artisan for one task attempt.

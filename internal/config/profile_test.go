@@ -211,6 +211,26 @@ func TestInvalidRepositoryProfileGrantRefused(t *testing.T) {
 	}
 }
 
+// TestCodexProfileAllowedToolsRefused: a codex profile runs read-only and grants nothing, so declaring
+// allowed_tools on it, even an empty list, is refused at load naming the profile and the reason; a codex profile
+// without it loads, and a repository grant to it is refused as for any non-claude profile.
+func TestCodexProfileAllowedToolsRefused(t *testing.T) {
+	for _, extra := range []string{`allowed_tools = ["Read"]`, `allowed_tools = []`} {
+		_, err := Parse([]byte(director(t) + "\n[profile.judge-codex]\nadapter = \"codex\"\n" + extra + "\n"))
+		if err == nil || !strings.Contains(err.Error(), `profile "judge-codex": runs the codex adapter, which runs read-only and grants no allowed_tools`) {
+			t.Errorf("%s: err = %v, want the codex allowed_tools refusal", extra, err)
+		}
+	}
+	cfg, err := Parse([]byte(director(t) + "\n[profile.judge-codex]\nadapter = \"codex\"\nmodel = \"gpt-5.5\"\neffort = \"high\"\n"))
+	if err != nil || cfg.Profiles["judge-codex"].Adapter != "codex" {
+		t.Fatalf("a codex profile without allowed_tools: %v", err)
+	}
+	_, err = Parse([]byte(director(t) + "[repository.profiles.judge-codex]\nallowed_tools = [\"Read\"]\n\n[profile.judge-codex]\nadapter = \"codex\"\n"))
+	if err == nil || !strings.Contains(err.Error(), `profile "judge-codex": runs the codex adapter, which grants no allowed_tools`) {
+		t.Errorf("repository grant to a codex profile: err = %v", err)
+	}
+}
+
 // TestInvalidAllowedToolsRefused: each allowed_tools entry is a narrow rule; a malformed rule, a duplicate or a rule
 // allowing every shell command is refused naming the profile.
 func TestInvalidAllowedToolsRefused(t *testing.T) {

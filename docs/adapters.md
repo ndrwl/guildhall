@@ -301,6 +301,7 @@ Each runtime says which settings it can honour, `runtimes.Runtime.CheckSettings`
 | Runtime | Model | Effort |
 |---|---|---|
 | `claude` | One word, not starting with `-`, passed to Claude Code's `--model` as given; Claude Code resolves aliases such as `opus` and full names, and a session on a model it does not know ends with no result | `low`, `medium`, `high`, `xhigh` or `max`, the levels Claude Code 2.1.309's `--effort` takes |
+| `codex` | One word, not starting with `-`, for Codex's `-m` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`, the levels the API took for codex-cli 0.163.0's `model_reasoning_effort` |
 | `fake` | Any, recorded | Any, recorded |
 
 Task creation and advance enforce the workflow's [profile admission requirements](configuration.md#profiles).
@@ -331,12 +332,15 @@ CI has no Herdr server, so the tab run uses `adaptertest.ShellPanes`, which keep
 Without Herdr flags, `guildhall artisan start` owns a stored attempt as its launcher with the fake or the [Claude adapter](#claude-adapter); see [Artisan commands](artisan.md#commands).
 For workflow launches rather than these manual flags, see [workflow Artisan workspaces](artisan.md#workflow-artisan-workspaces).
 
-Package `internal/adapter/runtimes` is the one owner of the runtimes Guildhall can launch: `runtimes.Lookup` returns the runtime by the name `artisan start --adapter` and a profile's `adapter` use, `fake` or `claude`, and `runtimes.Names` lists them.
+Package `internal/adapter/runtimes` is the one owner of the runtimes Guildhall can launch: `runtimes.Lookup` returns the runtime by the name `artisan start --adapter` and a profile's `adapter` use, `fake`, `claude` or `codex`, and `runtimes.Names` lists them.
+`codex` runs attempts only, not a Director session, so `runtimes.LookupSession` refuses it and `runtimes.SessionNames` lists the others.
 `artisan start` refuses any other name with a usage error that names it and lists them, in both modes.
 `launch.Process` passes the engine's adapter name through unchanged, so an unknown name is refused by the `artisan start` process it starts and reported as that process exiting before it owns the attempt, with its log, as every other startup failure is.
-The names are spelled once, as `adapter.FakeName` and `adapter.ClaudeName` in the leaf package every party imports; the lookup is keyed by them and `interp.FakeAdapter` and `interp.ClaudeAdapter` refer to them.
+The names are spelled once, as `adapter.FakeName`, `adapter.ClaudeName` and `adapter.CodexName` in the leaf package every party imports; the lookup is keyed by them and `interp.FakeAdapter` and `interp.ClaudeAdapter` refer to them.
 A new runtime is added to that package and nowhere else; the interpreter's test-binary guard, `interp.CheckAdapter`, stays in the interpreter.
-No Codex runtime exists yet (R1.22): with codex-cli 0.163.0, neither exec-policy rules ([evidence](evidence/codex-exec-policy-2026-11-03.txt)) nor a pre-tool hook ([evidence](evidence/codex-hooks-2026-11-03.txt), VERDICT: NO-GO, because a failing, malformed, missing or timed-out hook lets the command run) can enforce a deny-by-default allow-list.
+With codex-cli 0.163.0, neither exec-policy rules ([evidence](evidence/codex-exec-policy-2026-11-03.txt)) nor a pre-tool hook ([evidence](evidence/codex-hooks-2026-11-03.txt), VERDICT: NO-GO, because a failing, malformed, missing or timed-out hook lets the command run) can enforce a deny-by-default allow-list, so the `codex` runtime is for read-only steps only, run in Codex's read-only sandbox (R1.22).
+It is registered, and the configuration refuses a `codex` profile with `allowed_tools` and a `codex` profile on any workflow step, including the engine's rebase and design steps, so only the [quality judge](quality.md) can run on it; its wrapper, `guildhall codex-artisan`, is not built yet, so a `codex` attempt ends with no result until it is.
+Inside a test binary the interpreter's adapter guard admits `codex` only while `codex` on `PATH` is the stub `GUILDHALL_TEST_CODEX_STUB` names, and the [test guards](contracts/testenv.md) keep a real `codex` off every guarded test's `PATH`.
 
 `guildhall artisan start --adapter fake --task <id> --attempt <id> --prompt <file> --result <file> --workdir <dir> --herdr-session <name> --herdr-workspace <id>` launches one attempt in a new tab of that workspace and waits for its result file.
 
