@@ -38,10 +38,14 @@ func (a *attemptLog) other(l string) { a.log.WriteString(l + "\n") }
 func sampleAttempt() *attemptLog {
 	a := newAttemptLog()
 	a.other("guildhall: claude-artisan: task grant g1 adds Bash(go test:*)")
+	// Thinking carries no log lines: it renders as soon as every earlier event has, between text and tool events.
+	a.w.Write(Thinking("First the spec."))
 	a.show(Text("Reading the spec.\n\n**Then** testing.", nil), "Reading the spec.", "", "**Then** testing.")
 	a.other("claude: warning: something on stderr")
+	a.w.Write(Thinking("Now read and test."))
 	a.show(ToolCall("t1", "Read", "spec.md", nil), "tool: Read spec.md")
 	a.show(ToolCall("t2", "Bash", "go test ./...", nil), "tool: Bash go test ./...")
+	a.w.Write(Thinking(""))
 	a.w.Write(ToolResult("t2", true, 12, 1))
 	a.w.Write(ToolResult("t1", false, 300, 10))
 	// Text identical to a line no event claims is still shown once each.
@@ -54,11 +58,15 @@ func sampleAttempt() *attemptLog {
 }
 
 // wantMerged is sampleAttempt rendered without colour at width 80.
-const wantMerged = "guildhall: claude-artisan: task grant g1 adds Bash(go test:*)\n" +
+// Thinking, like a tool result, renders once every earlier event has, so it may come before a line no event claims.
+const wantMerged = "┃ First the spec.\n" +
+	"guildhall: claude-artisan: task grant g1 adds Bash(go test:*)\n" +
 	"Reading the spec.\n\nThen testing.\n" +
+	"┃ Now read and test.\n" +
 	"claude: warning: something on stderr\n" +
 	"14:03:09 ▸ Read spec.md\n" +
 	"14:03:09 ▸ Bash go test ./...\n" +
+	"· thinking not shown by the model\n" +
 	"14:03:09   ✗ Bash error 12 B\n" +
 	"14:03:09   ✓ Read 10 lines, 300 B\n" +
 	"Reading the spec.\n" +
@@ -138,7 +146,9 @@ func TestMergeResyncsPastAnEventWhoseLinesNeverCame(t *testing.T) {
 		m := NewMerger(r)
 		m.Events(stamped(Text("lost", []string{"lost"}), 0),
 			stamped(ToolResult("x", false, 1, 1), 0),
+			stamped(Thinking("between"), 0),
 			stamped(ToolCall("t1", "Read", "a.go", []string{"tool: Read a.go"}), 0),
+			stamped(Thinking("after"), 0),
 			stamped(Text("two\nlines", []string{"two", "lines"}), 0))
 		m.Line("other", true)
 		m.Line("tool: Read a.go", true)
@@ -146,7 +156,7 @@ func TestMergeResyncsPastAnEventWhoseLinesNeverCame(t *testing.T) {
 		m.Line("lines", true)
 		m.Flush()
 	})
-	if want := "other\nlost\n14:03:09   ✓ tool 1 B\n14:03:09 ▸ Read a.go\ntwo\nlines\n"; got != want {
+	if want := "other\nlost\n14:03:09   ✓ tool 1 B\n┃ between\n14:03:09 ▸ Read a.go\n┃ after\ntwo\nlines\n"; got != want {
 		t.Errorf("resynced =\n%q\nwant\n%q", got, want)
 	}
 }

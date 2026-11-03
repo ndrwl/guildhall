@@ -137,6 +137,60 @@ func TestReadableStreamFixtureEvents(t *testing.T) {
 	}
 }
 
+// TestReadableStreamFixtureEventsThinking: a recorded Opus session at high effort, whose print-mode thinking block
+// arrives with empty text and only a signature, gives one thinking event with no text and no log line, between the
+// Read's result and the Write call, and leaves stdout as the plain text and tool lines.
+func TestReadableStreamFixtureEventsThinking(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "stream", "thinking.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out, events bytes.Buffer
+	ew := workbench.NewWriter(&events)
+	ew.Now = func() time.Time { return fixtureTime }
+	result := &limitedBuffer{limit: maxOutputBytes}
+	stream := &readableStream{out: &out, events: ew, result: result}
+	for i, n := 0, 1; i < len(data); i, n = i+n, n%977+13 {
+		_, _ = stream.Write(data[i:min(i+n, len(data))])
+	}
+	stream.finish()
+	if !stream.sawResult.Load() {
+		t.Error("the recorded result event was not seen")
+	}
+	if u, err := ParseUsage(result.buf.Bytes()); err != nil || u.OutputTokens != 283 {
+		t.Errorf("usage from the recorded result = %+v, %v", u, err)
+	}
+	wantOut := "tool: Read /work/spec.md\ntool: Write /work/primes.txt\n" +
+		"I wrote 17 and 23 to `primes.txt`, leaving out 21 because it equals 3 × 7.\n"
+	if out.String() != wantOut {
+		t.Errorf("stdout =\n%q\nwant\n%q", out.String(), wantOut)
+	}
+	golden := filepath.Join("testdata", "stream", "thinking.events.jsonl")
+	if updating() {
+		if err := os.WriteFile(golden, events.Bytes(), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(events.Bytes(), want) {
+		t.Errorf("events =\n%s\nwant\n%s", events.Bytes(), want)
+	}
+	got := workbench.ReadAll(bytes.NewReader(events.Bytes()))
+	kinds := make([]string, len(got))
+	for i, e := range got {
+		kinds[i] = string(e.Kind)
+	}
+	if wantKinds := "tool_call tool_result thinking tool_call tool_result text"; strings.Join(kinds, " ") != wantKinds {
+		t.Fatalf("event kinds = %s, want %s", strings.Join(kinds, " "), wantKinds)
+	}
+	if e := got[2]; e.Text != "" || e.Log != nil {
+		t.Errorf("thinking event = %+v, want no text and no log", e)
+	}
+}
+
 // TestReadableStreamWritesEachEventBeforeItsLines: every event that carries log lines is written to the event file
 // just before those lines go to stdout, so a bridge that has read a line has its event too.
 func TestReadableStreamWritesEachEventBeforeItsLines(t *testing.T) {
@@ -196,6 +250,38 @@ func TestReadableStreamIgnoresEventWriterFailure(t *testing.T) {
 	n, err := stream.Write(data)
 	if err != nil || n != len(data) || out.String() != "working\ntool: Bash ls\n" || !bytes.Contains(result.buf.Bytes(), []byte("done")) {
 		t.Fatalf("event writer failure changed the stream: %d, %v, %q", n, err, out.String())
+	}
+}
+
+// TestReadableStreamThinking: a thinking block in full becomes a thinking event with its text, controls removed;
+// an empty, signature-only or redacted_thinking block becomes one with no text; none writes a log line or anything
+// to stdout, so launcher.log is unchanged; thinking in a user event is ignored.
+func TestReadableStreamThinking(t *testing.T) {
+	var out, events bytes.Buffer
+	stream := &readableStream{out: &out, events: workbench.NewWriter(&events), result: &limitedBuffer{limit: maxOutputBytes}}
+	data := `{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"Read the spec \u001b[31mfirst\u001b[0m.\n\nThen test.","signature":"c2ln"}]}}` + "\n" +
+		`{"type":"assistant","message":{"content":[{"type":"thinking","thinking":""}]}}` + "\n" +
+		`{"type":"assistant","message":{"content":[{"type":"thinking","thinking":" \n","signature":"c2ln"}]}}` + "\n" +
+		`{"type":"assistant","message":{"content":[{"type":"thinking","signature":"c2ln"}]}}` + "\n" +
+		`{"type":"assistant","message":{"content":[{"type":"redacted_thinking","data":"ZW5jcnlwdGVk"}]}}` + "\n" +
+		`{"type":"user","message":{"content":[{"type":"thinking","thinking":"not the model's"}]}}` + "\n" +
+		`{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"Now say it."},{"type":"text","text":"Done."}]}}` + "\n"
+	_, _ = stream.Write([]byte(data))
+	if out.String() != "Done.\n" {
+		t.Errorf("stdout = %q, want only the text", out.String())
+	}
+	got := workbench.ReadAll(&events)
+	want := []string{"Read the spec [31mfirst[0m.\n\nThen test.", "", "", "", "", "Now say it."}
+	if len(got) != len(want)+1 {
+		t.Fatalf("events = %+v, want %d thinking events and a text event", got, len(want))
+	}
+	for i, w := range want {
+		if e := got[i]; e.Kind != workbench.KindThinking || e.Text != w || e.Log != nil {
+			t.Errorf("event %d = %+v, want thinking %q with no log", i, e, w)
+		}
+	}
+	if e := got[len(want)]; e.Kind != workbench.KindText || e.Text != "Done." {
+		t.Errorf("last event = %+v, want the text", e)
 	}
 }
 

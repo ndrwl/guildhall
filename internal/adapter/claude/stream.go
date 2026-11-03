@@ -16,7 +16,7 @@ import (
 // readableStream consumes bounded NDJSON events without retaining the transcript.
 // A failed presentation sink never breaks the worker's stdout pipe. Only a
 // result event is retained for the existing usage/denial/final-text reporter.
-// Each text and tool call it shows, and each tool result, is also written to
+// Each text and tool call it shows, and each piece of thinking and tool result, is also written to
 // events, the Workbench event file, before its plain lines go to out; events'
 // write errors are ignored too, and a nil events writes none.
 // os/exec serializes calls to Write; finish is called only after Wait.
@@ -68,11 +68,12 @@ func (s *readableStream) event(line []byte) {
 		Type    string `json:"type"`
 		Message struct {
 			Content []struct {
-				Type  string `json:"type"`
-				Text  string `json:"text"`
-				ID    string `json:"id"`
-				Name  string `json:"name"`
-				Input struct {
+				Type     string `json:"type"`
+				Text     string `json:"text"`
+				Thinking string `json:"thinking"`
+				ID       string `json:"id"`
+				Name     string `json:"name"`
+				Input    struct {
 					FilePath     string `json:"file_path"`
 					NotebookPath string `json:"notebook_path"`
 					Command      string `json:"command"`
@@ -99,6 +100,14 @@ func (s *readableStream) event(line []byte) {
 			case block.Type == "text" && event.Type == "assistant":
 				text := plainText(block.Text)
 				s.show(workbench.Text(text, nil), text)
+			case (block.Type == "thinking" || block.Type == "redacted_thinking") && event.Type == "assistant":
+				// Thinking goes to the event file only, so launcher.log is unchanged. A redacted, empty or
+				// signature-only block is thinking the model did not show: an event with no text.
+				text := plainText(block.Thinking)
+				if block.Type == "redacted_thinking" || strings.TrimSpace(text) == "" {
+					text = ""
+				}
+				s.events.Write(workbench.Thinking(text))
 			case block.Type == "tool_use" && event.Type == "assistant":
 				subject := strings.Join(strings.Fields(cmp.Or(block.Input.FilePath, block.Input.NotebookPath, block.Input.Command)), " ")
 				runes := []rune(plainText(subject))

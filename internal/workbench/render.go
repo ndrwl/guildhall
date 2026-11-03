@@ -20,10 +20,16 @@ const (
 	tool
 	failure
 	success
+	thought
+	margin
 )
 
-// sgr is each style's Select Graphic Rendition parameters.
-var sgr = [...]string{plain: "0", bold: "1", dim: "2", code: "33", tool: "36", failure: "31", success: "1;32"}
+// sgr is each style's Select Graphic Rendition parameters. Thinking is italic at full brightness behind a magenta
+// margin.
+var sgr = [...]string{plain: "0", bold: "1", dim: "2", code: "33", tool: "36", failure: "31", success: "1;32", thought: "3", margin: "35"}
+
+// thinkingMargin opens every line of shown thinking, and marks it alone when colour is off.
+const thinkingMargin = "┃ "
 
 // reset ends every coloured line, and the Workbench, so the pane is left at a normal shell.
 const reset = "\x1b[0m"
@@ -45,7 +51,10 @@ type Renderer struct {
 	opts  Options
 	calls map[string]string
 	fence bool
-	err   error
+	// thinking is set while the last line written ended shown thinking, so the next shown thinking is kept apart
+	// from it by a blank line.
+	thinking bool
+	err      error
 }
 
 // NewRenderer returns a Renderer writing to out.
@@ -70,6 +79,7 @@ type span struct {
 
 // line writes spans as one line: SGR codes only when colour is on, and a reset after any coloured line.
 func (r *Renderer) line(spans ...span) {
+	r.thinking = false
 	var b strings.Builder
 	coloured := false
 	cur := plain
@@ -120,6 +130,8 @@ func (r *Renderer) Event(e Event) {
 		r.fence = false
 		r.Text(e.Text)
 		r.fence = false
+	case KindThinking:
+		r.Thinking(e.Text)
 	case KindToolCall:
 		r.calls[e.ID] = e.Name
 		r.toolCall(r.clock(e.Time), e.Name, e.Subject)
@@ -282,6 +294,28 @@ func (r *Renderer) Text(text string) {
 	}
 }
 
+// Thinking writes the model's thinking in full, with no Markdown, wrapped to the width behind the magenta margin,
+// in italic; a blank line inside it keeps the margin. Shown thinking straight after shown thinking is kept apart by
+// a blank line. Empty thinking, which the model did not show, is one dimmed line.
+func (r *Renderer) Thinking(text string) {
+	text = clean(text)
+	if strings.TrimSpace(text) == "" {
+		r.line(span{"· thinking not shown by the model", dim})
+		return
+	}
+	if r.thinking {
+		r.line()
+	}
+	for _, l := range strings.Split(strings.Trim(text, "\n"), "\n") {
+		if strings.TrimSpace(l) == "" {
+			r.line(span{strings.TrimRight(thinkingMargin, " "), margin})
+			continue
+		}
+		r.wrapAfter(toRunes(l, thought), span{thinkingMargin, margin}, span{thinkingMargin, margin})
+	}
+	r.thinking = true
+}
+
 // heading is the text of a # heading line, or empty.
 func heading(l string) string {
 	n := len(l) - len(strings.TrimLeft(l, "#"))
@@ -347,8 +381,13 @@ func inline(s string, base style) []styled {
 	return out
 }
 
-// wrap writes runes word-wrapped to the width, the first line after first and the rest after hang.
+// wrap writes runes word-wrapped to the width, the first line after first and the rest after hang, both unstyled.
 func (r *Renderer) wrap(runes []styled, first, hang string) {
+	r.wrapAfter(runes, span{first, plain}, span{hang, plain})
+}
+
+// wrapAfter is wrap with styled prefixes.
+func (r *Renderer) wrapAfter(runes []styled, first, hang span) {
 	var words [][]styled
 	var word []styled
 	for _, c := range runes {
@@ -366,7 +405,7 @@ func (r *Renderer) wrap(runes []styled, first, hang string) {
 	}
 	prefix := first
 	var cur []styled
-	room := func() int { return r.opts.Width - len([]rune(prefix)) }
+	room := func() int { return r.opts.Width - len([]rune(prefix.text)) }
 	flush := func() {
 		r.styledLine(prefix, cur)
 		prefix, cur = hang, nil
@@ -397,9 +436,9 @@ func (r *Renderer) wrap(runes []styled, first, hang string) {
 	}
 }
 
-// styledLine writes prefix, unstyled, then runes as one line.
-func (r *Renderer) styledLine(prefix string, runes []styled) {
-	spans := []span{{prefix, plain}}
+// styledLine writes prefix, then runes as one line.
+func (r *Renderer) styledLine(prefix span, runes []styled) {
+	spans := []span{prefix}
 	for _, c := range runes {
 		if last := &spans[len(spans)-1]; last.st == c.st {
 			last.text += string(c.r)

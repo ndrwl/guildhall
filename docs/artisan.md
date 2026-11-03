@@ -482,7 +482,11 @@ It is Guildhall's own Go code (`internal/workbench`), separate from [Lanterns](l
 `launcher.log` stays the plain and complete record of the attempt: formatting is applied only on the way to the pane, and nothing the Workbench shows is written back to it.
 
 - A header names the attempt: `guildhall <repository> · <task> · <step> · <attempt>`.
-- Assistant text has light Markdown: `**bold**`, `` `code` ``, `#` headings, `-`, `*` and `1.` lists with a hanging indent, and fenced code blocks, dimmed, indented and never wrapped; the rest is word-wrapped to the pane's width.
+- The model's thinking is shown in full, word-wrapped, after a magenta `┃ ` margin on every line, in italic at full brightness and with no Markdown; without colour the margin alone marks it.
+  Two pieces of thinking in a row are kept apart by a blank line.
+  Thinking the model did not show, a redacted, empty or signature-only block, is one dimmed `· thinking not shown by the model` line.
+  A pane with no thinking, such as a Codex pane, the log shown alone, or a model that does not think, looks as it did without it.
+- Assistant text has light Markdown, and no margin: `**bold**`, `` `code` ``, `#` headings, `-`, `*` and `1.` lists with a hanging indent, and fenced code blocks, dimmed, indented and never wrapped; the rest is word-wrapped to the pane's width.
   Every control character in agent text is removed before the Workbench adds its own colour codes, so model output cannot send escape sequences to the pane.
 - Each tool call is one line, `HH:MM:SS ▸ <Name> <subject>`, stamped when the wrapper received it, and each result one line, `HH:MM:SS   ✓ <Name> <size>`, or `✗ <Name> error <size>` in the error colour, matched to its call by id, so parallel calls are labelled correctly.
 - Every other `launcher.log` line, such as Claude's error output, `guildhall:` lines and advance output, is dimmed; a `Claude was denied` line and an error-like `guildhall:` line take the error colour.
@@ -492,7 +496,7 @@ It is Guildhall's own Go code (`internal/workbench`), separate from [Lanterns](l
 
 The bridge tails `launcher.log` and the runtime's event file, [`workbench.jsonl`](adapters.md#claude-adapter), every 100 ms, reading the log first.
 Events render in order.
-An event carrying `log` lines waits until exactly those lines come next from `launcher.log`, which are then shown as the event instead; an event without them, a tool result or the runtime's end, renders as soon as every earlier event has; a line no pending event claims is an other line.
+An event carrying `log` lines waits until exactly those lines come next from `launcher.log`, which are then shown as the event instead; an event without them, thinking, a tool result or the runtime's end, renders as soon as every earlier event has; a line no pending event claims is an other line.
 Because the wrapper writes each event before its lines, nothing is shown twice and nothing is lost.
 An event whose lines never arrive is shown as soon as a later event's lines arrive, so later events are not held behind it, or else at the end.
 With no event file, for another adapter or a wrapper older than the Workbench, or after the file's `truncated` event, the log is shown alone: a `tool:` line as a tool call with no timestamp or result, a `guildhall:` line as an other line, and the rest as text.

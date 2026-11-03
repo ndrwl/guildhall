@@ -1,0 +1,6 @@
+{"schema":"guildhall.workbench-event","version":1,"seq":1,"time":"2026-10-31T10:00:00Z","kind":"tool_call","id":"toolu_01J5Ywr11LfWAd6RJWKG3hQW","name":"Read","subject":"/work/spec.md","log":["tool: Read /work/spec.md"]}
+{"schema":"guildhall.workbench-event","version":1,"seq":2,"time":"2026-10-31T10:00:00Z","kind":"tool_result","id":"toolu_01J5Ywr11LfWAd6RJWKG3hQW","error":false,"bytes":109,"lines":4}
+{"schema":"guildhall.workbench-event","version":1,"seq":3,"time":"2026-10-31T10:00:00Z","kind":"thinking"}
+{"schema":"guildhall.workbench-event","version":1,"seq":4,"time":"2026-10-31T10:00:00Z","kind":"tool_call","id":"toolu_01L2LaSczxp7YruheS5tk4qc","name":"Write","subject":"/work/primes.txt","log":["tool: Write /work/primes.txt"]}
+{"schema":"guildhall.workbench-event","version":1,"seq":5,"time":"2026-10-31T10:00:00Z","kind":"tool_result","id":"toolu_01L2LaSczxp7YruheS5tk4qc","error":false,"bytes":114,"lines":1}
+{"schema":"guildhall.workbench-event","version":1,"seq":6,"time":"2026-10-31T10:00:00Z","kind":"text","text":"I wrote 17 and 23 to `primes.txt`, leaving out 21 because it equals 3 × 7.","log":["I wrote 17 and 23 to `primes.txt`, leaving out 21 because it equals 3 × 7."]}
