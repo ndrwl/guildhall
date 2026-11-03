@@ -3,7 +3,7 @@ status: designed
 date: 2026-10-21
 topic: release
 amends: steward-rollouts-copy-with-scp.md
-amended-by: release-launcher-program.md
+amended-by: release-launcher-program.md, release-install-builds-from-source.md
 formerly: D51, 0051-release-upgrades.md
 ---
 

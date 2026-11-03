@@ -271,3 +271,43 @@ func TestReleaseJSONOrigin(t *testing.T) {
 		t.Errorf("Check of a built release = %+v, %v", r, err)
 	}
 }
+
+// TestReadOrigin reads the source and commit of a release built from source, and none for a release installed
+// from a file, one not installed or one whose release.json names another release.
+func TestReadOrigin(t *testing.T) {
+	h := newHome(t)
+	from, sum := binary(t, "release v1.4.0")
+	var ran []string
+	if _, err := h.Install(context.Background(), "v1.4.0", from, sum, reports(good("v1.4.0"), &ran), installedAt, lockWait); err != nil {
+		t.Fatal(err)
+	}
+	report := good(pseudo)
+	report.Revision = pseudoFull
+	req := buildReq(pseudo, newFake(), report, &ran)
+	if _, err := h.Build(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	if o, ok := h.ReadOrigin(pseudo); !ok || o.Source != req.Source || o.Commit != pseudoFull {
+		t.Errorf("ReadOrigin(built) = %+v, %v; want %s at %s", o, ok, req.Source, pseudoFull)
+	}
+	for _, v := range []string{"v1.4.0", "v9.9.9", "../x"} {
+		if o, ok := h.ReadOrigin(v); ok {
+			t.Errorf("ReadOrigin(%s) = %+v, want none", v, o)
+		}
+	}
+	// A release.json naming another release gives none.
+	dir := h.ReleaseDir("v2.0.0")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(h.ReleaseDir(pseudo), metadataFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, metadataFile), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if o, ok := h.ReadOrigin("v2.0.0"); ok {
+		t.Errorf("ReadOrigin of a release.json naming %s = %+v, want none", pseudo, o)
+	}
+}

@@ -349,6 +349,9 @@ func (r releaseStatusReport) plain() string {
 		} else {
 			fmt.Fprintf(&b, "  %s  %s  installed %s  store schema %d  release contract %d\n",
 				rel.Version, shortSHA(rel.SHA256), rel.InstalledAt.UTC().Format(time.RFC3339), rel.StoreSchema, rel.ReleaseContract)
+			if rel.Source != "" && rel.Commit != "" {
+				fmt.Fprintf(&b, "    built from %s at %s\n", rel.Source, rel.Commit)
+			}
 			for _, c := range rel.PinnedBy {
 				fmt.Fprintf(&b, "    pinned by %s\n", c)
 			}

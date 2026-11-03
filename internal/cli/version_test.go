@@ -165,15 +165,15 @@ func TestVersionForms(t *testing.T) {
 		{name: "full vcs info, no copy", git: &fakeVersionGit{},
 			plain:   first + rev,
 			startup: "guildhall abd97485 2026-10-27\n",
-			json:    head + `"modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":null,"task":null,"behind_main":null,"store_schema":1,"release_contract":2}`},
+			json:    head + `"modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":null,"task":null,"behind_main":null,"store_schema":1,"release_contract":2,"origin":null}`},
 		{name: "no vcs info", git: &fakeVersionGit{}, edit: func(i *debug.BuildInfo) { i.Settings = i.Settings[:2] },
 			plain:   first,
 			startup: "guildhall v1.2.3\n",
-			json:    `{"version":"v1.2.3","revision":"","time":"","modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":null,"task":null,"behind_main":null,"store_schema":1,"release_contract":2}`},
+			json:    `{"version":"v1.2.3","revision":"","time":"","modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":null,"task":null,"behind_main":null,"store_schema":1,"release_contract":2,"origin":null}`},
 		{name: "tagged module build, no vcs info", git: &fakeVersionGit{}, edit: func(i *debug.BuildInfo) { i.Settings, i.Main.Version = i.Settings[:2], "v1.2.3" },
 			plain:   first,
 			startup: "guildhall v1.2.3\n",
-			json:    `{"version":"v1.2.3","revision":"","time":"","modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":null,"task":null,"behind_main":null,"store_schema":1,"release_contract":2}`},
+			json:    `{"version":"v1.2.3","revision":"","time":"","modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":null,"task":null,"behind_main":null,"store_schema":1,"release_contract":2,"origin":null}`},
 		{name: "pseudo-version module build, no vcs info", copy: "git@github.com:ndrwl/guildhall.git",
 			edit: func(i *debug.BuildInfo) {
 				i.Settings, i.Main.Version = i.Settings[:2], "v0.0.0-20261030170552-650231703145"
@@ -182,49 +182,49 @@ func TestVersionForms(t *testing.T) {
 			plain:   first + "revision: 650231703145 (2026-10-30T17:05:52Z)\nlatest merge: #184\nbehind main: 1 merge (#214)\n",
 			startup: "guildhall 65023170 #184 2026-10-30, 1 behind main (#214)\nwarning: this binary is 1 merge behind main\n",
 			json: `{"version":"v1.2.3","revision":"650231703145","time":"2026-10-30T17:05:52Z","modified":false,"go_version":"go1.27.2","platform":"linux/amd64",` +
-				`"pr":184,"task":null,"behind_main":{"count":1,"missing_prs":[214],"as_of":"2026-10-28T09:00:00Z"},"store_schema":1,"release_contract":2}`, fetchCalls: 2},
+				`"pr":184,"task":null,"behind_main":{"count":1,"missing_prs":[214],"as_of":"2026-10-28T09:00:00Z"},"store_schema":1,"release_contract":2,"origin":null}`, fetchCalls: 2},
 		{name: "modified build", git: &fakeVersionGit{}, edit: func(i *debug.BuildInfo) { i.Settings[5].Value = "true" },
 			plain:   first + "revision: " + testRevision + " (2026-10-27T21:00:24Z, modified)\n",
 			startup: "guildhall abd97485 2026-10-27, modified\nwarning: this binary was built with uncommitted or untracked files\n",
-			json:    head + `"modified":true,"go_version":"go1.27.2","platform":"linux/amd64","pr":null,"task":null,"behind_main":null,"store_schema":1,"release_contract":2}`},
+			json:    head + `"modified":true,"go_version":"go1.27.2","platform":"linux/amd64","pr":null,"task":null,"behind_main":null,"store_schema":1,"release_contract":2,"origin":null}`},
 		{name: "copy with no matching repository", copy: "git@github.com:example/app.git", git: &fakeVersionGit{subjects: merged, ref: true},
 			plain:   first + rev,
 			startup: "guildhall abd97485 2026-10-27\n",
-			json:    head + `"modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":null,"task":null,"behind_main":null,"store_schema":1,"release_contract":2}`},
+			json:    head + `"modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":null,"task":null,"behind_main":null,"store_schema":1,"release_contract":2,"origin":null}`},
 		{name: "unreadable repository path", copy: "https://github.com/ndrwl/guildhall.git", git: &fakeVersionGit{subjects: merged, unreadable: true},
 			plain:   first + rev,
 			startup: "guildhall abd97485 2026-10-27\n",
-			json:    head + `"modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":null,"task":null,"behind_main":null,"store_schema":1,"release_contract":2}`, fetchCalls: 2},
+			json:    head + `"modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":null,"task":null,"behind_main":null,"store_schema":1,"release_contract":2,"origin":null}`, fetchCalls: 2},
 		{name: "subject without a pull request", copy: "git@github.com:ndrwl/guildhall.git", git: &fakeVersionGit{subjects: map[string]string{testRevision: "Merge branch 'x'"}},
 			plain:   first + rev + "behind main: 0 merges\n",
 			startup: "guildhall abd97485 2026-10-27, up to date with main\n",
-			json:    head + `"modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":null,"task":null,"behind_main":{"count":0,"missing_prs":[],"as_of":"2026-10-28T09:00:00Z"},"store_schema":1,"release_contract":2}`, fetchCalls: 2},
+			json:    head + `"modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":null,"task":null,"behind_main":{"count":0,"missing_prs":[],"as_of":"2026-10-28T09:00:00Z"},"store_schema":1,"release_contract":2,"origin":null}`, fetchCalls: 2},
 		{name: "pull request this copy did not deliver", copy: "ssh://git@github.com/ndrwl/guildhall", git: &fakeVersionGit{subjects: merged},
 			plain:   first + rev + "latest merge: #158\nbehind main: 0 merges\n",
 			startup: "guildhall abd97485 #158 2026-10-27, up to date with main\n",
-			json:    head + `"modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":158,"task":null,"behind_main":{"count":0,"missing_prs":[],"as_of":"2026-10-28T09:00:00Z"},"store_schema":1,"release_contract":2}`, fetchCalls: 2},
+			json:    head + `"modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":158,"task":null,"behind_main":{"count":0,"missing_prs":[],"as_of":"2026-10-28T09:00:00Z"},"store_schema":1,"release_contract":2,"origin":null}`, fetchCalls: 2},
 		{name: "pull request delivered by this copy", copy: "git@github.com:ndrwl/guildhall.git", delivered: true, git: &fakeVersionGit{subjects: merged},
 			plain:   first + rev + "latest merge: #158 (task d10)\nbehind main: 0 merges\n",
 			startup: "guildhall abd97485 #158 d10 2026-10-27, up to date with main\n",
-			json:    head + `"modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":158,"task":"d10","behind_main":{"count":0,"missing_prs":[],"as_of":"2026-10-28T09:00:00Z"},"store_schema":1,"release_contract":2}`, fetchCalls: 2},
+			json:    head + `"modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":158,"task":"d10","behind_main":{"count":0,"missing_prs":[],"as_of":"2026-10-28T09:00:00Z"},"store_schema":1,"release_contract":2,"origin":null}`, fetchCalls: 2},
 		{name: "behind 2", copy: "git@github.com:ndrwl/guildhall.git", delivered: true,
 			git:     &fakeVersionGit{subjects: merged, behind: []string{"Close finished workspaces (#160)", "State the finding-id format (#159)"}},
 			plain:   first + rev + "latest merge: #158 (task d10)\nbehind main: 2 merges (#160, #159)\n",
 			startup: "guildhall abd97485 #158 d10 2026-10-27, 2 behind main (#160, #159)\nwarning: this binary is 2 merges behind main\n",
-			json:    head + `"modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":158,"task":"d10","behind_main":{"count":2,"missing_prs":[160,159],"as_of":"2026-10-28T09:00:00Z"},"store_schema":1,"release_contract":2}`, fetchCalls: 2},
+			json:    head + `"modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":158,"task":"d10","behind_main":{"count":2,"missing_prs":[160,159],"as_of":"2026-10-28T09:00:00Z"},"store_schema":1,"release_contract":2,"origin":null}`, fetchCalls: 2},
 		{name: "behind 12 names 10", copy: "git@github.com:ndrwl/guildhall.git", git: &fakeVersionGit{subjects: merged, behind: twelve},
 			plain:   first + rev + "latest merge: #158\nbehind main: 12 merges (#170, #169, #168, #167, #166, #165, #164, #163, #162, #161 and 2 more)\n",
 			startup: "guildhall abd97485 #158 2026-10-27, 12 behind main (#170, #169, #168, #167, #166, #165, #164, #163, #162, #161 and 2 more)\nwarning: this binary is 12 merges behind main\n",
-			json:    head + `"modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":158,"task":null,"behind_main":{"count":12,"missing_prs":[170,169,168,167,166,165,164,163,162,161,160,159],"as_of":"2026-10-28T09:00:00Z"},"store_schema":1,"release_contract":2}`, fetchCalls: 2},
+			json:    head + `"modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":158,"task":null,"behind_main":{"count":12,"missing_prs":[170,169,168,167,166,165,164,163,162,161,160,159],"as_of":"2026-10-28T09:00:00Z"},"store_schema":1,"release_contract":2,"origin":null}`, fetchCalls: 2},
 		{name: "fetch failure falls back to the old ref", copy: "git@github.com:ndrwl/guildhall.git", fetchedAt: "2026-10-26T08:00:00Z",
 			git:     &fakeVersionGit{subjects: merged, ref: true, fetchErr: errors.New("could not resolve host"), behind: []string{"Direct push", "Fix (#159)"}},
 			plain:   first + rev + "latest merge: #158\nbehind main: 2 merges (#159) as of 2026-10-26T08:00:00Z\n",
 			startup: "guildhall abd97485 #158 2026-10-27, 2 behind main (#159) as of 2026-10-26T08:00:00Z\nwarning: this binary is 2 merges behind main\n",
-			json:    head + `"modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":158,"task":null,"behind_main":{"count":2,"missing_prs":[159],"as_of":"2026-10-26T08:00:00Z"},"store_schema":1,"release_contract":2}`, fetchCalls: 2},
+			json:    head + `"modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":158,"task":null,"behind_main":{"count":2,"missing_prs":[159],"as_of":"2026-10-26T08:00:00Z"},"store_schema":1,"release_contract":2,"origin":null}`, fetchCalls: 2},
 		{name: "fetch failure with no ref at all", copy: "git@github.com:ndrwl/guildhall.git", git: &fakeVersionGit{subjects: merged, fetchErr: errors.New("offline")},
 			plain:   first + rev + "latest merge: #158\n",
 			startup: "guildhall abd97485 #158 2026-10-27\n",
-			json:    head + `"modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":158,"task":null,"behind_main":null,"store_schema":1,"release_contract":2}`, fetchCalls: 2},
+			json:    head + `"modified":false,"go_version":"go1.27.2","platform":"linux/amd64","pr":158,"task":null,"behind_main":null,"store_schema":1,"release_contract":2,"origin":null}`, fetchCalls: 2},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -364,6 +364,48 @@ func TestRemoteModule(t *testing.T) {
 		if got := remoteModule(remote); got == testModule {
 			t.Errorf("remoteModule(%q) matched the module", remote)
 		}
+	}
+}
+
+// TestVersionForkRepository sees a copy whose repository's remote is a fork get its latest merge, task and behind
+// main, fetched from the fork, once its release_source names that fork, compared as remotes; with no release_source,
+// or one naming no repository of the copy, the fork is not Guildhall's own repository, as before, and an upstream
+// repository still matches by module path.
+func TestVersionForkRepository(t *testing.T) {
+	setVersion(t, "v1.2.3")
+	const fork = "git@github.com:someone/guildhall-fork.git"
+	merged := map[string]string{testRevision: "max_attempts_per_day = \"0\" means no daily cap (#158)"}
+	for _, c := range []struct {
+		name, remote, setting string
+		matched               bool
+	}{
+		{"fork with release_source", fork, `release_source = "https://github.com/someone/guildhall-fork"`, true},
+		{"fork without release_source", fork, "", false},
+		{"fork with release_source naming another", fork, `release_source = "https://github.com/other/guildhall"`, false},
+		{"upstream with release_source naming a fork", "https://github.com/ndrwl/guildhall.git", `release_source = "https://github.com/someone/guildhall-fork"`, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := versionCopy(t, c.remote)
+			cfg := filepath.Join(dir, "config.toml")
+			b, err := os.ReadFile(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, cfg, strings.Replace(string(b), "[local]\n", "[local]\n"+c.setting+"\n", 1))
+			writePullRequest(t, dir, "d10", 158)
+			g := &fakeVersionGit{subjects: merged, behind: []string{"Fork change (#3)"}}
+			code, out, stderr := runVersion(t, testBuildInfo(nil), g, map[string]string{cwdKey: markCopy(t, dir)})
+			want := "guildhall v1.2.3 linux/amd64 go1.27.2\nrevision: " + testRevision + " (2026-10-27T21:00:24Z)\n"
+			if c.matched {
+				want += "latest merge: #158 (task d10)\nbehind main: 1 merge (#3)\n"
+			}
+			if code != 0 || stderr != "" || out != want {
+				t.Errorf("version = %d, %q\n%s\nwant\n%s", code, stderr, out, want)
+			}
+			if fetched := slices.Contains(g.calls, "fetch "+c.remote+" "+versionMainRef); fetched != c.matched {
+				t.Errorf("git calls %q; fetch of %s = %v, want %v", g.calls, c.remote, fetched, c.matched)
+			}
+		})
 	}
 }
 

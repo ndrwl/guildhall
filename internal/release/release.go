@@ -340,6 +340,26 @@ type Origin struct {
 	Commit string
 }
 
+// ReadOrigin returns where release version was built from, as its release.json records it, with ok set; ok is
+// false for a release installed from a file and for a release.json that is missing, unreadable, of another schema
+// or names another release. It reads release.json only, hashing nothing, so a caller that needs the release intact
+// uses Check.
+func (h Home) ReadOrigin(version string) (Origin, bool) {
+	if ValidVersion(version) != nil {
+		return Origin{}, false
+	}
+	b, err := os.ReadFile(filepath.Join(h.ReleaseDir(version), metadataFile))
+	if err != nil {
+		return Origin{}, false
+	}
+	var m metadata
+	if json.Unmarshal(b, &m) != nil || m.Schema != metadataSchema || m.Version != metadataVersion || m.Release != version ||
+		m.Source == "" || m.Commit == "" {
+		return Origin{}, false
+	}
+	return Origin{Source: m.Source, Commit: m.Commit}, true
+}
+
 // install is Install of the binary at from, named label in refusals; a binary built from source at origin must also
 // report origin's commit as its revision, and release.json records origin.
 func (h Home) install(ctx context.Context, version, from, label, sum string, probe Probe, now time.Time, lockWait time.Duration, origin *Origin) (InstallResult, error) {

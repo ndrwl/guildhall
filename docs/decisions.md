@@ -138,6 +138,7 @@ Regenerate it with `go test ./internal/doccheck -run TestDecisionIndex -update`,
 
 - [Role prompts and stage guides ship with the binary](decisions/release-baseline.md)
 - [Releases are five static cross-compiled binaries with checksums, published only from a version tag](decisions/release-builds.md)
+- [`release install` builds a missing release from source at its commit, from a configurable source repository, rather than download a binary checked against SHA256SUMS](decisions/release-install-builds-from-source.md)
 - [The PATH launcher is its own program, installed from a guildhall-launcher build beside the release](decisions/release-launcher-program.md)
 - [The release policy test parses the workflow with Python and PyYAML, as development-only dependencies](decisions/release-policy-regression-test.md)
 - [Release skills live in the top-level `skills/` directory and are embedded in the binary](decisions/release-skills-root.md)
