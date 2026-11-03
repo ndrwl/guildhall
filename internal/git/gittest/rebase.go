@@ -176,3 +176,60 @@ func derived(a, b, what string) string {
 	sum := sha1.Sum([]byte(a + b + what))
 	return hex.EncodeToString(sum[:])
 }
+
+// regenerations holds the double's scripted regenerations, by marked commit, and every one asked for.
+type regenerations struct {
+	scripts map[string]git.Regenerated
+	asked   []git.Regeneration
+}
+
+// SetRegenerate scripts the regeneration of marked. Without a script a regeneration fails, naming the double.
+func (f *Workspaces) SetRegenerate(marked string, r git.Regenerated) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.regen.scripts == nil {
+		f.regen.scripts = map[string]git.Regenerated{}
+	}
+	f.regen.scripts[marked] = r
+}
+
+// Regenerations returns every regeneration Regenerate was asked for, in order.
+func (f *Workspaces) Regenerations() []git.Regeneration {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.regen.asked)
+}
+
+// Regenerate implements git.Program.Regenerate with the scripted result. A scripted commit becomes a commit of the
+// repository on Marked; no directory is made, no branch moves and no command runs.
+func (f *Workspaces) Regenerate(ctx context.Context, g git.Regeneration) (git.Regenerated, error) {
+	if err := ctx.Err(); err != nil {
+		return git.Regenerated{}, err
+	}
+	// Repository is only a key here, as in Rebase and Squash: interp tests name it with a slash path that is not
+	// absolute on Windows. Dir is a real scratch path, so it must be absolute.
+	if g.Repository == "" || !filepath.IsAbs(g.Dir) || len(g.Commands) == 0 || g.Marked == "" || g.Onto == "" {
+		return git.Regenerated{}, fmt.Errorf("gittest: invalid regeneration %+v", g)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.regen.asked = append(f.regen.asked, g)
+	out, ok := f.regen.scripts[g.Marked]
+	if !ok {
+		return git.Regenerated{Changed: []string{}, Failed: "gittest: no scripted regeneration of " + g.Marked}, nil
+	}
+	out.Changed = slices.Clone(out.Changed)
+	if out.Changed == nil {
+		out.Changed = []string{}
+	}
+	if out.Failed != "" {
+		out.Commit = ""
+		return out, nil
+	}
+	if out.Commit == "" {
+		out.Commit = derived(g.Marked, g.Onto, "regenerate")
+	}
+	f.parents[out.Commit] = g.Marked
+	f.add(g.Repository, out.Commit)
+	return out, nil
+}

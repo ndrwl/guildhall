@@ -92,6 +92,23 @@ Each git run is bounded by `Program.Timeout` with `GIT_TERMINAL_PROMPT=0`, as be
 The engine, not git, refuses a rebase, a squash and every worktree move while any attempt of the task runs, from a fresh read of its attempts.
 The double `gittest.Workspaces` implements all five: `SetRebase(base, head, rebased)` scripts a replay, a replay without a script is clean with equal patch-ids, `SetDiff` scripts a diff and `Replays` lists the calls.
 
+### Regenerate
+
+`Program.Regenerate(ctx, git.Regeneration{Repository, Marked, Onto, Take, Commands, Dir})` resolves a marked replay whose only conflicts are a repository's declared generated files, such as its digest goldens, by running the repository's [declared regenerate commands](../configuration.md#rebase-settings), with no model ([tiered rebase](../interpreter.md#tiered-rebase)).
+It works in a scratch, detached worktree at `Dir` (`git worktree add --detach <Dir> <Marked>`), never the task's worktree, and moves no branch:
+
+1. It takes the base side of each `Take` path, `git checkout <Onto> -- <paths>` with literal pathspecs.
+2. It runs each of `Commands` in order, an argv with no shell, from the worktree root. The environment is inherited, minus `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE`; all the commands together are bounded by `RegenerateTimeout`, ten minutes, under `ctx`.
+3. It stages everything (`git add --all`) and commits the tree on `Marked` with `Marked`'s message and author, dated as `Rebase` dates its commit.
+4. It returns `git.Regenerated`: `Commit`, `Changed`, the sorted paths that differ between `Marked` and `Commit`, and `Output`, the last 4 KiB of the commands' combined output.
+5. It removes the scratch worktree, and git's record of it, on every path; a leftover from a crashed run is removed first.
+
+A command that exits non-zero, cannot start or runs past the bound is not an error: `Failed` names the command and how it failed, `Output` holds its output, and `Commit` is empty.
+An error means git itself failed, the request was invalid (ids that are not full object ids, a relative path, no command or an empty one) or `ctx` ended.
+The commands are Guildhall running repository code on the Director host; only the Director's own config names them, never the repository, and the engine calls `Regenerate` only for a conflict confined to the declared paths.
+
+The double `gittest.Workspaces` scripts it with `SetRegenerate(marked, regenerated)`: a scripted commit becomes a commit of the repository on `Marked`, a scripted `Failed` has no commit, and a regeneration without a script fails, naming the double; it makes no directory and runs no command, and `Regenerations` lists the calls.
+
 ### Retire
 
 `Program.Retire(ctx, r)` removes a merged task's worktree and local branch when nothing in them would be lost, and otherwise removes nothing and returns why it kept them ([the working directory](../interpreter.md#the-working-directory)).
@@ -135,6 +152,10 @@ The CLI declares `cli.PolicyGit` over `FetchDefault` and `Show`, and bounds each
 `history_test.go`'s `TestVersionReads` covers the version reads over `gittest.Repository`: a subject, an unknown commit and a name that is not a full id refused, `Behind` before any fetch failing, a fetch that names two new commits with and without a pull request number, none behind at the tip, and a fetch from a missing remote failing with the ref unmoved and invalid refs and remotes refused.
 It was written with the operations and passed on its first run.
 `show_test.go`'s `TestShowAndChanges` covers the policy reads over `gittest.Repository`: `Show` before the ref is fetched (`ErrNoRevision`), of a missing path (absent), at the fetched ref, past an uncommitted edit in the work tree, of a directory and in a missing repository, and `Changes` over a commit adding the file and one not touching it.
+
+The workspace contract's regeneration case runs against `git.Program` and the double: a conflicting golden whose generator rewrites it gives a commit on the marked commit whose `Changed` is that path alone, a failing command gives `Failed` and no commit, and in both the scratch worktree is gone and the task's worktree and branch are unmoved.
+`workspace_test.go`'s `TestRegenerateProgram` pins what only git shows, with this test binary as the generator: the base side is what a command starts from, the regenerated golden holds no markers, the commit takes the marked commit's message and parent, a failing or missing command is reported with its exit status and output, a leftover scratch directory is replaced, and invalid requests are refused; `regenerate_internal_test.go` pins the environment filter.
+These were written with the operation and passed after one fixture fix (the arrangement's second commit had lost its directory to `git reset --hard`).
 
 `head_test.go` adds green-first boundary coverage for `FinalHead`: committed and detached HEAD, untracked notes, modified/staged/deleted/renamed/added tracked paths, unborn HEAD, non-repository directories, missing executable, cancellation and process timeout.
 The red-first integration regression that drove this new operation is linked from the [interpreter contract](interp.md).

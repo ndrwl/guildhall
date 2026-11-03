@@ -180,6 +180,9 @@ func (w *sliceWorkspaces) Log(context.Context, string, string, string, ...string
 func (w *sliceWorkspaces) Changes(context.Context, string, string, string, string) (bool, error) {
 	return false, nil
 }
+func (w *sliceWorkspaces) Regenerate(context.Context, git.Regeneration) (git.Regenerated, error) {
+	return git.Regenerated{}, errors.New("no regeneration in the slice tests")
+}
 
 // newSliceEnv is app/t7 bound to the sliced workflow, or its copy with no range, over a fake forge holding every
 // slice's head and the workspace stub.
