@@ -305,3 +305,67 @@ func TestQueueRerunFlakeReplay(t *testing.T) {
 		t.Errorf("reruns = %q, want one", got)
 	}
 }
+
+// TestQueueRerunPartialRefusal: at the rebased front, a refusal after an accepted rerun records why but neither
+// records the checks nor escalates while the accepted rerun runs; it failing again then escalates, naming it.
+func TestQueueRerunPartialRefusal(t *testing.T) {
+	e, f := rebasedFront(t, backends[0], nil, twoFailedJobs()...)
+	f.SetRerunError("124", errors.New("gh: This workflow run is too old to re-run (HTTP 403)"))
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), deliverWait)
+	if got := f.Reruns(); !slices.Equal(got, []string{"123", "124"}) {
+		t.Fatalf("reruns = %q, want both jobs asked once", got)
+	}
+	if out := e.pullRequestDoc(t, frontRecordName(head2, windows)+"-outcome"); !strings.Contains(out["error"].(string), "too old to re-run") {
+		t.Errorf("rerun outcome = %v", out)
+	}
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), deliverWait)
+	docs := e.documents(t)
+	if _, ok := docs[frontChecks]; ok {
+		t.Fatal("the front recorded its checks while 123's rerun runs")
+	}
+	if _, ok := docs["deliver-1-escalated-1"]; ok {
+		t.Fatal("the front escalated while 123's rerun runs")
+	}
+	if queued, known := inQueue(t, e); known && !queued {
+		t.Error("the front left the queue while it waited")
+	}
+	settle(t, f, head2, forge.CheckFailed)
+	escalated := expectEscalation(t, e)
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), escalated)
+	v := e.validationDoc(t, frontChecks)
+	if v.Verdict != "failed" || !slices.Equal(rerunChecks(v.Reruns), []string{macos}) || checkNamed(t, v.Checks, macos).ID != "CR_123-rerun-1" {
+		t.Errorf("%s = %+v", frontChecks, v)
+	}
+}
+
+// TestQueueRerunLaggingRead: at the rebased front, a read showing one accepted rerun pending beside the other's old
+// failed run records nothing and does not escalate; once both reruns finish the front escalates as usual.
+func TestQueueRerunLaggingRead(t *testing.T) {
+	e, f := rebasedFront(t, backends[0], nil, twoFailedJobs()...)
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), deliverWait)
+	rerun, err := f.Checks(t.Context(), forge.Commit{Repository: repoPath, Remote: repoRemote, Head: head2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.SetChecks(repoRemote, head2, lagging(rerun)...)
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), deliverWait)
+	docs := e.documents(t)
+	if _, ok := docs[frontChecks]; ok {
+		t.Fatal("the front recorded its checks while 123's rerun is pending")
+	}
+	if _, ok := docs["deliver-1-escalated-1"]; ok {
+		t.Fatal("the front escalated while 123's rerun is pending")
+	}
+	if text := e.messages(t)["app.t7.checks-pending.deliver."+head2[:12]]; !strings.Contains(text, "the checks of rebased head "+head2) {
+		t.Errorf("checks-pending = %q, want the rebased head's text", text)
+	}
+	f.SetChecks(repoRemote, head2, finished(rerun, forge.CheckFailed)...)
+	escalated := expectEscalation(t, e)
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), escalated)
+	if v := e.validationDoc(t, frontChecks); v.Verdict != "failed" || !slices.Equal(rerunChecks(v.Reruns), []string{macos, windows}) {
+		t.Errorf("%s = %+v", frontChecks, v)
+	}
+	if got := f.Reruns(); len(got) != 2 {
+		t.Errorf("reruns = %q, want two calls", got)
+	}
+}

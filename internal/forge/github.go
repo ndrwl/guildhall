@@ -405,6 +405,16 @@ func (g GitHub) CheckLog(ctx context.Context, c Commit, job string, limit int64)
 	return CheckLog{}, &LogUnavailableError{Reason: reason, Expired: expiredLog.MatchString(reason)}
 }
 
+// CheckRerunner re-runs a failed GitHub Actions job once on the same head; it is optional on a forge, and validate
+// and the rebased merge-queue front re-run a failed round's checks through it under the repository's flaky_checks
+// policy (docs/interpreter.md#validate-reruns). GitHub and forgetest.Fake implement it; a forge without it reruns
+// nothing, as flaky_checks = "off" does.
+type CheckRerunner interface {
+	RerunJob(ctx context.Context, c Commit, job string) error
+}
+
+var _ CheckRerunner = GitHub{}
+
 // RerunJob asks GitHub Actions to re-run job job of c's repository once, with gh api's POST to the job's rerun
 // endpoint. GitHub answers at once and runs the job as a new check run of the same name, with a new run id and a
 // new job id, which Checks then reports pending; it refuses a job whose workflow run is still in progress or too

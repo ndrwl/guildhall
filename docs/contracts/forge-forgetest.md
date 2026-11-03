@@ -16,9 +16,9 @@ It performs no network or git operations; production evidence computation is tes
 `Fake.CheckLog` implements the optional `interp.CheckLogReader` as `forge.GitHub.CheckLog` does: `SetLog(job, text)` sets a job's log, served through the same `forge.TailWriter` cap, and `SetLogError(job, err)` makes reading it fail with `err` until a nil error clears it; a job with neither has an expired log (`forge.ErrLogExpired`), an empty job or a limit of zero or less is `forge.ErrLogUnavailable` and a cancelled context is returned as it is.
 `LogCalls` counts its calls, so consumers can show a log served from a cache made no forge call.
 
-`Fake.RerunJob` implements the optional `interp.CheckRerunner` as `forge.GitHub.RerunJob` does: the check of the head whose job is `job` becomes a pending new run of the same name and URL, with a new run id and a new job id; a job no check of the head runs is refused like GitHub's 404, an empty or non-numeric job or a malformed commit is `forge.ErrInvalid`, and a cancelled context is returned as it is.
+`Fake.RerunJob` implements the optional `forge.CheckRerunner` as `forge.GitHub.RerunJob` does: the check of the head whose job is `job` becomes a pending new run of the same name and URL, with a new run id and a new job id; a job no check of the head runs is refused like GitHub's 404, an empty or non-numeric job or a malformed commit is `forge.ErrInvalid`, and a cancelled context is returned as it is.
 `SetRerunError(job, err)` makes re-running that job fail with `err` until a nil error clears it, and `Reruns` returns the jobs it was called with, in order, failed calls included, so consumers can show that a job was never re-run twice.
-`RunForgeContract` runs the rerun cases when the harness's forge implements the suite's `CheckRerunner` and can be given checks.
+`RunForgeContract` runs the rerun cases when the harness's forge implements `forge.CheckRerunner` and can be given checks.
 
 `RunMergeabilityContract` is the shared observation contract for the scripted fake and the strict-gh/real-git fixture.
 It checks exact evidence, immutable returned slices, repeated reads, malformed requests and refusal when the requested head no longer matches the observation.

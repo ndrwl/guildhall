@@ -309,3 +309,144 @@ func TestValidateRerunFlakeReplay(t *testing.T) {
 		})
 	}
 }
+
+// windows is the second matrix check the partial-rerun tests fail: run CR_124 of job 124.
+const windows = "test (windows-latest)"
+
+// twoFailedJobs is the macos and windows jobs of one round, both failed.
+func twoFailedJobs() []forge.Check {
+	return []forge.Check{actionsCheck(macos, "123", forge.CheckFailed), actionsCheck(windows, "124", forge.CheckFailed)}
+}
+
+// lagging returns checks with windows back at its old failed run CR_124, as a read does before GitHub registers its
+// rerun's new attempt.
+func lagging(checks []forge.Check) []forge.Check {
+	out := slices.Clone(checks)
+	for i := range out {
+		if out[i].Name == windows {
+			out[i] = actionsCheck(windows, "124", forge.CheckFailed)
+		}
+	}
+	return out
+}
+
+// finished returns checks with every one at state.
+func finished(checks []forge.Check, state forge.CheckState) []forge.Check {
+	out := slices.Clone(checks)
+	for i := range out {
+		out[i].State = state
+	}
+	return out
+}
+
+// rerunChecks returns the check names of reruns.
+func rerunChecks(reruns []rerunResult) []string {
+	var out []string
+	for _, r := range reruns {
+		out = append(out, r.Check)
+	}
+	return out
+}
+
+// TestValidateRerunPartialRefusal: when the forge accepts 123's rerun and then refuses 124's, the refusal is recorded
+// but no result is: validate waits for 123's rerun, then records one failed round from a fresh read, whose checks
+// show the rerun's run and whose reruns name the check that failed again; windows' refusal keeps it failed either way.
+func TestValidateRerunPartialRefusal(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		state   forge.CheckState
+		failing []string
+		reruns  []string
+	}{
+		{name: "fails again", state: forge.CheckFailed, failing: []string{macos, windows}, reruns: []string{macos}},
+		{name: "passes", state: forge.CheckPassed, failing: []string{windows}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			def := editValidate(t, func(s *workflow.Step) { s.On = nil })
+			e, f := newValidateEnvDefinition(t, backends[0], def)
+			f.SetChecks(repoRemote, head, twoFailedJobs()...)
+			f.SetRerunError("124", errors.New("gh: This workflow run is too old to re-run (HTTP 403)"))
+			want(t, e.toValidate(t), waitChecks)
+			if got := f.Reruns(); !slices.Equal(got, []string{"123", "124"}) {
+				t.Fatalf("reruns = %q, want both jobs asked once", got)
+			}
+			if out := e.pullRequestDoc(t, recordName(head, windows)+"-outcome"); !strings.Contains(out["error"].(string), "too old to re-run") {
+				t.Errorf("rerun outcome = %v", out)
+			}
+			if _, ok := e.documents(t)["validate-1-result"]; ok {
+				t.Fatal("a result was recorded while 123's rerun runs")
+			}
+			if got := withPrefix(e.messages(t), "app.t7.checks-failed"); len(got) != 0 {
+				t.Errorf("checks-failed sent while 123's rerun runs: %v", got)
+			}
+			// The accepted rerun is still running: validate waits on it and asks nothing again.
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), waitChecks)
+			if _, ok := e.documents(t)["validate-1-result"]; ok {
+				t.Fatal("a result was recorded while 123's rerun is pending")
+			}
+			settle(t, f, head, tc.state)
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDirector, Step: "validate"})
+			v := e.validationDoc(t, "validate-1-result")
+			if v.Verdict != "failed" || !slices.Equal(v.Failing, tc.failing) {
+				t.Errorf("validate-1-result = %+v, want failed naming %q", v, tc.failing)
+			}
+			if c := checkNamed(t, v.Checks, macos); c.ID != "CR_123-rerun-1" || c.State != tc.state {
+				t.Errorf("macos check = %+v, want its rerun's run", c)
+			}
+			if got := rerunChecks(v.Reruns); !slices.Equal(got, tc.reruns) {
+				t.Errorf("reruns = %q, want %q", got, tc.reruns)
+			}
+			if got := f.Reruns(); len(got) != 2 {
+				t.Errorf("reruns = %q, want two calls", got)
+			}
+		})
+	}
+}
+
+// TestValidateRerunLaggingRead: after both reruns are accepted, a read showing 123's rerun pending beside 124's old
+// failed run records nothing and waits on checks, replaying the same checks-pending message; once both reruns have
+// finished the round is recorded as usual.
+func TestValidateRerunLaggingRead(t *testing.T) {
+	def := editValidate(t, func(s *workflow.Step) { s.On = nil })
+	e, f := newValidateEnvDefinition(t, backends[0], def)
+	// The matrix is still running at first, so the checks-pending message is sent before any rerun.
+	f.SetChecks(repoRemote, head, actionsCheck(macos, "123", forge.CheckFailed), actionsCheck(windows, "124", forge.CheckPending))
+	want(t, e.toValidate(t), waitChecks)
+	id := "app.t7.checks-pending.validate." + head[:12]
+	before := e.messages(t)[id]
+	if before == "" {
+		t.Fatalf("messages = %v, want %s", e.messages(t), id)
+	}
+	f.SetChecks(repoRemote, head, twoFailedJobs()...)
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), waitChecks)
+	if got := f.Reruns(); !slices.Equal(got, []string{"123", "124"}) {
+		t.Fatalf("reruns = %q, want both jobs", got)
+	}
+	rerun, err := f.Checks(t.Context(), forge.Commit{Repository: repoPath, Remote: repoRemote, Head: head})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.SetChecks(repoRemote, head, lagging(rerun)...)
+	n := len(e.messages(t))
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), waitChecks)
+	if _, ok := e.documents(t)["validate-1-result"]; ok {
+		t.Fatal("a result was recorded while 123's rerun is pending")
+	}
+	msgs := e.messages(t)
+	if msgs[id] != before || len(msgs) != n {
+		t.Errorf("checks-pending = %q (%d new messages), want %q replayed", msgs[id], len(msgs)-n, before)
+	}
+	if got := withPrefix(msgs, "app.t7.checks-failed"); len(got) != 0 {
+		t.Errorf("checks-failed sent while a rerun runs: %v", got)
+	}
+	if got := f.Reruns(); len(got) != 2 {
+		t.Errorf("reruns = %q, want no new call", got)
+	}
+	// Both reruns finish, failing again: the round is recorded, naming both.
+	f.SetChecks(repoRemote, head, finished(rerun, forge.CheckFailed)...)
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDirector, Step: "validate"})
+	v := e.validationDoc(t, "validate-1-result")
+	if v.Verdict != "failed" || !slices.Equal(rerunChecks(v.Reruns), []string{macos, windows}) || !slices.Equal(v.Failing, []string{macos, windows}) {
+		t.Errorf("validate-1-result = %+v, want a failed round naming both reruns", v)
+	}
+}
