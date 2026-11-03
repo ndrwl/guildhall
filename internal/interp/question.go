@@ -4,6 +4,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/ndrwl/guildhall/internal/spec"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
@@ -33,6 +34,6 @@ func boundedQuestion(why string, options []string) string {
 			named[i] = h
 		}
 	}
-	answer := "\n\nAnswer with one of: " + strings.Join(named, ", ") + ".\n"
+	answer := "\n\n" + spec.AnswerLine + strings.Join(named, ", ") + ".\n"
 	return shortText(why, store.MaxTextBytes-len(answer)) + answer
 }

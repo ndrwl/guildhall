@@ -450,18 +450,20 @@ func (s *Server) mockup(t Task, doc Document, v *askView) {
 }
 
 // questionParts are the parts of an approval question that follow its summary and open questions (render.Question),
-// and of a design round's question, its line saying what each answer does (render.DesignQuestion).
-var questionParts = []string{"\n\nInstructions:\n", "\n\nInputs:\n", "\n\nAnswer with one of: ", "\n\napproved makes the design "}
+// and of a design round's question, its line saying what each answer does (render.DesignQuestion), by the markers
+// spec names for them, each after a blank line.
+var questionParts = []string{"\n\n" + spec.InstructionsHeader + "\n", "\n\n" + spec.InputsHeader + "\n", "\n\n" + spec.AnswerLine, "\n\n" + spec.DesignAnswersLine}
 
 // stripSummary takes an approval question's own summary part off the front of rest, the question after its first
-// line: its "No summary in this spec" line always, its "Plan summary:" block when the page shows summary, the block
-// it read from the spec, in its place, and then its open-questions part when the page shows questions, the part it
-// read from the spec. A copy that differs from the page's is cut up to the next part of the question.
+// line: its spec.NoSummaryLine line always, its spec.SummaryHeader block when the page shows summary, the block it
+// read from the spec, in its place, and then its open-questions part when the page shows questions, the part it read
+// from the spec. A copy that differs from the page's is cut up to the next part of the question.
 func stripSummary(rest, summary, questions string) string {
-	if line, after, _ := strings.Cut(rest, "\n"); strings.HasPrefix(line, "No summary in this spec") {
+	header := spec.SummaryHeader + "\n"
+	if line, after, _ := strings.Cut(rest, "\n"); strings.HasPrefix(line, spec.NoSummaryLine) {
 		rest = strings.TrimSpace(after)
-	} else if summary != "" && strings.HasPrefix(rest, "Plan summary:\n") {
-		if after, ok := cutPart(rest, "Plan summary:\n"+summary); ok {
+	} else if summary != "" && strings.HasPrefix(rest, header) {
+		if after, ok := cutPart(rest, header+summary); ok {
 			rest = after
 		} else {
 			return toNextPart(rest)

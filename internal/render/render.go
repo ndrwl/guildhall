@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/ndrwl/guildhall/internal/digest"
+	"github.com/ndrwl/guildhall/internal/spec"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
@@ -521,29 +522,24 @@ func Question(stage Stage, inputs []Input) (Ask, error) {
 		stage.Repository, stage.Task, stage.Step.ID, kind.Type, kind.Version, stage.Attempt)
 	if kind.Type == "guildmaster-approval" {
 		if summary := strings.TrimSpace(normalise(stage.Summary)); summary != "" {
-			fmt.Fprintf(&b, "\nPlan summary:\n%s\n", summary)
+			fmt.Fprintf(&b, "\n%s\n%s\n", spec.SummaryHeader, summary)
 		} else if stage.NoSummary {
 			name := "the spec"
 			if i := slices.IndexFunc(inputs, func(in Input) bool { return in.Port == "spec" }); i >= 0 {
 				name = slashName(inputs[i].Name)
 			}
-			fmt.Fprintf(&b, "\nNo summary in this spec; read %s.\n", name)
+			fmt.Fprintf(&b, "\n%s; read %s.\n", spec.NoSummaryLine, name)
 		}
 		if questions := strings.TrimSpace(normalise(stage.Questions)); questions != "" {
 			fmt.Fprintf(&b, "\n%s\n", questions)
 		}
 	}
 	if instructions := strings.TrimRight(normalise(stage.Step.Instructions()), "\n"); strings.TrimSpace(instructions) != "" {
-		fmt.Fprintf(&b, "\nInstructions:\n%s\n", instructions)
+		fmt.Fprintf(&b, "\n%s\n%s\n", spec.InstructionsHeader, instructions)
 	}
-	if len(inputs) > 0 {
-		b.WriteString("\nInputs:\n")
-		for _, in := range inputs {
-			fmt.Fprintf(&b, "- %s: %s (sha256:%s)\n", in.Port, slashName(in.Name), in.SHA256)
-		}
-	}
+	writeInputs(&b, inputs)
 	options := questionOptions[kind.Type]
-	fmt.Fprintf(&b, "\nAnswer with one of: %s.\n", strings.Join(options, ", "))
+	fmt.Fprintf(&b, "\n%s%s.\n", spec.AnswerLine, strings.Join(options, ", "))
 	return Ask{Question: normalise(b.String()), Options: slices.Clone(options)}, nil
 }
 
@@ -561,15 +557,22 @@ func DesignQuestion(repository, task, id string, n int, questions string, inputs
 	if questions := strings.TrimSpace(normalise(questions)); questions != "" {
 		fmt.Fprintf(&b, "\n%s\n", questions)
 	}
-	b.WriteString("\napproved makes the design an input to plan, which runs again if it already ran; changes_requested reopens the grill with your answer.\n")
-	if len(inputs) > 0 {
-		b.WriteString("\nInputs:\n")
-		for _, in := range inputs {
-			fmt.Fprintf(&b, "- %s: %s (sha256:%s)\n", in.Port, slashName(in.Name), in.SHA256)
-		}
-	}
-	fmt.Fprintf(&b, "\nAnswer with one of: %s.\n", strings.Join(DesignOptions, ", "))
+	fmt.Fprintf(&b, "\n%s\n", spec.DesignAnswersLine)
+	writeInputs(&b, inputs)
+	fmt.Fprintf(&b, "\n%s%s.\n", spec.AnswerLine, strings.Join(DesignOptions, ", "))
 	return Ask{Question: normalise(b.String()), Options: slices.Clone(DesignOptions)}
+}
+
+// writeInputs writes a question's inputs part to b: the spec.InputsHeader line and one line for each input, by port,
+// name and recorded digest, or nothing when there are none.
+func writeInputs(b *strings.Builder, inputs []Input) {
+	if len(inputs) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "\n%s\n", spec.InputsHeader)
+	for _, in := range inputs {
+		fmt.Fprintf(b, "- %s: %s (sha256:%s)\n", in.Port, slashName(in.Name), in.SHA256)
+	}
 }
 
 var questionOptions = map[string][]string{

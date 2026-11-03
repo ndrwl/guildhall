@@ -126,6 +126,7 @@ A plan approval's question also carries, right after its first line, the spec's 
 After it comes `Stage.Questions`, the spec's open-questions part (`spec.SpecPart`): `Open questions in full:` and every `## Open questions` question copied byte for byte, cut at a question boundary with `(cut; read the spec)` past 16 KiB, or `Open questions: none.`; a spec with no readable section, such as one recorded before the plan check, has no part.
 `render.DesignQuestion` writes a design round's question the same way: right after its first line, the design's open-questions part that the engine read from the verified design with `spec.SpecPart`, or nothing for a design with no readable section.
 The complete question text has CRLF and lone CR normalised to LF.
+`spec` names the questions' parts once, and `render`, `interp` and the task page share them: `SummaryHeader` (`Plan summary:`), `NoSummaryLine`, `InstructionsHeader`, `InputsHeader`, `AnswerLine` (`Answer with one of: `) and a design round's `DesignAnswersLine`; stored questions hold these exact bytes, so rewording one needs a reader that accepts both forms.
 
 | Kind | Options |
 |---|---|

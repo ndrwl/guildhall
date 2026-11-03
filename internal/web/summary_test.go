@@ -139,6 +139,8 @@ func TestDesignRoundNoSummary(t *testing.T) {
 
 func TestStripSummary(t *testing.T) {
 	const qs = "Open questions in full:\n**Q1. A**\nOptions: x; y.\nRecommended: x."
+	// design is the line render.DesignQuestion writes, whole, as every stored design question holds it.
+	const design = "approved makes the design an input to plan, which runs again if it already ran; changes_requested reopens the grill with your answer."
 	for _, c := range []struct{ rest, summary, questions, want string }{
 		{"Plan summary:\n- a\n\n- b\n\nInputs:\n- x", "- a\n\n- b", "", "Inputs:\n- x"},
 		{"Plan summary:\n- a, as stored\n\nAnswer with one of: y.", "- a", "", "Answer with one of: y."},
@@ -151,9 +153,9 @@ func TestStripSummary(t *testing.T) {
 		{"Plan summary:\n- a, as stored\n\n" + qs + "\n\nInputs:\n- x", "- a", qs, "Inputs:\n- x"},
 		{"No summary in this spec; read s.md.\n\n" + qs + "\n\nInputs:\n- x", "", qs, "Inputs:\n- x"},
 		{"Plan summary:\n- a\n\n" + qs + "\n\nInputs:\n- x", "- a", "", qs + "\n\nInputs:\n- x"},
-		{qs + "\n\napproved makes the design an input.\n\nInputs:\n- x", "", qs, "approved makes the design an input.\n\nInputs:\n- x"},
-		{qs + ", as stored\n\napproved makes the design an input.\n\nInputs:\n- x", "", qs, "approved makes the design an input.\n\nInputs:\n- x"},
-		{"approved makes the design an input.\n\nInputs:\n- x", "", qs, "approved makes the design an input.\n\nInputs:\n- x"},
+		{qs + "\n\n" + design + "\n\nInputs:\n- x", "", qs, design + "\n\nInputs:\n- x"},
+		{qs + ", as stored\n\n" + design + "\n\nInputs:\n- x", "", qs, design + "\n\nInputs:\n- x"},
+		{design + "\n\nInputs:\n- x", "", qs, design + "\n\nInputs:\n- x"},
 	} {
 		if got := stripSummary(c.rest, c.summary, c.questions); got != c.want {
 			t.Errorf("stripSummary(%q, %q, %q) = %q, want %q", c.rest, c.summary, c.questions, got, c.want)
