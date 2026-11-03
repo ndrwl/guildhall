@@ -1,8 +1,43 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {urgency, smithy, raster, layout, routineEdge, routineBox, rule} from '../lib/presentation.mjs';
+import {urgency, smithy, raster, layout, linkTickets, routineEdge, routineBox, rule} from '../lib/presentation.mjs';
 import {assertS2} from './s2-contract.mjs';
-import {twoAsks, nothing, grill, linked} from './layout-fixtures.mjs';
+import {twoAsks, nothing, grill, linked, ticketed} from './layout-fixtures.mjs';
+
+const base='http://host.tail.ts.net:4388';
+const one={url:base,repos:['guildhall']};
+const two={url:base,repos:['guildhall','site']};
+
+test('ticket tokens become task-page links that keep the token as their text',()=>{
+ // A qualified token, with and without a record.
+ assert.equal(linkTickets('see ticket:guildhall/d147',two),`see [ticket:guildhall/d147](${base}/guildhall/d147)`);
+ assert.equal(linkTickets('ticket:site/d9#accept-1 waits',two),`[ticket:site/d9#accept-1](${base}/site/d9#accept-1) waits`);
+ // A bare id resolves only in a copy with one repository.
+ assert.equal(linkTickets('ticket:d147#grill-1.',one),`[ticket:d147#grill-1](${base}/guildhall/d147#grill-1).`);
+ assert.equal(linkTickets('ticket:d147#grill-1',two),'ticket:d147#grill-1');
+ // An unknown repository is left as it is.
+ assert.equal(linkTickets('ticket:other/d1',two),'ticket:other/d1');
+ // A trailing slash on the base URL is not doubled.
+ assert.equal(linkTickets('ticket:d1',{url:base+'/',repos:['guildhall']}),`[ticket:d1](${base}/guildhall/d1)`);
+ // Tokens need a word boundary before them and are not linked twice.
+ for(const text of ['noticket:d1','x/ticket:d1','[ticket:d1](http://elsewhere/d1)','ticket:','ticket:-d1'])assert.equal(linkTickets(text,one),text);
+ // Code spans and fenced blocks are left as they are.
+ assert.equal(linkTickets('run `ticket:d1` or ticket:d2',one),`run \`ticket:d1\` or [ticket:d2](${base}/guildhall/d2)`);
+ assert.equal(linkTickets('``a ticket:d1 b`` ticket:d2',one),`\`\`a ticket:d1 b\`\` [ticket:d2](${base}/guildhall/d2)`);
+ const fenced='```sh\nguildhall task show ticket:d1\n```\nticket:d2\n~~~\nticket:d3\n~~~';
+ assert.equal(linkTickets(fenced,one),`\`\`\`sh\nguildhall task show ticket:d1\n\`\`\`\n[ticket:d2](${base}/guildhall/d2)\n~~~\nticket:d3\n~~~`);
+ // Without links, or with no repositories, nothing changes.
+ for(const l of [undefined,null,{},{url:base,repos:[]},{url:'',repos:['guildhall']}])assert.equal(linkTickets('ticket:d1',l),'ticket:d1');
+ assert.equal(linkTickets(undefined,one),undefined);
+});
+test('linking a layout reply\'s sections leaves the section split as it was',()=>{
+ const parts=layout(ticketed);
+ assert.equal(parts.needs,'**Needs you**\n- d122 · approve the plan · accept-1 · ticket:guildhall/d122#accept-1');
+ assert.deepEqual(layout(linkTickets(ticketed,two)),Object.fromEntries(Object.entries(parts).map(([k,v])=>[k,k==='asOf'?v:linkTickets(v,two)])));
+ assert.equal(linkTickets(parts.needs,two),`**Needs you**\n- d122 · approve the plan · accept-1 · [ticket:guildhall/d122#accept-1](${base}/guildhall/d122#accept-1)`);
+ // The Routine box is drawn as text and never linked.
+ assert.equal(linkTickets(parts.routine,two),parts.routine);
+});
 
 test('only opening markers select urgency; unknown is neutral',()=>{
  for (const [text,want] of [['🔴 act','red'],['🟡 decide','yellow'],['🟢 done','green'],['unmarked','gray'],['later 🔴','gray'],['','gray']]) assert.equal(urgency(text),want);

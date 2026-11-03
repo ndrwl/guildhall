@@ -97,6 +97,8 @@ type Adapter struct {
 	Claude string
 	// SkillPolicy is the already resolved Director policy; nil uses director-v1.
 	SkillPolicy *config.ClaudeSkillPolicy
+	// Links is the task pages Lanterns links ticket tokens to; nil, with no [web] table, renders no LinksFile.
+	Links *Links
 }
 
 // Capabilities reports the Claude adapter's optional capabilities: none.

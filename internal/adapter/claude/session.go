@@ -185,8 +185,8 @@ const (
 
 // SessionFiles are the files a Claude Code Director session needs beside its skills, by slash path relative to
 // the session directory: merged settings at SettingsFile, a policy receipt at SkillPolicyFile, the /version
-// command at VersionCommandFile, the embedded Lanterns plugin at PluginDir and the embedded Clerk plugin at
-// ClerkPluginDir.
+// command at VersionCommandFile, the embedded Lanterns plugin at PluginDir with its CalmFile, and LinksFile when
+// Links is set, and the embedded Clerk plugin at ClerkPluginDir.
 func (a Adapter) SessionFiles(copyDir string) map[string][]byte {
 	p := a.SkillPolicy
 	if p == nil {
@@ -203,7 +203,30 @@ func (a Adapter) SessionFiles(copyDir string) map[string][]byte {
 		files[filepath.ToSlash(filepath.Join(ClerkPluginDir, name))] = data
 	}
 	files[CalmFile] = calmFile(copyDir)
+	if a.Links != nil {
+		files[LinksFile] = a.Links.file()
+	}
 	return files
+}
+
+// LinksFile tells the Lanterns plugin where the task pages are and which repositories the copy configures, so it
+// can draw `ticket:<repo>/<id>` tokens as links, relative to the session directory; a plugin with no LinksFile
+// leaves tokens as they are (docs/lanterns.md).
+const LinksFile = PluginDir + "/links.json"
+
+// Links is LinksFile's content: the task pages' base URL and the copy's repository ids, in config order.
+type Links struct {
+	URL   string   `json:"url"`
+	Repos []string `json:"repos"`
+}
+
+// file is LinksFile's JSON, {"url":"<base url>","repos":["<repo>",…]}, with a trailing newline.
+func (l Links) file() []byte {
+	if l.Repos == nil {
+		l.Repos = []string{}
+	}
+	b, _ := json.Marshal(l)
+	return append(b, '\n')
 }
 
 // CalmFile tells the Lanterns plugin where the copy's Calm preference is, relative to the session directory; a

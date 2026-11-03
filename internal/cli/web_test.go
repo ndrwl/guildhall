@@ -428,8 +428,18 @@ func TestDirectorSessionServesTheTaskPages(t *testing.T) {
 	if code, body := getPage(t, "http://"+first+"/app/t-1"); code != http.StatusOK || !strings.Contains(body, "Sort the task list") {
 		t.Errorf("page: %d\n%s", code, body)
 	}
-	if code, out, stderr := directorCmd(t, nil, "status", "--json", "--copy", dir); code != 0 || !strings.Contains(out, `"web":{"state":"serving","url":"http://host.tail.ts.net:4388"}`) {
+	if code, out, stderr := directorCmd(t, nil, "status", "--json", "--copy", dir); code != 0 || !strings.Contains(out, `"web":{"state":"serving","url":"http://host.tail.ts.net:4388","links":"markdown"}`) {
 		t.Errorf("status: exit %d, %s, %s", code, out, stderr)
+	}
+	// Run from a Director whose Claude has function hooks on, status asks for ticket tokens Lanterns links.
+	hooks := func(name string) string {
+		if name == "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS" {
+			return "1"
+		}
+		return ""
+	}
+	if code, out, stderr := directorCmd(t, hooks, "status", "--json", "--copy", dir); code != 0 || !strings.Contains(out, `"web":{"state":"serving","url":"http://host.tail.ts.net:4388","links":"ticket"}`) {
+		t.Errorf("status with function hooks: exit %d, %s, %s", code, out, stderr)
 	}
 	copyRun(t, dir, "director", "reload")
 	copyRun(t, dir, "director", "turn-ended")
@@ -466,7 +476,7 @@ func TestDirectorSessionBindFailureOnlyWarns(t *testing.T) {
 	writeFile(t, cfgPath, string(b)+"\n[web]\naddress = \"host.tail.ts.net:4388\"\n")
 	stub := &webStub{fail: errors.New("not a Tailscale address")}
 	done := superviseWith(t, dir, time.Hour, func(a *App) { a.WebListen = stub.listen })
-	if code, out, stderr := directorCmd(t, nil, "status", "--json", "--copy", dir); code != 0 || !strings.Contains(out, `"web":{"state":"failed to bind","url":"http://host.tail.ts.net:4388","reason":"not a Tailscale address"}`) {
+	if code, out, stderr := directorCmd(t, nil, "status", "--json", "--copy", dir); code != 0 || !strings.Contains(out, `"web":{"state":"failed to bind","url":"http://host.tail.ts.net:4388","reason":"not a Tailscale address","links":"markdown"}`) {
 		t.Errorf("status: exit %d, %s, %s", code, out, stderr)
 	}
 	copyRun(t, dir, "director", "stop", "--now")
