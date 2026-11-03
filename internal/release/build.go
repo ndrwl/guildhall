@@ -90,7 +90,7 @@ func AbsSource(source string) (string, error) {
 	if err := ValidSource(source); err != nil {
 		return "", err
 	}
-	if !isLocalSource(source) {
+	if !IsLocalSource(source) {
 		return source, nil
 	}
 	abs, err := filepath.Abs(source)
@@ -100,8 +100,8 @@ func AbsSource(source string) (string, error) {
 	return abs, nil
 }
 
-// isLocalSource reports whether git reads source as a local path rather than a URL or an scp-style remote.
-func isLocalSource(source string) bool {
+// IsLocalSource reports whether git reads source as a local path rather than a URL or an scp-style remote.
+func IsLocalSource(source string) bool {
 	if strings.Contains(source, "://") {
 		return false
 	}

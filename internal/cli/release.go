@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/admit"
+	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/release"
 	"github.com/ndrwl/guildhall/internal/store"
 )
@@ -24,7 +25,7 @@ const releaseLockWait = 10 * time.Second
 // releaseBuildTimeout bounds release install's fetch and build of a missing release, every git and go run together.
 const releaseBuildTimeout = 10 * time.Minute
 
-const releaseUsage = `usage: guildhall release install <version> [--source <url>] [--no-build]
+const releaseUsage = `usage: guildhall release install <version> [--source <url>] [--no-build] [--copy <dir>]
        guildhall release install <version> --from <file> --sha256 <hex>
        guildhall release install --launcher [--from <file>]
        guildhall release adopt [--copy <dir>] [--launcher <file>]
@@ -92,8 +93,8 @@ func (a *App) releaseProbe(ctx context.Context, path string) (release.Report, er
 	return r, nil
 }
 
-// releaseInstall runs `guildhall release install <version> [--source <url>] [--no-build]` and `guildhall release
-// install <version> --from <file> --sha256 <hex>`.
+// releaseInstall runs `guildhall release install <version> [--source <url>] [--no-build] [--copy <dir>]` and
+// `guildhall release install <version> --from <file> --sha256 <hex>`.
 func (a *App) releaseInstall(args []string) int {
 	fl := flag.NewFlagSet("release install", flag.ContinueOnError)
 	fl.SetOutput(io.Discard)
@@ -102,10 +103,12 @@ func (a *App) releaseInstall(args []string) int {
 	launcher := fl.Bool("launcher", false, "install the PATH launcher")
 	source := fl.String("source", "", "the git repository to build a missing release from")
 	noBuild := fl.Bool("no-build", false, "refuse a missing release rather than build it")
+	var cp copyFlags
+	cp.register(fl)
 	if err := parseInterspersed(fl, args); err != nil {
 		return a.usageError("release install: " + err.Error())
 	}
-	building := *source != "" || *noBuild
+	building := *source != "" || *noBuild || cp.dir != ""
 	switch {
 	case *launcher && (fl.NArg() != 0 || *sum != "" || building):
 		return a.usageError("release install --launcher takes only --from <file>\n" + releaseUsage)
@@ -114,7 +117,7 @@ func (a *App) releaseInstall(args []string) int {
 	case fl.NArg() != 1:
 		return a.usageError("release install: want one version\n" + releaseUsage)
 	case (*from != "" || *sum != "") && building:
-		return a.usageError("release install: --from and --sha256 install a file, and take no --source or --no-build\n" + releaseUsage)
+		return a.usageError("release install: --from and --sha256 install a file, and take no --source, --no-build or --copy\n" + releaseUsage)
 	case (*from == "") != (*sum == ""):
 		return a.usageError("release install: --from and --sha256 go together\n" + releaseUsage)
 	}
@@ -128,7 +131,10 @@ func (a *App) releaseInstall(args []string) int {
 	case *from != "":
 		res, err = h.Install(context.Background(), version, *from, *sum, a.releaseProbe, a.now(), releaseLockWait)
 	default:
-		res, err = a.releaseBuild(h, version, *source, *noBuild)
+		var src string
+		if src, err = a.releaseSource(*source, cp); err == nil {
+			res, err = a.releaseBuild(h, version, src, *noBuild)
+		}
 	}
 	if err != nil {
 		return a.fail(fmt.Errorf("release install: %w", err))
@@ -145,6 +151,31 @@ func (a *App) releaseInstall(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// releaseSource is the source release install builds a missing release from: given, its --source, when set;
+// else the release_source setting of the copy cp selects (--copy or copy discovery), reading no other setting and
+// neither store nor pin; else release.DefaultSource, also when no copy is found. A copy whose config cannot be read
+// refuses, naming --source, rather than build from another source than the copy names.
+func (a *App) releaseSource(given string, cp copyFlags) (string, error) {
+	if given != "" {
+		return given, nil
+	}
+	var cfgPath string
+	if err := cp.apply(a, nil, &cfgPath, nil); err != nil {
+		return "", err
+	}
+	if cp.dir == "" {
+		return release.DefaultSource, nil
+	}
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return "", fmt.Errorf("reading %s for %s: %w; pass --source <url> to name the source", cfgPath, config.ReleaseSourceKey, err)
+	}
+	if s, ok := cfg.ReleaseSource(); ok {
+		return s, nil
+	}
+	return release.DefaultSource, nil
 }
 
 // releaseBuild installs version, building it from source, or release.DefaultSource when source is "", when it is not

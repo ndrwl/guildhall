@@ -51,6 +51,7 @@ Every refusal leaves `releases/` unchanged and removes the scratch directory and
 `ExecBuilder` is the real `Builder`: git with `GIT_TERMINAL_PROMPT=0`, `git init` and `git fetch --no-write-fetch-head --no-recurse-submodules <source> +refs/heads/*:refs/remotes/source/* +refs/tags/*:refs/tags/*`, `git rev-parse --verify --quiet --end-of-options <rev>^{commit}`, whose failure is `ErrNotInSource`, and a detached checkout; go with `GOFLAGS` cleared, `GOWORK=off`, `CGO_ENABLED=0` and the running binary's `GOOS` and `GOARCH`, `go env GOVERSION` and `go build -buildvcs=true -trimpath -mod=readonly -o <out> ./cmd/guildhall`.
 Each git run is bounded by `DefaultBuildGitTimeout`, five minutes, and each go run by `DefaultBuildGoTimeout`, ten, unless set.
 `DefaultSource` is `https://github.com/ndrwl/guildhall`.
+`IsLocalSource` reports whether git reads a source as a local path, as `AbsSource` decides; `config`'s `release_source` check uses it with `ValidSource` to require a local path be absolute.
 
 **The inventory.** `Copies` reads `copies`, one absolute copy directory per line; a home without one has none.
 `Register(dir, lockWait)` adds `dir`, made absolute and clean, under the home lock, keeping the file sorted and without duplicates and publishing it with [`atomicfile`](atomicfile.md); registering a copy already there changes nothing, and a directory containing a line break is refused.
