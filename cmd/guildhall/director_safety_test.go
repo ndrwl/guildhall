@@ -54,7 +54,7 @@ func TestMain(m *testing.M) {
 	for _, k := range []string{"HERDR_SESSION", "HERDR_SOCKET_PATH", "HERDR_PANE_ID", "HERDR_TAB_ID", "HERDR_WORKSPACE_ID", "HERDR_ENV"} {
 		_ = os.Unsetenv(k)
 	}
-	code := testenv.RunWithClaudeGuard(m)
+	code := testenv.RunWithGuards(m)
 	if toolsDir != "" {
 		_ = os.RemoveAll(toolsDir)
 	}

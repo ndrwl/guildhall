@@ -26,7 +26,8 @@ Test-binary children inherit `CI` and so the same ceilings.
 It writes the guard to a new temporary directory, removes from `PATH` every directory holding another `claude` program `exec.LookPath` would find (on Windows, `claude` with a `PATHEXT` extension), and appends the guard's directory, so a stub `claudetest.Install` prepends later still wins and `claudeStubbed`'s comparison still holds.
 It records the directory in `GUILDHALL_TEST_CLAUDE_GUARD`; a child that inherits both installs nothing, and its `remove` does nothing.
 Removing those directories also hides any other tool beside a developer's `claude`, such as in `~/.local/bin`, from the guarded tests.
-`RunWithClaudeGuard(m)` installs the guard, runs `m`, removes it and returns the exit code, 2 when the guard cannot be installed.
+`InstallCodexGuard()` does the same for `codex`: its guard writes `guildhall test: real codex invoked: <args>` (`CodexGuardMessage`) and exits 97 (`CodexGuardExit`), it records its directory in `GUILDHALL_TEST_CODEX_GUARD`, and a stub a test prepends later still wins, so no test reaches a real Codex CLI.
+`RunWithGuards(m)` installs both guards, runs `m`, removes them and returns the exit code, 2 when a guard cannot be installed.
 Every package whose tests start subprocesses calls it from `TestMain`: `cmd/guildhall`, `internal/cli`, `internal/launch`, `internal/adapter/claude` and `internal/interp`, so `go test ./...` on a developer's machine is guarded as well as CI.
 This closes the gap `interp.CheckAdapter` leaves in a built binary, where `testing.Testing()` is false.
 
@@ -43,6 +44,7 @@ The repository-wide guard initially failed on the existing timing inventory befo
 `testenv_test.go` was written red first against a stub that always skipped: the skip and failure table over a recording `T`, `Required`'s parsing and refusal, and `TestCIRequirementsAreKnown`, which checks the running job's own `GUILDHALL_CI_REQUIRE` on every runner.
 `ceiling_test.go`'s `TestCeiling` was written red first against a `Ceiling` returning `d` unchanged ([red run](../evidence/windows-ci-speed-2026-10-22-red.txt)): unset keeps the ceiling, and `true` and any other value scale it; the cap cases were added after a macOS run where `cmd/guildhall`'s scaled minute ceilings outlasted the package timeout.
 `claude_guard_test.go`'s `TestClaudeGuard` was run red against an `InstallClaudeGuard` that installed nothing ([red run](../evidence/claude-guard-2026-10-29-red.txt)): with a recording `claude` earlier on `PATH`, `exec.LookPath` finds the guard, which exits 97 with its message and arguments without reaching the other; a second install keeps the first; a later stub wins.
+`TestCodexGuard` runs the same checks for `codex`; it was added with the guard, which shares the claude guard's code, and was not run red.
 `cmd/guildhall`'s `TestRealClaudeIsRefused` runs a plan whose profile names the claude adapter through the built binary with no stub, and wants the attempt failed by the guard; the claude wrapper's first call is its version probe, which logs the guard's exit status, not its message.
 Its red run, with `TestMain` calling `m.Run()` instead of `testenv.RunWithClaudeGuard` and a recording `claude` first on `PATH`, failed because the attempt reached the recording `claude` with the Artisan's `--print` model call ([red run](../evidence/claude-guard-binary-2026-10-29-red.txt)).
 The converted call sites keep their tests unchanged; run with every name required on a Linux host without `ksh` or PowerShell, each fails naming the missing tool or platform.

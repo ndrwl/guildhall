@@ -9,19 +9,23 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/adapter/claude"
+	"github.com/ndrwl/guildhall/internal/adapter/codex"
 	"github.com/ndrwl/guildhall/internal/adapter/fake"
 	"github.com/ndrwl/guildhall/internal/adapter/runtimes"
 )
 
 func TestLookupConstructsEachRuntime(t *testing.T) {
-	if got, want := runtimes.Names(), []string{adapter.ClaudeName, adapter.FakeName}; !slices.Equal(got, want) {
+	if got, want := runtimes.Names(), []string{adapter.ClaudeName, adapter.CodexName, adapter.FakeName}; !slices.Equal(got, want) {
 		t.Fatalf("Names() = %q, want %q", got, want)
+	}
+	if got, want := runtimes.SessionNames(), []string{adapter.ClaudeName, adapter.FakeName}; !slices.Equal(got, want) {
+		t.Fatalf("SessionNames() = %q, want %q", got, want)
 	}
 	exe := filepath.Join(t.TempDir(), "guildhall")
 	dir := t.TempDir()
 	spec := adapter.Spec{Identity: adapter.Identity{TaskID: "t-1", AttemptID: "build-1"}, WorkDir: dir,
 		PromptFile: filepath.Join(dir, "prompt.md"), ResultFile: filepath.Join(dir, "result.json")}
-	for name, subcommand := range map[string]string{adapter.FakeName: fake.Subcommand, adapter.ClaudeName: claude.Subcommand} {
+	for name, subcommand := range map[string]string{adapter.FakeName: fake.Subcommand, adapter.ClaudeName: claude.Subcommand, adapter.CodexName: codex.Subcommand} {
 		r, err := runtimes.Lookup(name, exe)
 		if err != nil {
 			t.Fatalf("Lookup(%q): %v", name, err)
@@ -37,14 +41,14 @@ func TestLookupConstructsEachRuntime(t *testing.T) {
 }
 
 func TestLookupRefusesAnUnknownName(t *testing.T) {
-	for _, name := range []string{"", "codex", "mock", "Fake"} {
+	for _, name := range []string{"", "gemini", "mock", "Fake", "Codex"} {
 		r, err := runtimes.Lookup(name, "/bin/guildhall")
 		if r != nil || !errors.Is(err, runtimes.ErrUnknown) {
 			t.Errorf("Lookup(%q) = %v, %v; want ErrUnknown", name, r, err)
 			continue
 		}
-		if !strings.Contains(err.Error(), "claude, fake") || name != "" && !strings.Contains(err.Error(), name) {
-			t.Errorf("Lookup(%q) error %q does not name it and list claude, fake", name, err)
+		if !strings.Contains(err.Error(), "claude, codex, fake") || name != "" && !strings.Contains(err.Error(), name) {
+			t.Errorf("Lookup(%q) error %q does not name it and list claude, codex, fake", name, err)
 		}
 	}
 }
@@ -65,8 +69,13 @@ func TestLookupSessionConstructsEachRuntime(t *testing.T) {
 			t.Errorf("%s session = %+v, %v", name, cmd, err)
 		}
 	}
-	if r, err := runtimes.LookupSession("codex", exe); r != nil || !errors.Is(err, runtimes.ErrUnknown) || !strings.Contains(err.Error(), "claude, fake") {
-		t.Errorf("LookupSession(codex) = %v, %v", r, err)
+	// Codex runs attempts only: a Director session on it is refused, naming the session runtimes.
+	if r, err := runtimes.LookupSession(adapter.CodexName, exe); r != nil || !errors.Is(err, runtimes.ErrNoSession) || errors.Is(err, runtimes.ErrUnknown) ||
+		!strings.Contains(err.Error(), `"codex" runs attempts only`) || !strings.Contains(err.Error(), "claude, fake") {
+		t.Errorf("LookupSession(codex) = %v, %v; want ErrNoSession listing claude, fake", r, err)
+	}
+	if r, err := runtimes.LookupSession("gemini", exe); r != nil || !errors.Is(err, runtimes.ErrUnknown) || !strings.Contains(err.Error(), "claude, fake") {
+		t.Errorf("LookupSession(gemini) = %v, %v", r, err)
 	}
 }
 

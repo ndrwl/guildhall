@@ -40,7 +40,7 @@ func TestMain(m *testing.M) {
 		}
 		os.Exit(claude.Main(os.Args[2:], os.Stdout, os.Stderr))
 	}
-	os.Exit(testenv.RunWithClaudeGuard(m))
+	os.Exit(testenv.RunWithGuards(m))
 }
 
 func subject(t *testing.T) adaptertest.Subject {

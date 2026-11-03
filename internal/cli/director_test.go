@@ -438,7 +438,8 @@ func TestDirectorStartRefusals(t *testing.T) {
 	}{
 		{name: "no adapter", table: "[director]\nmodel = \"opus\"\n", code: 1, want: "the adapters are claude, fake"},
 		{name: "no director table", code: 1, want: "the adapters are claude, fake"},
-		{name: "unknown runtime", table: "[director]\nadapter = \"fake\"\n", args: []string{"codex"}, code: 1, want: `unknown runtime adapter "codex": the adapters are claude, fake`},
+		{name: "unknown runtime", table: "[director]\nadapter = \"fake\"\n", args: []string{"gemini"}, code: 1, want: `unknown runtime adapter "gemini": the adapters are claude, fake`},
+		{name: "attempt-only runtime", table: "[director]\nadapter = \"fake\"\n", args: []string{"codex"}, code: 1, want: `runtime adapter runs no Director session: "codex" runs attempts only; the Director session adapters are claude, fake`},
 		{name: "managed copy", table: "[director]\nadapter = \"fake\"\n", code: 1, want: "managed.toml is present but this copy is not enrolled: run guildhall director enrol --steward <label>",
 			setup: func(t *testing.T, dir string) { writeFile(t, filepath.Join(dir, "managed.toml"), "") }},
 		{name: "inline managed", table: "[director]\nadapter = \"fake\"\n", code: 1, want: "inline [managed] section, which a Director copy refuses in every mode",

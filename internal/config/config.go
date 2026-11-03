@@ -23,6 +23,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/workbench"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
@@ -807,6 +808,9 @@ func (c *Config) validate() []string {
 		}
 		if p.Role != "" && !configRelative(p.Role) {
 			add("profile %q: role must be a relative slash-separated path inside the config directory", name)
+		}
+		if p.Adapter == adapter.CodexName && p.AllowedToolsSet() {
+			add("profile %q: runs the %s adapter, which runs read-only and grants no allowed_tools; remove allowed_tools", name, p.Adapter)
 		}
 		problems = append(problems, checkAllowedTools(fmt.Sprintf("profile %q", name), p.AllowedToolsList())...)
 	}
