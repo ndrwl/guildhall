@@ -29,8 +29,8 @@ func IsBaselineDocument(d store.DocumentRef) bool {
 	return strings.HasPrefix(d.Name, "baseline-") && d.Path == path.Join("tasks", d.Repository, d.TaskID, d.Name+".md")
 }
 
-// baselineLimit is how many merges a baseline lists, the newest by landing; it says how many more in the range it
-// dropped.
+// baselineLimit is how many of a baseline's merges, the newest by landing, keep full check tables; every merge in the
+// range is still a row, and each older one lists only its failed or pending checks.
 const baselineLimit = 20
 
 // BaselineJobsSchema identifies the failed-jobs block of a baseline.
@@ -153,7 +153,7 @@ func (r *run) renderBaseline(s workflow.Step, n int) ([]byte, error) {
 	} else {
 		fmt.Fprintf(&b, "- Current: `%s`, the remote's default branch when this was rendered; the attempt's prepared head (`%s`) is the authority and may be newer on a later attempt\n", current, preparedName(s.ID, n))
 	}
-	var listed []baselineMerge
+	var full, older []baselineMerge
 	if current == "" {
 		fmt.Fprintf(&b, "\n## Merged tasks\n\nmerged tasks unavailable: %s\n", cell(unavailable))
 	} else {
@@ -187,22 +187,22 @@ func (r *run) renderBaseline(s workflow.Step, n int) ([]byte, error) {
 			}
 			return nil, fmt.Errorf("baseline: order merges: %w", err)
 		}
-		dropped := max(0, len(placed)-baselineLimit)
-		listed = placed[:len(placed)-dropped]
-		fmt.Fprintf(&b, "\n## Merged tasks (%d, newest first)\n\n", len(listed)+len(unreadable))
-		if len(listed)+len(unreadable) == 0 {
+		full = placed[:min(len(placed), baselineLimit)]
+		older = placed[len(full):]
+		fmt.Fprintf(&b, "\n## Merged tasks (%d, newest first)\n\n", len(placed)+len(unreadable))
+		if len(placed)+len(unreadable) == 0 {
 			b.WriteString("No merged task is between the two heads.\n")
 		} else {
 			b.WriteString("| Task | Pull request | Merge commit | Head |\n|---|---|---|---|\n")
-			for _, m := range listed {
+			for _, m := range placed {
 				fmt.Fprintf(&b, "| %s | [#%d](%s) | `%s` | `%s` |\n", m.label, m.pr.Number, cell(m.pr.URL), m.pr.MergeCommit, m.pr.Head)
 			}
 			for _, m := range unreadable {
 				fmt.Fprintf(&b, "| %s | unreadable: %s | — | — |\n", m.label, cell(m.unreadable))
 			}
 		}
-		if dropped > 0 {
-			fmt.Fprintf(&b, "\n%d older merges in the range are not listed (limit %d).\n", dropped, baselineLimit)
+		if len(older) > 0 {
+			fmt.Fprintf(&b, "\nThe %d oldest merges list only failed or pending checks (limit %d).\n", len(older), baselineLimit)
 		}
 		if len(placeless) > 0 {
 			fmt.Fprintf(&b, "\nNot placed: %s.\n", strings.Join(placeless, "; "))
@@ -212,23 +212,32 @@ func (r *run) renderBaseline(s workflow.Step, n int) ([]byte, error) {
 		return []byte(b.String()), nil
 	}
 	b.WriteString("\n## Checks\n")
-	if len(listed) == 0 {
+	if len(full)+len(older) == 0 {
 		b.WriteString("\nNo merged task to check.\n")
 	}
 	jobs := baselineJobs{Schema: BaselineJobsSchema, Jobs: []BaselineJob{}}
-	for _, m := range listed {
+	// section writes merge m's checks: all of them, or with summary only those not passed, one line when all passed.
+	section := func(m baselineMerge, summary bool) error {
 		fmt.Fprintf(&b, "\n### %s `%s`\n\n", m.label, m.commit)
 		checks, err := r.e.Forge.Checks(r.ctx, forge.Commit{Repository: repo.Path, Remote: m.pr.Remote, Head: m.commit})
 		if err != nil {
 			if r.ctx.Err() != nil {
-				return nil, r.ctx.Err()
+				return r.ctx.Err()
 			}
 			fmt.Fprintf(&b, "checks unavailable: %s\n", cell(err.Error()))
-			continue
+			return nil
 		}
 		if len(checks) == 0 {
 			b.WriteString("No checks reported.\n")
-			continue
+			return nil
+		}
+		if summary {
+			all := len(checks)
+			checks = slices.DeleteFunc(slices.Clone(checks), func(c forge.Check) bool { return c.State == forge.CheckPassed })
+			if len(checks) == 0 {
+				fmt.Fprintf(&b, "All %d checks passed.\n", all)
+				return nil
+			}
 		}
 		b.WriteString("| Check | State | URL | Log |\n|---|---|---|---|\n")
 		for _, c := range checks {
@@ -238,6 +247,17 @@ func (r *run) renderBaseline(s workflow.Step, n int) ([]byte, error) {
 				jobs.Jobs = append(jobs.Jobs, BaselineJob{Task: m.label, Remote: m.pr.Remote, Head: m.commit, Check: c.Name, Job: c.Job})
 			}
 			fmt.Fprintf(&b, "| %s | %s | %s | %s |\n", cell(c.Name), c.State, cell(c.URL), command)
+		}
+		return nil
+	}
+	for _, m := range full {
+		if err := section(m, false); err != nil {
+			return nil, err
+		}
+	}
+	for _, m := range older {
+		if err := section(m, true); err != nil {
+			return nil, err
 		}
 	}
 	block, err := json.Marshal(jobs)

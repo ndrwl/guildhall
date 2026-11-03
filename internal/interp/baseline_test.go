@@ -330,7 +330,7 @@ func TestHallmarkBaseline(t *testing.T) {
 				t.Fatalf("failed jobs = %+v, %v; want t5's lint job", jobs, err)
 			}
 			if got := h.forge.checksCalls(); got != 2 {
-				t.Fatalf("Checks calls = %d, want one per listed merge", got)
+				t.Fatalf("Checks calls = %d, want one per merge", got)
 			}
 
 			want(t, h.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "hallmark", Attempt: 1}), waitsOnFollowUps)
@@ -498,8 +498,8 @@ func TestHallmarkBaselineSlicesPartlyInRange(t *testing.T) {
 	}
 }
 
-// TestHallmarkBaselineOpenNewestKept: the limit keeps the newest merges by landing, so an open task's merge landed
-// last is listed first and the two oldest done merges are the ones dropped.
+// TestHallmarkBaselineOpenNewestKept: rows are newest first by landing, so an open task's merge landed last is
+// listed first; past the limit the two oldest done merges are still rows, summarised.
 func TestHallmarkBaselineOpenNewestKept(t *testing.T) {
 	for _, b := range backends {
 		t.Run(b.name, func(t *testing.T) {
@@ -513,12 +513,61 @@ func TestHallmarkBaselineOpenNewestKept(t *testing.T) {
 			h.eng.Forge = nil
 			want(t, h.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 1})
 			_, text := h.baseline(t)
-			containsInOrder(t, text, "## Merged tasks (20, newest first)\n\n| Task | Pull request | Merge commit | Head |\n|---|---|---|---|\n| o1 | [#99]",
-				"| m21 |", "| m03 |", "2 older merges in the range are not listed (limit 20).")
-			for _, absent := range []string{"| m02 |", "| m01 |"} {
-				if strings.Contains(text, absent) {
-					t.Errorf("baseline has %q", absent)
+			containsInOrder(t, text, "## Merged tasks (22, newest first)\n\n| Task | Pull request | Merge commit | Head |\n|---|---|---|---|\n| o1 | [#99]",
+				"| m21 |", "| m03 |", "| m02 |", "| m01 |", "The 2 oldest merges list only failed or pending checks (limit 20).")
+			if strings.Contains(text, "not listed") {
+				t.Error("baseline says merges are not listed")
+			}
+		})
+	}
+}
+
+// TestHallmarkBaselineOlderMergesSummarised: every merge past the limit is still a row; the newest 20 keep full check
+// tables and each older one lists only its failed or pending checks, a failed job of an older merge naming its ci
+// log command and being in the failed-jobs block. There is one Checks call per merge.
+func TestHallmarkBaselineOlderMergesSummarised(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			h := newBaselineEnv(t, b, hallmarkExp(1, map[string]string{}, report("# Hallmark\n")))
+			commits := map[int]string{}
+			for i := 1; i <= 24; i++ {
+				var checks []forge.Check
+				switch i {
+				case 1:
+					checks = []forge.Check{{Name: "lint-old", State: forge.CheckFailed, Job: "9001"}, {Name: "build-ok-old", State: forge.CheckPassed}}
+				case 2:
+					checks = []forge.Check{{Name: "test-waiting", State: forge.CheckPending}, {Name: "vet-ok-old", State: forge.CheckPassed}}
+				case 24:
+					checks = []forge.Check{{Name: "test-new", State: forge.CheckPassed}}
 				}
+				commits[i] = h.merged(t, fmt.Sprintf("m%02d", i), i, checks...)
+			}
+			want(t, h.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 1})
+			_, text := h.baseline(t)
+			rows := []string{"## Merged tasks (24, newest first)"}
+			for i := 24; i >= 1; i-- {
+				rows = append(rows, fmt.Sprintf("| m%02d |", i))
+			}
+			rows = append(rows, "The 4 oldest merges list only failed or pending checks (limit 20).")
+			containsInOrder(t, text, rows...)
+			if strings.Contains(text, "not listed") {
+				t.Error("baseline still says merges are not listed")
+			}
+			containsInOrder(t, text, "## Checks", "### m24 `"+commits[24]+"`", "| test-new | passed |",
+				"### m02 `"+commits[2]+"`", "| test-waiting | pending |",
+				"### m01 `"+commits[1]+"`", "| lint-old | failed |  | `guildhall ci log",
+				"## Failed jobs")
+			m01, _, _ := strings.Cut(text[strings.Index(text, "### m01 "):], "## Failed jobs")
+			m02, _, _ := strings.Cut(text[strings.Index(text, "### m02 "):], "### m01 ")
+			if strings.Contains(m01, "build-ok-old") || strings.Contains(m02, "vet-ok-old") {
+				t.Error("an older merge's section lists a passed check")
+			}
+			jobs, err := interp.BaselineJobs([]byte(text))
+			if err != nil || len(jobs) != 1 || jobs[0] != (interp.BaselineJob{Task: "m01", Remote: h.remote, Head: commits[1], Check: "lint-old", Job: "9001"}) {
+				t.Fatalf("failed jobs = %+v, %v; want m01's lint-old job", jobs, err)
+			}
+			if got := h.forge.checksCalls(); got != 24 {
+				t.Fatalf("Checks calls = %d, want one per merge", got)
 			}
 		})
 	}
@@ -594,7 +643,7 @@ func TestHallmarkBaselineCancelled(t *testing.T) {
 }
 
 // TestHallmarkBaselineNoForge: without a forge the baseline has no checks and no failed-jobs block; with no previous
-// hallmark it lists the newest in-range merges up to the limit and says how many it dropped.
+// hallmark it lists every in-range merge, past the limit too, and says how many are past it.
 func TestHallmarkBaselineNoForge(t *testing.T) {
 	for _, b := range backends {
 		t.Run(b.name, func(t *testing.T) {
@@ -605,8 +654,8 @@ func TestHallmarkBaselineNoForge(t *testing.T) {
 			h.eng.Forge = nil
 			want(t, h.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 1})
 			_, text := h.baseline(t)
-			containsInOrder(t, text, "- Previous hallmark: none\n", "## Merged tasks (20, newest first)", "| m22 |", "| m03 |", "2 older merges in the range are not listed (limit 20).")
-			for _, absent := range []string{"| m02 |", "| m01 |", "## Checks", "## Failed jobs"} {
+			containsInOrder(t, text, "- Previous hallmark: none\n", "## Merged tasks (22, newest first)", "| m22 |", "| m03 |", "| m02 |", "| m01 |", "The 2 oldest merges list only failed or pending checks (limit 20).")
+			for _, absent := range []string{"not listed", "## Checks", "## Failed jobs"} {
 				if strings.Contains(text, absent) {
 					t.Errorf("baseline has %q", absent)
 				}
