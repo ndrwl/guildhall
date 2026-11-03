@@ -2,10 +2,12 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -282,4 +284,58 @@ func TestReleaseInstallBuildRefusals(t *testing.T) {
 		}
 		releasesEmpty(t, home)
 	})
+}
+
+// TestBuiltReleaseShowsItsOrigin builds a release from a fork, then sees `version`, plain and --json, run as that
+// release's binary, and `release status` say where it was built from; the same build run by a path outside the
+// home, or a release.json naming another commit, shows no origin.
+func TestBuiltReleaseShowsItsOrigin(t *testing.T) {
+	const fork = "https://example.com/fork/guildhall"
+	setVersion(t, buildVersion)
+	app, _, home, stdout, stderr := buildTestApp(t, buildReport)
+	if code := app.Run([]string{"release", "install", buildVersion, "--source", fork}); code != 0 {
+		t.Fatalf("release install = %d; stderr %s", code, stderr)
+	}
+	h := release.Home{Dir: home, GOOS: runtime.GOOS}
+	exe := h.Binary(buildVersion)
+	app.Executable = func() (string, error) { return exe, nil }
+	app.BuildInfo = testBuildInfo(func(i *debug.BuildInfo) { i.Settings[3].Value = buildCommit })
+	app.Getwd = func() (string, error) { return t.TempDir(), nil }
+	line := "built from " + fork + " at " + buildCommit + "\n"
+
+	run := func(args ...string) string {
+		t.Helper()
+		stdout.Reset()
+		stderr.Reset()
+		if code := app.Run(args); code != 0 {
+			t.Fatalf("%q = %d; stderr %s", args, code, stderr)
+		}
+		return stdout.String()
+	}
+	if out := run("version"); !strings.Contains(out, "revision: "+buildCommit+" (2026-10-27T21:00:24Z)\n"+line) {
+		t.Errorf("version =\n%s\nwant the line %q after the revision", out, line)
+	}
+	var v versionInfo
+	if err := json.Unmarshal([]byte(run("version", "--json")), &v); err != nil || v.Origin == nil || *v.Origin != (versionOrigin{Source: fork, Commit: buildCommit}) {
+		t.Errorf("version --json origin = %+v, %v; want %s at %s", v.Origin, err, fork, buildCommit)
+	}
+	if out := run("release", "status"); !strings.Contains(out, "\n    "+line) {
+		t.Errorf("release status =\n%s\nwant %q under the release", out, line)
+	}
+
+	// Run by its path from elsewhere, the same build is not known to be that release.
+	other := filepath.Join(t.TempDir(), release.BinaryName(runtime.GOOS))
+	if err := os.WriteFile(other, []byte("built"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	app.Executable = func() (string, error) { return other, nil }
+	if out := run("version", "--json"); !strings.Contains(out, `"origin":null`) {
+		t.Errorf("version --json run from elsewhere = %s, want origin null", out)
+	}
+	// A binary of another revision than the release.json records shows none either.
+	app.Executable = func() (string, error) { return exe, nil }
+	app.BuildInfo = testBuildInfo(nil)
+	if out := run("version"); strings.Contains(out, "built from") {
+		t.Errorf("version of another revision =\n%s\nwant no origin", out)
+	}
 }

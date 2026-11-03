@@ -65,12 +65,21 @@ type versionInfo struct {
 	// the release contract it implements, release.Contract; release install records both (docs/releases.md).
 	StoreSchema     int `json:"store_schema"`
 	ReleaseContract int `json:"release_contract"`
+	// Origin is where this binary was built from source by release install, as its release's release.json records
+	// it; nil for a binary that is not an installed release built from source (docs/releases.md).
+	Origin *versionOrigin `json:"origin"`
 	// repository is the id of Guildhall's own repository in the copy's config, "" when it lists none.
 	repository string
 	// pin is the copy's release pin, "" for a copy that has not adopted releases, and pinBehind how far that
 	// pinned release is behind main, nil when not known.
 	pin       string
 	pinBehind *behindMain
+}
+
+// versionOrigin is the source repository and full commit an installed release was built from.
+type versionOrigin struct {
+	Source string `json:"source"`
+	Commit string `json:"commit"`
 }
 
 // behindMain is how far the binary's revision is behind the repository's default branch as last fetched.
@@ -154,6 +163,7 @@ func (a *App) versionInfo(ctx context.Context, cfgPath, state string, fetch bool
 		// its version; the module proxy builds from a clean tree, so it is not modified.
 		v.Revision, v.Time = pseudoVersionCommit(info.Main.Version)
 	}
+	v.Origin = a.releaseOrigin(v.Revision)
 	if v.Revision == "" || cfgPath == "" {
 		return v
 	}
@@ -192,6 +202,36 @@ func (a *App) versionInfo(ctx context.Context, cfgPath, state string, fetch bool
 		}
 	}
 	return v
+}
+
+// releaseOrigin is where the running binary was built from when it is the binary of release Version() in its home
+// and that release's release.json records a source and a commit equal to revision, the binary's own; nil otherwise,
+// such as for a binary run by its path from elsewhere or a release installed from a file.
+func (a *App) releaseOrigin(revision string) *versionOrigin {
+	if a.Executable == nil || revision == "" {
+		return nil
+	}
+	exe, err := a.Executable()
+	if err != nil {
+		return nil
+	}
+	h, err := a.releaseHome()
+	if err != nil {
+		return nil
+	}
+	own, err := os.Stat(exe)
+	if err != nil {
+		return nil
+	}
+	installed, err := os.Stat(h.Binary(Version()))
+	if err != nil || !os.SameFile(own, installed) {
+		return nil
+	}
+	o, ok := h.ReadOrigin(Version())
+	if !ok || o.Commit != revision {
+		return nil
+	}
+	return &versionOrigin{Source: o.Source, Commit: o.Commit}
 }
 
 // newBehind is a behindMain of count first-parent commits with their subjects, naming the pull requests they merged.
@@ -302,19 +342,35 @@ func (a *App) now() time.Time {
 	return time.Now()
 }
 
-// ownRepository is the one repository of the config at cfgPath whose remote names module, the binary's module
-// path; none, more than one or a config that does not load gives none.
+// ownRepository is Guildhall's own repository in the config at cfgPath: the one repository whose remote is the
+// copy's release_source setting, the source release install builds from, a fork included; else, with no such
+// setting or no one repository at it, the one whose remote names module, the binary's module path. Remotes are
+// compared as remoteModule writes them. None, more than one or a config that does not load gives none.
 func ownRepository(cfgPath, module string) (config.Repository, bool) {
-	if module == "" {
-		return config.Repository{}, false
-	}
 	cfg, err := reportedConfig(cfgPath)
 	if err != nil {
 		return config.Repository{}, false
 	}
+	if source, ok := cfg.ReleaseSource(); ok {
+		if r, ok := repositoryAt(cfg, remoteModule(source)); ok {
+			return r, true
+		}
+	}
+	if module == "" {
+		return config.Repository{}, false
+	}
+	return repositoryAt(cfg, strings.ToLower(module))
+}
+
+// repositoryAt is the one repository of cfg whose remote, as remoteModule writes it, is want; none or more than one
+// gives none.
+func repositoryAt(cfg *config.Config, want string) (config.Repository, bool) {
+	if want == "" {
+		return config.Repository{}, false
+	}
 	var found []config.Repository
 	for _, r := range cfg.Repositories {
-		if remoteModule(r.Remote) == strings.ToLower(module) {
+		if remoteModule(r.Remote) == want {
 			found = append(found, r)
 		}
 	}
@@ -470,6 +526,9 @@ func (v versionInfo) plain() string {
 			fmt.Fprintf(&b, " (%s)", strings.Join(notes, ", "))
 		}
 		b.WriteString("\n")
+	}
+	if o := v.Origin; o != nil {
+		fmt.Fprintf(&b, "built from %s at %s\n", o.Source, o.Commit)
 	}
 	if v.PR != nil {
 		fmt.Fprintf(&b, "latest merge: #%d", *v.PR)
