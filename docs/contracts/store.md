@@ -51,7 +51,11 @@ Its head/state replay identity and observation document are owned by the interpr
 
 `CreateTaskWithRelease`, `TaskRelease`, `TaskReleases` and `ReadTaskRelease` keep each task's [release](../store.md#task-releases) in each repository's `task_releases` bucket, written in the task's create transaction and never changed, and `store doctor` counts them as `RepositoryCounts.TaskReleases`; the bucket is additive and `SchemaVersion` is unchanged (d127 slice 3).
 
+`QueueOrigin`, `ProposeLesson`, `Lesson`, `Lessons`, `ResolveLesson`, `FileIncident`, `ObserveIncident`, `Incident`, `Incidents`, `ResolveIncident` and `MarkCollected` keep a copy's [lessons and incidents](../store.md#lessons-and-incidents) in the `director` bucket's nested `queue-origin`, `lessons`, `incidents` and `incident-observations`; `LessonTitle`, `DefaultLessonID`, `ValidateIncidentReport` and `ValidateObservationReport` are the checks the CLI shares, and `store doctor` counts them as `Report.Lessons`, `Report.Incidents` and `Report.IncidentObservations`; the buckets are additive and `SchemaVersion` is unchanged (d124 slice 1).
+
 ## Tests
+
+`director_queue_test.go` was written with the lessons and incidents and not run red: `TestLessons` and `TestIncidents` file, replay, conflict, observe and resolve; `TestLessonRefusals` and `TestIncidentRefusals` refuse missing sections, bad ids, the 64 KiB cap with its size, missing fields and bad evidence digests, recording nothing; `TestMarkCollected` refuses a mismatched digest, leaving the item pending, and then refuses resolve; `TestQueueDoctorAndExport` counts them in `store doctor` and exports, imports and exports them again unchanged; `TestLessonFencedSections` and the fenced cases of `TestLessonRefusals` ignore section lines inside fenced code blocks; `TestIncidentSizeBound` refuses the observation that would take an incident past 512 KiB with the limit, keeping the rest.
 
 `release_pin_test.go` was written with the release-pin events and not run red: `TestReleasePins` records an adopt pin and a use pin, sees the previous version and sha256 set, refuses the newest again, `dev`, a non-version, a path, an upper-case sha256, an unknown source and a store-set time with `ErrInvalid` and a stale previous with `ErrMutationConflict`, lists both, reads the newest through `ManagedView` and gets a clean `store doctor`.
 

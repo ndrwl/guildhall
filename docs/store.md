@@ -231,6 +231,29 @@ An event has the removed release's `version`, its `sha256`, empty for a damaged 
 `RecordReleasePruned` records one under the mutation id `release-pruned:<sequence>`, the sequence one more than the newest event's, so two recorded at once conflict with `ErrMutationConflict`; a version that is not a release version, a bad sha256, an empty or overlong reason and a store-set field are `ErrInvalid`.
 `ReleasePrunes` returns every event oldest first, and `store doctor` decodes them.
 
+### Lessons and incidents
+
+A copy's local queue of [lessons](director-modes.md#lessons) and [maintenance incidents](messaging.md#maintenance-tickets-to-the-steward) lives in nested buckets of the `director` bucket, each created by its first record, so they are additive and need no schema bump: `queue-origin`, `lessons` and `incidents`, keyed by id, and `incident-observations`, keyed by `<incident id>/<zero-padded observation sequence>`.
+Filing works the same in a standalone and a managed copy and needs no enrolment.
+
+- The **origin** is 16 random hex digits written to `queue-origin` by the first lesson or incident and never changed; every lesson, incident and observation records it, and `QueueOrigin` returns it, `ErrNotFound` before the first.
+- A **lesson** has its `id`, a lowercase id of at most 64 bytes, the Markdown `body`, at most `MaxQueueItemBytes` (64 KiB), whose first line that is not blank is a `# ` title and which has `## Evidence` and `## Limits` lines outside fenced code blocks, the `title`, the body's sha256 `digest`, its `state`, `proposed`, `collected`, `adopted` or `declined`, and the filing's `receipt` and `time`.
+  `ProposeLesson` files one under the mutation id `lesson:<id>`, whose request is the id and body: filing the same again returns the lesson and its receipt, and another body under the id is `ErrMutationConflict`.
+  A lesson filed without an id gets `DefaultLessonID`, `l-` and the first 12 hex digits of its body's sha256.
+- An **incident** has its `report`, the strict-JSON `IncidentReport` as filed and never changed, the report's sha256 `digest`, its `state`, `open`, `collected`, `accepted`, `deferred` or `declined`, and the filing's `receipt` and `time`.
+  `FileIncident` files one under the mutation id `incident:<id>`, whose request is the report, so filing the same report replays and another conflicts; `ValidateIncidentReport`'s refusals are `ErrInvalid`.
+- An **observation** is later evidence linked to an incident: `ObserveIncident` records it as the incident's next observation, numbered from 1, under the mutation id `incident-observe:<id>:<first 16 hex digits of its sha256>`, whatever the incident's state, and never changes the incident's report.
+  `Incident` and `Incidents` read each incident with its observations, oldest first.
+  An incident's stored record and its observations' records together are at most `MaxIncidentBytes` (512 KiB): an observation past that is `ErrInvalid` naming the size, and a new incident that names the old one carries further evidence.
+  So an incident listed with all its observations always fits, with room to spare, in a 1 MiB pending list, and can never hold that list, and every item after it, back.
+- Bodies are stored inline, never as files under `state/documents`, where [prune](running.md#pruning) removes files; a body, report or observation over 64 KiB is `ErrInvalid` naming its size.
+- `ResolveLesson` records `adopted` or `declined` on a `proposed` lesson under the mutation id `lesson-resolve:<id>`, and `ResolveIncident` records `accepted`, `deferred` or `declined` on an `open` incident, or `accepted` or `declined` on a `deferred` one, under `incident-resolve:<id>:<state>`; each sets `resolved`, its receipt and time.
+  Resolving to the state the item is in returns it again; a collected item is `ErrInvalid`, because from then on the Steward's queue owns it, and so is any other move.
+- `MarkCollected` records that a Steward collected an item into a private-repository commit, under the mutation id `collected:<kind>:<id>:<first 16 hex digits of the digest>`: the item's `state` becomes `collected` and `collected` holds the `commit`, receipt and time, keeping any local resolution.
+  A digest that is not the item's is `ErrDigestMismatch` and leaves the item pending, and an item already collected is `ErrInvalid`; Steward collection, which calls it, is d124's second slice.
+
+`store doctor` counts and decodes the lessons, incidents and observations, and export and import carry the buckets as they carry every bucket.
+
 ### Task releases
 
 A task created on a copy with a pin records that release, which it [keeps](releases.md#tasks-keep-their-release).
@@ -311,7 +334,7 @@ Prune reads a task's close time from it, and `interp.LastHallmark` and `interp.O
 It checks existing metadata instead of initializing buckets, while leaving successful opens writable unless `ReadOnly` is also set.
 All messaging commands use this option; `send` and `ack` cannot initialize a store as a side effect of a refused operation.
 
-The file holds a `meta` bucket (`format = guildhall-store`, `schema_version`), a `receipts` bucket keyed by mutation id, an optional `workflow-approvals` bucket keyed by workflow digest, an optional `director` bucket holding `sessions` keyed by session number, `wakes` keyed by sequence and the Director's other nested buckets, such as [`enrolments` and `managed-revisions`](#managed-mode), and a `repositories` bucket with one nested bucket per repository holding `tasks`, `attempts`, `owners`, `documents`, `panes`, `decisions`, `messages` and `inbox`, and, once a task is pruned, `pruned`, and, once a task's dependencies change, `task_dependencies`; a store without it opens unchanged.
+The file holds a `meta` bucket (`format = guildhall-store`, `schema_version`), a `receipts` bucket keyed by mutation id, an optional `workflow-approvals` bucket keyed by workflow digest, an optional `director` bucket holding `sessions` keyed by session number, `wakes` keyed by sequence and the Director's other nested buckets, such as [`enrolments` and `managed-revisions`](#managed-mode) and [`lessons` and `incidents`](#lessons-and-incidents), and a `repositories` bucket with one nested bucket per repository holding `tasks`, `attempts`, `owners`, `documents`, `panes`, `decisions`, `messages` and `inbox`, and, once a task is pruned, `pruned`, and, once a task's dependencies change, `task_dependencies`; a store without it opens unchanged.
 `inbox` indexes unacknowledged messages by recipient and sequence, holding each message's id.
 A per-repository bucket is created by the first record that needs it, so a schema 1 file written before messages existed accepts them unchanged.
 The `workflow-approvals` bucket is likewise created by the first approval, and the `director` bucket by the first session or wake; neither is required, and a store without one has no such records.
@@ -335,7 +358,7 @@ Usage errors exit 2.
 
 ## `guildhall store doctor`
 
-`guildhall store doctor <path>` opens a store read-only, runs bbolt's page-level integrity check, decodes every record and prints the schema version, the receipt count, the workflow approval count, the count of [Director sessions](#director-sessions) and of [wakes](messaging.md#waking-the-director) and each repository's record counts, including rulings, task context entries, task link records, task override records, task dependency records, ownership records and how many of them are in `starting` with no containment (owners that cannot be proven exited once their launcher is gone; [limits](artisan.md#limits)), messages and how many are unread, and [pruned tasks](#pruned-tasks).
+`guildhall store doctor <path>` opens a store read-only, runs bbolt's page-level integrity check, decodes every record and prints the schema version, the receipt count, the workflow approval count, the count of [Director sessions](#director-sessions) and of [wakes](messaging.md#waking-the-director), a `queue:` line counting the copy's [lessons, incidents and incident observations](#lessons-and-incidents), and each repository's record counts, including rulings, task context entries, task link records, task override records, task dependency records, ownership records and how many of them are in `starting` with no containment (owners that cannot be proven exited once their launcher is gone; [limits](artisan.md#limits)), messages and how many are unread, and [pruned tasks](#pruned-tasks).
 A record that does not decode, such as a damaged session, wake, enrolment or managed-revision event, is printed as a `problem:` line.
 It exits 0 when the store opened and showed no problems, and 1 when it is missing, locked by a writer, not a store, newer than this Guildhall or damaged.
 

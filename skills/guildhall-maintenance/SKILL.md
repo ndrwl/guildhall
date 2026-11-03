@@ -74,6 +74,37 @@ Read the report, then:
 Then read the self-review ledger, as `guildhall-self-review` asks at hallmark time, and give its lowest criteria to the hallmark's findings.
 A hallmark the Guildmaster asks for out of turn is launched the same way.
 
+## Lessons and incidents
+
+Maintenance also keeps what you learn about Guildhall itself, in the copy's local queue, standalone or managed.
+Filing launches nothing, changes no policy and never holds up the task, so file as you go rather than waiting for an audit.
+
+- When you hit an engine dead end, an unexpected state or a workaround, even one you resolved, file an incident: strict JSON with exactly these keys, `workaround` optional, `repository`, `task`, `step` and `attempt` each `n/a` for a failure outside a task, and each `evidence` digest the `sha256:` of the referenced file.
+
+  ```json
+  {"schema": "guildhall.incident/1", "id": "stuck-owner", "repository": "guildhall", "task": "d12", "step": "build",
+   "attempt": "build-1", "release": "v1.2.3", "workflow": "sha256:<hex>", "observed_state": "attempt stuck in starting",
+   "observed_at": "2026-11-03T09:00:00Z", "error": "<the exact error>",
+   "evidence": [{"ref": "<path or URL>", "digest": "sha256:<hex>"}],
+   "tried": "<what you tried>", "done": "<what you did>", "workaround": "<the workaround>", "risk": "<the risk that remains>"}
+  ```
+
+  ```sh
+  guildhall incident file incident.json
+  ```
+
+- When it happens again, link the new evidence with `guildhall incident observe <id> observation.json`, strict JSON with `schema` `guildhall.incident-observation/1`, `observed_at`, a `note` and `evidence`; it never overwrites the report.
+  An incident holds at most 512 KiB with its observations; past that, file a new incident that names it.
+- When shared practice should change, propose a lesson: Markdown with a `# ` title and `## Evidence` and `## Limits` sections.
+
+  ```sh
+  guildhall lesson propose lesson.md
+  ```
+
+- `guildhall incident list` and `guildhall lesson list` show the queue, and `--pending` what no Steward has collected yet.
+- Without a Steward, the Guildmaster decides each item: record their answer with `guildhall incident resolve <id> accepted|deferred|declined` or `guildhall lesson resolve <id> adopted|declined`.
+  Never resolve on your own, and never once an item is `collected`: the Steward's queue owns it then.
+
 ## Checking
 
 A note audit item leaves `needs_me` once the run is recorded, and a hallmark item once its task is created.

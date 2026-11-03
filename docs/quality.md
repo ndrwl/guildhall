@@ -422,7 +422,7 @@ The skill then copies the judge's scores into the self-review with `judge: model
 The self-review is for learning and for evaluating workflow changes; it never re-gates a merged task.
 No task is audited any more: deliver opened the Guildmaster's `audit` decision for one in `quality_audit_sample` delivered tasks until the audit was retired, and that setting is now deprecated and has no effect ([decision](decisions/retire-quality-audit.md)).
 A task created with `guildhall task new --fixes <repository>/<task>` carries "Fixes a defect introduced by task `<repository>/<task>`." in its pull request body, the line rework (C5) and change failure (E2) count from.
-The lesson-proposal shape that applies `quality_skill_edits_need_approval`, the reference task set and its runner, and the rule for evaluating Director-proposed workflow changes are later work; their settings are already parsed and validated so a copy can set them now.
+Applying `quality_skill_edits_need_approval` to lessons, which the [lesson](director-modes.md#lessons) `guildhall lesson propose` files does not read, the reference task set and its runner, and the rule for evaluating Director-proposed workflow changes are later work; their settings are already parsed and validated so a copy can set them now.
 
 ## Sources
 
