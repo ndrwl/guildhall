@@ -34,7 +34,9 @@ const (
 	DesignPort = "design"
 	// BriefPort carries a designer attempt its round's brief.
 	BriefPort = render.BriefPort
-	// MockupPort names a designer's mock-up, output 2 of its design port, where a design round's question lists it.
+	// MockupPort names a designer's mock-up: the part it is recorded under, <attempt>-<k>-mockup, and the input a
+	// design round's question lists it as. A mock-up intaken before the named part is read under its legacy name,
+	// <attempt>-<k>-design-2 (MockupDocument).
 	MockupPort = "mockup"
 	// roundPrefix prefixes the design round's step ids while a workflow step has one of them (DesignSteps).
 	roundPrefix = "round-"
@@ -335,6 +337,30 @@ func (r *run) designInputs(brief store.DocumentRef) ([]render.Input, error) {
 	return append(inputs, linked...), nil
 }
 
+// MockupDocument names the mock-up of the designer attempt whose design is subject, <attempt>-<k>-design with attempt
+// the designer step of def (DesignSteps; designer for a nil def): <attempt>-<k>-mockup when has reports the task
+// records it, else the legacy <attempt>-<k>-design-2 when has reports that, else ("", false). Any other subject has
+// none. has reports whether the task records a document of the given name. It is the one rule that names a mock-up.
+func MockupDocument(def *workflow.Definition, subject string, has func(name string) bool) (string, bool) {
+	attempt := "designer"
+	if def != nil {
+		_, attempt = DesignSteps(def)
+	}
+	p, ok := parseDocument(subject)
+	if !ok || p.step != attempt || p.round == 0 || p.exit || p.part != DesignPort || p.index != 0 {
+		return "", false
+	}
+	for _, m := range []place{{step: p.step, round: p.round, part: MockupPort}, {step: p.step, round: p.round, part: DesignPort, index: 2}} {
+		if name := documentName(m); has(name) {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+// recorded reports whether the task records a document of the given name.
+func (r *run) recorded(name string) bool { return r.document(name) != nil }
+
 // askDesign opens round n's decision once its designer attempt a succeeded: an approval bound to the design's digest,
 // asking about the brief and the design.
 func (r *run) askDesign(n int, brief store.DocumentRef, a *store.StageAttempt) (Next, error) {
@@ -349,9 +375,9 @@ func (r *run) askDesign(n int, brief store.DocumentRef, a *store.StageAttempt) (
 	}
 	id := DecisionID(decision, n, false)
 	inputs := []render.Input{docInput(BriefPort, brief, r.e.DocumentDir), docInput(DesignPort, *doc, r.e.DocumentDir)}
-	if m := r.document(documentName(place{step: a.Step, round: a.Number, part: DesignPort, index: 2})); m != nil {
+	if name, ok := MockupDocument(r.def, doc.Name, r.recorded); ok {
 		// The decision stays bound to design.md; the question names the mock-up, immutable per attempt, by digest.
-		inputs = append(inputs, docInput(MockupPort, *m, r.e.DocumentDir))
+		inputs = append(inputs, docInput(MockupPort, *r.document(name), r.e.DocumentDir))
 	}
 	// The design's open questions in full (spec.SpecPart), read verified; a design recorded before the design check
 	// required them, or one that cannot be read, has no part.

@@ -78,7 +78,7 @@ func TestDesignRequestSurface(t *testing.T) {
 }
 
 // TestDesignMockupAccepted: a designer that writes the mock-up its brief's surface asks for reaches the ask; the
-// mock-up is recorded as designer-1-design-2, the decision stays bound to design.md and its question lists the
+// mock-up is recorded under its named part, designer-1-mockup, and never as designer-1-design-2, the decision stays bound to design.md and its question lists the
 // mock-up's digest. A none round records design.md alone.
 func TestDesignMockupAccepted(t *testing.T) {
 	for _, c := range []struct {
@@ -102,7 +102,11 @@ func TestDesignMockupAccepted(t *testing.T) {
 				if d.Subject == nil || d.Subject.Digest != "sha256:"+sum(designOne) {
 					t.Errorf("design-1 bound to %+v, want design.md", d.Subject)
 				}
-				m, ok := e.documents(t)["designer-1-design-2"]
+				docs := e.documents(t)
+				if legacy, ok := docs["designer-1-design-2"]; ok {
+					t.Errorf("the mock-up was recorded under its legacy name: %+v", legacy)
+				}
+				m, ok := docs["designer-1-mockup"]
 				if c.mockup == nil {
 					if ok || strings.Contains(d.Question, "- mockup:") {
 						t.Errorf("a none round recorded a mock-up %+v or asked about one: %q", m, d.Question)
@@ -110,7 +114,7 @@ func TestDesignMockupAccepted(t *testing.T) {
 					return
 				}
 				if !ok || m.SHA256 != sum(c.mockup.Data) || !strings.HasSuffix(m.Path, "/designer-1/"+c.mockup.Path) {
-					t.Fatalf("designer-1-design-2 = %+v, %v; want the mock-up", m, ok)
+					t.Fatalf("designer-1-mockup = %+v, %v; want the mock-up", m, ok)
 				}
 				if line := "- mockup: " + m.Path + " (sha256:" + m.SHA256 + ")\n"; !strings.Contains(d.Question, line) {
 					t.Errorf("design-1 question = %q, want the line %q", d.Question, line)
@@ -120,7 +124,42 @@ func TestDesignMockupAccepted(t *testing.T) {
 	}
 }
 
-// TestDesignMockupFromTheGoldenPage: a web mock-up built from the real golden task pages as the stage guide says, each
+// TestDesignMockupLegacyReplay: a designer attempt whose mock-up a store already records under its legacy name,
+// designer-1-design-2, with its design decision not yet opened, asks with that mock-up on advance, and no
+// designer-1-mockup copy is recorded.
+func TestDesignMockupLegacyReplay(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			e := designedEnv(t, b, surfaceBrief("web-page"), interptest.File{Path: "design.md", Data: designOne}, interptest.File{Path: "mockup.html", Data: webMockup})
+			const p = "tasks/app/t7/designer-1/mockup.html"
+			file := filepath.Join(e.eng.DocumentDir, filepath.FromSlash(p))
+			if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(file, webMockup, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			legacy := store.DocumentRef{Repository: "app", TaskID: "t7", Name: "designer-1-design-2", Path: p, SHA256: sum(webMockup)}
+			if _, err := e.h.Records.PutDocument("earlier:designer-1-design-2", legacy); err != nil {
+				t.Fatal(err)
+			}
+			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "designer", Attempt: 1}), interp.Next{Wait: interp.WaitDecision, Step: "design", Decision: "design-1"})
+			docs := e.documents(t)
+			if m, ok := docs["designer-1-mockup"]; ok {
+				t.Errorf("a legacy mock-up gained a named copy %+v", m)
+			}
+			if _, ok := docs["designer-1-design"]; !ok {
+				t.Errorf("designer-1-design not recorded")
+			}
+			q := e.decision(t, "design-1").Question
+			if line := "- mockup: " + p + " (sha256:" + sum(webMockup) + ")\n"; !strings.Contains(q, line) {
+				t.Errorf("design-1 question = %q, want the legacy mock-up line %q", q, line)
+			}
+		})
+	}
+}
+
+// TestDesignMockupFromTheGoldenPage:a web mock-up built from the real golden task pages as the stage guide says, each
 // page escaped into a desktop and a phone srcdoc frame with its external links pointed at #, passes intake, so the
 // page's own markup and CSS raise no false refusal; left unedited, its pull request links are refused.
 func TestDesignMockupFromTheGoldenPage(t *testing.T) {
@@ -181,7 +220,7 @@ func TestDesignMockupRejected(t *testing.T) {
 			e := designedEnv(t, backends[1], surfaceBrief(c.surface), c.files...)
 			assertRejected(t, e, interp.Event{Kind: interp.AttemptResult, Step: "designer", Attempt: 1}, c.reason)
 			docs := e.documents(t)
-			for _, name := range []string{"designer-1-design", "designer-1-design-2"} {
+			for _, name := range []string{"designer-1-design", "designer-1-mockup", "designer-1-design-2"} {
 				if _, ok := docs[name]; ok {
 					t.Errorf("a refused result recorded %s", name)
 				}
