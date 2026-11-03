@@ -123,6 +123,8 @@ var settingRegistry = []settingEntry{
 	// The release pin is the copy's, read by the launcher and config reload, never by a task (checkRelease).
 	{key: ReleaseKey, scope: ScopeMachine, check: checkReleaseVersion},
 	{key: ReleaseSHA256Key, scope: ScopeMachine, check: checkReleaseSHA256},
+	// The build source is read by release install for the whole home, never by a task.
+	{key: ReleaseSourceKey, scope: ScopeMachine, check: checkReleaseSource},
 }
 
 // excludedEntry is config a task override may never name, kept in the registry so a refusal can name it.

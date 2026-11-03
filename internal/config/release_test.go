@@ -1,6 +1,7 @@
 package config
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -36,5 +37,52 @@ func TestManagedRelease(t *testing.T) {
 	}
 	if err := cfg.CheckTaskOverride(ReleaseKey, "v1.5.0"); err == nil || !strings.Contains(err.Error(), "machine-wide") {
 		t.Fatalf("a task override of release = %v, want the machine-wide refusal", err)
+	}
+}
+
+// TestReleaseSource: release_source may be local or managed, a local value replacing an overridable managed one; it
+// must be a source git can take, a local path absolute and a URL with no credential, and no task may override it.
+func TestReleaseSource(t *testing.T) {
+	fork := "https://github.com/example/guildhall"
+	upstream := "https://github.com/ndrwl/guildhall"
+	abs := filepath.Join(t.TempDir(), "guildhall")
+	for _, c := range []struct {
+		name, managed, local, want string
+		set                        bool
+	}{
+		{"unset", "", "", "", false},
+		{"local", "", "release_source = \"" + fork + "\"\n", fork, true},
+		{"an absolute local path", "", "release_source = '" + abs + "'\n", abs, true},
+		{"an scp-style remote", "", "release_source = \"git@github.com:example/guildhall.git\"\n", "git@github.com:example/guildhall.git", true},
+		{"managed", "[managed.release_source]\nvalue = \"" + upstream + "\"\n", "", upstream, true},
+		{"local over overridable managed", "[managed.release_source]\nvalue = \"" + upstream + "\"\noverridable = true\n", "release_source = \"" + fork + "\"\n", fork, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got, ok := overrideConfig(t, c.managed, c.local).ReleaseSource()
+			if got != c.want || ok != c.set {
+				t.Errorf("ReleaseSource = %q, %v; want %q, %v", got, ok, c.want, c.set)
+			}
+		})
+	}
+	for _, c := range []struct {
+		name, managed, local, want string
+	}{
+		{"empty", "", "release_source = \"\"\n", "release_source"},
+		{"an option", "", "release_source = \"--upload-pack=x\"\n", "release_source"},
+		{"a relative path", "", "release_source = \"../guildhall\"\n", "must be absolute"},
+		{"a credential", "", "release_source = \"https://user:secret@example.com/guildhall\"\n", "credential"},
+		{"a bad managed value", "[managed.release_source]\nvalue = \"-x\"\n", "", "managed release_source"},
+		{"local over a pinned managed value", "[managed.release_source]\nvalue = \"" + upstream + "\"\n", "release_source = \"" + fork + "\"\n", "not overridable"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			data := strings.Replace(director(t), "[local]", c.managed+"[local]\n"+c.local, 1)
+			if _, err := Parse([]byte(data)); err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("Parse = %v, want an error naming %q", err, c.want)
+			}
+		})
+	}
+	cfg := overrideConfig(t, "", "release_source = \""+fork+"\"\n")
+	if err := cfg.CheckTaskOverride(ReleaseSourceKey, upstream); err == nil || !strings.Contains(err.Error(), "machine-wide") {
+		t.Fatalf("a task override of release_source = %v, want the machine-wide refusal", err)
 	}
 }
