@@ -32,7 +32,9 @@ const (
 	// round; it is the designer's output port too.
 	DesignPort = "design"
 	// BriefPort carries a designer attempt its round's brief.
-	BriefPort = "brief"
+	BriefPort = render.BriefPort
+	// MockupPort names a designer's mock-up, output 2 of its design port, where a design round's question lists it.
+	MockupPort = "mockup"
 	// roundPrefix prefixes the design round's step ids while a workflow step has one of them (DesignSteps).
 	roundPrefix = "round-"
 )
@@ -119,6 +121,11 @@ func (r *run) designRequested(ev Event) error {
 	if strings.TrimSpace(ev.Reason) == "" {
 		return fmt.Errorf("%w: a design round needs a nonempty brief", ErrEvent)
 	}
+	if _, found, err := render.BriefSurface([]byte(ev.Reason)); err != nil {
+		return fmt.Errorf("%w: %w", ErrEvent, err)
+	} else if !found {
+		return fmt.Errorf("%w: a design round's brief starts with a Surface: line naming web-page, cli, chat or none", ErrEvent)
+	}
 	decision, _ := DesignSteps(r.def)
 	n := r.designRound()
 	open := false
@@ -126,6 +133,7 @@ func (r *run) designRequested(ev Event) error {
 		d := r.decision(DecisionID(decision, n, false))
 		open = d == nil || !d.Answered
 	}
+	// The replay compares the composed brief, its Surface: line included.
 	if open && r.document(briefName(decision, n)).SHA256 == digest.Of([]byte(ev.Reason)).Hex() {
 		return nil
 	}
@@ -339,7 +347,12 @@ func (r *run) askDesign(n int, brief store.DocumentRef, a *store.StageAttempt) (
 		return Next{}, err
 	}
 	id := DecisionID(decision, n, false)
-	ask := render.DesignQuestion(r.task.Repository, r.task.ID, id, n, []render.Input{docInput(BriefPort, brief, r.e.DocumentDir), docInput(DesignPort, *doc, r.e.DocumentDir)})
+	inputs := []render.Input{docInput(BriefPort, brief, r.e.DocumentDir), docInput(DesignPort, *doc, r.e.DocumentDir)}
+	if m := r.document(documentName(place{step: a.Step, round: a.Number, part: DesignPort, index: 2})); m != nil {
+		// The decision stays bound to design.md; the question names the mock-up, immutable per attempt, by digest.
+		inputs = append(inputs, docInput(MockupPort, *m, r.e.DocumentDir))
+	}
+	ask := render.DesignQuestion(r.task.Repository, r.task.ID, id, n, inputs)
 	d := store.Decision{Repository: r.task.Repository, TaskID: r.task.ID, ID: id, Kind: store.DecisionApproval,
 		Subject: &store.Subject{Kind: store.SubjectDocument, Digest: string(dg)}, Options: ask.Options, Question: ask.Question}
 	if _, err := r.e.Records.OpenDecision(r.mutation("decision", id), d); err != nil {

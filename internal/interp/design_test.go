@@ -20,8 +20,8 @@ import (
 
 // The brief and designs these tests' design rounds use.
 var (
-	designBrief  = "Show the sort options as a mock-up, so the Guildmaster can choose one."
-	designBrief2 = "Show the table of sort options with its column headings."
+	designBrief  = "Surface: none\n\nShow the sort options as a mock-up, so the Guildmaster can choose one."
+	designBrief2 = "Surface: none\n\nShow the table of sort options with its column headings."
 	designOne    = []byte("# Design\n\nOption A: a drop-down of sort keys. Option B: a table. Recommend A.\n")
 	designTwo    = []byte("# Design\n\nA table of sort options: key, order, default.\n")
 	researchSort = []byte("# Research\n\nThe list is sorted in the view.\n")

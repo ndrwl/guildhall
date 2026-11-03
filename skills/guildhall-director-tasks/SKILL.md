@@ -237,18 +237,21 @@ Use `step retry`, not send-back, for a failed or stopped attempt.
 
 ## Design rounds
 
-When the Guildmaster or you want a design before build, run `task design` with a brief that says what the design must show and why; whether to run one, and how many, is your call:
+When the Guildmaster or you want a design before build, run `task design` with a brief that says what the design must show and why; whether to run one, and how many, is your call.
+Name its `--surface`, what the change shows the Guildmaster: `web-page` for a web page, `cli` for command-line output, `chat` for a chat reply, `none` when nothing they see changes.
+The designer then hands in a mock-up beside `design.md`: the real task page in a desktop and a phone frame for `web-page`, the exact sample output for `cli` and `chat`.
 
 ```sh
-guildhall task design --repo app --task t-12 --brief - <<'BRIEF'
-Show two layouts for the export dialog as text mock-ups, so the Guildmaster can choose before anything is planned.
+guildhall task design --repo app --task t-12 --surface web-page --brief - <<'BRIEF'
+Show two layouts for the export dialog, so the Guildmaster can choose before anything is planned.
 BRIEF
 ```
 
-A `designer` Artisan writes the design, and the task waits for the Guildmaster's decision `design-<n>`: put its design to them, record their answer with `guildhall decide answer`, then `guildhall task start --decision design-<n>`.
-You may show them the design on any surface, but the decision is bound to the stored document, so answer for that one.
+A `designer` Artisan writes the design, and the task waits for the Guildmaster's decision `design-<n>`: give them only the design ask's task-page link, where they read the design and open the mock-up; do not paste or render the design or the mock-up in chat.
+Record their answer with `guildhall decide answer`, then `guildhall task start --decision design-<n>`; the decision is bound to the stored `design.md`.
+A designer that skips the mock-up its surface asks for, or changes the project, fails and waits for you like any failed designer.
 `approved` gives the design to plan, which runs again if it already ran, and the plan is asked for acceptance again; `changes_requested` reopens the grill, handed to you with their answer, your last notes and the design, and once it finishes you may ask for another round.
-A failed designer is retried with `guildhall step retry --step <step>`, naming the step the task's wait names (`designer`, or `round-designer` on a workflow that already has a `design` or `designer` step), within the same round; repeating `task design` with the same brief is a safe replay only while its round is open, and once the round is answered it asks for the next round.
+A failed designer is retried with `guildhall step retry --step <step>`, naming the step the task's wait names (`designer`, or `round-designer` on a workflow that already has a `design` or `designer` step), within the same round; repeating `task design` with the same surface and brief is a safe replay only while its round is open, and once the round is answered it asks for the next round.
 It is refused, recording nothing, for a bug task ("bugs have no design round"), once build has started, while a round is open, while any attempt runs and until the grill has succeeded.
 `task show` and `task timeline` print `design_rounds`, the rounds used.
 

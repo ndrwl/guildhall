@@ -118,6 +118,11 @@ A finished outcome without a readable result is refused, not guessed.
 - **Rounds used** is how many design rounds a task has had, one per accepted request whatever its outcome, printed as `design_rounds`; a retry of a failed designer stays within its round.
   There is no cap on them; say rounds used, not "cap" or "limit".
 - The **designer** is the round's Artisan, the synthetic step `designer`, run under the copy's `designer` profile, shipped at effort `high`.
+  It changes nothing in the repository.
+- A round's **surface** is what the design changes that the Guildmaster will see, `web-page`, `cli`, `chat` or `none`, named by `task design --surface` and recorded as the brief's first line, `Surface: <surface>`.
+- A **mock-up** is the designer's second output beside `design.md`, as the surface asks: `mockup.html`, the real task page in a desktop and a phone frame, for `web-page`, and `mockup.md`, the exact sample output in fenced blocks, for `cli` and `chat`.
+  It is evidence for the Guildmaster, shown only from the design ask on the task page; `design.md` holds the decisions, and only it goes to plan.
+  Say mock-up, not "mockup" or "wireframe", except as the file names.
 
 ## Setting scope
 

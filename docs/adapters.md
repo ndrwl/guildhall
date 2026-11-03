@@ -246,6 +246,7 @@ The shipped default grants are the grants of the six [role profiles](configurati
 
 Read-only git is `Bash(git <command>:*)` for `status`, `diff`, `log`, `show`, `rev-list`, `merge-base` and `ls-files`.
 No default grants `git checkout`, which can discard work, `git push`, which the publish stage does, or any toolchain command; a profile of any other name, or of another adapter, gets no default.
+The designer stays read-only: it builds a web mock-up by copying the golden task page, `internal/web/testdata/task.golden.html` or `task.answering.golden.html`, the real template and CSS rendered with a fixture, and editing the copy with its file tools, with no toolchain grant; intake also refuses a designer that changes a tracked file or HEAD ([design rounds](interpreter.md#design-rounds)).
 The reviewer's `guildhall review check` checks its review outcome as intake will before it finishes, as the [`guildhall-review`](../skills/guildhall-review/SKILL.md) skill requires; a copy profile that sets its own `allowed_tools` for a reviewer must add `Bash(guildhall review check:*)` to them.
 The rules come only from the Guildhall release and the copy `--copy` or [copy discovery](running.md#copies) selects, so two Directors on one machine can grant different sets; no machine-wide file, shared file, repository file or Steward-managed value grants them, and the Director's own session may not edit its `config.toml`.
 

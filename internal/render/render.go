@@ -266,13 +266,17 @@ func Prompt(stage Stage, inputs []Input, baseline Baseline, roots []SkillRoot) (
 	if err != nil {
 		return Rendered{}, err
 	}
+	surface, err := designSurface(m.Identity.Kind, m.Inputs, inputData)
+	if err != nil {
+		return Rendered{}, err
+	}
 
 	r := Rendered{PromptPath: filepath.Join(stage.Dir, PromptFile), SkillsPath: filepath.Join(stage.Dir, SkillsDir)}
 	created, err := prepareDir(stage.Dir)
 	if err != nil {
 		return Rendered{}, err
 	}
-	if err := r.write(&m, inputData, found, stage.Title, stage.Detail, stage.Step.Instructions(), role, guide, standards, stage.Step.Actor(), stage.Revisions, stage.ReviewBase, stage.Retry, stage.Main, stage.Branch, baseline); err != nil {
+	if err := r.write(&m, inputData, found, stage.Title, stage.Detail, stage.Step.Instructions(), role, guide, standards, stage.Step.Actor(), stage.Revisions, stage.ReviewBase, stage.Retry, stage.Main, stage.Branch, surface, baseline); err != nil {
 		_ = os.RemoveAll(r.PromptPath)
 		_ = os.RemoveAll(r.SkillsPath)
 		_ = os.RemoveAll(filepath.Join(stage.Dir, InputsDir))
@@ -285,7 +289,7 @@ func Prompt(stage Stage, inputs []Input, baseline Baseline, roots []SkillRoot) (
 	return r, nil
 }
 
-func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, title, detail, instructions, role, guide string, standards []string, actor workflow.Actor, revisions *workflow.Revisions, reviewBase string, retry *Retry, main *Main, branch string, baseline Baseline) error {
+func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, title, detail, instructions, role, guide string, standards []string, actor workflow.Actor, revisions *workflow.Revisions, reviewBase string, retry *Retry, main *Main, branch string, surface Surface, baseline Baseline) error {
 	inputsPath := filepath.Join(filepath.Dir(r.PromptPath), InputsDir)
 	if err := os.Mkdir(inputsPath, 0o755); err != nil {
 		return fmt.Errorf("render: %w", err)
@@ -317,9 +321,9 @@ func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, tit
 		}
 		m.Skills = append(m.Skills, skill)
 	}
-	text := composePrompt(m, title, detail, instructions, role, guide, standards, reviewBase, retry, main, baseline.Policies, baseline.PolicyError)
+	text := composePrompt(m, title, detail, instructions, role, guide, standards, reviewBase, retry, main, surface, baseline.Policies, baseline.PolicyError)
 	if actor == workflow.ArtisanActor {
-		text += outputInstructions(m.Identity, revisions, branch)
+		text += outputInstructions(m.Identity, revisions, branch, surface)
 	}
 	prompt := []byte(text)
 	if err := os.WriteFile(r.PromptPath, prompt, 0o644); err != nil {
@@ -329,7 +333,7 @@ func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, tit
 	return nil
 }
 
-func composePrompt(m *Manifest, title, detail, instructions, role, guide string, standards []string, reviewBase string, retry *Retry, main *Main, policies []string, policyError string) string {
+func composePrompt(m *Manifest, title, detail, instructions, role, guide string, standards []string, reviewBase string, retry *Retry, main *Main, surface Surface, policies []string, policyError string) string {
 	var b strings.Builder
 	id := m.Identity
 	fmt.Fprintf(&b, "# Guildhall attempt\n\nRepository: %s\nTask: %s\nStep: %s (%s version %d)\nAttempt: %d\n",
@@ -370,7 +374,12 @@ func composePrompt(m *Manifest, title, detail, instructions, role, guide string,
 		list.WriteString("The inputs directory beside this prompt holds a verified copy of each input document.\n\n")
 	}
 	for _, in := range m.Inputs {
-		fmt.Fprintf(&list, "- %s: %s/%s (%s)\n", in.Port, InputsDir, in.Path, in.Digest)
+		fmt.Fprintf(&list, "- %s: %s/%s (%s)", in.Port, InputsDir, in.Path, in.Digest)
+		if surface != "" && in.Port == BriefPort {
+			// A designer is told the surface its brief names beside the brief, as BriefSurface reads it.
+			fmt.Fprintf(&list, ", surface `%s`", surface)
+		}
+		list.WriteString("\n")
 	}
 	section("Inputs", orNone(list.String()))
 	var std strings.Builder

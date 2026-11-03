@@ -1083,7 +1083,7 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 		return r.recordRebaseOutputs(s, n, port.Name, outputs)
 	}
 	// A report already recorded stands on replay, even after the worktree moved on.
-	if s.Type == hallmarkKindType && r.document(documentName(place{step: s.ID, round: n, part: port.Name})) == nil {
+	if readOnlyKind(s.Type) && r.document(documentName(place{step: s.ID, round: n, part: port.Name})) == nil {
 		if err := r.checkReadOnly(s, n); err != nil {
 			return err
 		}
@@ -1133,6 +1133,13 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 	// stands on replay.
 	if s.Type == "plan" && port.Name == "spec" && r.document(documentName(place{step: s.ID, round: n, part: port.Name})) == nil {
 		if err := r.checkSlices(contents[0]); err != nil {
+			return err
+		}
+	}
+	// A designer's mock-up is checked against its brief's surface before anything is recorded; a design already
+	// recorded stands on replay.
+	if s.Type == designKindType && r.document(documentName(place{step: s.ID, round: n, part: port.Name})) == nil {
+		if err := r.checkMockup(s, n, outputs, contents); err != nil {
 			return err
 		}
 	}

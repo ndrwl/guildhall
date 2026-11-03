@@ -15,7 +15,7 @@ const RebaseReportFile = "rebase.json"
 // outputInstructions is part of the generated agent-facing protocol. It lives
 // outside baseline prose so even an old copy's overridden guide gets the current
 // port formats and the same result template in every runtime.
-func outputInstructions(id Identity, revisions *workflow.Revisions, branch string) string {
+func outputInstructions(id Identity, revisions *workflow.Revisions, branch string, surface Surface) string {
 	if branch == "" {
 		branch = "guildhall/" + id.Task
 	}
@@ -79,6 +79,10 @@ func outputInstructions(id Identity, revisions *workflow.Revisions, branch strin
 		} else {
 			b.WriteString("Format: a UTF-8 Markdown document. Minimal example:\n\n```text\n# Notes\n\nThe requested work is recorded here.\n```\n")
 		}
+		if mockup := MockupFile(surface); id.Kind == designKind && mockup != "" {
+			outputs = append(outputs, adapter.Output{Path: mockup})
+			b.WriteString(mockupInstructions(surface, filename))
+		}
 	}
 	result := struct {
 		Schema  string `json:"schema"`
@@ -87,5 +91,30 @@ func outputInstructions(id Identity, revisions *workflow.Revisions, branch strin
 	}{adapter.ResultSchema, adapter.ResultVersion, adapter.Result{Identity: adapter.Identity{TaskID: id.Task, AttemptID: fmt.Sprintf("%s-%d", id.Step, id.Attempt)}, Status: adapter.StatusSucceeded, Summary: "What was done, in one or more sentences.", Outputs: outputs}}
 	data, _ := json.MarshalIndent(result, "", "  ")
 	fmt.Fprintf(&b, "\n## Result template\n\nAfter writing the required files (or committing the code head), write this JSON shape to the result file your runtime names, once, as your last action. Keep schema, version, task_id and attempt_id unchanged. Use status `succeeded` only when the work and required outputs are complete; otherwise use `failed` and explain why in summary (failed results may use an empty outputs list).\n\n```json\n%s\n```\n", data)
+	return b.String()
+}
+
+// mockupInstructions is a designer prompt's "Also" section for the mock-up its brief's surface asks for, written
+// beside design (the design port's file) and listed second; intake (docs/interpreter.md#design-rounds) refuses a
+// result that breaks it.
+func mockupInstructions(surface Surface, design string) string {
+	mockup := MockupFile(surface)
+	var b strings.Builder
+	fmt.Fprintf(&b, "\n### Also `%s`\n\nThe brief's surface is `%s`. Write `%s`, untracked, beside `%s` and list it in result outputs second, after `%s`. ", mockup, surface, mockup, design, design)
+	if surface == SurfaceWebPage {
+		b.WriteString("It shows the changed web page as it will really look, with sample data. " +
+			"Build it from the real task page: copy `internal/web/testdata/task.golden.html`, or `internal/web/testdata/task.answering.golden.html` when the change touches the Guildmaster's forms " +
+			"(the real page template and CSS rendered with a fixture, the CSS inlined), and edit its markup and sample data. " +
+			"Lay it out as the stage guide says: two `<iframe srcdoc>` frames, desktop 1280px wide and phone 390px wide, side by side and wrapping on a narrow screen, each holding the edited page. " +
+			"It must be UTF-8 with no `<script`, no `on…=` event attribute and no `http:`, `https:` or `//` URL in `src`, `href`, `url(` or `@import`: only inline styles and `data:` images, so point each external link the golden page has, such as a pull request link, at `#`. " +
+			"Intake fails a result that lists no mock-up, another file, or a mock-up that breaks these rules.\n")
+		return b.String()
+	}
+	what := "command-line output"
+	if surface == SurfaceChat {
+		what = "chat reply"
+	}
+	fmt.Fprintf(&b, "It shows the exact sample %s the design changes, with sample data, as preformatted text in at least one fenced code block, a short heading or sentence before each saying what it shows. Minimal example:\n\n````text\n# Mock-up\n\nThe new reply:\n\n```text\nThe exact sample %s, line for line.\n```\n````\n\n", what, what)
+	b.WriteString("Intake fails a result that lists no mock-up, another file, or a mock-up with no fenced code block.\n")
 	return b.String()
 }
