@@ -73,7 +73,7 @@ func TestWebStepsAndFindingsByRecordPlace(t *testing.T) {
 		},
 	}
 	b := webBuilder{ct: ct, tl: tl, def: def}
-	if st := b.steps(); len(st) != 1 || st[0].State != web.StateDone || st[0].Note != "review-x1 approved" {
+	if st := b.steps(); len(st) != 1 || st[0].State != web.StateDone || st[0].Note != "review approved" || st[0].Raw != "review-x1 approved" {
 		t.Errorf("steps = %+v", st)
 	}
 	if f := b.openFindings("review-x1"); len(f) != 1 || f[0].ID != "f1" {

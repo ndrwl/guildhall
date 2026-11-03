@@ -53,19 +53,26 @@ func TestWebSourceAsksFollowClerk(t *testing.T) {
 	var plan, decision *web.Node
 	for i, n := range task.Story {
 		switch n.Title {
-		case "Plan · round 1":
+		case "The plan was written (round 1)":
 			plan = &task.Story[i]
-		case "Approval · accept-plan":
+		case "The plan is ready for your approval":
 			decision = &task.Story[i]
 		}
 	}
 	if plan == nil || plan.State != web.StateDone || plan.Body != "Planned the change in three steps." {
 		t.Errorf("plan node = %+v in %+v", plan, task.Story)
 	}
-	if decision == nil || decision.State != web.StateYou || decision.Ask != "accept-plan" {
+	if decision == nil || decision.State != web.StateYou || decision.Ask != "accept-plan" || decision.Raw != "accept-plan" ||
+		len(decision.Events) != 1 || decision.Events[0].Text != "decision accept-plan opened · approval · subject sha256:aaaaaaaaaaaa" {
 		t.Errorf("decision node = %+v", decision)
 	}
-	if task.Story[0].Title != "Task added" {
+	if plan != nil && (plan.Raw != "plan-1" || len(plan.Events) != 2 || plan.Events[1].Text != "attempt plan-1 succeeded") {
+		t.Errorf("plan node's raw records = %q %+v", plan.Raw, plan.Events)
+	}
+	if w := task.Where; w.Lead != "Waiting for you on 1 ask:" || w.Rest != "approval of the plan." || !w.You {
+		t.Errorf("where it stands = %+v", w)
+	}
+	if task.Story[0].Title != "You added the task" {
 		t.Errorf("the story does not start with the task added: %+v", task.Story[0])
 	}
 
@@ -78,7 +85,7 @@ func TestWebSourceAsksFollowClerk(t *testing.T) {
 		t.Fatalf("an answered decision waiting for task start is an ask: %+v, %q", task.Asks, task.Stands)
 	}
 	for _, n := range task.Story {
-		if n.Title == "Approval · accept-plan" && (n.State != web.StateDone || n.Word != "Approve" || len(n.Said) != 1 || n.Said[0].Text != "Go ahead.") {
+		if n.Title == "You approved the plan" && (n.State != web.StateDone || n.Word != "Approve" || len(n.Said) != 1 || n.Said[0].Text != "Go ahead.") {
 			t.Errorf("answered node = %+v", n)
 		}
 	}
@@ -106,7 +113,7 @@ func TestWebSourceAsksFollowClerk(t *testing.T) {
 	}
 	found := false
 	for _, n := range task.Story {
-		if n.Title == "Approval · accept-2" {
+		if n.Title == "An earlier approval of the plan was withdrawn" {
 			found = n.State == web.StateVoid && strings.Contains(n.Body, "superseded: the spec changed") && n.Ask == ""
 		}
 	}
@@ -244,23 +251,23 @@ func TestWebSourceDecisionTone(t *testing.T) {
 	for _, n := range task.Story {
 		nodes[n.Title] = n
 	}
-	if n, ok := nodes["Merge · deliver-1"]; !ok || n.State != web.StateDone || n.Word != "Hold" {
+	if n, ok := nodes["You held the merge"]; !ok || n.State != web.StateDone || n.Word != "Hold" || n.Raw != "deliver-1" {
 		t.Errorf("merge hold node = %+v", n)
 	}
-	if n, ok := nodes["Follow ups · validate-1"]; !ok || n.State != web.StateDone || n.Word != "None" {
+	if n, ok := nodes["You chose no follow-ups"]; !ok || n.State != web.StateDone || n.Word != "None" {
 		t.Errorf("follow-ups none node = %+v", n)
 	}
-	if n, ok := nodes["Question · ask-1"]; !ok || n.State != web.StateDone || n.Word != "answered" || len(n.Said) != 1 || n.Said[0].Text != "Neither; go straight on." {
+	if n, ok := nodes["You answered the Director's question"]; !ok || n.State != web.StateDone || n.Word != "answered" || len(n.Said) != 1 || n.Said[0].Text != "Neither; go straight on." {
 		t.Errorf("free-text question node = %+v", n)
 	}
 	steps := map[string]web.Step{}
 	for _, st := range task.Steps {
 		steps[st.Name] = st
 	}
-	if st := steps["Deliver"]; st.State != web.StateDone || st.Note != "deliver-1 hold" {
+	if st := steps["Deliver"]; st.State != web.StateDone || st.Note != "merge hold" || st.Raw != "deliver-1 hold" {
 		t.Errorf("deliver step = %+v", st)
 	}
-	if st := steps["Validate"]; st.State != web.StateDone || st.Note != "validate-1 none" {
+	if st := steps["Validate"]; st.State != web.StateDone || st.Note != "follow-ups none" || st.Raw != "validate-1 none" {
 		t.Errorf("validate step = %+v", st)
 	}
 }
@@ -287,12 +294,12 @@ func TestWebSourceStagesSlicesAndRefusals(t *testing.T) {
 	if sl := sliced.Slices; sl == nil || sl.Current != 2 || sl.Total != 3 || len(sl.Items) != 3 || sl.Items[0].State != "merged" || sl.Items[0].PR == nil || sl.Items[0].PR.Number != 401 {
 		t.Fatalf("slices = %+v", sliced.Slices)
 	}
-	if pr := sliced.Status.PR; pr == nil || pr.Number != 402 || sliced.Status.CI != web.CIPending || sliced.Status.Step != "Validate" {
+	if pr := sliced.Status.PR; pr == nil || pr.Number != 402 || sliced.Status.CI != web.CIPending || sliced.Status.Step != "Slice 2 validation" {
 		t.Errorf("status = %+v", sliced.Status)
 	}
 	merged := false
 	for _, n := range sliced.Story {
-		merged = merged || n.Title == "Slice 1 merged"
+		merged = merged || n.Title == "Slice 1 was merged"
 	}
 	if !merged {
 		t.Errorf("no slice merge node in %+v", sliced.Story)

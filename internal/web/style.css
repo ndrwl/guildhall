@@ -36,7 +36,6 @@ button{font:inherit;color:inherit}
 .steps .bad{border-color:#ff6b6b}.steps .bad b::before{content:"✗ ";color:#ff9b9b}
 .steps .you{border-color:#f5b31c;background:#262116}.steps .you b{color:#ffd166}.steps .you b::before{content:"? "}
 .steps .later b{color:var(--bandmut);font-weight:500}
-.sliceof{display:inline-block;margin:0 0 10px;font-size:13px;color:var(--bandmut)}
 /* quiet text and status */
 .mut{color:var(--mut)}.faint{color:var(--faint)}
 .kv{display:grid;grid-template-columns:max-content 1fr;gap:6px 14px;margin:0;font-size:14px}
@@ -242,4 +241,16 @@ button{font:inherit;color:inherit}
  .r-side{position:static;max-height:none;border-left:0;border-top:1px solid var(--line);padding:18px 12px 48px}
  .r-side .q{font-size:16.5px}
  .endback .backto{width:100%;justify-content:center}
+}
+/* d150: where it stands, in the band, and each story node's raw events */
+.ws{margin:-4px 0 14px;font-size:15.5px;line-height:1.45;color:var(--bandfg);max-width:80ch}
+.ws b{font-weight:650}
+.ws.you b{color:#ffd166}
+.ws .m{color:var(--bandmut);font-size:13.5px;margin-left:6px}
+.raw{font-size:13px}
+.raw>summary{color:var(--mut);font-weight:500;min-height:44px}
+.raw pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace;margin:0;color:var(--mut);background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+@media (max-width:760px){
+ .ws{font-size:14.5px;margin:0 0 10px}
+ .ws .m{display:block;margin:2px 0 0}
 }

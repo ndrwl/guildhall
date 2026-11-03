@@ -56,6 +56,8 @@ type Task struct {
 	State string
 	// Stands is where the task stands, Clerk's one phrase for it (docs/clerk.md).
 	Stands string
+	// Where is where the task stands as the page says it, one sentence; its zero value falls back to Stands.
+	Where Where
 	// Related are the tasks this one names: its dependencies, the task it fixes, the tasks whose documents are
 	// linked to it.
 	Related []Related
@@ -80,6 +82,13 @@ type Task struct {
 	ReadAt time.Time
 }
 
+// Where is a where-it-stands sentence: Lead, shown in bold, says who or what the task waits on, such as "Waiting for
+// you on 2 asks:", and Rest what for; You says it waits on the Guildmaster.
+type Where struct {
+	Lead, Rest string
+	You        bool
+}
+
 // Related is a task this task names, with how it is related, such as "depends on" or "fixes".
 type Related struct {
 	Label, Repository, ID string
@@ -89,8 +98,9 @@ type Related struct {
 type Step struct {
 	Name  string
 	State StepState
-	// Note is a short line under the step's name, such as "round 2" or "PR #241".
-	Note string
+	// Note is a short line under the step's name, such as "round 2" or "plan approved", and Raw the same said with
+	// its record id, such as "accept-2 approved", shown as the note's title; "" when the note names no record.
+	Note, Raw string
 }
 
 // Slices is a multi-PR task's slices and which is current.
@@ -123,7 +133,8 @@ const (
 
 // Status is the Status section: the current step and attempt, the pull request and its checks.
 type Status struct {
-	// Step is the step the task is at, Round its round, zero when unknown.
+	// Step is the step the task is at as the page names it, such as "Slice 2 review", Round its round, zero when
+	// unknown.
 	Step  string
 	Round int
 	// Attempt is the latest attempt, nil when there is none.
@@ -134,9 +145,11 @@ type Status struct {
 	CI string
 }
 
-// Attempt is one attempt of a step, its outcome ("" while it runs) and when it finished or started.
+// Attempt is one attempt of a step, its outcome ("" while it runs) and when it finished or started; Name is how the
+// page names it, such as "Slice 2 review, attempt 2", "" to name it by its record id.
 type Attempt struct {
 	Step    string
+	Name    string
 	Number  int
 	Outcome string
 	At      *time.Time
@@ -178,8 +191,10 @@ type Quote struct {
 // Document is one recorded document: the task it belongs to, its store name, its path relative to the document
 // directory and the lowercase hex sha256 recorded for it, with the group the page lists it under (Review, Design,
 // Spec, Research, Grill, Build or another), the step and attempt or round that wrote it, and when it was recorded.
+// Label is the name the task page shows for it, such as "Grill notes, round 3", "" to show its store name.
 type Document struct {
 	Repository, TaskID, Name, Path, SHA256 string
+	Label                                  string
 	Kind                                   string
 	Step                                   string
 	Attempt                                int
@@ -188,8 +203,10 @@ type Document struct {
 
 // Node is one entry of the story.
 type Node struct {
-	Title string
-	State StepState
+	// Title says what happened as a sentence, such as "You approved the plan", and Raw is the record id it is about,
+	// shown as the title's title, "" for none.
+	Title, Raw string
+	State      StepState
 	// Word is the state as the node says it, such as "changes requested · sent back to build".
 	Word       string
 	Start, End *time.Time
@@ -202,6 +219,15 @@ type Node struct {
 	Documents []string
 	// Ask is the id of the node's open decision, linked to its ask on Now; "" for none.
 	Ask string
+	// Events are the raw records the node was built from, oldest first, shown folded under it.
+	Events []Event
+}
+
+// Event is one raw record behind a story node, such as "attempt review--s2-2 started · review", and when it was
+// committed, nil when unknown.
+type Event struct {
+	At   *time.Time
+	Text string
 }
 
 // Said is quoted words on a node and where they were given; Back marks words that sent the work back.
