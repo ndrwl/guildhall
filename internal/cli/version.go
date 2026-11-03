@@ -284,7 +284,7 @@ func (v versionInfo) installItem() (needsMeItem, bool) {
 	if v.pin != "" {
 		return needsMeItem{Kind: installKind, Repository: v.repository, Count: m.Count,
 			Reason: fmt.Sprintf("this copy's pinned release %s is %d %s behind main%s; on the Guildmaster's word, install the new build with "+
-				"guildhall release install <version> --from <file> --sha256 <hex>, pin it with guildhall release use <version>, then run guildhall director reload",
+				"guildhall release install <version>, pin it with guildhall release use <version>, then run guildhall director reload",
 				v.pin, m.Count, plural(m.Count, "merge", "merges"), m.prs()),
 			Command: "guildhall release install"}, true
 	}

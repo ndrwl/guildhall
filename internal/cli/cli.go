@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/release"
 	"github.com/ndrwl/guildhall/internal/steward"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/web"
@@ -33,6 +34,8 @@ const usage = `Usage: guildhall <command>
 Commands:
   version [--startup | --json] [--copy <dir>]
                  print the guildhall version, revision, latest merge and how far it is behind main
+  release install <version> [--source <url>] [--no-build]
+                 build a missing release from source at its commit and install it side by side under the Guildhall home
   release install <version> --from <file> --sha256 <hex>
                  verify a release binary and install it side by side under the Guildhall home
   release install --launcher [--from <file>]
@@ -284,6 +287,9 @@ type App struct {
 	// VersionGit reads Guildhall's own repository for version and director status; nil means git.Program with a
 	// five-second bound on each run.
 	VersionGit VersionGit
+	// ReleaseBuilder fetches and builds a release that release install finds missing; nil means
+	// release.ExecBuilder over git and go on PATH.
+	ReleaseBuilder release.Builder
 	// PolicyGit fetches and reads each repository's policy file for director start, director status and Artisan
 	// prompts (docs/configuration.md#repository-policies); nil means git.Program with a thirty-second bound on
 	// each run.

@@ -168,7 +168,7 @@ func TestReleaseStatusListsTasks(t *testing.T) {
 	}
 	items := f.app.taskReleaseItems(filepath.Join(f.copy, "director.store"))
 	if len(items) != 1 || items[0].Kind != releaseKind || items[0].TaskID != "t-1" || !strings.Contains(items[0].Reason, "records release v1.0.0, which is damaged") ||
-		!strings.HasPrefix(items[0].Command, "guildhall release install v1.0.0 --from <file> --sha256 ") {
+		!strings.Contains(items[0].Reason, "a rebuild from source may not reproduce its recorded sha256 ") || items[0].Command != "guildhall release install v1.0.0" {
 		t.Fatalf("release items %+v", items)
 	}
 }

@@ -72,7 +72,7 @@ func TestDirectorStatusInstallOnAnAdoptedCopy(t *testing.T) {
 	}
 	want := needsMeItem{Kind: installKind, Repository: "guildhall", Count: 2,
 		Reason: "this copy's pinned release " + pin + " is 2 merges behind main (#160, #159); on the Guildmaster's word, install the new build with " +
-			"guildhall release install <version> --from <file> --sha256 <hex>, pin it with guildhall release use <version>, then run guildhall director reload",
+			"guildhall release install <version>, pin it with guildhall release use <version>, then run guildhall director reload",
 		Command: "guildhall release install"}
 	if len(out.NeedsMe) != 1 || out.NeedsMe[0] != want {
 		t.Errorf("needs_me = %+v, want only %+v", out.NeedsMe, want)

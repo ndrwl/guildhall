@@ -92,7 +92,7 @@ func TestReleaseRollback(t *testing.T) {
 	if err := os.WriteFile(h.Binary("v1.0.0"), []byte("damaged"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if code := f.run("release", "rollback", "--copy", f.copy); code != 1 || !strings.Contains(f.stderr.String(), "damaged") || !strings.Contains(f.stderr.String(), "release install v1.0.0") {
+	if code := f.run("release", "rollback", "--copy", f.copy); code != 1 || !strings.Contains(f.stderr.String(), "damaged") || !strings.Contains(f.stderr.String(), "release install v1.0.0, though a rebuild from source may not reproduce its recorded sha256 ") {
 		t.Fatalf("rollback to a damaged release = %d, %q", code, f.stderr)
 	}
 	if pin, _ := release.ReadPin(f.copy); pin != "v1.1.0" || len(f.pins()) != 4 {

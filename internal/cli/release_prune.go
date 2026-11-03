@@ -271,7 +271,7 @@ func (a *App) releaseRollback(args []string) int {
 	}
 	r, err := h.Runnable(latest.PreviousVersion)
 	if err != nil {
-		return fail(fmt.Errorf("%w; reinstall it with guildhall release install %s --from <file> --sha256 %s", err, latest.PreviousVersion, latest.PreviousSHA256))
+		return fail(fmt.Errorf("%w; reinstall it with guildhall release install %s, though a rebuild from source may not reproduce its recorded sha256 %s", err, latest.PreviousVersion, latest.PreviousSHA256))
 	}
 	if r.SHA256 != latest.PreviousSHA256 {
 		return fail(fmt.Errorf("release %s is installed with sha256 %s, not the %s copy %s was pinned to; a release directory is never changed, so remove it and reinstall the pinned binary", r.Version, r.SHA256, latest.PreviousSHA256, dir))
