@@ -78,6 +78,11 @@ type askView struct {
 	// goldmark, empty when it has none or its file cannot be shown, and the ask then links the spec instead.
 	Plan    bool
 	Summary template.HTML
+	// MockupHref links a design ask's mock-up as MockupLabel: an HTML mock-up's frame route, opened in a new tab, or
+	// the reader page of one the page cannot show inline. Mockup is a Markdown mock-up rendered by goldmark, shown
+	// in the ask instead of a link.
+	MockupHref, MockupLabel string
+	Mockup                  template.HTML
 	// Digest is the full subject digest the form carries back, "" for none.
 	Digest string
 	// Form says the request is from the Guildmaster's login, which answers on the page as Login; Answering says the
@@ -299,6 +304,9 @@ func (s *Server) askView(t Task, a Ask) askView {
 			s.planSummary(*doc, &v)
 		}
 	}
+	if doc := taskDocument(t, a.Mockup); a.Mockup != "" && doc != nil {
+		s.mockup(t, *doc, &v)
+	}
 	for _, o := range a.Options {
 		m, _ := OptionMeaning(a.Kind, o)
 		v.Tiles = append(v.Tiles, tileView{Option: o, Word: OptionWord(o), Text: m.Text, Tone: m.Tone})
@@ -339,6 +347,25 @@ func (s *Server) planSummary(doc Document, v *askView) {
 		}
 	}
 	v.Rest = stripSummary(v.Rest, summary)
+}
+
+// mockup adds a design ask's mock-up document doc to its ask: an HTML mock-up as an "Open mock-up" link to its frame
+// route, so it opens sandboxed at the full window width; a Markdown mock-up, read verified, rendered inline, so its
+// fenced sample output shows as preformatted text; and any other, or a Markdown file that does not verify, as a link
+// to its reader page, which says why it is not shown.
+func (s *Server) mockup(t Task, doc Document, v *askView) {
+	href := docHref(t.Repository, t.ID, doc.Name)
+	switch {
+	case isHTML(doc.Path):
+		v.MockupHref, v.MockupLabel = href+"/frame", "Open mock-up"
+		return
+	case isMarkdown(doc.Path):
+		if body, status, _ := s.verified(doc); status == http.StatusOK {
+			v.Mockup = RenderMarkdown(body)
+			return
+		}
+	}
+	v.MockupHref, v.MockupLabel = href, "read "+doc.Name
 }
 
 // questionParts are the parts of an approval question that follow its summary (render.Question).

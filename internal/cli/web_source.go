@@ -235,6 +235,9 @@ func (b webBuilder) asks(docs []web.Document) []web.Ask {
 			a.Subject = s.Digest
 			a.SubjectDocument = subjectDocument(docs, v, *s)
 		}
+		if dec.Kind == store.DecisionApproval {
+			a.Mockup = b.mockupDocument(docs, a.SubjectDocument)
+		}
 		if dec.Kind == store.DecisionLoopExit {
 			a.Findings = b.openFindings(dec.ID)
 		}
@@ -256,6 +259,29 @@ func subjectDocument(docs []web.Document, v taskView, s store.Subject) string {
 	for _, d := range docs {
 		if d.Repository == v.Repository && d.TaskID == v.ID && d.SHA256 == hexPart {
 			return d.Name
+		}
+	}
+	return ""
+}
+
+// mockupDocument names a design ask's mock-up: when subject, the document a design round's approval is bound to, is
+// a designer attempt's design, designer-<k>-design, it is that attempt's second design output, designer-<k>-design-2,
+// when the task records one; "" otherwise.
+func (b webBuilder) mockupDocument(docs []web.Document, subject string) string {
+	if subject == "" {
+		return ""
+	}
+	designer := "designer"
+	if b.def != nil {
+		_, designer = interp.DesignSteps(b.def)
+	}
+	if p := recordPlace(subject); p.Step != designer || p.Part != interp.DesignPort || p.Index != 0 || p.Exit || p.Round == 0 {
+		return ""
+	}
+	v, name := b.ct.view, subject+"-2"
+	for _, d := range docs {
+		if d.Repository == v.Repository && d.TaskID == v.ID && d.Name == name {
+			return name
 		}
 	}
 	return ""

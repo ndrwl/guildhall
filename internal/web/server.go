@@ -19,8 +19,9 @@ import (
 const CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; frame-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'self'"
 
 // FrameCSP is the policy an HTML document is served with on its frame route, so it runs sandboxed with no script,
-// no forms and an opaque origin.
-const FrameCSP = "sandbox"
+// no forms and an opaque origin, and loads nothing from the network: styles only inline, images and fonts only as
+// data: URLs, and frames only its own srcdoc ones, such as a design mock-up's desktop and phone frames.
+const FrameCSP = "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; frame-src 'self' about:"
 
 //go:embed page.tmpl style.css
 var assets embed.FS
