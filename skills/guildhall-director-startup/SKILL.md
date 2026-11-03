@@ -33,6 +33,8 @@ The binary refuses `guildhall task new`, and `guildhall task start` of a task wi
      When it appears or its count changes, tell the Guildmaster how many merges behind it is and which pull requests it is missing, and that it is time to install.
      If tasks in flight are worth waiting for before installing, name them; that is your judgement.
      Never keep a note about installs: the item stays until the installed binary catches up.
+     When the Guildmaster asks you to install and the item's command is `guildhall version`, follow "Installing Guildhall" in your role: build `origin/main` from a scratch worktree into the installed binary's directory, rename the installed binary to `guildhall.prev-<rev>`, rename the new build into its place, confirm `guildhall version` shows 0 merges behind, and remove the worktree.
+     Then report the new revision and its pull requests, say this session's supervisor, role and skills stay on the old build until the next session, and offer a handoff, or on Windows a `guildhall director stop` and `guildhall director start` by the Guildmaster, that happens only on the Guildmaster's yes.
      On a copy that has adopted releases the item compares the copy's release pin with main and names the fix: `guildhall release install`, `guildhall release use`, then `guildhall director reload`.
      Standalone, you may run those three only on the Guildmaster's word for that upgrade, never on your own; managed, you leave upgrades to the Steward's rollout and never run `guildhall release use`.
 
