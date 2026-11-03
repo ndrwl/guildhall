@@ -211,7 +211,7 @@ While the latest round is open, the advance starts no workflow step:
 
    It is rejected too when `design.md`'s `## Open questions` section is missing or is neither "None" nor `**Qn. title**` questions numbered from Q1 with no gaps, each with an `Options:` and a `Recommended:` line (`spec.SpecQuestions`), the error naming the question at fault; a design already recorded stands on replay, unchecked.
 
-   The mock-up is output 2 of the `design` port, recorded as `<attempt>-<k>-design-2`; everything that reads the design, plan's `design` input, its staleness and the grill's `reviewed` input, reads `<attempt>-<k>-design`, `design.md`, alone.
+   The mock-up, the file after `design.md`, is recorded under its own named part, `<attempt>-<k>-mockup`; one recorded before that part keeps its legacy name, `<attempt>-<k>-design-2`, which is still read and never gains a `-mockup` copy, and `interp.MockupDocument` is the one rule that names either. Everything that reads the design, plan's `design` input, its staleness and the grill's `reviewed` input, reads `<attempt>-<k>-design`, `design.md`, alone.
 3. Once the designer succeeds, the engine opens decision `<decision>-<n>`, kind `approval`, options `approved` and `changes_requested`, bound to the design's digest, its question carrying, right after its first line, the design's open questions in full (`spec.SpecPart`, read from the verified design; none for a design recorded before the check) and listing the brief, the design and the mock-up, when there is one, by digest, and waits; `task start --decision <decision>-<n>` moves the task on once it is answered.
 
 **The answer.** `approved` closes the round: plan's binding gains the latest approved design on the engine-added `design` port.

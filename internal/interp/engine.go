@@ -1154,7 +1154,15 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 	for i, o := range outputs {
 		data := contents[i]
 		p := place{step: s.ID, round: n, part: port.Name}
-		if i > 0 {
+		if i > 0 && s.Type == designKindType {
+			// A designer's mock-up, its one output after design.md (checkMockup), is recorded under its own part; one
+			// recorded already, under that name or its legacy one, stands.
+			design := documentName(place{step: s.ID, round: n, part: port.Name})
+			if _, ok := MockupDocument(r.def, design, r.recorded); ok {
+				continue
+			}
+			p.part = MockupPort
+		} else if i > 0 {
 			p.index = i + 1
 		}
 		name := documentName(p)

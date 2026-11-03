@@ -265,26 +265,16 @@ func subjectDocument(docs []web.Document, v taskView, s store.Subject) string {
 }
 
 // mockupDocument names a design ask's mock-up: when subject, the document a design round's approval is bound to, is
-// a designer attempt's design, designer-<k>-design, it is that attempt's second design output, designer-<k>-design-2,
-// when the task records one; "" otherwise.
+// a designer attempt's design, the mock-up interp.MockupDocument names among the task's documents, its named mockup
+// part or the legacy designer-<k>-design-2; "" otherwise.
 func (b webBuilder) mockupDocument(docs []web.Document, subject string) string {
-	if subject == "" {
-		return ""
-	}
-	designer := "designer"
-	if b.def != nil {
-		_, designer = interp.DesignSteps(b.def)
-	}
-	if p := recordPlace(subject); p.Step != designer || p.Part != interp.DesignPort || p.Index != 0 || p.Exit || p.Round == 0 {
-		return ""
-	}
-	v, name := b.ct.view, subject+"-2"
-	for _, d := range docs {
-		if d.Repository == v.Repository && d.TaskID == v.ID && d.Name == name {
-			return name
-		}
-	}
-	return ""
+	v := b.ct.view
+	name, _ := interp.MockupDocument(b.def, subject, func(name string) bool {
+		return slices.ContainsFunc(docs, func(d web.Document) bool {
+			return d.Repository == v.Repository && d.TaskID == v.ID && d.Name == name
+		})
+	})
+	return name
 }
 
 // openFindings are the findings of the newest review outcome of the step a loop-exit decision id names.
