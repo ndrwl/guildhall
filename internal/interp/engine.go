@@ -43,6 +43,9 @@ const (
 	// DesignRequested: the Director asks for a design round of a feature task before its first build, with Reason as
 	// the brief (docs/interpreter.md#design-rounds).
 	DesignRequested EventKind = "design-requested"
+	// SliceDelivered: the Director closes a multi-PR task's current slice, Slice, as already delivered by an earlier
+	// slice, BySlice, or a merged pull request, PullRequest, with Reason (docs/tasks.md#a-slice-already-delivered).
+	SliceDelivered EventKind = "slice-delivered"
 )
 
 // Event is one thing that happened to a task, given to Engine.Advance.
@@ -60,8 +63,12 @@ type Event struct {
 	// required brief for DesignRequested.
 	// A retry binds it to the next attempt, whose prompt quotes it, and records it as a Director message once that
 	// attempt launches; a retry repeated after a refusal keeps the first bound reason. Send-back and a design request
-	// record an immutable input document.
+	// record an immutable input document. SliceDelivered requires it and records it in the slice's delivery record.
 	Reason string
+	// Slice is the slice SliceDelivered closes, which must be the current one; BySlice is the earlier slice whose
+	// merge delivered its work, or PullRequest the URL of the merged pull request that did, exactly one of the two.
+	Slice, BySlice int
+	PullRequest    string
 }
 
 // Wait says what a task waits for after an advance.
@@ -279,6 +286,14 @@ func (e *Engine) Advance(ctx context.Context, ev Event) (Next, error) {
 	// The slice merged last finishes closing before the next one starts, after a crash between the two.
 	if err := r.settleSlice(); err != nil {
 		return Next{}, fmt.Errorf("interp: %s/%s slice %d: %w", t.Repository, t.ID, r.slice.merged, err)
+	}
+	// A current slice closed as already delivered, just now or before a crash, closes as a merged slice does: the
+	// advance goes on with the next slice, or, for the last, the task is done.
+	if done, next, err := r.closeDelivered(); err != nil || done {
+		if err != nil {
+			return Next{}, fmt.Errorf("interp: %s/%s slice %d: %w", t.Repository, t.ID, r.slice.current, err)
+		}
+		return next, nil
 	}
 	// A pull request merged outside Guildhall closes the task before any step reads the forge: publish would open a
 	// new pull request for the landed branch, and validate's and the front's mergeability reads refuse a moved head.
@@ -533,6 +548,8 @@ func (r *run) intake(ev Event) error {
 		return r.sentBack(ev)
 	case DesignRequested:
 		return r.designRequested(ev)
+	case SliceDelivered:
+		return r.sliceDelivered(ev)
 	case DecisionAnswered:
 		d := r.decision(ev.Decision)
 		switch {

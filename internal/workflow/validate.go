@@ -67,6 +67,9 @@ func (v *validator) check() {
 		if s.ID == JudgeStep {
 			v.addf("step %d: step id %q is reserved for the judge attempts of delivered tasks", i+1, s.ID)
 		}
+		if s.ID == DeliveredStep {
+			v.addf("step %d: step id %q is reserved for the records of slices already delivered", i+1, s.ID)
+		}
 		if _, dup := v.index[s.ID]; dup {
 			v.addf("duplicate step id %q", s.ID)
 			continue

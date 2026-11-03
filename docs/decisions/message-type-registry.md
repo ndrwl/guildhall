@@ -28,4 +28,5 @@ The store's `SendMessage` and `messages send` do not check: a local sender may s
 ## Consequences
 
 `director status`'s `messages.by_type` still counts every type by name: it is JSON the Director reads, not a line typed into its pane.
+A type added later is registered with the change that sends it, such as the engine's `slice-delivered` (d162), sent when the Director closes a slice as already delivered; it is not a `merged` message, so it counts toward no `hallmark_after_merges`.
 Message ids keep their existing prefixes, such as `stage.` for `director-stage`, so a replayed send after an upgrade still finds its first send.

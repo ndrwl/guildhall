@@ -38,6 +38,11 @@ var idPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 // workflow step id, so it is never one of a workflow's steps.
 const JudgeStep = "quality-judge"
 
+// DeliveredStep is the step part of the record that closes a multi-PR task's slice as already delivered by an earlier
+// slice or pull request, delivered--s<k>-1-delivery (docs/tasks.md#a-slice-already-delivered): Validate refuses it as
+// a workflow step id, so no step's records can take that name.
+const DeliveredStep = "delivered"
+
 // ValidID reports whether s is a valid workflow or step identifier.
 func ValidID(s string) bool { return idPattern.MatchString(s) }
 

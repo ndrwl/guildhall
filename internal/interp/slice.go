@@ -68,7 +68,8 @@ func DocumentSlice(name string) int {
 type sliceState struct {
 	// current is the slice the range runs for, from 1; total the accepted spec's slice count, 1 without a list.
 	current, total int
-	// merged counts the slices, from the first, with a merge record.
+	// merged counts the slices, from the first, that closed: with a merge record, or a delivery record for a slice an
+	// earlier slice or pull request already delivered (sliceClosed).
 	merged int
 	// entries is the accepted spec's slice list, nil for a one-slice task.
 	entries []spec.Slice
@@ -124,7 +125,7 @@ func slicesOf(def *workflow.Definition, h *history) (sliceState, error) {
 		}
 		st.total = max(1, len(st.entries))
 	}
-	for k := 1; h.sliceMerge(def.Slices.To, k) >= 0; k++ {
+	for k := 1; h.sliceClosed(def.Slices.To, k) >= 0; k++ {
 		st.merged = k
 	}
 	st.current = min(st.merged+1, st.total)
@@ -265,25 +266,33 @@ func (r *run) sliceStarted() bool {
 	})
 }
 
-// settleSlice finishes the close of the slice merged last, before the next one starts: a crash after its merge was
-// recorded leaves its message, retirement or merge-queue exit undone, and the advance that resumes at the next slice
-// repeats them, each idempotent.
+// settleSlice finishes the close of the slice closed last, before the next one starts: a crash after its merge or
+// delivery record was written leaves its message, retirement or merge-queue exit undone, and the advance that resumes
+// at the next slice repeats them, each idempotent.
 func (r *run) settleSlice() error {
 	k := r.slice.merged
 	if k < 1 || k >= r.slice.current || r.sliceStarted() {
 		return nil
 	}
+	repo, err := r.repository()
+	if err != nil {
+		return err
+	}
 	i := r.sliceMerge(r.base.Slices.To, k)
+	if i < 0 {
+		// The slice closed as already delivered.
+		doc, err := r.delivery(k)
+		if err != nil {
+			return err
+		}
+		return r.closeSliceDelivered(k, deliveredID(k), repo, &doc)
+	}
 	var pr pullRequestDoc
 	if _, err := r.readJSONDoc(r.documents[i].Name, &pr); err != nil {
 		return err
 	}
 	p := r.docPlaces[i]
 	id := DecisionID(p.step, p.round, false)
-	repo, err := r.repository()
-	if err != nil {
-		return err
-	}
 	return r.closeSlice(k, id, repo, &pr, p.step == outsideStep(k))
 }
 
@@ -373,24 +382,30 @@ type SliceProgress struct {
 	// Current is the slice being delivered, from 1, and Total the accepted spec's slice count.
 	Current, Total int
 	Items          []SliceItem
-	// Merging reports that a slice's merge is in progress: the current slice has a merge record, or the slice merged
-	// last may not have finished closing, since the next one has recorded nothing yet; advancing the task finishes it.
+	// Merging reports that a slice's close is in progress: the current slice has a merge or delivery record, or the
+	// slice merged last may not have finished closing, since the next one has recorded nothing yet; advancing the task
+	// finishes it. An earlier slice closed as already delivered merged nothing, so it never counts as merging.
 	Merging bool
 }
 
 // Slice states.
 const (
-	SliceMerged  = "merged"
-	SliceCurrent = "current"
-	SlicePending = "pending"
+	SliceMerged = "merged"
+	// SliceAlreadyDelivered is a slice closed as already delivered by an earlier slice or a merged pull request, with
+	// nothing merged for it.
+	SliceAlreadyDelivered = "delivered"
+	SliceCurrent          = "current"
+	SlicePending          = "pending"
 )
 
 // SliceItem is one slice of a multi-PR task.
 type SliceItem struct {
 	Index int
 	Title string
-	// State is SliceMerged, SliceCurrent or SlicePending.
+	// State is SliceMerged, SliceAlreadyDelivered, SliceCurrent or SlicePending.
 	State string
+	// DeliveredBy, for a delivered slice, is what delivered its work: "slice <j>" or a pull request's URL.
+	DeliveredBy string
 	// PullRequest is the slice's merged pull request, or else the last one its records hold; nil before publish.
 	PullRequest *forge.PullRequest
 }
@@ -415,11 +430,19 @@ func TaskSlices(def *workflow.Definition, repository, task string, docs []store.
 		return SliceProgress{Current: 1, Total: 1}, err
 	}
 	out := SliceProgress{Current: st.current, Total: st.total}
-	out.Merging = h.sliceMerge(def.Slices.To, st.current) >= 0 ||
-		st.merged >= 1 && st.current == st.merged+1 && !slices.ContainsFunc(docs, func(d store.DocumentRef) bool { return DocumentSlice(d.Name) == st.current })
+	out.Merging = h.sliceClosed(def.Slices.To, st.current) >= 0 ||
+		st.merged >= 1 && st.current == st.merged+1 && h.sliceMerge(def.Slices.To, st.merged) >= 0 && !slices.ContainsFunc(docs, func(d store.DocumentRef) bool { return DocumentSlice(d.Name) == st.current })
 	for _, e := range st.entries {
 		item := SliceItem{Index: e.Index, Title: e.Title, State: SlicePending}
 		switch {
+		case e.Index <= st.merged && h.sliceMerge(def.Slices.To, e.Index) < 0:
+			item.State = SliceAlreadyDelivered
+			var d deliveryDoc
+			if i := h.sliceDelivery(e.Index); i >= 0 {
+				if data, err := read(docs[i]); err == nil && json.Unmarshal(data, &d) == nil {
+					item.DeliveredBy = d.by()
+				}
+			}
 		case e.Index <= st.merged:
 			item.State = SliceMerged
 		case e.Index == st.current:

@@ -278,9 +278,21 @@ The task stays `open`, and only the last slice's merge records it `done`.
 A crash between a slice's merge record and the next slice's first attempt resumes at the next slice, finishing the merged slice's close first.
 Each slice merge sends a `merged` message, so it counts toward `hallmark_after_merges`; `handoff_after_tasks`, `--depends-on` and `--until-merged` count or release only when the task closes.
 
-A spec that turns out wrong part-way goes back to plan with `step send-back`; the revised spec keeps every merged slice's entry byte for byte and may rewrite, add or drop the slices still to come, the Guildmaster accepts it, and the current slice's steps, bound to the old spec, run again under the new one.
+A spec that turns out wrong part-way goes back to plan with `step send-back`; the revised spec keeps every merged slice's entry byte for byte and may rewrite, add or drop slices still to come, but not all of them: a revision that leaves nothing after the merged slices is refused, as it leaves nothing to deliver. The Guildmaster accepts it, and the current slice's steps, bound to the old spec, run again under the new one.
+When the slices left have nothing to deliver because earlier work already shipped them, close them with [`slice delivered`](#a-slice-already-delivered) instead.
+
+### A slice already delivered
+
+A slice closes in one of three ways: its own pull request merges through deliver, it merges [outside Guildhall](#merged-outside-guildhall), or the Director closes it as already delivered.
+The third is for a slice whose work an earlier slice or another merged pull request already shipped: its build has nothing to commit, so it reports `failed` with a summary starting `Already delivered by slice <j>` or `Already delivered by <pr url>`, and no merge record will ever close the slice.
+The Director checks the evidence and runs [`guildhall slice delivered`](running.md#slice-delivered) with `--by-slice <j>`, an earlier slice of the task with a merge record, or `--by-pr <url>`, a pull request of the task's repository the forge reports merged.
+The engine records `delivered--s<k>-1-delivery`, voids the slice's open decisions, sends a `slice-delivered` message naming the slice or pull request, retires the slice's branch and worktree and takes the task out of the merge queue.
+The next slice then starts, or, after the last, the task is `done`, not `cancelled`, so its dependents and holds release as for any done task.
+Nothing merged, so no `merged` message is sent and the close counts toward no `hallmark_after_merges`; the record is no `-merge` document, so the hallmark baseline does not list it.
+`director status` shows the slice with `state` `delivered` and `delivered_by`, and `task cancel` names it as closed.
+A one-slice task has no slice to close this way: [`task reconcile`](#task-reconcile) or [`task cancel`](#task-cancel) remain its ways out.
 A merged slice's steps never run again; its records are read only to show the slices (`director status`, the Clerk and the pull request body, which lists each merged slice and its pull request) and to find merge heads.
-`director status` gives such a task a `slices` object, `{current, total, items: [{index, title, state, pull_request}]}`; Clerk's `/guild` shows `slice k of n` beside where it stands, `/task` and `/inspect` show the current slice and list every slice with its title, state and pull request, and the Artisan's Herdr workspace is labelled `└ <task> · slice k/n · <step> #<n>`.
+`director status` gives such a task a `slices` object, `{current, total, items: [{index, title, state, pull_request, delivered_by}]}`, `state` being `merged`, `delivered`, `current` or `pending`; Clerk's `/guild` shows `slice k of n` beside where it stands, `/task` and `/inspect` show the current slice and list every slice with its title, state and pull request, and the Artisan's Herdr workspace is labelled `└ <task> · slice k/n · <step> #<n>`.
 GitHub stacked pull requests are not used: each slice starts after the one before merged ([why, and when stacking may be reconsidered](decisions/stacked-prs-not-yet.md)).
 
 ## Retries

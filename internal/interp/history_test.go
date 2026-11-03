@@ -77,6 +77,11 @@ func TestRecordPlace(t *testing.T) {
 		{"build--s2-3-head", Place{Step: "build", Slice: 2, Round: 3, Part: "head"}, document},
 		{"review--s2-x1", Place{Step: "review", Slice: 2, Round: 1, Exit: true}, decision},
 		{"deliver--s2-1-merge", Place{Step: "deliver", Slice: 2, Round: 1, Part: "merge"}, document},
+		// A slice closed as already delivered: its record is no -merge document, and still reads as its slice's.
+		{"delivered--s2-1-delivery", Place{Step: "delivered", Slice: 2, Round: 1, Part: "delivery"},
+			func(p Place) string { return DeliveryRecord(p.Slice) }},
+		{"delivered-1-delivery", Place{Step: "delivered", Slice: 1, Round: 1, Part: "delivery"},
+			func(p Place) string { return DeliveryRecord(p.Slice) }},
 		{"send-back-build-2", Place{Step: "build", Slice: 1, Round: 2, Part: "send-back"},
 			func(p Place) string { return SendBackName(workflow.SliceStep(p.Step, p.Slice), p.Round) }},
 		{"send-back-build--s2-3", Place{Step: "build", Slice: 2, Round: 3, Part: "send-back"},
@@ -122,6 +127,32 @@ func TestRecordPlace(t *testing.T) {
 		"deliver-1-rebase-01", "deliver-1-escalated-x"} {
 		if got, ok := RecordPlace(name); ok {
 			t.Errorf("RecordPlace(%q) = %+v, true; want false", name, got)
+		}
+	}
+}
+
+// TestDeliveryRecordName: slice k's delivery record parses to slice k in the history view and by DocumentSlice, and is
+// never a merge record, so the hallmark baseline and TaskPullRequests never read it as a merge.
+func TestDeliveryRecordName(t *testing.T) {
+	for k, name := range map[int]string{1: "delivered-1-delivery", 2: "delivered--s2-1-delivery", 12: "delivered--s12-1-delivery"} {
+		if got := DeliveryRecord(k); got != name {
+			t.Errorf("DeliveryRecord(%d) = %q, want %q", k, got, name)
+		}
+		if got := DocumentSlice(name); got != k {
+			t.Errorf("DocumentSlice(%q) = %d, want %d", name, got, k)
+		}
+		if IsMergeRecord(name) {
+			t.Errorf("%q reads as a merge record", name)
+		}
+		h := newHistory("app", "t7", nil, nil, nil, []store.DocumentRef{{Name: name}}, nil)
+		if i := h.sliceDelivery(k); i != 0 {
+			t.Errorf("slice %d's delivery in a history holding %q = %d, want 0", k, name, i)
+		}
+		if i := h.sliceClosed("deliver", k); i != 0 {
+			t.Errorf("slice %d closed in a history holding %q = %d, want 0", k, name, i)
+		}
+		if i := h.sliceMerge("deliver", k); i != -1 {
+			t.Errorf("slice %d's merge in a history holding %q = %d, want -1", k, name, i)
 		}
 	}
 }

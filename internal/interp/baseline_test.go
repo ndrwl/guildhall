@@ -472,6 +472,33 @@ func TestHallmarkBaselineCancelledSlices(t *testing.T) {
 	}
 }
 
+// TestHallmarkBaselineDeliveredSlice: a three-slice task done after slice 1 merged and slices 2 and 3 closed as
+// already delivered lists slice 1's merge only: a delivery record is no merge, so it is never a row.
+func TestHallmarkBaselineDeliveredSlice(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			h := newBaselineEnv(t, b, hallmarkExp(1, map[string]string{}, report("# Hallmark\n")))
+			h.sliced(t)
+			c1 := h.commit(t, "t6-s1")
+			h.recordMerge(t, "t6", "deliver-1-merge", 201, c1)
+			for _, k := range []string{"2", "3"} {
+				h.putDoc(t, "t6", "delivered--s"+k+"-1-delivery", "tasks/app/t6/delivered--s"+k+"-1/delivery.json",
+					[]byte(`{"schema":"guildhall.slice-delivery/1","slice":`+k+`,"by_slice":1,"reason":"slice 1 shipped it","at":"2026-11-01T00:00:00Z"}`))
+			}
+			h.finish(t, "t6", store.TaskDone)
+			h.eng.Forge = nil
+			want(t, h.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 1})
+			_, text := h.baseline(t)
+			containsInOrder(t, text, "## Merged tasks (1, newest first)", "| t6 · slice 1/3 | [#201](https://example.invalid/pull/201) | `"+c1+"` | `"+c1+"` |\n")
+			for _, absent := range []string{"slice 2/3", "slice 3/3", "delivered"} {
+				if strings.Contains(text, absent) {
+					t.Errorf("baseline has %q", absent)
+				}
+			}
+		})
+	}
+}
+
 // TestHallmarkBaselineSlicesPartlyInRange: a finished three-slice task whose slice 3 landed at the previous hallmark's
 // head and whose slice 1 landed after it lists slice 1 only.
 func TestHallmarkBaselineSlicesPartlyInRange(t *testing.T) {
