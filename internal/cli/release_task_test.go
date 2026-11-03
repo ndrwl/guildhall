@@ -171,6 +171,35 @@ func TestReleaseStatusListsTasks(t *testing.T) {
 		!strings.Contains(items[0].Reason, "a rebuild from source may not reproduce its recorded sha256 ") || items[0].Command != "guildhall release install v1.0.0" {
 		t.Fatalf("release items %+v", items)
 	}
+
+	// Damaged, missing or another binary under its version, release status and needs_me give the refusal
+	// release.Home.RunnableAs words, the rule the launcher applies too.
+	recorded := rep.Copy.Tasks[0].SHA256
+	for _, c := range []struct {
+		name  string
+		setup func()
+	}{
+		{"damaged", func() {}},
+		{"missing", func() {
+			if err := os.RemoveAll(h.ReleaseDir("v1.0.0")); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"another sha256", func() { f.install("v1.0.0", "another release v1.0.0", 1) }},
+	} {
+		c.setup()
+		var nr *release.NotRunnableError
+		if _, err := h.RunnableAs("v1.0.0", recorded); !errors.As(err, &nr) {
+			t.Fatalf("%s: RunnableAs = %v, want a NotRunnableError", c.name, err)
+		}
+		if code := f.run("release", "status", "--copy", f.copy); code != 0 || !strings.Contains(f.stdout.String(), "task app/t-1 runs on v1.0.0, which "+nr.Why+"\n") {
+			t.Fatalf("%s: release status = %d, %q; want which %s", c.name, code, f.stdout, nr.Why)
+		}
+		items := f.app.taskReleaseItems(filepath.Join(f.copy, "director.store"))
+		if len(items) != 1 || !strings.Contains(items[0].Reason, "records release v1.0.0, which "+nr.Why+", so it refuses") {
+			t.Fatalf("%s: release items %+v; want which %s", c.name, items, nr.Why)
+		}
+	}
 }
 
 // TestWatcherAdvancesAnotherReleaseThroughTheLauncher: a task that recorded another release than the supervisor's

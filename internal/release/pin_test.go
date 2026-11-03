@@ -65,3 +65,42 @@ func TestNewestAndRunnable(t *testing.T) {
 		t.Fatalf("Runnable of a missing release: %v", err)
 	}
 }
+
+// TestRunnableAs: a release runs as a task recorded it only when it is installed, undamaged and of the recorded
+// sha256; otherwise the *NotRunnableError's Why says which, with damage winning over another sha256.
+func TestRunnableAs(t *testing.T) {
+	h := newHome(t)
+	at := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	one := installed(t, h, "v1.0.0", "one", at)
+	two := installed(t, h, "v2.0.0", "two", at)
+	if err := os.WriteFile(h.Binary("v2.0.0"), []byte("changed"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	other := strings.Repeat("c", 64)
+	for _, c := range []struct {
+		name, version, sha256, why string
+	}{
+		{"intact", "v1.0.0", one, ""},
+		{"missing", "v9.0.0", one, "is not installed: " + h.Binary("v9.0.0") + " does not exist"},
+		{"damaged", "v2.0.0", two, "is damaged and never run: "},
+		{"damaged and another sha256", "v2.0.0", other, "is damaged and never run: "},
+		{"another sha256", "v1.0.0", other, "is installed with sha256 " + one + ", not the " + other + " the task recorded"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r, err := h.RunnableAs(c.version, c.sha256)
+			if c.why == "" {
+				if err != nil || r.Version != c.version || r.SHA256 != c.sha256 || r.Damage != "" {
+					t.Fatalf("RunnableAs = %+v, %v; want the intact release", r, err)
+				}
+				return
+			}
+			var nr *NotRunnableError
+			if !errors.As(err, &nr) || nr.Version != c.version || !strings.HasPrefix(nr.Why, c.why) || r != (Release{}) {
+				t.Fatalf("RunnableAs = %+v, %v; want a NotRunnableError whose Why starts %q", r, err, c.why)
+			}
+			if err.Error() != "release "+c.version+" "+nr.Why || nr.Err != nil || errors.Unwrap(err) != nil {
+				t.Fatalf("error %q, Err %v; want release %s %s", err, nr.Err, c.version, nr.Why)
+			}
+		})
+	}
+}

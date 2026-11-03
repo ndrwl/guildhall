@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -225,18 +224,16 @@ func (a *App) advanceThroughLauncher(f advanceFlags, t taskRef, rec store.TaskRe
 	return interp.Next{Wait: n.Wait, Step: n.Step, Attempt: n.Attempt, Decision: n.Decision, Position: n.Position}, nil
 }
 
-// taskReleaseProblem says why the task release r cannot run from h, "" when it can.
+// taskReleaseProblem says why the task release r cannot run from h, as a clause that reads after "which", or ""
+// when it can: the Why of release.Home.RunnableAs, the rule the launcher applies too.
 func taskReleaseProblem(h release.Home, r store.TaskRelease) string {
-	rel, err := h.Check(r.Version)
+	_, err := h.RunnableAs(r.Version, r.SHA256)
+	var nr *release.NotRunnableError
 	switch {
-	case errors.Is(err, fs.ErrNotExist):
-		return "is not installed at " + h.ReleaseDir(r.Version)
+	case errors.As(err, &nr):
+		return nr.Why
 	case err != nil:
-		return "cannot be read: " + err.Error()
-	case rel.Damage != "":
-		return "is damaged: " + rel.Damage
-	case rel.SHA256 != r.SHA256:
-		return fmt.Sprintf("is installed with sha256 %s, not the %s it recorded", rel.SHA256, r.SHA256)
+		return err.Error()
 	}
 	return ""
 }

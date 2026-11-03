@@ -80,20 +80,38 @@ func (b ExecBuilder) Build(ctx context.Context, dir, pkg, out string) error {
 	return err
 }
 
-// goEnv is the environment go runs in: the process's, with the build's fixed settings in place of its own.
+// goEnv is the environment go runs in: the process's without the variables that redirect git, as go build runs git
+// to stamp the revision, and with the build's fixed settings in place of its own.
 func goEnv() []string {
 	fixed := map[string]string{"GOFLAGS": "", "GOWORK": "off", "CGO_ENABLED": "0", "GOOS": runtime.GOOS, "GOARCH": runtime.GOARCH}
-	var env []string
-	for _, kv := range os.Environ() {
-		k, _, _ := strings.Cut(kv, "=")
-		if _, ok := fixed[strings.ToUpper(k)]; !ok {
-			env = append(env, kv)
-		}
-	}
+	env := withoutEnv(os.Environ(), func(k string) bool { _, ok := fixed[k]; return ok || gitRedirect(k) })
 	for k, v := range fixed {
 		env = append(env, k+"="+v)
 	}
 	return env
+}
+
+// gitEnv is the environment git runs in: the process's without GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE, so an
+// inherited one cannot point a build at another repository, and never prompting.
+func gitEnv() []string {
+	return append(withoutEnv(os.Environ(), gitRedirect), "GIT_TERMINAL_PROMPT=0")
+}
+
+// gitRedirect reports whether the upper-cased variable k points git at another repository, work tree or index.
+func gitRedirect(k string) bool {
+	return k == "GIT_DIR" || k == "GIT_WORK_TREE" || k == "GIT_INDEX_FILE"
+}
+
+// withoutEnv is env without each variable whose name, upper-cased, drop reports.
+func withoutEnv(env []string, drop func(k string) bool) []string {
+	var kept []string
+	for _, kv := range env {
+		k, _, _ := strings.Cut(kv, "=")
+		if !drop(strings.ToUpper(k)) {
+			kept = append(kept, kv)
+		}
+	}
+	return kept
 }
 
 // git runs git, in dir unless it is "", bounded by GitTimeout and never prompting.
@@ -105,7 +123,7 @@ func (b ExecBuilder) git(ctx context.Context, dir string, args ...string) ([]byt
 	if dir != "" {
 		args = append([]string{"-C", dir}, args...)
 	}
-	return run(ctx, b.GitTimeout, DefaultBuildGitTimeout, "", append(os.Environ(), "GIT_TERMINAL_PROMPT=0"), path, args...)
+	return run(ctx, b.GitTimeout, DefaultBuildGitTimeout, "", gitEnv(), path, args...)
 }
 
 // goRun runs go in dir with goEnv, bounded by GoTimeout.

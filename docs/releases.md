@@ -46,7 +46,7 @@ Slice 3 is built too: tasks record their release and run on it, as [tasks keep t
 
 - **`guildhall task new`** on a copy with a pin records the pin's version and sha256 on the task in its own store bucket ([task releases](store.md#task-releases)), under the home lock, registering the copy; a pin whose release is missing or damaged refuses the task. A copy with no pin records nothing, as before.
 - **The launcher dispatches task commands** by the task they name: `task start`, `task cancel`, `task reconcile`, `task design`, the `step` commands, `artisan start` and `artisan resume` and the `quality` judge commands run on the task's recorded release, whatever the copy pins, so Herdr's plain `guildhall artisan resume …` and the Director's own commands reach it; a task command naming no task, or two, is refused. The session supervisor's watchers advance such a task through the launcher too.
-- **A task whose recorded release is missing or damaged** refuses to advance, naming the version and `guildhall release install`, and `director status` raises a `release` item in `needs_me` for it; it is never moved to another release.
+- **A task whose recorded release is missing, damaged or installed with another sha256** refuses to advance, naming the version and `guildhall release install`, and `director status` raises a `release` item in `needs_me` for it; it is never moved to another release. The launcher, `release status` and that item give the same reason: the release `is not installed: <its binary> does not exist`, `cannot be read`, `is damaged and never run` or `is installed with sha256 <got>, not the <want> the task recorded`.
 - **Unrecorded tasks**, created before their copy recorded releases, run on the current pin, as before, and `release status` lists them as unrecorded beside each active task's release.
 - **The store-schema rule**: `release use` refuses a release whose `store_schema` differs from that of the release any active task records, naming those tasks, so the Guildmaster lets them finish first and no release migrates the store under a task still running an older one.
 - `version --json` reports `release_contract` 2.
@@ -170,7 +170,7 @@ Copy selection is preserved in child invocations and Director restarts.
 Every later step of that task, including initial Artisan launches, subsequent steps and resume commands (`launch.ResumeArgv`), enters the task-aware launcher with the owning store, repository and task identity.
 The launcher executes `releases/<recorded version>/guildhall`, not the current pin, and replaces the child release environment as above.
 Herdr's registered resume argv continues to start with the plain command `guildhall`, followed by `artisan resume` and the existing store, state, repository, task, step and attempt arguments; no executable path is registered and Herdr needs no change.
-A task whose recorded release is missing or damaged refuses to advance and raises an alert naming the version; it is never moved to another release.
+A task whose recorded release is missing, damaged or installed with another sha256 refuses to advance and raises an alert naming the version and the same reason the launcher gives; it is never moved to another release.
 
 ## How a running Director picks up a new release
 
