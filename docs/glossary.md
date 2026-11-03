@@ -195,3 +195,10 @@ A finished outcome without a readable result is refused, not guessed.
   Avoid "part", "phase", "sub-task" and "chunk"; the hallmark skill's "slice", a pull-request-sized part of planned work, means the same.
 - A **cycle**, in contract TDD, is one contract case and its minimal implementation inside a single build (`guildhall-contract-tdd`); it was called a slice there before multi-PR tasks.
 - A **stack** and its **layers** are GitHub's stacked pull requests, named only for how slices might one day be shown on the forge, never in place of "slice"; Guildhall does not stack pull requests yet ([decision](decisions/stacked-prs-not-yet.md)).
+
+## Task id
+
+- A **task id prefix** is a repository's `task_prefix`, 1 to 3 lowercase letters such as `d`, unique across a copy's repositories ([repositories](configuration.md#repositories)); guildhall's is `d`.
+  It is not a repository id, and not the `guildhall/` of a task branch.
+- A **task number** is the decimal number after the prefix in a task id, `42` in `d42`, with no leading zero.
+- A task id, such as `d42`, is a task id prefix followed by a task number; older tasks and the reserved ones, such as the steward's `rollouts`, keep ids of other forms.
