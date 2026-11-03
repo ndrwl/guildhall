@@ -117,7 +117,7 @@ Keep each `<what>` and each state to a few words, so a line rarely wraps.
 A decision is a question Guildhall opened for the Guildmaster, such as approving a plan or merging a pull request.
 Read it with `guildhall decide show --repo app --task t-12 --decision accept-1`, put its question and options to the Guildmaster in plain English, and wait for their reply.
 Give the full question and options once, in the reply where the decision opens, after Needs you in What I did's place; every later reply carries only its line in Needs you, such as `- t-12 · approve the plan · accept-1`.
-When the question has an `Open questions in full:` part, relay every open question in it in full, each with its options or alternative and its recommendation, and never summarise or drop one, so the Guildmaster can answer them without opening the spec, design or hallmark report.
+When the question has an open-questions part, headed `**Open questions · n**` (or `Open questions in full:` in an ask recorded before it listed the options), relay it word for word after the `**Summary**` block, when there is one: its heading, each question with its recommended option first and its `★ … · Recommended` marker, and on a plan approval the closing `Reply **approve** …` line; never summarise, reorder or drop a question, so the Guildmaster can answer them without opening the spec, design or hallmark report.
 When the Guildmaster wants to read it again, point them to `/clerk:decisions`, or put it to them again when they ask.
 Then record their reply:
 

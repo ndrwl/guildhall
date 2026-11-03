@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"fmt"
 	"html/template"
-	"math"
 	"net/http"
 	"slices"
 	"strconv"
@@ -96,11 +95,12 @@ type askView struct {
 	// goldmark, empty when it has none or its file cannot be shown, and the ask then links the spec instead.
 	Plan    bool
 	Summary template.HTML
-	// Questions is that spec's open-questions part (spec.SpecPart), shown after Summary, or on a design ask its
-	// design's, or on a follow-ups ask its hallmark report's (spec.ReportPart), shown in a box of its own: the
-	// questions in full, rendered by goldmark, or the line saying there are none; empty when the document has no
-	// readable section.
-	Questions template.HTML
+	// Questions is that spec's open questions as cards (newQuestionsView), shown after Summary, or on a design ask its
+	// design's, or on a follow-ups ask its hallmark report's, shown in a box of their own; the same parse the question
+	// text's part comes from, or the line saying there are none; nil when the document has no readable section.
+	Questions *questionsView
+	// Hint is the words box's hint, which on an ask with a recommended answer says how to change an answer.
+	Hint string
 	// MockupHref links a design ask's mock-up as MockupLabel: an HTML mock-up's frame route, opened in a new tab, or
 	// the reader page of one the page cannot show inline. Mockup is a Markdown mock-up rendered by goldmark, shown
 	// in the ask instead of a link.
@@ -121,6 +121,8 @@ type askView struct {
 type tileView struct {
 	Option, Word, Text string
 	Tone               Tone
+	// Rec marks the recommended answer, which spans the row with a Recommended badge.
+	Rec bool
 }
 
 type quoteView struct {
@@ -376,9 +378,13 @@ func (s *Server) askView(t Task, a Ask) askView {
 	if doc := taskDocument(t, a.Mockup); a.Mockup != "" && doc != nil {
 		s.mockup(t, *doc, &v)
 	}
-	for _, o := range a.Options {
-		m, _ := OptionMeaning(a.Kind, o)
-		v.Tiles = append(v.Tiles, tileView{Option: o, Word: OptionWord(o), Text: m.Text, Tone: m.Tone})
+	// A plan or design approval whose questions carry recommendations offers taking them all as its recommended
+	// answer; a follow-ups ask's pick and none are about ids, not about its questions, and keep their tiles.
+	recommend := a.Kind == "approval" && v.Questions != nil && v.Questions.Lettered && slices.Contains(a.Options, "approved")
+	v.Tiles = answerTiles(a.Kind, a.Options, recommend)
+	v.Hint = wordsHint
+	if recommend {
+		v.Hint = recommendedHint
 	}
 	if n := len(a.Findings); n > 0 {
 		v.FindingsSummary = fmt.Sprintf("The open findings · %d", n)
@@ -408,8 +414,9 @@ func taskDocument(t Task, name string) *Document {
 // by goldmark, or, when the spec has no block or its file cannot be shown, the fallback link. The question's own copy
 // of the summary, or its no-summary line, is taken out of the rest of the question, so the summary shows once.
 //
-// After the summary come the spec's open questions in full (spec.SpecPart), the same part the question text carries,
-// rendered the same way; a spec with no readable section, such as one recorded before the plan check, shows none.
+// After the summary come the spec's open questions as cards (newQuestionsView), from the same parse as the part the
+// question text carries (spec.PlanPart); a spec with no readable section, such as one recorded before the plan check,
+// shows none.
 func (s *Server) planSummary(doc Document, v *askView) {
 	v.Plan = true
 	var summary, questions string
@@ -417,58 +424,71 @@ func (s *Server) planSummary(doc Document, v *askView) {
 		if text, ok := spec.Summary(body); ok {
 			summary, v.Summary = text, RenderMarkdown([]byte(text))
 		}
-		if part, ok := spec.SpecPart(body); ok {
-			questions, v.Questions = part, questionsHTML(part)
+		if q, err := spec.ReadSpecQuestions(body); err == nil {
+			questions, v.Questions = q.PlanPart(), newQuestionsView(q)
 		}
 	}
 	v.Rest = stripSummary(v.Rest, summary, questions)
 }
 
 // designQuestions adds a design round's open questions to its ask, an approval whose subject is the design document
-// doc: the design's open questions in full (spec.SpecPart), read verified and rendered as a plan approval's are, the
-// same part render.DesignQuestion writes into the question, which is taken out of the rest of the question so it
-// shows once. A design with no readable section, such as one recorded before the design check, or whose file does
+// doc: the design's open questions as cards, read verified as a plan approval's are, from the same parse as the part
+// render.DesignQuestion writes into the question (spec.SpecPart), which is taken out of the rest of the question so
+// it shows once. A design with no readable section, such as one recorded before the design check, or whose file does
 // not verify, shows none and keeps its question whole.
 func (s *Server) designQuestions(doc Document, v *askView) {
 	body, status, _ := s.verified(doc)
 	if status != http.StatusOK {
 		return
 	}
-	part, ok := spec.SpecPart(body)
-	if !ok {
+	q, err := spec.ReadSpecQuestions(body)
+	if err != nil {
 		return
 	}
-	v.Questions = questionsHTML(part)
-	v.Rest = stripSummary(v.Rest, "", part)
+	v.Questions = newQuestionsView(q)
+	v.Rest = stripSummary(v.Rest, "", q.Part())
 }
 
 // reportQuestions adds a hallmark report's questions to its follow-ups ask, whose subject is the report document doc:
-// the report's `## Questions` in full (spec.ReportPart), read verified and rendered as a plan approval's are, the
-// part the follow-ups question carries after its ranked list, which is taken out of the rest of the question so it
-// shows once. The box is cut only at QuestionsMax, so it shows every question the question text had room for. A
-// report with no readable section, or whose file does not verify, shows none and keeps its question whole.
+// the report's `## Questions` as cards (spec.ReportQuestions), read verified as a plan approval's are, from the same
+// parse as the part the follow-ups question carries after its ranked list (spec.ReportPart), which is taken out of
+// the rest of the question so it shows once. The cards are cut only at QuestionsMax, so they show every question the
+// question text had room for. A report with no readable section, or whose file does not verify, shows none and
+// keeps its question whole.
 func (s *Server) reportQuestions(doc Document, v *askView) {
 	body, status, _ := s.verified(doc)
 	if status != http.StatusOK {
 		return
 	}
-	part, ok := spec.ReportPart(body, math.MaxInt)
-	if !ok {
+	q, err := spec.ReportQuestions(body)
+	if err != nil {
 		return
 	}
-	v.Questions = questionsHTML(part)
+	v.Questions = newQuestionsView(q)
 	v.Rest = stripReportQuestions(v.Rest)
 }
 
 // followUpsAnswer starts the answer format that ends a follow-ups question, after its questions.
 const followUpsAnswer = "\n\nAnswer pick, then "
 
+// partHeads start an ask's open-questions part in its stored text: today's heading, the heading of asks recorded
+// before d153, and the line saying there are none.
+var partHeads = []string{spec.QuestionsHeadingPrefix, spec.OldQuestionsInFull + "\n", spec.QuestionsNone}
+
+// isPart says rest starts with an open-questions part, in either shape.
+func isPart(rest string) bool {
+	return slices.ContainsFunc(partHeads, func(h string) bool { return strings.HasPrefix(rest, h) })
+}
+
 // stripReportQuestions takes a follow-ups question's open-questions part out of rest, the question after its first
-// line: from the part's heading, after the ranked list, up to the answer format, whatever the stored copy holds.
+// line: from the part's heading, in either shape, after the ranked list, up to the answer format, whatever the
+// stored copy holds.
 func stripReportQuestions(rest string) string {
-	i := strings.Index(rest, "\n\n"+spec.QuestionsInFull+"\n")
-	if i < 0 {
-		i = strings.Index(rest, "\n\n"+spec.QuestionsNone)
+	i := -1
+	for _, h := range partHeads {
+		if j := strings.Index(rest, "\n\n"+h); j >= 0 && (i < 0 || j < i) {
+			i = j
+		}
 	}
 	if i < 0 {
 		return rest
@@ -477,16 +497,6 @@ func stripReportQuestions(rest string) string {
 		return rest[:i] + rest[end:]
 	}
 	return rest[:i]
-}
-
-// questionsHTML renders an open-questions part (spec.Part) for an ask's box: "Open questions in full" and the
-// questions rendered by goldmark, each question's lines as written, or the line saying there are none.
-func questionsHTML(part string) template.HTML {
-	if q, ok := strings.CutPrefix(part, spec.QuestionsInFull+"\n"); ok {
-		// Each question's lines show as written: its Options: and Recommended: lines on lines of their own.
-		return template.HTML(`<p class="ph">Open questions in full</p><div class="qs">`) + RenderMarkdown([]byte(q)) + template.HTML(`</div>`)
-	}
-	return template.HTML(`<p class="ph">` + template.HTMLEscapeString(part) + `</p>`)
 }
 
 // mockup adds a design ask's mock-up document doc to its ask: an HTML mock-up as an "Open mock-up" link to its frame
@@ -514,27 +524,37 @@ func (s *Server) mockup(t Task, doc Document, v *askView) {
 var questionParts = []string{"\n\n" + spec.InstructionsHeader + "\n", "\n\n" + spec.InputsHeader + "\n", "\n\n" + spec.AnswerLine, "\n\n" + spec.DesignAnswersLine}
 
 // stripSummary takes an approval question's own summary part off the front of rest, the question after its first
-// line: its spec.NoSummaryLine line always, its spec.SummaryHeader block when the page shows summary, the block it
-// read from the spec, in its place, and then its open-questions part when the page shows questions, the part it read
-// from the spec. A copy that differs from the page's is cut up to the next part of the question.
+// line: its spec.NoSummaryLine line always, its spec.SummaryHeader block, or spec.OldSummaryHeader in an ask recorded
+// before d153, when the page shows summary, the block it read from the spec, in its place, and then its
+// open-questions part, in either shape, when the page shows questions, the part it read from the spec. A copy that
+// differs from the page's, as an older ask's does, is cut up to the next part of the question.
 func stripSummary(rest, summary, questions string) string {
-	header := spec.SummaryHeader + "\n"
 	if line, after, _ := strings.Cut(rest, "\n"); strings.HasPrefix(line, spec.NoSummaryLine) {
 		rest = strings.TrimSpace(after)
-	} else if summary != "" && strings.HasPrefix(rest, header) {
-		if after, ok := cutPart(rest, header+summary); ok {
+	} else if head, ok := summaryHead(rest); summary != "" && ok {
+		if after, ok := cutPart(rest, head+summary); ok {
 			rest = after
 		} else {
 			return toNextPart(rest)
 		}
 	}
-	if questions == "" || (!strings.HasPrefix(rest, spec.QuestionsInFull+"\n") && !strings.HasPrefix(rest, spec.QuestionsNone)) {
+	if questions == "" || !isPart(rest) {
 		return rest
 	}
 	if after, ok := cutPart(rest, questions); ok {
 		return after
 	}
 	return toNextPart(rest)
+}
+
+// summaryHead is the Summary block's heading line rest starts with, in either shape.
+func summaryHead(rest string) (string, bool) {
+	for _, h := range []string{spec.SummaryHeader + "\n", spec.OldSummaryHeader + "\n"} {
+		if strings.HasPrefix(rest, h) {
+			return h, true
+		}
+	}
+	return "", false
 }
 
 // cutPart takes part off the front of rest when it is a whole part, ending rest or followed by a new line.

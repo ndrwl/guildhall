@@ -5,8 +5,8 @@ Your `brief` input says what the design must show and why; its first line, `Surf
 The `context` inputs, when given, are the latest grill notes, research notes and spec.
 Make the design self-contained and short enough to read in one decision.
 Set out the options and the trade-offs between them, and say which option you recommend.
-List every decision the Guildmaster still has to make under `## Open questions`, or write "None": each starts on a line `**Qn. <title>**`, numbered from Q1 with no gaps, and has an `Options:` line and a `Recommended:` line.
-The design ask copies each question in full, and Guildhall refuses a design with no such section or one in another shape.
+List every decision the Guildmaster still has to make under `## Open questions`, or write "None": each starts on a line `**Qn. <title>**`, numbered from Q1 with no gaps, and has an `Options: (a) <one answer>; (b) <another>.` line and a `Recommended: (<letter>). <why>` line, the spec's shape.
+The design ask shows each question as a card with its recommended option first and marked, and Guildhall refuses a design with no such section, one in another shape, or a `Recommended:` line that does not start with one of its option letters.
 Write the required `design` port as a UTF-8 Markdown document at `design.md` in your working directory: it holds the written decisions.
 Change nothing in the repository; scratch files in your attempt directory are allowed.
 

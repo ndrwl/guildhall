@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ndrwl/guildhall/internal/spec"
 )
 
 const designPath = "tasks/guildhall/d122/designer-5/design.md"
@@ -50,37 +52,40 @@ func designPage(t *testing.T, design, question string, mismatch bool) string {
 	if i < 0 {
 		t.Fatal("the page has no design ask")
 	}
-	ask, _, _ := strings.Cut(body[i:], `class="opts"`)
+	ask, _, _ := strings.Cut(body[i:], `<p class="who">`)
 	return ask
 }
 
-// TestDesignQuestions: a design round's ask shows its design's open questions in full in a box of their own, each
-// line as written, once, with no plan summary, and the rest of the question keeps what each answer does but not the
-// questions; a design whose section says None says so; an older design with no section, or one whose file does not
-// verify, shows no box and keeps its question whole; hostile questions are made safe.
+// TestDesignQuestions: a design round's ask shows its design's open questions as cards in a box of their own, once,
+// with no Summary, the recommended option first and Approved as the recommended answer, and the rest of the question
+// keeps what each answer does but not the questions, in today's shape or an older ask's; a design whose section says
+// None says so; an older design with no section, or one whose file does not verify, shows no box and keeps its
+// question whole; hostile questions are made safe.
 func TestDesignQuestions(t *testing.T) {
-	const qs = "**Q1. Which control sorts the list**\nThe list needs one control.\nOptions: (a) a drop-down; (b) a table.\nRecommended: (a). It fits a phone."
+	const qs = "**Q1. Which control sorts the list**\nThe list needs one control.\nOptions: (a) a drop-down; (b) a table.\nRecommended: (b). It fits a phone."
 	design := "# Design\n\nA drop-down.\n\n## Open questions\n\n" + qs + "\n"
-	part := "Open questions in full:\n" + qs
-	t.Run("in full", func(t *testing.T) {
-		for name, q := range map[string]string{"question with a copy": designQuestion(part), "older question": designQuestion("")} {
+	part, ok := spec.SpecPart([]byte(design))
+	if !ok {
+		t.Fatal("the design's questions do not read")
+	}
+	t.Run("cards", func(t *testing.T) {
+		for name, q := range map[string]string{"question with a copy": designQuestion(part), "question with an old copy": designQuestion("Open questions in full:\n" + qs), "older question": designQuestion("")} {
 			page := designPage(t, design, q, false)
-			once(t, page, `<div class="plan md"><p class="ph">Open questions in full</p><div class="qs"><p><strong>Q1. Which control sorts the list</strong>
-The list needs one control.
-Options: (a) a drop-down; (b) a table.
-Recommended: (a). It fits a phone.</p>
-</div></div>`)
+			once(t, page, `<div class="plan md"><p class="ph oqh">Open questions <span class="n">1</span></p><div class="oqs">
+<section class="oq"><p class="qt"><span class="qn">Q1</span>Which control sorts the list</p><div class="qb"><p>The list needs one control.</p>
+</div><ul class="ol"><li class="rec"><span class="lt">(b)</span><span class="ot">a table<span class="why">It fits a phone.</span></span><i class="badge">Recommended</i></li><li><span class="lt">(a)</span><span class="ot">a drop-down</span></li></ul></section></div></div>`)
 			box, rest, _ := strings.Cut(page, `class="ctx"`)
-			if strings.Contains(box, "Plan summary") || strings.Contains(box, "No summary in this spec") {
+			if strings.Contains(box, `<p class="ph">Summary</p>`) || strings.Contains(box, "No summary in this spec") {
 				t.Errorf("%s: a design ask shows a plan summary", name)
 			}
-			if strings.Contains(rest, "Which control") || strings.Contains(page, "Open questions in full:") {
+			if strings.Contains(rest, "Which control") || strings.Contains(rest, "Open questions") {
 				t.Errorf("%s: the rest of the question repeats the questions", name)
 			}
+			once(t, rest, `<b>Approved <i class="badge">Recommended</i></b><span>take every recommendation above; the task goes on</span>`)
 			if !strings.Contains(rest, "<pre>approved makes the design an input to plan") || !strings.Contains(rest, "Inputs:\n- design: ") {
 				t.Errorf("%s: the rest of the question lost its parts:\n%s", name, rest)
 			}
-			if q, p := strings.Index(page, `<p class="q">`), strings.Index(page, `<div class="plan md"><p class="ph">Open questions`); q < 0 || p < q || strings.Index(page, `class="ctx"`) < p {
+			if q, p := strings.Index(page, `<p class="q">`), strings.Index(page, `<div class="plan md"><p class="ph oqh">Open questions`); q < 0 || p < q || strings.Index(page, `class="ctx"`) < p {
 				t.Errorf("%s: the questions are not under the question's first line and before the fold", name)
 			}
 			once(t, page, `<a href="/guildhall/d122/doc/designer-5-design">read designer-5-design</a>`)
@@ -91,6 +96,9 @@ Recommended: (a). It fits a phone.</p>
 		page := designPage(t, design, designQuestion(part+" As stored."), false)
 		_, rest, _ := strings.Cut(page, `class="ctx"`)
 		once(t, page, "Which control")
+		if strings.Contains(rest, "As stored") {
+			t.Errorf("the rest of the question repeats the stored questions:\n%s", rest)
+		}
 		if !strings.Contains(rest, "<pre>approved makes the design ") {
 			t.Errorf("the rest of the question lost what each answer does:\n%s", rest)
 		}
@@ -112,15 +120,22 @@ Recommended: (a). It fits a phone.</p>
 			if !strings.Contains(page, "<pre>approved makes the design ") {
 				t.Error("the question is not kept whole")
 			}
+			if strings.Contains(page, "take every recommendation") {
+				t.Error("an ask with no questions offers a recommended answer")
+			}
 		})
 	}
 	t.Run("hostile", func(t *testing.T) {
-		bad := "# D\n\n## Open questions\n\n**Q1. <script>alert(1)</script>**\nOptions: [x](javascript:alert(1)); <img src=x onerror=alert(1)>.\nRecommended: x.\n"
-		page := designPage(t, bad, designQuestion(""), false)
-		once(t, page, `<p class="ph">Open questions in full</p>`)
-		for _, b := range []string{"<script", "javascript:", "<img"} {
-			if strings.Contains(page, b) {
-				t.Errorf("the questions hold %q", b)
+		for name, bad := range map[string]string{
+			"word for word": "# D\n\n## Open questions\n\n**Q1. <script>alert(1)</script>**\nOptions: [x](javascript:alert(1)); <img src=x onerror=alert(1)>.\nRecommended: x.\n",
+			"options":       "# D\n\n## Open questions\n\n**Q1. <script>alert(1)</script>**\n<script>b</script>\nOptions: (a) [x](javascript:alert(1)); (b) <img src=x onerror=alert(1)>.\nRecommended: (a). <script>c</script>\n",
+		} {
+			page := designPage(t, bad, designQuestion(""), false)
+			once(t, page, `<p class="ph oqh">Open questions <span class="n">1</span></p>`)
+			for _, b := range []string{"<script", "javascript:", "<img"} {
+				if strings.Contains(page, b) {
+					t.Errorf("%s: the questions hold %q", name, b)
+				}
 			}
 		}
 	})

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ndrwl/guildhall/internal/spec"
 )
 
 const reportPath = "tasks/guildhall/d122/hallmark-1/report.md"
@@ -56,41 +58,48 @@ func followUpsPage(t *testing.T, report, question string, mismatch bool) string 
 	if i < 0 {
 		t.Fatal("the page has no follow-ups ask")
 	}
-	ask, _, _ := strings.Cut(body[i:], `class="opts"`)
+	ask, _, _ := strings.Cut(body[i:], `<p class="who">`)
 	return ask
 }
 
-// TestReportQuestions: a follow-ups ask shows its hallmark report's questions in full, each Alternative: line as
-// written, once, in a box of its own, and the rest of the question keeps its ranked list and answer format but not the
-// questions; a report whose section says None says so; an older report with no section, or one whose file does not
+// TestReportQuestions: a follow-ups ask shows its hallmark report's questions as cards, the recommended answer first
+// and marked and the alternative after it, once, in a box of its own, and the rest of the question keeps its ranked
+// list and answer format but not the questions, in today's shape or an older ask's; its pick and none keep their
+// tiles; a report whose section says None says so; an older report with no section, or one whose file does not
 // verify, shows no box and keeps its question whole; hostile questions are made safe.
 func TestReportQuestions(t *testing.T) {
 	const qs = "**Q1. Change direction**\nShould the next slice move on?\nRecommended: yes, because the relay is done.\nAlternative: finish the CLI first, a week later."
 	report := "# Hallmark\n\n## Fixes\n\n### H1. Tighten the parser\n\n## Questions\n\n" + qs + "\n\n## Procedure\n\n- none.\n"
-	part := "Open questions in full:\n" + qs
-	t.Run("in full", func(t *testing.T) {
+	part, ok := spec.ReportPart([]byte(report), spec.QuestionsMax)
+	if !ok {
+		t.Fatal("the report's questions do not read")
+	}
+	oldPart := "Open questions in full:\n" + qs
+	t.Run("cards", func(t *testing.T) {
 		for name, q := range map[string]string{"question with a copy": followUpsQuestion(part), "stored copy that differs": followUpsQuestion(part + " As stored."),
-			"cut copy": followUpsQuestion("Open questions in full:\n(cut; read the spec)"), "older question": followUpsQuestion("")} {
+			"cut copy": followUpsQuestion("**Open questions · 1**\n\n(cut; read the spec)"), "question with an old copy": followUpsQuestion(oldPart),
+			"old cut copy": followUpsQuestion("Open questions in full:\n(cut; read the spec)"), "older question": followUpsQuestion("")} {
 			page := followUpsPage(t, report, q, false)
-			once(t, page, `<div class="plan md"><p class="ph">Open questions in full</p><div class="qs"><p><strong>Q1. Change direction</strong>
-Should the next slice move on?
-Recommended: yes, because the relay is done.
-Alternative: finish the CLI first, a week later.</p>
-</div></div>`)
+			once(t, page, `<div class="plan md"><p class="ph oqh">Open questions <span class="n">1</span></p><div class="oqs">
+<section class="oq"><p class="qt"><span class="qn">Q1</span>Change direction</p><div class="qb"><p>Should the next slice move on?</p>
+</div><ul class="ol"><li class="rec"><span class="ot">yes, because the relay is done.</span><i class="badge">Recommended</i></li><li><span class="lt">Alternative</span><span class="ot">finish the CLI first, a week later.</span></li></ul></section></div></div>`)
 			box, rest, _ := strings.Cut(page, `class="ctx"`)
-			if strings.Contains(box, "Plan summary") || strings.Contains(box, "No summary in this spec") {
+			if strings.Contains(box, `<p class="ph">Summary</p>`) || strings.Contains(box, "No summary in this spec") {
 				t.Errorf("%s: a follow-ups ask shows a plan summary", name)
 			}
-			if strings.Contains(rest, "Change direction") || strings.Contains(page, "Open questions in full:") || strings.Contains(rest, "(cut;") {
+			if strings.Contains(rest, "Change direction") || strings.Contains(rest, "Open questions") || strings.Contains(rest, "(cut;") {
 				t.Errorf("%s: the rest of the question repeats the questions:\n%s", name, rest)
 			}
 			if !strings.Contains(rest, "Ranked follow-ups:\nH1. Tighten the parser\n\nAnswer pick, then the ids") {
 				t.Errorf("%s: the rest of the question lost its ranked list or answer format:\n%s", name, rest)
 			}
-			if q, p := strings.Index(page, `<p class="q">`), strings.Index(page, `<div class="plan md"><p class="ph">Open questions`); q < 0 || p < q || strings.Index(page, `class="ctx"`) < p {
+			if q, p := strings.Index(page, `<p class="q">`), strings.Index(page, `<div class="plan md"><p class="ph oqh">Open questions`); q < 0 || p < q || strings.Index(page, `class="ctx"`) < p {
 				t.Errorf("%s: the questions are not under the question's first line and before the fold", name)
 			}
 			once(t, page, `<a href="/guildhall/d122/doc/hallmark-1-report">read hallmark-1-report</a>`)
+			if strings.Contains(page, "take every recommendation") || strings.Contains(page, `opt pos rec`) {
+				t.Errorf("%s: a follow-ups ask offers a recommended answer", name)
+			}
 		}
 	})
 	t.Run("none", func(t *testing.T) {
@@ -115,7 +124,8 @@ Alternative: finish the CLI first, a week later.</p>
 	t.Run("hostile", func(t *testing.T) {
 		bad := "# H\n\n## Questions\n\n**Q1. <script>alert(1)</script>**\nRecommended: [x](javascript:alert(1)).\nAlternative: <img src=x onerror=alert(1)>.\n"
 		page := followUpsPage(t, bad, followUpsQuestion(""), false)
-		once(t, page, `<p class="ph">Open questions in full</p>`)
+		once(t, page, `<p class="ph oqh">Open questions <span class="n">1</span></p>`)
+		once(t, page, `<li class="rec"><span class="ot"><a href="">x</a>.</span>`)
 		for _, b := range []string{"<script", "javascript:", "<img"} {
 			if strings.Contains(page, b) {
 				t.Errorf("the questions hold %q", b)
@@ -134,6 +144,9 @@ func TestStripReportQuestions(t *testing.T) {
 		{"Report: r.md\n\nOpen questions in full:\n(cut; read the spec)" + answer, "Report: r.md" + answer},
 		{list + answer, list + answer},
 		{list + "\n\nOpen questions in full:\n**Q1. a**", list},
+		{list + "\n\n**Open questions · 1**\n\n**Q1. a**\n- ★ **Recommended:** b.\n- Alternative: c." + answer, list + answer},
+		{"Report: r.md\n\n**Open questions · 3**\n\n(cut; read the spec)" + answer, "Report: r.md" + answer},
+		{list + "\n\n**Open questions · 1**\n\n**Q1. a**", list},
 	} {
 		if got := stripReportQuestions(c.rest); got != c.want {
 			t.Errorf("stripReportQuestions(%q) = %q, want %q", c.rest, got, c.want)

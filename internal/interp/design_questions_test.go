@@ -12,7 +12,7 @@ import (
 )
 
 // TestDesignOpenQuestions: a design whose `## Open questions` is missing, or holds a question with no Options: or
-// Recommended: line or a numbering gap, is refused before anything is recorded, the error naming what is at fault;
+// Recommended: line, a Recommended: line that does not start with an option letter, or a numbering gap, is refused before anything is recorded, the error naming what is at fault;
 // one that says "None" reaches an ask that says so.
 func TestDesignOpenQuestions(t *testing.T) {
 	const head = "# Design\n\nOption A: a drop-down. Recommend A.\n"
@@ -20,6 +20,7 @@ func TestDesignOpenQuestions(t *testing.T) {
 		{"no section", head, "no ## Open questions section"},
 		{"no options", head + "\n## Open questions\n\n**Q1. Which control**\nRecommended: (a).\n", `Q1 "Which control" has no Options: line`},
 		{"no recommendation", head + "\n## Open questions\n\n**Q1. Which control**\nOptions: (a) x; (b) y.\n", `Q1 "Which control" has no Recommended: line`},
+		{"free-text recommendation", head + "\n## Open questions\n\n**Q1. Which control**\nOptions: (a) a drop-down; (b) a table.\nRecommended: the drop-down.\n", `Q1 "Which control": its Recommended: line does not start with one of its option letters`},
 		{"numbering gap", head + "\n## Open questions\n\n**Q1. A**\nOptions: x.\nRecommended: x.\n\n**Q3. C**\nOptions: x.\nRecommended: x.\n", "Q3 follows Q1"},
 		{"none", head + "\n## Open questions\n\nNone.\n", ""},
 	} {

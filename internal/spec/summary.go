@@ -15,12 +15,15 @@ const SummaryHeading = "## Summary"
 
 // The parts of a Guildmaster stage's approval question (render.Question) and a design round's question
 // (render.DesignQuestion) are named here, so the questions' writers and the task page that takes a question apart
-// (web) share one wording. Like QuestionsInFull, each is bare text with no surrounding new lines: a writer adds the
-// line breaks, and a reader finds a part after a blank line, "\n\n" and the marker. Stored questions hold these exact
-// bytes, so rewording one needs a reader that accepts both forms.
+// (web) share one wording. Like QuestionsHeadingPrefix, each is bare text with no surrounding new lines: a writer adds
+// the line breaks, and a reader finds a part after a blank line, "\n\n" and the marker. Stored questions hold these
+// exact bytes, so rewording one needs a reader that accepts both forms.
 const (
 	// SummaryHeader heads an approval question's copy of the spec's Summary block, on a line of its own.
-	SummaryHeader = "Plan summary:"
+	SummaryHeader = "**Summary**"
+	// OldSummaryHeader headed the Summary block in asks recorded before d153. Stored questions are immutable, so the
+	// task page still recognises it in an ask's text.
+	OldSummaryHeader = "Plan summary:"
 	// NoSummaryLine starts the line an approval question carries in place of a summary when the spec has none;
 	// render appends "; read <name>.".
 	NoSummaryLine = "No summary in this spec"
