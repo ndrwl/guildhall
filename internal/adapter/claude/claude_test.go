@@ -494,7 +494,7 @@ func TestRunGrantsAllowedTools(t *testing.T) {
 			if err := claude.Run(context.Background(), args(spec), &bytes.Buffer{}, &stderr); err != nil {
 				t.Fatalf("Run = %v; stderr %s", err, stderr.String())
 			}
-			want := append(slices.Clone(rules), claude.CILogRule)
+			want := append(slices.Clone(rules), claude.GuildhallRules...)
 			got, err := claudetest.Granted(spec.ResultFile)
 			if err != nil || !slices.Equal(got, want) {
 				t.Errorf("granted %q, %v; want exactly %q", got, err, want)
@@ -522,7 +522,7 @@ func TestRunGrantsAllowedTools(t *testing.T) {
 			if err := claude.Run(context.Background(), args(spec), &bytes.Buffer{}, &stderr); err != nil {
 				t.Fatalf("Run = %v; stderr %s", err, stderr.String())
 			}
-			want := append(append(slices.Clone(claude.ShippedDefaultGrants["builder"]), extra...), claude.CILogRule)
+			want := append(append(slices.Clone(claude.ShippedDefaultGrants["builder"]), extra...), claude.GuildhallRules...)
 			if got, err := claudetest.Granted(spec.ResultFile); err != nil || !slices.Equal(got, want) {
 				t.Errorf("granted %q, %v; want exactly %q", got, err, want)
 			}

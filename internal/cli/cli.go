@@ -206,7 +206,10 @@ Commands:
                  attempt as its launcher does, and print the judge's agreement with the audits
   review check <outcome-file> [--previous <previous-outcome-file>]
                  check a review outcome file as intake does before the reviewer finishes; prints ok
-  help          print this help
+  result check|submit [--copy <dir>] <file>
+                 inside an attempt, check its result with intake's checks, and with submit make it the draft;
+                 prints ok or rejected: <reason>
+  help         print this help
 `
 
 // toolProbeTimeout bounds each external version command run by doctor.
@@ -427,6 +430,8 @@ func (a *App) Run(args []string) int {
 		return a.review(rest)
 	case "ci":
 		return a.ciCmd(rest)
+	case "result":
+		return a.resultCmd(rest)
 	case "clerk":
 		return a.clerk(rest)
 	case "web":

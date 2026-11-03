@@ -94,10 +94,11 @@ func TestEffectiveGrant(t *testing.T) {
 		"fake builder":               {"[profile.builder]\nadapter = \"claude\"\n[profile.worker]\nadapter = \"claude\"\n[profile.planner]\nadapter = \"fake\"\n", "planner", "app", nil},
 	} {
 		t.Run(name, func(t *testing.T) {
-			// Every claude profile, even one whose copy list is empty, is granted guildhall ci log last.
+			// Every claude profile, even one whose copy list is empty, is granted guildhall ci log, result submit and
+			// result check last.
 			want := c.want
 			if name != "fake builder" {
-				want = append(slices.Clone(want), grants(claude.SourceGuildhall, "Bash(guildhall ci log:*)")...)
+				want = append(slices.Clone(want), grants(claude.SourceGuildhall, "Bash(guildhall ci log:*)", "Bash(guildhall result submit:*)", "Bash(guildhall result check:*)")...)
 			}
 			got, err := claude.EffectiveGrant(grantConfig(t, c.extra), c.profile, c.repository)
 			if err != nil || !slices.Equal(got, want) {

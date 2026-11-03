@@ -64,10 +64,10 @@ func TestWrapperProfileAuthority(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			// An empty list still keeps the rule Guildhall gives every claude profile; no reference grants nothing.
+			// An empty list still keeps the rules Guildhall gives every claude profile; no reference grants nothing.
 			var want []string
 			if name == "empty" {
-				want = []string{claude.CILogRule}
+				want = claude.GuildhallRules
 			}
 			got, err := claudetest.Granted(spec.ResultFile)
 			if err != nil || !slices.Equal(got, want) {

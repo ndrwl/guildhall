@@ -369,6 +369,7 @@ The attempt directory is `<state>/<repository>/<task>/<step>-<n>`, as the interp
 `artisan.AttemptKey` owns that layout (`Dir`, `AttemptID`, `ResultFile`, `ModelDir`) for both.
 For build results, see [code-head output intake](interpreter.md#code-head-output-intake) for the final-commit output contract, workspace requirements and recovery of an already-succeeded empty-output result.
 `model` in the attempt directory is the only part a model-run Artisan may write, holding the copy of its prompt and its draft result, which its wrapper publishes as `result.json`; the result, its cancel marker, `outcome.json`, the lock, the events file and `launcher.log` are never in it.
+[`guildhall result submit`](contracts/cli.md), which the Artisan runs inside its attempt, writes that draft only for a result intake's checks accept, or for the third rejected one, and keeps its count of rejected submissions in `submissions` and its lock in `submit.lock` (`artisan.SubmissionsFile`, `artisan.SubmitLockFile`) in the attempt directory, outside `model`, so the model cannot reset them; `guildhall result check` checks the same way and writes nothing.
 They are the composition package `internal/launch`, whose [doc comments](../internal/launch/launch.go) own the API contract.
 
 With those identity flags, `artisan start --adapter fake|claude --prompt <file> --workdir <dir>` (the names [`runtimes`](adapters.md#running-an-attempt) holds) runs an attempt the store already records as running; it does not create or begin a store attempt.

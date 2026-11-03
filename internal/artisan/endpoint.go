@@ -122,6 +122,33 @@ func (k AttemptKey) Dir(stateDir string) string {
 // launcher's log, are never in it.
 const ModelDir = "model"
 
+// Files `guildhall result submit` keeps in the attempt directory, outside ModelDir, where the model cannot reset
+// them (docs/contracts/cli.md).
+const (
+	// SubmissionsFile counts the attempt's rejected submissions, one line each.
+	SubmissionsFile = "submissions"
+	// SubmitLockFile serialises the attempt's submissions (LockPath).
+	SubmitLockFile = "submit.lock"
+)
+
+// ParseAttemptKey is the inverse of AttemptKey.String: it parses "<repository>/<task>/<step>/<n>", as AttemptEnv
+// holds it, and refuses any other shape or an invalid id.
+func ParseAttemptKey(s string) (AttemptKey, error) {
+	parts := strings.Split(s, "/")
+	if len(parts) != 4 {
+		return AttemptKey{}, fmt.Errorf("artisan: attempt %q is not <repository>/<task>/<step>/<n>", s)
+	}
+	n, err := strconv.Atoi(parts[3])
+	if err != nil || strconv.Itoa(n) != parts[3] {
+		return AttemptKey{}, fmt.Errorf("artisan: attempt %q is not <repository>/<task>/<step>/<n>", s)
+	}
+	k := AttemptKey{Repository: parts[0], TaskID: parts[1], Step: parts[2], Attempt: n}
+	if err := k.validate(); err != nil {
+		return AttemptKey{}, err
+	}
+	return k, nil
+}
+
 func (k AttemptKey) validate() error {
 	for _, id := range []string{k.Repository, k.TaskID, k.Step} {
 		if !workflow.ValidID(id) {

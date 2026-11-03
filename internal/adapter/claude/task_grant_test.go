@@ -22,8 +22,8 @@ import (
 // profileRules are the builder's own allowed_tools in the task grant tests' copy.
 var profileRules = []string{"Bash(go test:*)", "Bash(git commit:*)"}
 
-// effectiveRules are the builder's effective grant without a task grant: profileRules and the guildhall CILogRule.
-var effectiveRules = append(slices.Clone(profileRules), claude.CILogRule)
+// effectiveRules are the builder's effective grant without a task grant: profileRules and the GuildhallRules.
+var effectiveRules = append(slices.Clone(profileRules), claude.GuildhallRules...)
 
 // grantCopy is a copy whose builder grants profileRules, with a store holding task app/task-1 and, when rules is not
 // nil, its approved one-attempt grant g1 of rules for build, bound to attempt build-1 by its binding document.

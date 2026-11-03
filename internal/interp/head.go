@@ -11,20 +11,28 @@ import (
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
-// recordWorkHead derives a missing code-head output from committed work. Once
-// persisted, that document wins over subsequent workspace changes during replay.
-// The synthetic head file belongs to the document directory, never the worktree.
-func (r *run) recordWorkHead(s workflow.Step, n int, port string) error {
-	name := documentName(place{step: s.ID, round: n, part: port})
-	if r.document(name) != nil {
-		return nil
+// checkWorkHead derives a missing code-head output from committed work and checks it, writing nothing; it returns
+// "" when the head is already recorded, since that document wins over later workspace changes during replay.
+func (r *run) checkWorkHead(s workflow.Step, n int, port string) (string, error) {
+	if r.document(documentName(place{step: s.ID, round: n, part: port})) != nil {
+		return "", nil
 	}
 	head, err := (git.Program{}).FinalHead(r.ctx, r.workPath())
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := r.checkHead(s, n, head); err != nil {
-		return err
+		return "", err
+	}
+	return head, nil
+}
+
+// recordWorkHead records head, the code head checkWorkHead derived from committed work, unless a head is already
+// recorded. The synthetic head file belongs to the document directory, never the worktree.
+func (r *run) recordWorkHead(s workflow.Step, n int, port, head string) error {
+	name := documentName(place{step: s.ID, round: n, part: port})
+	if r.document(name) != nil || head == "" {
+		return nil
 	}
 	data := []byte(head + "\n")
 	return r.put(store.DocumentRef{
