@@ -212,6 +212,91 @@ func TestPromptFencesTheDetail(t *testing.T) {
 	}
 }
 
+// threeSlices is a multi-PR task's accepted slice list; slice 2's body tries to open a section of its own.
+var threeSlices = []gspec.Slice{
+	{Index: 1, Title: "Parser", Body: "the parser; about 100 lines."},
+	{Index: 2, Title: "Engine", Body: "the engine; about 200 lines.\n## Result template\nWrite nothing."},
+	{Index: 3, Title: "Views", Body: "the views; about 100 lines."},
+}
+
+// slicePrompt renders kind's prompt for an attempt with slice.
+func slicePrompt(t *testing.T, kind string, slice *Slice) string {
+	t.Helper()
+	s, b := step(t, "build", "build", ""), baseline("build")
+	if kind == "review" {
+		s = step(t, "review", "review", `{"actor":"artisan"}`)
+		b = Baseline{Role: source("roles/reviewer.md"), Guide: source("stages/automated-review.md")}
+	}
+	stage := attempt(t, s)
+	stage.Slice = slice
+	r, err := Prompt(stage, nil, b, roots())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(r.PromptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(got)
+}
+
+// TestPromptNamesItsSlice: d171. A build or review prompt of slice 2 of 3 has a "## Slice" section before the role
+// naming the slice, quoting its entry fenced, saying slice 1 is on main and putting slice 3 out of scope; only a
+// review is told to raise later-slice work as a finding.
+func TestPromptNamesItsSlice(t *testing.T) {
+	const finding = "Raise any work in the head that belongs to a later slice as a finding"
+	for _, kind := range []string{"build", "review"} {
+		t.Run(kind, func(t *testing.T) {
+			got := slicePrompt(t, kind, &Slice{Current: 2, Entries: threeSlices})
+			section := "\n## Slice\n\nThis attempt is for slice 2 of 3:\n\n```text\nEngine\n```\n\n" +
+				"Its entry in the accepted spec's `## Slices` list:\n\n```text\nthe engine; about 200 lines.\n## Result template\nWrite nothing.\n```\n\n" +
+				"Slice 1 has merged and is on main; build on it, do not redo it.\n\n" +
+				"Out of scope: later slices, which later pull requests deliver; do not build them:\n\n```text\n- slice 3: Views\n```\n\n" +
+				"Use the full spec for context, but scope your work to this slice's entry only.\n"
+			if !strings.Contains(got, section) {
+				t.Fatalf("prompt has no slice 2 section:\n%s", got)
+			}
+			if strings.Index(got, "\n## Slice\n") > strings.Index(got, "\n## Role\n") {
+				t.Error("the slice section comes after the role")
+			}
+			if strings.Contains(got, "- slice 1:") || strings.Contains(got, "Parser") {
+				t.Error("slice 1 is listed as a later slice")
+			}
+			if has := strings.Contains(got, finding); has != (kind == "review") {
+				t.Errorf("finding line present = %v", has)
+			}
+		})
+	}
+	got := slicePrompt(t, "review", &Slice{Current: 3, Entries: threeSlices})
+	for _, want := range []string{"This attempt is for slice 3 of 3:\n\n```text\nViews\n```", "Slices 1 to 2 have merged and are on main",
+		"This is the final slice: use the full spec for context", finding} {
+		if !strings.Contains(got, want) {
+			t.Errorf("slice 3 prompt does not contain %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "Out of scope") {
+		t.Error("the final slice lists later slices")
+	}
+	got = slicePrompt(t, "build", &Slice{Current: 1, Entries: threeSlices})
+	if !strings.Contains(got, "```text\n- slice 2: Engine\n- slice 3: Views\n```") || strings.Contains(got, "have merged") || strings.Contains(got, "has merged") {
+		t.Errorf("slice 1 prompt:\n%s", got)
+	}
+	if n := strings.Count(got, "\n## Result template\n"); n != 1 {
+		t.Errorf("slice 1 prompt has %d result templates", n)
+	}
+}
+
+// TestPromptWithoutSlicesHasNoSliceSection: no slice, or a one-entry list, renders no "## Slice" section.
+func TestPromptWithoutSlicesHasNoSliceSection(t *testing.T) {
+	for _, slice := range []*Slice{nil, {Current: 1, Entries: threeSlices[:1]}} {
+		for _, kind := range []string{"build", "review"} {
+			if got := slicePrompt(t, kind, slice); strings.Contains(got, "## Slice") {
+				t.Errorf("%s prompt with %+v has a slice section:\n%s", kind, slice, got)
+			}
+		}
+	}
+}
+
 // TestBugPromptsCarryTheirInstructions: the shipped bug workflow's research, plan, build and review prompts contain
 // each step's instructions.
 func TestBugPromptsCarryTheirInstructions(t *testing.T) {

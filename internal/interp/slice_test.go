@@ -292,19 +292,50 @@ func TestThreeSlicesRunToDone(t *testing.T) {
 					t.Errorf("retirement %d = %+v, want %s in %s at %s", i+1, r, wantBranches[i], interp.SliceWorkDir(i+1), sliceHeads[i])
 				}
 			}
+			// d171: every build and review prompt names its slice, quotes its entry and puts later slices out of scope.
+			titles = []string{"Parser", "Engine", "Views"}
+			scoped := map[string]bool{}
 			for _, s := range e.script.Launched() {
-				if s.Manifest.Identity.Step != "build--s2" {
-					continue
-				}
+				step := s.Manifest.Identity.Step
 				prompt, err := os.ReadFile(s.PromptFile)
 				if err != nil {
 					t.Fatal(err)
 				}
-				if !strings.Contains(string(prompt), "Commit on the task branch `guildhall/t7.s2`") {
-					t.Error("slice 2's build is not told to commit on guildhall/t7.s2")
+				text := string(prompt)
+				base, k := workflow.ParseSliceStep(step)
+				if base != "build" && base != "review" {
+					if strings.Contains(text, "## Slice") {
+						t.Errorf("%s's prompt has a slice section; only steps in the slice range get one", step)
+					}
+					continue
 				}
-				if !strings.HasSuffix(s.WorkDir, interp.SliceWorkDir(2)) {
-					t.Errorf("slice 2's build works in %s, want its own %s", s.WorkDir, interp.SliceWorkDir(2))
+				scoped[step] = true
+				if !strings.Contains(text, fmt.Sprintf("This attempt is for slice %d of 3:", k)) || !strings.Contains(text, titles[k-1]) {
+					t.Errorf("%s's prompt does not name slice %d of 3 (%s):\n%s", step, k, titles[k-1], text)
+				}
+				if !strings.Contains(text, "the "+strings.ToLower(titles[k-1])+"; about") {
+					t.Errorf("%s's prompt does not quote slice %d's entry", step, k)
+				}
+				for later := k + 1; later <= 3; later++ {
+					if !strings.Contains(text, fmt.Sprintf("- slice %d: %s", later, titles[later-1])) {
+						t.Errorf("%s's prompt does not put slice %d (%s) out of scope", step, later, titles[later-1])
+					}
+				}
+				if finding := strings.Contains(text, "belongs to a later slice as a finding"); finding != (base == "review") {
+					t.Errorf("%s's prompt has the later-slice finding line = %v", step, finding)
+				}
+				if step == "build--s2" {
+					if !strings.Contains(text, "Commit on the task branch `guildhall/t7.s2`") {
+						t.Error("slice 2's build is not told to commit on guildhall/t7.s2")
+					}
+					if !strings.HasSuffix(s.WorkDir, interp.SliceWorkDir(2)) {
+						t.Errorf("slice 2's build works in %s, want its own %s", s.WorkDir, interp.SliceWorkDir(2))
+					}
+				}
+			}
+			for _, step := range []string{"build", "review", "build--s2", "review--s2", "build--s3", "review--s3"} {
+				if !scoped[step] {
+					t.Errorf("%s was not launched", step)
 				}
 			}
 			msgs := e.messages(t)
@@ -336,6 +367,15 @@ func TestOneSliceKeepsTodaysNames(t *testing.T) {
 		titles[ranged], _ = f.Text(repoRemote, 1)
 		if prs := f.PullRequests(repoRemote); len(prs) != 1 || prs[0].Branch != "guildhall/t7" {
 			t.Errorf("pull requests = %+v, want one on guildhall/t7", prs)
+		}
+		for _, s := range e.script.Launched() {
+			prompt, err := os.ReadFile(s.PromptFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(prompt), "## Slice") {
+				t.Errorf("one-slice %s prompt has a slice section", s.Manifest.Identity.Step)
+			}
 		}
 	}
 	if !slices.Equal(names[true], names[false]) {

@@ -268,7 +268,9 @@ The shipped default workflow declares `"slices": {"from": "build", "to": "delive
 The current slice is the slices with a merge record plus one, worked out from the records at every advance, so nothing stores a cursor.
 Slice 1 records everything under today's names and publishes `guildhall/<task>`; slice k from 2 on records its steps as `<step>--s<k>`, such as `build--s2-1` and `deliver--s2-1-merge`, and publishes `guildhall/<task>.s<k>` from a fresh worktree, `<state>/<repo>/<task>/work.s<k>`, cut from main after the slice before it merged.
 `step retry`, `step send-back` and `step done` name such a step by that id.
-Every slice reads the same `accept.spec`, so no slice asks for a new acceptance, and every slice pull request meets the repository's merge requirements and goes through the merge queue as any pull request does.
+Every slice reads the same `accept.spec`, so no slice asks for a new acceptance.
+Each Artisan prompt of a step in the slice range, such as build and review, has a [`## Slice` section](rendering.md#slice-section) naming its slice, quoting its entry and putting the later slices out of scope, so slice 1 does not build the whole spec.
+Every slice pull request meets the repository's merge requirements and goes through the merge queue as any pull request does.
 Its title is `<slice title> (slice k of n)`, and its body quotes the spec's goal, the slice's entry and every slice with the pull request of each merged one.
 
 A slice's merge before the last records the merge, sends a `merged` message naming `slice k of n`, retires that slice's branch and working directory and takes the task out of the merge queue, so the next slice joins it afresh, with its stays and hold reset; then the same advance starts the next slice's build.
