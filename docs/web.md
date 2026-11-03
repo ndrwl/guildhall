@@ -53,7 +53,7 @@ On a phone the band carries chips for the step, the pull request and CI, the ste
 
 ## Answering
 
-The Director's reply links each decision it lists under Needs you, such as `- d122 · approve the plan · accept-1 · http://andrew-lap-wsl.tail5da40a.ts.net:4388/guildhall/d122#accept-1`, so a tap opens the ask.
+The Director's reply links each decision it lists under Needs you with a Markdown link, such as `- d122 · approve the plan · accept-1 · [open](http://andrew-lap-wsl.tail5da40a.ts.net:4388/guildhall/d122#accept-1)`, so a click opens the ask even when the link wraps across lines.
 
 Each ask has one box, **Your words**, and below it the answer tiles:
 

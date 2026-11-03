@@ -207,6 +207,8 @@ The older manual `artisan start --herdr-session` mode still refuses Claude; it i
 Transcripts and interactive model-session resume are later work.
 
 The same adapter runs the [Director's session](director.md#start) interactively; that page describes its command, rendered skills and permission settings.
+An interactive session, a Director's or the Steward's, gets `FORCE_HYPERLINK=1` in its environment unless the supervisor's environment already has `FORCE_HYPERLINK`, so Claude Code draws links that wrap across lines as hyperlinks.
+An Artisan does not: Guildhall redraws its print-mode output itself, so Claude Code never draws its links, and the variable would only make Node tools in its Bash commands write OSC 8 escapes into the output it captures.
 
 ### Artisan permissions
 
