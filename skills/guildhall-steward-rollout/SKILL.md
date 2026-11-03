@@ -46,5 +46,5 @@ The roster is edited in the private checkout only on the Guildmaster's word; a r
 ## Rules
 
 - Never apply a plan the Guildmaster has not seen.
-- Never remove `.rollout.lock` while another apply may be running; tell the Guildmaster instead.
+- Never remove `.rollout.lock` while another apply or a collection may be running; tell the Guildmaster instead.
 - You never message a Director: a rollout is the only way a change reaches a copy.

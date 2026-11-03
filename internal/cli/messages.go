@@ -112,7 +112,14 @@ func (a *App) messages(args []string) int {
 	var out any
 	switch sub {
 	case "send":
-		out, err = box.Send(to, messageSender(a.Getenv, a.Getwd, *path), env)
+		sender := messageSender(a.Getenv, a.Getwd, *path)
+		// The director tag on the Steward's inbox is its collection round's own (store.StewardSenders); from messages
+		// send, only the Guildmaster reaches it.
+		if to.Role == store.RecipientSteward && sender != store.SenderGuildmaster {
+			err = fmt.Errorf("%w: the steward's inbox takes messages send from %s only, not from %s", store.ErrInvalid, store.SenderGuildmaster, sender)
+			break
+		}
+		out, err = box.Send(to, sender, env)
 	case "list":
 		var page messaging.Page
 		if page, err = box.List(to, *after, *limit); err == nil {

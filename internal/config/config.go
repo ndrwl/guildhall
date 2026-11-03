@@ -352,6 +352,21 @@ type Steward struct {
 	// Role is a slash-separated path relative to the config file's directory; empty keeps the copy's
 	// baseline/roles/steward.md, else the release's.
 	Role string `toml:"role"`
+	// CollectEvery is how often the Steward session collects lessons and incidents from the enrolled copies, as a Go
+	// duration of at least a minute; empty, the default, means never on a schedule (docs/steward.md#collection).
+	CollectEvery string `toml:"collect_every" json:",omitempty"`
+}
+
+// CollectEveryDuration is the table's collect_every, and false when it is unset, so no round is scheduled.
+func (s Steward) CollectEveryDuration() (time.Duration, bool, error) {
+	if s.CollectEvery == "" {
+		return 0, false, nil
+	}
+	d, err := time.ParseDuration(s.CollectEvery)
+	if err != nil || d < time.Minute {
+		return 0, false, fmt.Errorf("steward: collect_every %q must be a duration of at least a minute, such as \"1h\"", s.CollectEvery)
+	}
+	return d, true, nil
 }
 
 // Director chooses the runtime adapter, model and effort of the Director's session and optionally its role
@@ -744,6 +759,9 @@ func (c *Config) validate() []string {
 		}
 		if st.Role != "" && !configRelative(st.Role) {
 			add("steward: role must be a relative slash-separated path inside the config directory")
+		}
+		if _, _, err := st.CollectEveryDuration(); err != nil {
+			add("%v", err)
 		}
 	}
 	if w := c.Web; w != nil {

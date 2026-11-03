@@ -24,6 +24,7 @@ const stewardUsage = `Usage:
   guildhall steward handoff [--copy <dir>]
   guildhall steward status [--copy <dir>]
   guildhall steward approval request --plan <dir> [--copy <dir>]
+  guildhall steward collect [--machine <label>...] [--copy <dir>]
   guildhall steward rollout --config <steward.toml> --machine <label> [--machine <label>...] --plan <dir> --dry-run
   guildhall steward rollout --config <steward.toml> --machine <label> [--machine <label>...] --plan <dir> --apply [--approve <plan digest>]
 
@@ -32,7 +33,9 @@ mirror the Director's on the Steward copy's steward.store. status prints the ses
 last rollout receipt. The dry run fetches each Director copy on the named enrolled machines, writes the plan and
 file previews to a new --plan directory and changes nothing. --apply carries out that plan only if nothing changed
 since; inside a Guildhall session, --approve needs the Guildmaster's answer "approve" to the plan's approval
-decision, which approval request opens.
+decision, which approval request opens. collect reads the lessons and incidents not yet collected from each enrolled
+Director copy, commits them to the private config, pushes it, marks them collected on the copy and opens a triage
+decision for each.
 `
 
 // scpTimeout bounds each scp run during a rollout.
@@ -58,10 +61,12 @@ func (a *App) steward(args []string) int {
 			return a.stewardStatusCmd(args[1:])
 		case "approval":
 			return a.stewardApprovalCmd(args[1:])
+		case "collect":
+			return a.stewardCollectCmd(args[1:])
 		}
 	}
 	if len(args) == 0 || args[0] != "rollout" {
-		_, _ = fmt.Fprintf(a.Stderr, "guildhall: steward: the commands are start, ready, pause, resume, stop, reload, handoff, status, approval and rollout\n\n%s", stewardUsage)
+		_, _ = fmt.Fprintf(a.Stderr, "guildhall: steward: the commands are start, ready, pause, resume, stop, reload, handoff, status, approval, collect and rollout\n\n%s", stewardUsage)
 		return 2
 	}
 	fs := flag.NewFlagSet("steward rollout", flag.ContinueOnError)

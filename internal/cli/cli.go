@@ -72,6 +72,8 @@ Commands:
                  open the decision through which the Guildmaster approves a rollout plan's digest
   steward rollout ...
                  plan and apply rollouts of managed settings to enrolled Director copies
+  steward collect [--machine <label>...] [--copy <dir>]
+                 collect enrolled copies' lessons and incidents into the private config and open their triage
   messages send|list|read|ack --store <path> ...
                  send, list, read and acknowledge local Director and Artisan messages
   workflow approve|approvals --store <path> ...
@@ -166,6 +168,8 @@ Commands:
                  record that a Steward manages the copy, with the digest of its managed.toml
   director leave --copy <dir>
                  return a managed copy to standalone, keeping its managed values in [local]
+  director collected --copy <dir>
+                 mark collected the items of the receipt a Steward's collection copied to the copy
   config reload --copy <dir>
                  authorize a managed copy's published managed.toml, as a Steward rollout runs it over SSH
   lesson propose [--id <id>] <file|-> --copy <dir>

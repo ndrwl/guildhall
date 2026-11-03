@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
 
 // stewardConfig is a minimal valid Steward config.
@@ -49,6 +50,30 @@ func TestStewardTableBelongsToTheSteward(t *testing.T) {
 		"name = \"steward\"\nidle_after = \"5m\"\n": `unknown keys: steward.idle_after`,
 	} {
 		if _, err := Parse([]byte(stewardConfig + "\n[steward]\n" + body)); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: err = %v, want %q", body, err, want)
+		}
+	}
+}
+
+// TestStewardCollectEvery: [steward] collect_every is unset by default, so no collection is scheduled, and is
+// validated as backup.every is: a duration of at least a minute.
+func TestStewardCollectEvery(t *testing.T) {
+	cfg, err := Parse([]byte(stewardConfig + "\n[steward]\nname = \"steward\"\ncollect_every = \"30m\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d, on, err := cfg.Steward.CollectEveryDuration(); err != nil || !on || d != 30*time.Minute {
+		t.Fatalf("collect_every = %v, %v, %v; want 30m on", d, on, err)
+	}
+	if d, on, err := (Steward{Name: "steward"}).CollectEveryDuration(); err != nil || on || d != 0 {
+		t.Fatalf("unset collect_every = %v, %v, %v; want off", d, on, err)
+	}
+	for body, want := range map[string]string{
+		"collect_every = \"soon\"\n": `steward: collect_every "soon" must be a duration of at least a minute`,
+		"collect_every = \"30s\"\n":  `at least a minute`,
+		"collect_every = \"-1h\"\n":  `at least a minute`,
+	} {
+		if _, err := Parse([]byte(stewardConfig + "\n[steward]\nname = \"steward\"\n" + body)); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: err = %v, want %q", body, err, want)
 		}
 	}

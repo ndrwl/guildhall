@@ -30,7 +30,7 @@ import (
 )
 
 // director runs `guildhall director status|start|ready|pause|resume|stop|note|follow-up|maintenance|reload|turn-started|
-// turn-ended|wait-wake|context-report|enrol|leave|mode`
+// turn-ended|wait-wake|context-report|enrol|leave|mode|collected`
 // (docs/director.md).
 func (a *App) director(args []string) int {
 	if len(args) > 0 {
@@ -69,9 +69,11 @@ func (a *App) director(args []string) int {
 			return a.directorLeave(args[1:])
 		case "mode":
 			return a.directorMode(args[1:])
+		case "collected":
+			return a.directorCollected(args[1:])
 		}
 	}
-	return a.usageError("director: the commands are status, start, ready, pause, resume, stop, note, follow-up, maintenance, reload, turn-started, turn-ended, wait-wake, context-report, enrol, leave and mode")
+	return a.usageError("director: the commands are status, start, ready, pause, resume, stop, note, follow-up, maintenance, reload, turn-started, turn-ended, wait-wake, context-report, enrol, leave, mode and collected")
 }
 
 // fakeDirector runs the fake Director session: `guildhall fake-director --role <file> <first message>`.

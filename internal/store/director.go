@@ -566,6 +566,9 @@ const (
 	// MessageDecisionAnswered tells the Director the Guildmaster answered a decision on the task page
 	// (docs/web.md#answering); it names the decision, never their words, which the Director reads with decide show.
 	MessageDecisionAnswered = "decision-answered"
+	// MessageTriageOpened is a Steward's scheduled collection round's report, to the Steward's own inbox, that it
+	// collected new lessons or incidents and opened their triage decisions (docs/steward.md#collection).
+	MessageTriageOpened = "triage-opened"
 )
 
 // MessageTypes is the registry of message types DirectorUnread and the wake line count by name, each with its
@@ -586,6 +589,7 @@ var MessageTypes = map[string]string{
 	MessageQuestion:        "local", MessageNote: "local",
 	MessageJudgeFailed: "quality", MessageJudgement: "quality", MessageJudgementRefused: "quality",
 	MessageHerdrLeftOpen: "supervisor", MessagePruneKept: "supervisor", MessageHoldReleased: "supervisor",
+	MessageTriageOpened:        "supervisor",
 	MessageDependencyCancelled: "cancel",
 	MessageDecisionAnswered:    "page",
 }

@@ -44,11 +44,11 @@ type sessionSettings struct {
 	Adapter, Model, Effort, Role string
 }
 
-// sessionStart is what a role's begin returns: the lines startup.md is told, and the workspace close sweep and
-// daily prune the session ticks, nil for none.
+// sessionStart is what a role's begin returns: the lines startup.md is told, and the workspace close sweep, daily
+// prune, backup and the Steward's scheduled collection the session ticks, nil for none.
 type sessionStart struct {
 	inFlight, running, parked, held, policies []string
-	closes, prunes, backups                   *workspaceCloseWatch
+	closes, prunes, backups, collects         *workspaceCloseWatch
 }
 
 // wait waits for the session's running sweeps.
@@ -56,6 +56,7 @@ func (s sessionStart) wait() {
 	s.closes.wait()
 	s.prunes.wait()
 	s.backups.wait()
+	s.collects.wait()
 }
 
 // sessionWatchers are a role's watchers of one session, nil for none, and the task pages the session serves, nil

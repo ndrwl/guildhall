@@ -38,7 +38,10 @@ var meanings = map[string]map[string]Meaning{
 		"approved":          {"approve it; the task goes on", TonePositive},
 		"changes_requested": {"send it back with your words", ToneCarryOn},
 		"approve":           {"approve exactly this; a rollout plan rolls out, a managed revision applies", TonePositive},
-		"decline":           {"do not roll the plan out", ToneNegative},
+		"decline":           {"decline it; no plan rolls out, no lesson is adopted, no incident becomes a task", ToneNegative},
+		"accept":            {"accept the incident; you create a task for it", TonePositive},
+		"defer":             {"keep the incident for a later look", ToneCarryOn},
+		"adopt":             {"adopt the lesson; the Steward drafts it as a private-config change", TonePositive},
 		"reject":            {"the managed revision stays refused", ToneNegative},
 	},
 	"review": {

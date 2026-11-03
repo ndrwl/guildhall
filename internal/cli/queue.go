@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ndrwl/guildhall/internal/steward"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/strictjson"
 )
@@ -185,6 +186,11 @@ func (a *App) lessonList(args []string) int {
 	if len(pos) > 0 {
 		return a.usageError(fmt.Sprintf("%s: unexpected argument %q", name, pos[0]))
 	}
+	if f.json && f.pending {
+		if err := ensureReceiptDir(path); err != nil {
+			return a.fail(fmt.Errorf("%s: %w", name, err))
+		}
+	}
 	out := lessonListJSON{Lessons: []store.Lesson{}}
 	_, err := withStore(path, true, func(s *store.Store) (struct{}, error) {
 		var err error
@@ -342,6 +348,11 @@ func (a *App) incidentList(args []string) int {
 	if len(pos) > 0 {
 		return a.usageError(fmt.Sprintf("%s: unexpected argument %q", name, pos[0]))
 	}
+	if f.json && f.pending {
+		if err := ensureReceiptDir(path); err != nil {
+			return a.fail(fmt.Errorf("%s: %w", name, err))
+		}
+	}
 	out := incidentListJSON{Incidents: []store.Incident{}}
 	_, err := withStore(path, true, func(s *store.Store) (struct{}, error) {
 		var err error
@@ -378,6 +389,92 @@ func (a *App) incidentList(args []string) int {
 		b.WriteString("\n")
 	}
 	return a.printf("%s", b.String())
+}
+
+// ensureReceiptDir creates, when missing, the directory of the copy whose store is at storePath that a Steward
+// copies its collection receipt into (steward.CollectReceiptPath), since scp creates no directory. The pending JSON
+// lists, which only a Steward's collection reads, create it before the Steward copies the receipt.
+func ensureReceiptDir(storePath string) error {
+	return os.MkdirAll(filepath.Dir(filepath.Join(filepath.Dir(storePath), filepath.FromSlash(steward.CollectReceiptPath))), 0o700)
+}
+
+// directorCollected runs `guildhall director collected [--copy <dir>]`, the fixed remote command a Steward's
+// collection runs after copying its receipt to steward.CollectReceiptPath in the copy (docs/steward.md#collection):
+// each receipt item of this copy's origin whose content digest is the item's is marked collected in the private
+// config commit the receipt names; any other item is reported and stays pending. It prints a steward.CollectedReport
+// and deletes the receipt. Like the lesson and incident commands it runs no configuration admission.
+func (a *App) directorCollected(args []string) int {
+	const name = "director collected"
+	path, pos, code := a.queueCopy(name, args, nil)
+	if code >= 0 {
+		return code
+	}
+	if len(pos) > 0 {
+		return a.usageError(fmt.Sprintf("%s: unexpected argument %q", name, pos[0]))
+	}
+	file := filepath.Join(filepath.Dir(path), filepath.FromSlash(steward.CollectReceiptPath))
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return a.fail(fmt.Errorf("%s: no collection receipt to read: %w", name, err))
+	}
+	receipt, err := steward.ParseCollectReceipt(data)
+	if err != nil {
+		return a.fail(fmt.Errorf("%s: %s: %w", name, file, err))
+	}
+	report, err := withStoreClock(path, false, a.Now, func(s *store.Store) (steward.CollectedReport, error) {
+		out := steward.CollectedReport{Schema: steward.CollectedReportSchema, Items: []steward.MarkedResult{}}
+		origin, err := queueOrigin(s)
+		if err != nil {
+			return out, err
+		}
+		for _, it := range receipt.Items {
+			r := steward.MarkedResult{Kind: it.Kind, Origin: it.Origin, ID: it.ID, Status: steward.MarkCollected}
+			r.Status, r.Error = markItem(s, origin, it)
+			out.Items = append(out.Items, r)
+		}
+		return out, nil
+	})
+	if err != nil {
+		return a.fail(fmt.Errorf("%s: %w", name, err))
+	}
+	if err := os.Remove(file); err != nil {
+		return a.fail(fmt.Errorf("%s: the items are marked, but the receipt stays: %w", name, err))
+	}
+	return a.printJSON(report)
+}
+
+// markItem marks one receipt item collected in s, whose queue origin is origin, and returns its status and, for any
+// status but collected, why.
+func markItem(s *store.Store, origin string, it steward.ReceiptItem) (string, string) {
+	if it.Origin != origin {
+		return steward.MarkMismatch, fmt.Sprintf("origin %s is not this copy's %q", it.Origin, origin)
+	}
+	var have string
+	var collected *store.Collection
+	var err error
+	if it.Kind == store.QueueLesson {
+		var l store.Lesson
+		l, err = s.Lesson(it.ID)
+		have, collected = l.Digest, l.Collected
+	} else {
+		var inc store.Incident
+		inc, err = s.Incident(it.ID)
+		have, collected = inc.Digest, inc.Collected
+	}
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return steward.MarkMissing, fmt.Sprintf("this copy has no %s %s", it.Kind, it.ID)
+	case err != nil:
+		return steward.MarkMismatch, err.Error()
+	case have != it.Digest:
+		return steward.MarkMismatch, fmt.Sprintf("its digest is %s, not %s", have, it.Digest)
+	case collected != nil:
+		return steward.MarkAlready, ""
+	}
+	if _, err := s.MarkCollected(it.Kind, it.ID, it.Digest, it.Commit); err != nil {
+		return steward.MarkMismatch, err.Error()
+	}
+	return steward.MarkCollected, ""
 }
 
 // queueOrigin is the copy's queue origin, empty before its first lesson or incident.

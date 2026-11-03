@@ -15,16 +15,24 @@ import (
 // Fleet is an in-memory steward.Copier that passes RunCopierContract, and steward.Runner that passes
 // RunRunnerContract, for testing a rollout consumer without scp or ssh. Its machines are maps of files held only
 // for its own lifetime; it has no directories, permissions or partial transfers. Its remote commands do nothing
-// but answer as Answer set.
+// but answer as Answer, AnswerCommand and Handle set.
 type Fleet struct {
 	mu      sync.Mutex
 	files   map[steward.Remote][]byte
 	refused map[string]bool
 	hung    map[string]bool
 	answers map[string]answer
-	ran     map[string][][]string
-	calls   []string
+	// handlers answer the commands of one machine, by alias, before answers.
+	handlers map[string]Handler
+	ran      map[string][][]string
+	calls    []string
 }
+
+// Handler answers one remote command on a machine, argv as the Runner was given it: it returns what the command
+// prints, or an error as its diagnostic when it exits non-zero, with handled true, or handled false to leave the
+// command to the machine's Answer. It is called without the Fleet's lock held, so it may read and write the
+// Fleet's files.
+type Handler func(argv []string) (output []byte, handled bool, err error)
 
 // answer is how a machine answers every remote command.
 type answer struct {
@@ -41,8 +49,38 @@ var (
 func NewFleet() *Fleet {
 	return &Fleet{
 		files: map[steward.Remote][]byte{}, refused: map[string]bool{}, hung: map[string]bool{},
-		answers: map[string]answer{}, ran: map[string][][]string{},
+		answers: map[string]answer{}, handlers: map[string]Handler{}, ran: map[string][][]string{},
 	}
+}
+
+// Handle makes h answer each later remote command on the machine with alias first, a per-command answer; a command h
+// leaves unhandled is answered as Answer set. A later Handle of the alias replaces it.
+func (f *Fleet) Handle(alias string, h Handler) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.handlers[alias] = h
+}
+
+// AnswerCommand makes the remote command on the machine with alias whose arguments after the Guildhall program are
+// exactly args print output and succeed, or, when failure is not empty, print failure as its diagnostic and fail;
+// every other command is answered as before, by an earlier Handle of the alias or by Answer.
+func (f *Fleet) AnswerCommand(alias string, args []string, output []byte, failure string) {
+	f.mu.Lock()
+	prev := f.handlers[alias]
+	f.mu.Unlock()
+	args, output = slices.Clone(args), slices.Clone(output)
+	f.Handle(alias, func(argv []string) ([]byte, bool, error) {
+		if len(argv) > 0 && slices.Equal(argv[1:], args) {
+			if failure != "" {
+				return nil, true, fmt.Errorf("fleet: %w: %s", errFailed, failure)
+			}
+			return slices.Clone(output), true, nil
+		}
+		if prev != nil {
+			return prev(argv)
+		}
+		return nil, false, nil
+	})
 }
 
 // Write sets a file on a machine.
@@ -152,8 +190,16 @@ func (f *Fleet) Run(ctx context.Context, alias string, argv []string) ([]byte, e
 		return nil, err
 	}
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.ran[alias] = append(f.ran[alias], slices.Clone(argv))
+	h := f.handlers[alias]
+	f.mu.Unlock()
+	if h != nil {
+		if out, handled, err := h(slices.Clone(argv)); handled {
+			return out, err
+		}
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	a := f.answers[alias]
 	if a.failure != "" {
 		return nil, fmt.Errorf("fleet: %w: %s", errFailed, a.failure)

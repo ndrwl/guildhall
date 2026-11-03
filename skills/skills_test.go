@@ -882,6 +882,8 @@ var notAskedOfTheDirector = map[string]string{
 	"steward start":            "the Guildmaster starts the Steward session; no Director runs it",
 	"steward status":           "the Steward's command, not the Director's",
 	"steward approval request": "the Steward's command, not the Director's",
+	"steward collect":          "the Steward's command, not the Director's",
+	"director collected":       "the Steward's collection runs it over SSH; the Director never marks its own items",
 	"render":                   "the engine renders every prompt",
 	"director turn-started":    "the runtime's hook runs it when a turn starts",
 	"director turn-ended":      "the runtime's hook runs it when a turn ends",
@@ -982,6 +984,28 @@ func TestDirectorSkillsNameEveryReadmeCommand(t *testing.T) {
 
 // TestStewardHandoffSkillRoutesTheWake checks that a Steward's "handoff due" wake leads to its own handoff skill,
 // which runs guildhall steward handoff, and that every skill claiming the wake says which role it is for.
+// TestStewardTriageSkill: the triage skill is the Steward's, runs steward collect, gives the Guildmaster the answer
+// command for both reserved tasks and never has the Steward answer, and startup sends open triage to it.
+func TestStewardTriageSkill(t *testing.T) {
+	read := func(name string) string {
+		t.Helper()
+		data, err := fs.ReadFile(skills.Release(), name+"/SKILL.md")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	body := read("guildhall-steward-triage")
+	for _, want := range []string{"as the Steward", "guildhall steward collect", "--repo steward --task <incidents|lessons>", "Never answer a triage decision yourself", "triage-opened"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("guildhall-steward-triage does not say %q", want)
+		}
+	}
+	if !strings.Contains(read("guildhall-steward-startup"), "guildhall-steward-triage") {
+		t.Error("guildhall-steward-startup does not send open triage to guildhall-steward-triage")
+	}
+}
+
 func TestStewardHandoffSkillRoutesTheWake(t *testing.T) {
 	read := func(name string) (description, body string) {
 		t.Helper()

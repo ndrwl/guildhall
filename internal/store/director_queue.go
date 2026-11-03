@@ -766,7 +766,8 @@ var ErrDigestMismatch = errors.New("the collected digest is not the item's")
 // private-repository commit commit, under the mutation id "collected:<kind>:<id>:<first 16 hex digits of d>": its state
 // becomes collected, keeping any local resolution, and marking it again with the same commit returns its receipt. A
 // digest that is not the item's is ErrDigestMismatch and leaves the item pending; an item already collected, a bad
-// commit and a bad kind are ErrInvalid; no such item is ErrNotFound. `director collected` will call it (d124 slice 2).
+// commit and a bad kind are ErrInvalid; no such item is ErrNotFound. `director collected` calls it for a Steward's
+// collection.
 func (s *Store) MarkCollected(kind QueueKind, id, d, commit string) (Receipt, error) {
 	if !commitPattern.MatchString(commit) {
 		return Receipt{}, invalid("collection commit %q must be 40 or 64 lowercase hex digits", commit)
