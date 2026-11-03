@@ -11,6 +11,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/render"
+	"github.com/ndrwl/guildhall/internal/spec"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
@@ -352,7 +353,13 @@ func (r *run) askDesign(n int, brief store.DocumentRef, a *store.StageAttempt) (
 		// The decision stays bound to design.md; the question names the mock-up, immutable per attempt, by digest.
 		inputs = append(inputs, docInput(MockupPort, *m, r.e.DocumentDir))
 	}
-	ask := render.DesignQuestion(r.task.Repository, r.task.ID, id, n, inputs)
+	// The design's open questions in full (spec.SpecPart), read verified; a design recorded before the design check
+	// required them, or one that cannot be read, has no part.
+	var questions string
+	if data, err := r.read(*doc); err == nil {
+		questions, _ = spec.SpecPart(data)
+	}
+	ask := render.DesignQuestion(r.task.Repository, r.task.ID, id, n, questions, inputs)
 	d := store.Decision{Repository: r.task.Repository, TaskID: r.task.ID, ID: id, Kind: store.DecisionApproval,
 		Subject: &store.Subject{Kind: store.SubjectDocument, Digest: string(dg)}, Options: ask.Options, Question: ask.Question}
 	if _, err := r.e.Records.OpenDecision(r.mutation("decision", id), d); err != nil {

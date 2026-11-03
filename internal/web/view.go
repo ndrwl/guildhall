@@ -78,8 +78,9 @@ type askView struct {
 	// goldmark, empty when it has none or its file cannot be shown, and the ask then links the spec instead.
 	Plan    bool
 	Summary template.HTML
-	// Questions is that spec's open-questions part (spec.SpecPart), shown after Summary: the questions in full,
-	// rendered by goldmark, or the line saying there are none; empty when the spec has no readable section.
+	// Questions is that spec's open-questions part (spec.SpecPart), shown after Summary, or on a design ask its
+	// design's, shown in a box of its own: the questions in full, rendered by goldmark, or the line saying there are
+	// none; empty when the document has no readable section.
 	Questions template.HTML
 	// MockupHref links a design ask's mock-up as MockupLabel: an HTML mock-up's frame route, opened in a new tab, or
 	// the reader page of one the page cannot show inline. Mockup is a Markdown mock-up rendered by goldmark, shown
@@ -305,6 +306,8 @@ func (s *Server) askView(t Task, a Ask) askView {
 		v.SubjectName, v.SubjectHref = a.SubjectDocument, docHref(t.Repository, t.ID, a.SubjectDocument)
 		if doc := taskDocument(t, a.SubjectDocument); a.Kind == "approval" && doc != nil && doc.Kind == "Spec" {
 			s.planSummary(*doc, &v)
+		} else if a.Kind == "approval" && doc != nil && doc.Kind == "Design" {
+			s.designQuestions(*doc, &v)
 		}
 	}
 	if doc := taskDocument(t, a.Mockup); a.Mockup != "" && doc != nil {
@@ -352,16 +355,38 @@ func (s *Server) planSummary(doc Document, v *askView) {
 			summary, v.Summary = text, RenderMarkdown([]byte(text))
 		}
 		if part, ok := spec.SpecPart(body); ok {
-			questions = part
-			if q, ok := strings.CutPrefix(part, spec.QuestionsInFull+"\n"); ok {
-				// Each question's lines show as written: its Options: and Recommended: lines on lines of their own.
-				v.Questions = template.HTML(`<p class="ph">Open questions in full</p><div class="qs">`) + RenderMarkdown([]byte(q)) + template.HTML(`</div>`)
-			} else {
-				v.Questions = template.HTML(`<p class="ph">` + template.HTMLEscapeString(part) + `</p>`)
-			}
+			questions, v.Questions = part, questionsHTML(part)
 		}
 	}
 	v.Rest = stripSummary(v.Rest, summary, questions)
+}
+
+// designQuestions adds a design round's open questions to its ask, an approval whose subject is the design document
+// doc: the design's open questions in full (spec.SpecPart), read verified and rendered as a plan approval's are, the
+// same part render.DesignQuestion writes into the question, which is taken out of the rest of the question so it
+// shows once. A design with no readable section, such as one recorded before the design check, or whose file does
+// not verify, shows none and keeps its question whole.
+func (s *Server) designQuestions(doc Document, v *askView) {
+	body, status, _ := s.verified(doc)
+	if status != http.StatusOK {
+		return
+	}
+	part, ok := spec.SpecPart(body)
+	if !ok {
+		return
+	}
+	v.Questions = questionsHTML(part)
+	v.Rest = stripSummary(v.Rest, "", part)
+}
+
+// questionsHTML renders an open-questions part (spec.Part) for an ask's box: "Open questions in full" and the
+// questions rendered by goldmark, each question's lines as written, or the line saying there are none.
+func questionsHTML(part string) template.HTML {
+	if q, ok := strings.CutPrefix(part, spec.QuestionsInFull+"\n"); ok {
+		// Each question's lines show as written: its Options: and Recommended: lines on lines of their own.
+		return template.HTML(`<p class="ph">Open questions in full</p><div class="qs">`) + RenderMarkdown([]byte(q)) + template.HTML(`</div>`)
+	}
+	return template.HTML(`<p class="ph">` + template.HTMLEscapeString(part) + `</p>`)
 }
 
 // mockup adds a design ask's mock-up document doc to its ask: an HTML mock-up as an "Open mock-up" link to its frame
@@ -383,8 +408,9 @@ func (s *Server) mockup(t Task, doc Document, v *askView) {
 	v.MockupHref, v.MockupLabel = href, "read "+doc.Name
 }
 
-// questionParts are the parts of an approval question that follow its summary (render.Question).
-var questionParts = []string{"\n\nInstructions:\n", "\n\nInputs:\n", "\n\nAnswer with one of: "}
+// questionParts are the parts of an approval question that follow its summary and open questions (render.Question),
+// and of a design round's question, its line saying what each answer does (render.DesignQuestion).
+var questionParts = []string{"\n\nInstructions:\n", "\n\nInputs:\n", "\n\nAnswer with one of: ", "\n\napproved makes the design "}
 
 // stripSummary takes an approval question's own summary part off the front of rest, the question after its first
 // line: its "No summary in this spec" line always, its "Plan summary:" block when the page shows summary, the block

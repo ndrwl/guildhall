@@ -151,6 +151,9 @@ func TestStripSummary(t *testing.T) {
 		{"Plan summary:\n- a, as stored\n\n" + qs + "\n\nInputs:\n- x", "- a", qs, "Inputs:\n- x"},
 		{"No summary in this spec; read s.md.\n\n" + qs + "\n\nInputs:\n- x", "", qs, "Inputs:\n- x"},
 		{"Plan summary:\n- a\n\n" + qs + "\n\nInputs:\n- x", "- a", "", qs + "\n\nInputs:\n- x"},
+		{qs + "\n\napproved makes the design an input.\n\nInputs:\n- x", "", qs, "approved makes the design an input.\n\nInputs:\n- x"},
+		{qs + ", as stored\n\napproved makes the design an input.\n\nInputs:\n- x", "", qs, "approved makes the design an input.\n\nInputs:\n- x"},
+		{"approved makes the design an input.\n\nInputs:\n- x", "", qs, "approved makes the design an input.\n\nInputs:\n- x"},
 	} {
 		if got := stripSummary(c.rest, c.summary, c.questions); got != c.want {
 			t.Errorf("stripSummary(%q, %q, %q) = %q, want %q", c.rest, c.summary, c.questions, got, c.want)

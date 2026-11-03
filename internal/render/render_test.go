@@ -673,11 +673,34 @@ func TestDesignQuestionGolden(t *testing.T) {
 		{Port: "brief", Name: "tasks/app/t7/design-1/brief.md", SHA256: strings.Repeat("cd", 32)},
 		{Port: "design", Name: "tasks/app/t7/designer-1/design.md", SHA256: strings.Repeat("ef", 32)},
 	}
-	ask := DesignQuestion("app", "t7", "design-1", 1, inputs)
+	ask := DesignQuestion("app", "t7", "design-1", 1, "", inputs)
 	if !slices.Equal(ask.Options, []string{"approved", "changes_requested"}) {
 		t.Errorf("options = %q", ask.Options)
 	}
 	golden(t, "question-design.txt", []byte(ask.Question))
+}
+
+// TestDesignQuestionOpenQuestions: a design round's question carries the design's open-questions part right after
+// its first line, byte for byte with LF line ends, or its none line; the rest of the question is unchanged.
+func TestDesignQuestionOpenQuestions(t *testing.T) {
+	inputs := []Input{
+		{Port: "brief", Name: "tasks/app/t7/design-1/brief.md", SHA256: strings.Repeat("cd", 32)},
+		{Port: "design", Name: "tasks/app/t7/designer-1/design.md", SHA256: strings.Repeat("ef", 32)},
+	}
+	three, ok := gspec.SpecPart([]byte(threeQuestions))
+	if !ok {
+		t.Fatal("the three-question fixture does not parse")
+	}
+	ask := DesignQuestion("app", "t7", "design-1", 1, strings.ReplaceAll(three, "\n", "\r\n"), inputs)
+	golden(t, "question-design-questions.txt", []byte(ask.Question))
+	none := DesignQuestion("app", "t7", "design-1", 1, gspec.QuestionsNone, inputs).Question
+	if !strings.HasPrefix(none, "Design decision needed for app/t7, design round 1, decision design-1.\n\nOpen questions: none.\n\napproved makes ") {
+		t.Errorf("question = %q, want the none line after the first line", none)
+	}
+	plain := DesignQuestion("app", "t7", "design-1", 1, "", inputs).Question
+	if rest, ok := strings.CutPrefix(none, "Design decision needed for app/t7, design round 1, decision design-1.\n\nOpen questions: none.\n"); !ok || !strings.HasSuffix(plain, rest) {
+		t.Errorf("the open-questions part changed the rest of the question:\n%s", none)
+	}
 }
 
 func TestQuestionNormalisesHandoffFrom(t *testing.T) {

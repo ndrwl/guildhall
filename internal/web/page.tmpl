@@ -21,7 +21,7 @@
 {{- if .Form}}<form method="post" action="{{.Action}}"><input type="hidden" name="decision" value="{{.ID}}"><input type="hidden" name="subject" value="{{.Digest}}"><input type="hidden" name="token" value="{{.Token}}">{{end}}
 <div class="ah"><span class="kind">{{.KindName}}</span><a class="aid" href="#{{.ID}}">#{{.ID}}</a>{{if .Deferred}}<span class="tag you">deferred</span>{{end}}{{if .Since}}<span class="since">{{.Since}}</span>{{end}}</div>
 <p class="q">{{.First}}</p>
-{{- if .Plan}}{{if .Summary}}<div class="plan md"><p class="ph">Plan summary</p>{{.Summary}}{{.Questions}}</div>{{else}}<p class="subj"><a href="{{.SubjectHref}}">No summary in this spec · read {{.SubjectName}}</a></p>{{if .Questions}}<div class="plan md">{{.Questions}}</div>{{end}}{{end}}{{end}}
+{{- if .Plan}}{{if .Summary}}<div class="plan md"><p class="ph">Plan summary</p>{{.Summary}}{{.Questions}}</div>{{else}}<p class="subj"><a href="{{.SubjectHref}}">No summary in this spec · read {{.SubjectName}}</a></p>{{if .Questions}}<div class="plan md">{{.Questions}}</div>{{end}}{{end}}{{else if .Questions}}<div class="plan md">{{.Questions}}</div>{{end}}
 {{- if or .Subject .ReadLink .MockupHref}}<p class="subj">{{if .Subject}}About <code>{{.Subject}}</code>{{end}}{{if .ReadLink}}{{if .Subject}} · {{end}}<a href="{{.SubjectHref}}">read {{.SubjectName}}</a>{{end}}{{if .MockupHref}}{{if or .Subject .ReadLink}} · {{end}}<a href="{{.MockupHref}}" target="_blank" rel="noopener">{{.MockupLabel}}</a>{{end}}</p>{{end}}
 {{- if .Mockup}}<div class="plan md"><p class="ph">Mock-up</p>{{.Mockup}}</div>{{end}}
 {{- if .Rest}}<details class="ctx"><summary>The rest of the question</summary><div><pre>{{.Rest}}</pre></div></details>{{end}}
