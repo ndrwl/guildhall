@@ -17,7 +17,7 @@ Arguments after `--` are not read.
 **Choosing the release.** `Choose(Options)` finds the home with `release.Locate` from the environment alone, `GUILDHALL_HOME` or the platform default, never from its own path, then:
 
 - with a copy whose `release.pin` names an installed, intact release (`Home.Runnable`), that release;
-- a pin whose release is missing or damaged refuses, naming the copy, the version, the path checked or the damage and the fix, `guildhall release install <version> --from <file> --sha256 <hex>`, or, for a copy with a `managed.toml`, a rollout; it never falls back to another release;
+- a pin whose release is missing or damaged refuses, naming the copy, the version, the path checked or the damage and the fix, `guildhall release install <version>`, or, for a copy with a `managed.toml`, a rollout; it never falls back to another release;
 - a copy with no pin refuses, naming `release.pin` and `guildhall release use <version>` or `guildhall release adopt`, or, managed, `guildhall config reload --copy <dir>`; so does a pin that cannot be read;
 - no copy refuses, naming `--copy`.
 
@@ -32,7 +32,7 @@ Recovery dispatch of `config reload` changes how it starts, not what it checks: 
 
 A task command missing its repository or task, or naming either twice with different values, is refused before anything else, `<command> names no task: it needs --repo and <the task id|--task>, and a task command is never run as new work`, or `names conflicting tasks`; one given `-h` or `--help` is not a task command.
 For a task command `Choose` first reads the task's [recorded release](../store.md#task-releases) with `store.ReadTaskRelease` from `--store`, else the selected copy's `director.store`, read-only, waiting up to ten seconds for the store's lock and without the schema check `store.Open` makes, since the launcher is one fixed program while the store's schema moves on.
-A recorded release is run when it is installed, intact and has the recorded sha256, whatever the copy pins and even when it pins nothing; otherwise the command is refused, `task <repo>/<id> records release <version> (sha256 <hex>), and a task is never moved to another release: <why>; install that release with guildhall release install <version> --from <file> --sha256 <hex>`, with no recovery dispatch and no fallback.
+A recorded release is run when it is installed, intact and has the recorded sha256, whatever the copy pins and even when it pins nothing; otherwise the command is refused, `task <repo>/<id> records release <version> (sha256 <hex>), and a task is never moved to another release: <why>; install that release with guildhall release install <version>, though a rebuild from source may not reproduce the recorded sha256 <hex>`, with no recovery dispatch and no fallback.
 A store that cannot be read refuses too; a task with no record, created before its copy recorded releases or on a copy with no pin, an unknown task and a store that does not exist go on to the copy's pin as above, and the release then judges the task.
 Herdr's resume argv, `guildhall artisan resume --store … --repo … --task …`, is a task command, so a resume after a restart runs on the task's release, as do the Director's own `task start` and `step` commands and an Artisan launcher's `step done` advance.
 Every other command, `task new` included, runs on the pin.

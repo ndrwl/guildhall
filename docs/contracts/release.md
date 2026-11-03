@@ -18,7 +18,8 @@ With none of these it returns `ErrNoHome`, naming the variables to set.
 It refuses `dev`, the version of a plain `go build`, which different builds share ([d127 grill Q1](../releases.md)).
 Tagged versions (`v1.4.0`) and main pseudo-versions (`v0.0.0-20261031162214-d385b331abcd`) are releases.
 
-**A release directory** holds the binary, `SHA256` (its lowercase hex sha256 and a newline) and `release.json`: schema `guildhall.release` version 1, the release, its sha256, the `store_schema` and `release_contract` the binary reported at install, and `installed_at` (RFC 3339 UTC, to the second).
+**A release directory** holds the binary, `SHA256` (its lowercase hex sha256 and a newline) and `release.json`: schema `guildhall.release` version 1, the release, its sha256, the `store_schema` and `release_contract` the binary reported at install, `installed_at` (RFC 3339 UTC, to the second) and, for a release built from source only, `source` and `commit`.
+The two are optional within version 1, so every older release, which ignores unknown fields, still reads the file, and `Check` reports them on `Release` (`""` for a release installed from a file).
 `Check(version)` verifies one: it is intact only when the binary hashes to `SHA256` and `release.json` has the right schema and names the same release and sha256.
 Anything else, including any missing piece, an entry that is not a directory or a name that is not a release version, is `Damage`, a reason; a damaged release is never run.
 `Check` returns `fs.ErrNotExist` when there is no entry of that name.
@@ -35,6 +36,21 @@ Anything else, including any missing piece, an entry that is not a directory or 
 
 Every refusal leaves `releases/` unchanged and removes the `.incoming` copy.
 An unverified `.incoming` binary is never run; the probe runs only after its sha256 matched.
+`Report` carries the probe's `revision` too, which only a build from source checks.
+`Installed(version)` reports a release of that version installed intact, whatever its sha256, as `Already`, `ok` false when none exists, and refuses a damaged one; it runs nothing.
+
+**Build** ([building a missing release](../releases.md#building-a-missing-release)). `Build(ctx, BuildRequest)` builds `Version` from `Source` with a `Builder` and installs it:
+
+1. returns `Installed` when the release is there, building nothing, and refuses an invalid version, a version with build metadata such as `+dirty`, and a source that `ValidSource` refuses: empty, starting with `-` or holding a line break; `AbsSource` then makes a source git reads as a local path absolute against the working directory, leaving a URL (`scheme://…`) and an scp-style `host:path` remote (a colon before any path separator, and no drive letter) unchanged, so the fetch, the messages and `release.json` all name the repository the caller meant;
+2. makes a scratch directory `.build-<version>-*` under `releases/.incoming/`, removed on return, so one a crash leaves is pruned as stale;
+3. `Builder.Fetch`es every branch and tag of the source into a new repository there, and `Builder.Resolve`s the version: a pseudo-version (`v0.0.0-<time>-<commit[:12]>` and its two other forms) to the full commit it abbreviates, any other version to `refs/tags/<version>`; `ErrNotInSource` refuses with `commit <c> is not in <source>` or `tag <v> is not in <source>`, with no fallback, and a resolved id that is not a full commit id, or does not start with the pseudo-version's abbreviation, is refused;
+4. `Builder.Checkout`s it, asks `Builder.GoVersion` and calls `Starting(commit, goVersion)` before `Builder.Build` builds `BuildPackage`, `./cmd/guildhall`, into `out/<BinaryName>` beside the work tree;
+5. installs the binary as `Install` does against its own sha256, refusing too a probe whose `revision` is not the resolved commit, and records `source` and `commit` in `release.json`.
+
+Every refusal leaves `releases/` unchanged and removes the scratch directory and any `.incoming` copy.
+`ExecBuilder` is the real `Builder`: git with `GIT_TERMINAL_PROMPT=0`, `git init` and `git fetch --no-write-fetch-head --no-recurse-submodules <source> +refs/heads/*:refs/remotes/source/* +refs/tags/*:refs/tags/*`, `git rev-parse --verify --quiet --end-of-options <rev>^{commit}`, whose failure is `ErrNotInSource`, and a detached checkout; go with `GOFLAGS` cleared, `GOWORK=off`, `CGO_ENABLED=0` and the running binary's `GOOS` and `GOARCH`, `go env GOVERSION` and `go build -buildvcs=true -trimpath -mod=readonly -o <out> ./cmd/guildhall`.
+Each git run is bounded by `DefaultBuildGitTimeout`, five minutes, and each go run by `DefaultBuildGoTimeout`, ten, unless set.
+`DefaultSource` is `https://github.com/ndrwl/guildhall`.
 
 **The inventory.** `Copies` reads `copies`, one absolute copy directory per line; a home without one has none.
 `Register(dir, lockWait)` adds `dir`, made absolute and clean, under the home lock, keeping the file sorted and without duplicates and publishing it with [`atomicfile`](atomicfile.md); registering a copy already there changes nothing, and a directory containing a line break is refused.
@@ -68,4 +84,5 @@ The callers in [the CLI](cli.md#release) gather the holds from every inventoried
 `TestCheckFindsDamage` changes or removes each piece of an installed release, sees `Check` name it and `Install` refuse over it; `TestList` the order and a stray entry reported damaged.
 `pin_test.go` was written with slice 2 and not run red: `TestPin` the missing, written, read and refused pin files; `TestNewestAndRunnable` the newest install, skipping a damaged one, and the missing and damaged refusals.
 `prune_test.go` was written with slice 4 and not run red: `TestPlanPrune` keeps the newest three and an older held release with its holds and removes the rest, a damaged one's reason naming its damage, and leaves entries not named as release versions, a stray one and `dev`, uncounted and never removed (slice 4 review f1); `TestRemoveAndPruneIncoming` removes a release, leaving the others listed, refuses a path, and removes a stale and a half-removed `.incoming/` entry, keeping a fresh one.
+`build_test.go` was written with d149 slice 1, with a fake `Builder`: `TestBuild` builds a pseudo-version and a tag, calling `Starting` with the commit and Go version, probing only the copy under `.incoming`, recording `source` and `commit` in a version-1 `release.json` and leaving `.incoming` empty, then builds again as `Already` with nothing run; `TestBuildRefusals` refuses an unknown commit and tag, naming the source, a failed fetch and build, a resolved commit the version does not name, a report of another version or revision, of no revision or modified, a source that is an option, a `+dirty` version and `dev`, each leaving no release and an empty `.incoming`; `TestAbsSource` keeps URLs and scp-style remotes, makes relative paths absolute and refuses what `ValidSource` refuses; `TestBuildRelativeSource` fetches and records a relative source as its absolute path; `TestBuildOverADamagedRelease` refuses with nothing run; `TestReleaseJSONOrigin` sees a file install's `release.json` without `source` or `commit`, and a built one read in an older release's shape as version 1 and passing `Check`.
 `TestRegister` covers sorting, duplicates and a cleaned path; `TestRegisterIsSerialized` registers sixteen copies at once and keeps every one; `TestLock` sees a second lock and a `Register` refused with `ErrLocked` while it is held, and taken again after unlock.

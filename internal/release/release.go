@@ -185,7 +185,10 @@ func NormalizeSHA256(sum string) (string, error) {
 
 // Report is what a binary says of itself in `guildhall version --json`, the fields install checks and records.
 type Report struct {
-	Version         string `json:"version"`
+	Version string `json:"version"`
+	// Revision is the commit the binary was built from, its vcs.revision; a build from source must report the
+	// commit it was built at.
+	Revision        string `json:"revision"`
 	Modified        bool   `json:"modified"`
 	StoreSchema     int    `json:"store_schema"`
 	ReleaseContract int    `json:"release_contract"`
@@ -201,6 +204,10 @@ type Release struct {
 	StoreSchema     int       `json:"store_schema"`
 	ReleaseContract int       `json:"release_contract"`
 	InstalledAt     time.Time `json:"installed_at"`
+	// Source and Commit are where a release built from source was built from: the source repository and the full
+	// commit; "" for a release installed from a file.
+	Source string `json:"source"`
+	Commit string `json:"commit"`
 	// Damage says why the release must never run; "" for an intact one.
 	Damage string `json:"damage"`
 }
@@ -214,6 +221,10 @@ type metadata struct {
 	StoreSchema     int       `json:"store_schema"`
 	ReleaseContract int       `json:"release_contract"`
 	InstalledAt     time.Time `json:"installed_at"`
+	// Source and Commit are optional within version 1, written only for a release built from source, so every
+	// older release still reads the file as version 1 and ignores them.
+	Source string `json:"source,omitempty"`
+	Commit string `json:"commit,omitempty"`
 }
 
 // Check reads release version's directory and verifies it: its binary must hash to its SHA256 file, and its
@@ -253,6 +264,7 @@ func (h Home) Check(version string) (Release, error) {
 		return damaged("%s: %v", metadataFile, err)
 	}
 	r.StoreSchema, r.ReleaseContract, r.InstalledAt = m.StoreSchema, m.ReleaseContract, m.InstalledAt
+	r.Source, r.Commit = m.Source, m.Commit
 	switch {
 	case m.Schema != metadataSchema || m.Version != metadataVersion:
 		return damaged("%s: schema %q version %d, want %q version %d", metadataFile, m.Schema, m.Version, metadataSchema, metadataVersion)
@@ -319,6 +331,18 @@ type InstallResult struct {
 // SHA256 and release.json are written beside it, and, under the home lock, the directory is renamed into
 // releases/<version> in one step. Every refusal leaves releases/ unchanged and removes the .incoming copy.
 func (h Home) Install(ctx context.Context, version, from, sum string, probe Probe, now time.Time, lockWait time.Duration) (InstallResult, error) {
+	return h.install(ctx, version, from, from, sum, probe, now, lockWait, nil)
+}
+
+// Origin is where a release built from source was built from: the source repository and the full commit.
+type Origin struct {
+	Source string
+	Commit string
+}
+
+// install is Install of the binary at from, named label in refusals; a binary built from source at origin must also
+// report origin's commit as its revision, and release.json records origin.
+func (h Home) install(ctx context.Context, version, from, label, sum string, probe Probe, now time.Time, lockWait time.Duration, origin *Origin) (InstallResult, error) {
 	if err := ValidVersion(version); err != nil {
 		return InstallResult{}, err
 	}
@@ -344,24 +368,29 @@ func (h Home) Install(ctx context.Context, version, from, sum string, probe Prob
 		return InstallResult{}, err
 	}
 	if got != sum {
-		return InstallResult{}, fmt.Errorf("%s hashes to %s, not the expected %s; nothing was installed", from, got, sum)
+		return InstallResult{}, fmt.Errorf("%s hashes to %s, not the expected %s; nothing was installed", label, got, sum)
 	}
 	report, err := probe(ctx, bin)
 	if err != nil {
-		return InstallResult{}, fmt.Errorf("%s: version --json: %w", from, err)
+		return InstallResult{}, fmt.Errorf("%s: version --json: %w", label, err)
 	}
 	switch {
 	case report.Version == "dev":
-		return InstallResult{}, fmt.Errorf("%s reports version dev, a plain go build's, which is never a release; install a tagged or pseudo-version build", from)
+		return InstallResult{}, fmt.Errorf("%s reports version dev, a plain go build's, which is never a release; install a tagged or pseudo-version build", label)
 	case report.Version != version:
-		return InstallResult{}, fmt.Errorf("%s reports version %q, not %q", from, report.Version, version)
+		return InstallResult{}, fmt.Errorf("%s reports version %q, not %q", label, report.Version, version)
 	case report.Modified:
-		return InstallResult{}, fmt.Errorf("%s was built with uncommitted or untracked files (modified), so it is never a release", from)
+		return InstallResult{}, fmt.Errorf("%s was built with uncommitted or untracked files (modified), so it is never a release", label)
 	case report.ReleaseContract < 1:
-		return InstallResult{}, fmt.Errorf("%s reports no release_contract, so it predates release installs", from)
+		return InstallResult{}, fmt.Errorf("%s reports no release_contract, so it predates release installs", label)
+	case origin != nil && report.Revision != origin.Commit:
+		return InstallResult{}, fmt.Errorf("%s reports revision %q, not the commit %s it was built at", label, report.Revision, origin.Commit)
 	}
 	m := metadata{Schema: metadataSchema, Version: metadataVersion, Release: version, SHA256: sum,
 		StoreSchema: report.StoreSchema, ReleaseContract: report.ReleaseContract, InstalledAt: now.UTC().Truncate(time.Second)}
+	if origin != nil {
+		m.Source, m.Commit = origin.Source, origin.Commit
+	}
 	mb, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return InstallResult{}, err
@@ -391,6 +420,25 @@ func (h Home) Install(ctx context.Context, version, from, sum string, probe Prob
 		return InstallResult{}, fmt.Errorf("release %s was installed damaged: %s", version, r.Damage)
 	}
 	return InstallResult{Release: r}, nil
+}
+
+// Installed reports a release of version already installed intact, whatever its sha256, as Already, with ok set;
+// ok is false when no release of that name exists. A damaged one is refused, as a release directory is never
+// changed. It runs nothing and changes nothing.
+func (h Home) Installed(version string) (res InstallResult, ok bool, err error) {
+	if err := ValidVersion(version); err != nil {
+		return InstallResult{}, false, err
+	}
+	r, err := h.Check(version)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return InstallResult{}, false, nil
+	case err != nil:
+		return InstallResult{}, false, err
+	case r.Damage != "":
+		return InstallResult{}, false, fmt.Errorf("release %s is already installed at %s but damaged (%s); a release directory is never changed, so remove it by hand and install again", version, h.ReleaseDir(version), r.Damage)
+	}
+	return InstallResult{Release: r, Already: true}, true, nil
 }
 
 // installed reports, done, an existing release of version: Already when it is intact with sum, else a refusal.

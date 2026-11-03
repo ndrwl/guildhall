@@ -21,7 +21,11 @@ import (
 // releaseLockWait bounds each wait for the Guildhall home's lock.
 const releaseLockWait = 10 * time.Second
 
-const releaseUsage = `usage: guildhall release install <version> --from <file> --sha256 <hex>
+// releaseBuildTimeout bounds release install's fetch and build of a missing release, every git and go run together.
+const releaseBuildTimeout = 10 * time.Minute
+
+const releaseUsage = `usage: guildhall release install <version> [--source <url>] [--no-build]
+       guildhall release install <version> --from <file> --sha256 <hex>
        guildhall release install --launcher [--from <file>]
        guildhall release adopt [--copy <dir>] [--launcher <file>]
        guildhall release use <version> [--copy <dir>]
@@ -88,43 +92,89 @@ func (a *App) releaseProbe(ctx context.Context, path string) (release.Report, er
 	return r, nil
 }
 
-// releaseInstall runs `guildhall release install <version> --from <file> --sha256 <hex>`.
+// releaseInstall runs `guildhall release install <version> [--source <url>] [--no-build]` and `guildhall release
+// install <version> --from <file> --sha256 <hex>`.
 func (a *App) releaseInstall(args []string) int {
 	fl := flag.NewFlagSet("release install", flag.ContinueOnError)
 	fl.SetOutput(io.Discard)
 	from := fl.String("from", "", "the binary to install")
 	sum := fl.String("sha256", "", "its expected sha256")
 	launcher := fl.Bool("launcher", false, "install the PATH launcher")
+	source := fl.String("source", "", "the git repository to build a missing release from")
+	noBuild := fl.Bool("no-build", false, "refuse a missing release rather than build it")
 	if err := parseInterspersed(fl, args); err != nil {
 		return a.usageError("release install: " + err.Error())
 	}
+	building := *source != "" || *noBuild
 	switch {
-	case *launcher && (fl.NArg() != 0 || *sum != ""):
+	case *launcher && (fl.NArg() != 0 || *sum != "" || building):
 		return a.usageError("release install --launcher takes only --from <file>\n" + releaseUsage)
 	case *launcher:
 		return a.releaseInstallLauncher(*from)
 	case fl.NArg() != 1:
 		return a.usageError("release install: want one version\n" + releaseUsage)
-	case *from == "" || *sum == "":
-		return a.usageError("release install: --from and --sha256 are required\n" + releaseUsage)
+	case (*from != "" || *sum != "") && building:
+		return a.usageError("release install: --from and --sha256 install a file, and take no --source or --no-build\n" + releaseUsage)
+	case (*from == "") != (*sum == ""):
+		return a.usageError("release install: --from and --sha256 go together\n" + releaseUsage)
 	}
 	h, err := a.releaseHome()
 	if err != nil {
 		return a.fail(fmt.Errorf("release install: %w", err))
 	}
-	res, err := h.Install(context.Background(), fl.Arg(0), *from, *sum, a.releaseProbe, a.now(), releaseLockWait)
+	version := fl.Arg(0)
+	var res release.InstallResult
+	switch {
+	case *from != "":
+		res, err = h.Install(context.Background(), version, *from, *sum, a.releaseProbe, a.now(), releaseLockWait)
+	default:
+		res, err = a.releaseBuild(h, version, *source, *noBuild)
+	}
 	if err != nil {
 		return a.fail(fmt.Errorf("release install: %w", err))
 	}
 	r := res.Release
 	line := fmt.Sprintf("installed %s (sha256 %s) at %s\n", r.Version, r.SHA256, h.ReleaseDir(r.Version))
-	if res.Already {
+	switch {
+	case res.Already:
 		line = fmt.Sprintf("%s is already installed (sha256 %s) at %s; nothing changed\n", r.Version, r.SHA256, h.ReleaseDir(r.Version))
+	case r.Commit != "":
+		line = fmt.Sprintf("installed %s (sha256 %s) at %s, built from %s at %s\n", r.Version, r.SHA256, h.ReleaseDir(r.Version), r.Source, r.Commit)
 	}
 	if _, err := io.WriteString(a.Stdout, line); err != nil {
 		return 1
 	}
 	return 0
+}
+
+// releaseBuild installs version, building it from source, or release.DefaultSource when source is "", when it is not
+// installed; with noBuild it refuses rather than build. It prints the source, commit and Go version before go build
+// runs.
+func (a *App) releaseBuild(h release.Home, version, source string, noBuild bool) (release.InstallResult, error) {
+	if source == "" {
+		source = release.DefaultSource
+	}
+	source, err := release.AbsSource(source)
+	if err != nil {
+		return release.InstallResult{}, err
+	}
+	if noBuild {
+		res, ok, err := h.Installed(version)
+		if err != nil || ok {
+			return res, err
+		}
+		return release.InstallResult{}, fmt.Errorf("release %s is not installed, and --no-build builds nothing; guildhall release install %s builds it from %s", version, version, source)
+	}
+	b := a.ReleaseBuilder
+	if b == nil {
+		b = release.ExecBuilder{}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), releaseBuildTimeout)
+	defer cancel()
+	return h.Build(ctx, release.BuildRequest{Version: version, Source: source, Builder: b, Probe: a.releaseProbe, Now: a.now(), LockWait: releaseLockWait,
+		Starting: func(commit, goVersion string) {
+			_, _ = fmt.Fprintf(a.Stdout, "building %s from %s at %s with %s\n", version, source, commit, goVersion)
+		}})
 }
 
 // releaseStatusReport is what `release status --json` prints.

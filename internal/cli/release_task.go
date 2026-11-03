@@ -73,7 +73,7 @@ func (a *App) newTaskRelease(copyDir, storePath string) (*store.TaskRelease, fun
 	}
 	r, err := h.Runnable(pin)
 	if err != nil {
-		return refuse(fmt.Errorf("copy %s pins %s, and a new task records and runs on its copy's pin: %w; install it with guildhall release install %s --from <file> --sha256 <hex>", dir, pin, err, pin))
+		return refuse(fmt.Errorf("copy %s pins %s, and a new task records and runs on its copy's pin: %w; install it with guildhall release install %s", dir, pin, err, pin))
 	}
 	return &store.TaskRelease{Version: r.Version, SHA256: r.SHA256}, unlock, nil
 }
@@ -170,8 +170,9 @@ func (a *App) taskReleaseItems(storePath string) []needsMeItem {
 	for _, r := range recorded {
 		if why := taskReleaseProblem(h, r.TaskRelease); why != "" {
 			items = append(items, needsMeItem{Kind: releaseKind, Repository: r.Repository, TaskID: r.TaskID,
-				Reason:  fmt.Sprintf("task %s/%s records release %s, which %s, so it refuses to advance and never moves to another release; ask the Guildmaster to install it", r.Repository, r.TaskID, r.Version, why),
-				Command: fmt.Sprintf("guildhall release install %s --from <file> --sha256 %s", r.Version, r.SHA256)})
+				Reason: fmt.Sprintf("task %s/%s records release %s, which %s, so it refuses to advance and never moves to another release; ask the Guildmaster to install it, "+
+					"though a rebuild from source may not reproduce its recorded sha256 %s", r.Repository, r.TaskID, r.Version, why, r.SHA256),
+				Command: "guildhall release install " + r.Version})
 		}
 	}
 	return items

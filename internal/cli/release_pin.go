@@ -106,7 +106,7 @@ func (a *App) releaseUse(args []string) int {
 	}
 	r, err := h.Runnable(version)
 	if err != nil {
-		return a.fail(fmt.Errorf("release use: %w; install it first with guildhall release install %s --from <file> --sha256 <hex>", err, version))
+		return a.fail(fmt.Errorf("release use: %w; install it first with guildhall release install %s", err, version))
 	}
 	ch, err := a.setPin(h, dir, storePath, r, store.PinUse)
 	if err != nil {

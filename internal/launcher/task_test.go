@@ -114,7 +114,7 @@ func TestLauncherRefusesAnUnusableTaskRelease(t *testing.T) {
 	}{
 		{"missing", []string{"records release v9.0.0", f.home.Binary("v9.0.0"), "never moved", "guildhall release install v9.0.0"}},
 		{"damaged", []string{"records release v1.0.0", "damaged", "guildhall release install v1.0.0"}},
-		{"other", []string{"records release v2.0.0", "not the " + strings.Repeat("c", 64), "--sha256 " + strings.Repeat("c", 64)}},
+		{"other", []string{"records release v2.0.0", "not the " + strings.Repeat("c", 64), "guildhall release install v2.0.0, though a rebuild from source may not reproduce the recorded sha256 " + strings.Repeat("c", 64)}},
 	} {
 		r := f.launch(a, "", nil, "step", "done", "--repo", "app", "--task", tc.task)
 		if r.code != 1 || r.stdout != "" {

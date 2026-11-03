@@ -65,11 +65,29 @@ Slice 5 is built too: the managed pin through `config reload`, and with it the m
 - **Recovery dispatch** runs an explicit `config reload --copy <dir>` on the newest installed, verified release when the copy's pin is absent or its release missing or damaged, so a rollout can give a managed copy its first pin or move it off a damaged release; a reload by copy discovery still refuses.
 - **The managed rollback** is the rollout of the previous `managed.toml` revision, then `config reload --copy` and `director reload --copy`; `release use` and `release rollback` refuse a managed copy, naming the rollout.
 
-Not built yet: the rollout's own copy of the release binary into `releases/.incoming/` (the binary is placed there, or installed with `release install`, by hand), the Steward's remote `director reload`, still reserved in its allow-list, the system alert for a pin that disagrees with its store, and downloading a release from GitHub, the first follow-up.
+Task d149, the first follow-up, builds a missing release from source, in three slices; slice 1 is built ([building a missing release](#building-a-missing-release)):
+
+- **`guildhall release install <version> [--source <url>] [--no-build]`** installs an intact release of that version already there as before, building nothing; otherwise it fetches the release's commit from the source repository with git, builds it with `go build` and installs it through the same verified install, recording the source and commit in `release.json`. `--no-build` refuses instead, naming the command that would build.
+- **Every message** that told the Guildmaster to install a missing release with `--from <file> --sha256 <hex>` now names plain `guildhall release install <version>`; where a task or rollback needs a recorded sha256, it adds that a rebuild from source may not reproduce it.
+
+Not built yet: the rollout's own copy of the release binary into `releases/.incoming/` (the binary is placed there, or installed with `release install`, by hand), the Steward's remote `director reload`, still reserved in its allow-list, the system alert for a pin that disagrees with its store, and d149's per-copy `release_source` setting (slice 2) and its "built from" origin in `guildhall version` and behind-main counted against the source (slice 3).
 
 The contracts are [`internal/release`](contracts/release.md), [`internal/launcher`](contracts/launcher.md), [`internal/copydir`](contracts/copydir.md), [the store's release pins and task releases](contracts/store.md) and [the CLI's release commands](contracts/cli.md#release) and [config reload](contracts/cli.md#config-reload).
 Until a copy adopts, the install-each-merge routine (`go install …@<pseudo-version>` onto `PATH`) is unchanged.
-After it adopts, an upgrade is `guildhall release install <version> --from <file> --sha256 <hex>`, `guildhall release use <version>` and `guildhall director reload`.
+After it adopts, an upgrade is `guildhall release install <version>`, `guildhall release use <version>` and `guildhall director reload`.
+
+## Building a missing release
+
+`guildhall release install <version>` builds a release that is not installed from source, at its exact commit; no prebuilt binary, release asset or `SHA256SUMS` is used ([d149](#built-so-far)).
+Integrity comes from the git commit hash and from the same checks every install makes.
+
+- **The source** is `--source <url>`, any git URL or path, a relative path meaning one from the current directory and recorded absolute, else `https://github.com/ndrwl/guildhall`; a fork works the same way. A source starting with `-` is refused.
+- **The commit**: a tag (`v1.4.0`) is built at `refs/tags/<version>`, and a pseudo-version (`v0.0.0-20261031162214-d385b331abcd`) at the commit its last 12 hex digits abbreviate, resolved after fetching every branch and tag of the source into a scratch repository. A commit or tag the source lacks, or an abbreviation it names twice, refuses with `commit <c> is not in <source>` (or `tag <v> …`), with no fallback to another source.
+- **The build** checks that commit out under `releases/.incoming/.build-<version>-*`, so a crash leaves only debris that [pruning](#pruning) removes a day later, prints `building <version> from <source> at <commit> with <go version>`, and runs `go build -buildvcs=true -trimpath -mod=readonly` of `./cmd/guildhall` with `GOFLAGS` cleared, `GOWORK=off`, `CGO_ENABLED=0` and the running binary's platform, into a file outside the work tree. Go stamps the version from the checkout: the tag at that commit, else `v0.0.0-<committer time in UTC>-<commit[:12]>` when no semver tag is reachable, the same name `go install …@<commit>` gives it.
+- **The install** is `release install --from` of the built binary against its own sha256, with one more check: the binary's `version --json` must report the resolved commit as its `revision`, as well as the requested version, not modified and a release contract. A build that stamps another name is refused, never installed under the wrong one. `release.json` records `source` and `commit` as optional fields of version 1, which older releases ignore; it then prints `installed <version> (sha256 <s>) at <dir>, built from <source> at <commit>`.
+- Each git run is bounded by five minutes and each go run by ten, and the whole build by ten minutes; a run a bound stops names the git or go command it stopped. Git and Go must be on `PATH`; Go fetches the module's dependencies through `GOPROXY`, checked against `go.sum`.
+- It never touches `release.pin`, a store or the running Director: switching to the new release is still `release use`. A failed fetch or build leaves `releases/` unchanged and removes its scratch directory.
+- A rebuild is not bit-for-bit the binary a `go install` or another machine produced, so a task or rollback that recorded another sha256 stays refused after one; the messages that name `release install` for them say so. `config reload` of a managed copy still installs only the rollout's binary against `release_sha256`.
 
 ## Layout
 
@@ -159,7 +177,7 @@ The Steward never tells the Director by message; it acts by command, in order:
 2. `guildhall config reload --copy <dir>` over SSH, using recovery dispatch if the pin is absent or its executable is missing or damaged, which authorizes the revision, verifies an already installed target or runs `release install` from `.incoming/` against `release_sha256`, records `release-pin` in that copy's store and then writes that copy's pin;
 3. `guildhall director reload --copy <dir>` over SSH.
 
-A standalone Guildmaster runs the same three steps by hand: `guildhall release install <version> --from <file> --sha256 <hex>`, `guildhall release use <version>`, `guildhall director reload`.
+A standalone Guildmaster runs the same three steps by hand: `guildhall release install <version>`, which [builds it](#building-a-missing-release) when it is missing, `guildhall release use <version>`, `guildhall director reload`.
 Steps 1 and 2 alone already make new tasks use the new release, because `task new` reads the pin; step 3 moves the Director's own session onto it.
 
 ### `guildhall director reload`
@@ -207,7 +225,8 @@ Prune removes only `releases/<version>/` directories and stale `.incoming/` copi
 
 | Command | Does |
 |---|---|
-| `guildhall release install <version> --from <file> --sha256 <hex>` | Verifies and installs a release side by side. |
+| `guildhall release install <version> [--source <url>] [--no-build]` | Builds a missing release from source at its commit, then verifies and installs it side by side. |
+| `guildhall release install <version> --from <file> --sha256 <hex>` | Verifies and installs a release binary side by side. |
 | `guildhall release install --launcher` | Replaces the PATH launcher from the running release. |
 | `guildhall release use <version>` | Standalone: sets the pin, records `release-pin`, then prunes. |
 | `guildhall release rollback` | Standalone: moves the pin to the previous version, then prunes. |
