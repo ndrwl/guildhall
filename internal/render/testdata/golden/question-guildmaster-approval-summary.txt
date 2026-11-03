@@ -5,8 +5,9 @@ Plan summary:
 - **Size:** small.
 - **Slices:** none.
 - **Changed since the grill:** nothing.
-- **Open questions:**
-  - Q1 Which? Recommended: this one.
+- **Open questions:** None.
+
+Open questions: none.
 
 Instructions:
 Check the scope.

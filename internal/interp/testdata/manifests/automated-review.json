@@ -11,7 +11,7 @@
   },
   "prompt": {
     "path": "prompt.md",
-    "digest": "sha256:1306593c3eb954def71de7ae1992faed666df9be5dcc4ceb2521680f4862269c"
+    "digest": "sha256:0ca1a8606b0bce6de83cbdce4709106619939501138a6c02e50afb36c79f8179"
   },
   "role": {
     "path": "roles/reviewer.md",
@@ -35,7 +35,7 @@
     {
       "port": "spec",
       "path": "tasks/t7/spec-v1.md",
-      "digest": "sha256:8862a7331864700fad2efe51d13663ca881f53610126e07e8add31dd5f15aa84"
+      "digest": "sha256:4a10390f1231da4013fc98b4fbfe893c412b042235465ced30acdcda7b5f265d"
     }
   ],
   "skills": []

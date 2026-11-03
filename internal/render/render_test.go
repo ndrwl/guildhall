@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	gspec "github.com/ndrwl/guildhall/internal/spec"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
@@ -572,17 +573,23 @@ func TestQuestionGoldenPerKind(t *testing.T) {
 func TestQuestionSummary(t *testing.T) {
 	spec := input(t, "spec", "tasks/t7/spec.md", "spec.md")
 	accept := step(t, "accept", "guildmaster-approval", `{"instructions": "Check the scope."}`)
+	three, ok := gspec.SpecPart([]byte(threeQuestions))
+	if !ok {
+		t.Fatal("the three-question fixture does not parse")
+	}
 	for _, c := range []struct {
 		golden    string
 		summary   string
 		noSummary bool
+		questions string
 	}{
-		{"question-guildmaster-approval-summary.txt", "- **Goal:** one page.\r\n- **Size:** small.\n- **Slices:** none.\n- **Changed since the grill:** nothing.\n- **Open questions:**\n  - Q1 Which? Recommended: this one.\n", false},
-		{"question-guildmaster-approval-no-summary.txt", "", true},
+		{"question-guildmaster-approval-summary.txt", "- **Goal:** one page.\r\n- **Size:** small.\n- **Slices:** none.\n- **Changed since the grill:** nothing.\n- **Open questions:** None.\n", false, gspec.QuestionsNone},
+		{"question-guildmaster-approval-questions.txt", "- **Goal:** one page.\n- **Size:** small.\n- **Slices:** none.\n- **Changed since the grill:** nothing.\n- **Open questions:** 3.\n", false, strings.ReplaceAll(three, "\n", "\r\n")},
+		{"question-guildmaster-approval-no-summary.txt", "", true, ""},
 	} {
 		t.Run(c.golden, func(t *testing.T) {
 			stage := attempt(t, accept)
-			stage.Summary, stage.NoSummary = c.summary, c.noSummary
+			stage.Summary, stage.NoSummary, stage.Questions = c.summary, c.noSummary, c.questions
 			ask, err := Question(stage, []Input{spec})
 			if err != nil {
 				t.Fatal(err)
@@ -598,9 +605,64 @@ func TestQuestionSummary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	review.Summary, review.NoSummary = "- **Goal:** x.", true
+	review.Summary, review.NoSummary, review.Questions = "- **Goal:** x.", true, three
 	if ask, err := Question(review, []Input{spec}); err != nil || ask.Question != plain.Question {
 		t.Errorf("a review's question changed with a summary: %q, %v", ask.Question, err)
+	}
+}
+
+// threeQuestions is a spec whose `## Open questions` holds three questions, each with its options and recommendation.
+const threeQuestions = `# T
+
+## Open questions
+
+**Q1. Design round**
+Does the page need a design round first?
+Options: (a) yes; (b) no.
+Recommended: (b).
+
+**Q2. Task list page**
+Should the task list get its own page?
+Options: (a) now; (b) later.
+Recommended: (b). It is its own task.
+
+**Q3. Link handling**
+Which task tokens become links?
+Options: (a) full references only; (b) bare ids too.
+Recommended: (a).
+`
+
+// TestQuestionOpenQuestions: a plan approval's open questions are copied byte for byte after the Summary block, and
+// questions over spec.QuestionsMax are cut at a question boundary with the marker while the Summary still shows.
+func TestQuestionOpenQuestions(t *testing.T) {
+	in := input(t, "spec", "tasks/t7/spec.md", "spec.md")
+	stage := attempt(t, step(t, "accept", "guildmaster-approval", `{}`))
+	q, err := gspec.SpecQuestions([]byte(threeQuestions))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage.Summary, stage.Questions = "- **Goal:** g.", q.Part()
+	ask, err := Question(stage, []Input{in})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range q.Items {
+		if !strings.Contains(ask.Question, it.Text) {
+			t.Errorf("the question lacks Q%d verbatim", it.N)
+		}
+	}
+	long := gspec.Questions{}
+	for i := 1; i <= 40; i++ {
+		long.Items = append(long.Items, gspec.Question{N: i, Title: "Q", Text: fmt.Sprintf("**Q%d. Q**\n%s\nOptions: a.\nRecommended: a.", i, strings.Repeat("x", 1000))})
+	}
+	stage.Questions = long.Part()
+	ask, err = Question(stage, []Input{in})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ask.Question, "\nPlan summary:\n- **Goal:** g.\n\nOpen questions in full:\n**Q1. Q**") ||
+		!strings.Contains(ask.Question, "Recommended: a.\n\n"+gspec.CutMarker+"\n") || strings.Contains(ask.Question, "**Q40.") {
+		t.Errorf("long questions are not cut at a boundary after the summary:\n%s", ask.Question)
 	}
 }
 

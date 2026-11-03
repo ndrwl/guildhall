@@ -91,7 +91,7 @@ func TestScenarioDogfoodToDeliver(t *testing.T) {
 	const (
 		notes      = "# Grill notes\n\n1. Sort by id? Yes.\n"
 		research   = "# Research notes\n\nThe list is sorted in internal/list.go.\n"
-		spec       = "# Spec\n\nSort the task list by id.\n"
+		spec       = "# Spec\n\n## Summary\n\n- **Goal:** sort the task list by id.\n- **Open questions:** None.\n\n## Goal\n\nSort the task list by id.\n\n## Open questions\n\nNone.\n"
 		reason     = "Make TestSort pass: compare ids, not titles."
 		buildFails = "tests failed: TestSort compares titles"
 	)

@@ -78,6 +78,9 @@ type askView struct {
 	// goldmark, empty when it has none or its file cannot be shown, and the ask then links the spec instead.
 	Plan    bool
 	Summary template.HTML
+	// Questions is that spec's open-questions part (spec.SpecPart), shown after Summary: the questions in full,
+	// rendered by goldmark, or the line saying there are none; empty when the spec has no readable section.
+	Questions template.HTML
 	// MockupHref links a design ask's mock-up as MockupLabel: an HTML mock-up's frame route, opened in a new tab, or
 	// the reader page of one the page cannot show inline. Mockup is a Markdown mock-up rendered by goldmark, shown
 	// in the ask instead of a link.
@@ -338,15 +341,27 @@ func taskDocument(t Task, name string) *Document {
 // design round's approval is about its design and shows none): the spec's Summary block, read verified and rendered
 // by goldmark, or, when the spec has no block or its file cannot be shown, the fallback link. The question's own copy
 // of the summary, or its no-summary line, is taken out of the rest of the question, so the summary shows once.
+//
+// After the summary come the spec's open questions in full (spec.SpecPart), the same part the question text carries,
+// rendered the same way; a spec with no readable section, such as one recorded before the plan check, shows none.
 func (s *Server) planSummary(doc Document, v *askView) {
 	v.Plan = true
-	var summary string
+	var summary, questions string
 	if body, status, _ := s.verified(doc); status == http.StatusOK {
 		if text, ok := spec.Summary(body); ok {
 			summary, v.Summary = text, RenderMarkdown([]byte(text))
 		}
+		if part, ok := spec.SpecPart(body); ok {
+			questions = part
+			if q, ok := strings.CutPrefix(part, spec.QuestionsInFull+"\n"); ok {
+				// Each question's lines show as written: its Options: and Recommended: lines on lines of their own.
+				v.Questions = template.HTML(`<p class="ph">Open questions in full</p><div class="qs">`) + RenderMarkdown([]byte(q)) + template.HTML(`</div>`)
+			} else {
+				v.Questions = template.HTML(`<p class="ph">` + template.HTMLEscapeString(part) + `</p>`)
+			}
+		}
 	}
-	v.Rest = stripSummary(v.Rest, summary)
+	v.Rest = stripSummary(v.Rest, summary, questions)
 }
 
 // mockup adds a design ask's mock-up document doc to its ask: an HTML mock-up as an "Open mock-up" link to its frame
@@ -372,18 +387,39 @@ func (s *Server) mockup(t Task, doc Document, v *askView) {
 var questionParts = []string{"\n\nInstructions:\n", "\n\nInputs:\n", "\n\nAnswer with one of: "}
 
 // stripSummary takes an approval question's own summary part off the front of rest, the question after its first
-// line: its "No summary in this spec" line always, and its "Plan summary:" block when the page shows summary, the
-// block it read from the spec, in its place.
-func stripSummary(rest, summary string) string {
+// line: its "No summary in this spec" line always, its "Plan summary:" block when the page shows summary, the block
+// it read from the spec, in its place, and then its open-questions part when the page shows questions, the part it
+// read from the spec. A copy that differs from the page's is cut up to the next part of the question.
+func stripSummary(rest, summary, questions string) string {
 	if line, after, _ := strings.Cut(rest, "\n"); strings.HasPrefix(line, "No summary in this spec") {
-		return strings.TrimSpace(after)
+		rest = strings.TrimSpace(after)
+	} else if summary != "" && strings.HasPrefix(rest, "Plan summary:\n") {
+		if after, ok := cutPart(rest, "Plan summary:\n"+summary); ok {
+			rest = after
+		} else {
+			return toNextPart(rest)
+		}
 	}
-	if summary == "" || !strings.HasPrefix(rest, "Plan summary:\n") {
+	if questions == "" || (!strings.HasPrefix(rest, spec.QuestionsInFull+"\n") && !strings.HasPrefix(rest, spec.QuestionsNone)) {
 		return rest
 	}
-	if after, ok := strings.CutPrefix(rest, "Plan summary:\n"+summary); ok && (after == "" || after[0] == '\n') {
-		return strings.TrimSpace(after)
+	if after, ok := cutPart(rest, questions); ok {
+		return after
 	}
+	return toNextPart(rest)
+}
+
+// cutPart takes part off the front of rest when it is a whole part, ending rest or followed by a new line.
+func cutPart(rest, part string) (string, bool) {
+	after, ok := strings.CutPrefix(rest, part)
+	if !ok || (after != "" && after[0] != '\n') {
+		return rest, false
+	}
+	return strings.TrimSpace(after), true
+}
+
+// toNextPart is rest from its first questionParts on, or nothing when it has none.
+func toNextPart(rest string) string {
 	end := len(rest)
 	for _, p := range questionParts {
 		if i := strings.Index(rest, p); i >= 0 && i < end {

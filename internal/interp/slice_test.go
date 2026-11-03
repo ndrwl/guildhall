@@ -37,8 +37,13 @@ const slicedJSON = `{
   ]
 }`
 
-// threeSlices is a spec whose `## Slices` lists three.
+// threeSlices is a spec whose `## Slices` lists three, with the Summary and open questions a plan check requires.
 const threeSlices = `# Large work
+
+## Summary
+
+- **Goal:** deliver the large work.
+- **Open questions:** None.
 
 ## Goal
 
@@ -49,6 +54,10 @@ Deliver the large work in three pull requests.
 1. **Parser**: the parser; about 100 lines in 2 files.
 2. **Engine**: the engine; about 200 lines in 4 files.
 3. **Views**: the views; about 100 lines in 3 files.
+
+## Open questions
+
+None.
 `
 
 // sliceHeads are the heads the three slices' builds land.
@@ -309,7 +318,7 @@ func TestThreeSlicesRunToDone(t *testing.T) {
 // TestOneSliceKeepsTodaysNames: a spec with no `## Slices` under a ranged workflow runs as today: one branch, one
 // pull request whose title is the spec's, and records under the names a workflow with no range gives.
 func TestOneSliceKeepsTodaysNames(t *testing.T) {
-	const one = "# One change\n\n## Goal\n\nOne pull request.\n"
+	const one = "# One change\n\n## Summary\n\n- **Goal:** one pull request.\n\n## Goal\n\nOne pull request.\n\n## Open questions\n\nNone.\n"
 	names := map[bool][]string{}
 	titles := map[bool]string{}
 	for _, ranged := range []bool{true, false} {

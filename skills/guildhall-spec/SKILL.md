@@ -26,9 +26,12 @@ The Guildmaster accepts a spec that states its scope, contracts, tests and size.
    Guildhall parses `## Slices` strictly: a numbered list `1.`, `2.`, … with no gaps, each entry one item that starts with a bold title, then says what the slice delivers and its expected size in lines and files, and no two titles alike.
    Leave the section out for one pull request.
    When the plan runs again after slices have merged, keep every merged slice's entry byte for byte and rewrite only the slices still to come.
-6. Write every decision you could not settle from the inputs or the repository as a numbered open question with your recommended answer, and proceed on that recommendation.
-7. Write the `## Summary` block last, and rewrite it whenever the plan runs again: Goal, Size, Slices, Changed since the grill and Open questions, as list items in that order, with every open question and its recommendation and nothing left out.
+6. Write every decision you could not settle from the inputs or the repository as a numbered open question under `## Open questions`, in the template's shape: its title, its body, an `Options:` line and a `Recommended:` line with your answer, and proceed on that recommendation.
+   Write "None" when there is none.
+   The approval ask copies each question in full, so write it to be answered without the rest of the spec.
+7. Write the `## Summary` block last, and rewrite it whenever the plan runs again: Goal, Size, Slices, Changed since the grill and Open questions, as list items in that order, with only the number of open questions, since the ask shows the questions themselves after it.
    The Guildmaster's approval ask shows it as written, so it says only what the spec below it says.
+   Guildhall refuses a plan with no Summary block, or with open questions that are not in the template's shape, and the plan runs again.
 
 ## Rules
 

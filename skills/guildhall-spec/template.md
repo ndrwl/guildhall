@@ -13,8 +13,7 @@ The `## Summary` block is what the Guildmaster reads on the approval ask, so the
 - **Size:** <one pull request, or n slices>, about <lines> lines in <files> files.
 - **Slices:** <none; one pull request>, or <each slice's title, in order>.
 - **Changed since the grill:** <where the plan differs from, or adds to, the grill's agreed change, in a sentence or two>; or "Nothing; the plan follows the grill's agreed change", or "No grill for this task". On a re-plan, also what changed since the previous plan and why, such as the feedback it answers.
-- **Open questions:** <how many>, or "None":
-  - Q1 <question title>. Recommended: <your answer>.
+- **Open questions:** <how many>, or "None".
 
 ## Goal
 
@@ -75,8 +74,12 @@ Only when the work is more than one pull request; leave the heading out otherwis
 
 **Q1. <question title>**
 <question body>
+Options: (a) <one answer>; (b) <another>.
 Recommended: <your answer, which this spec already follows>.
 ```
+
+The approval ask copies each `## Open questions` question in full, after the Summary, so the Summary gives only their number.
+Guildhall refuses a plan whose spec has no `## Summary` block, or whose `## Open questions` is neither "None" nor questions in this shape: numbered Q1, Q2, ... with no gaps, each starting on a line `**Qn. <title>**` and each with an `Options:` line and a `Recommended:` line.
 
 A good acceptance criterion names an observable result: "`Install` into a non-empty directory returns `ErrNotEmpty` and writes nothing".
 A poor one cannot be checked: "install works correctly".
