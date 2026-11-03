@@ -23,6 +23,7 @@ CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 guildhall director start --copy /path/to/cop
 ```
 
 Guildhall does not set that flag for you.
+It sets only `FORCE_HYPERLINK=1` in a Director's environment ([Director start](director.md#start)); `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` stays the Guildmaster's choice.
 Without its exact value `1`, the function-hook module does nothing: no `/calm`, preference reads, timers, redraws or frame changes.
 The marker instruction and native status line remain available.
 This integration is checked with Claude Code 2.1.310's zero-model-call `claude plugin test`; early-access API changes may require an adapter update.

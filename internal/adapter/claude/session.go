@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -104,7 +105,9 @@ func absoluteRule(path string) string {
 
 // Session returns the Claude Code Director session for spec: `claude --append-system-prompt-file <role prompt>
 // --add-dir <copy> --settings <session settings> --plugin-dir <bundled Lanterns> --plugin-dir <bundled Clerk> [--model <model>] [--effort <level>] -- <first message>` in the session directory with the session's environment,
-// the interactive command shape beside the Artisan's print mode. Session refuses invalid specs and settings
+// the interactive command shape beside the Artisan's print mode. The environment is the spec's, then
+// ForceHyperlinkEnv unless the environment the session inherits already names FORCE_HYPERLINK, with any value,
+// so a value the Guildmaster set wins. Session refuses invalid specs and settings
 // with no command and writes nothing; the caller writes
 // SessionFiles before starting it.
 func (a Adapter) Session(spec adapter.SessionSpec) (adapter.Command, error) {
@@ -124,8 +127,23 @@ func (a Adapter) Session(spec adapter.SessionSpec) (adapter.Command, error) {
 	argv := []string{prog, "--append-system-prompt-file", spec.RolePrompt, "--add-dir", spec.Copy, "--settings", filepath.Join(spec.Dir, SettingsFile)}
 	argv = append(argv, "--plugin-dir", filepath.Join(spec.Dir, PluginDir), "--plugin-dir", filepath.Join(spec.Dir, ClerkPluginDir))
 	argv = append(argv, settingsArgs(adapter.Settings{Model: spec.Model, Effort: spec.Effort})...)
-	return adapter.Command{Argv: append(argv, "--", spec.FirstMessage), Dir: spec.Dir, Env: spec.SessionEnv()}, nil
+	env := spec.SessionEnv()
+	if _, set := lookupEnv(forceHyperlink); !set {
+		env = append(env, ForceHyperlinkEnv)
+	}
+	return adapter.Command{Argv: append(argv, "--", spec.FirstMessage), Dir: spec.Dir, Env: env}, nil
 }
+
+// forceHyperlink makes Claude Code draw links, including links that wrap across lines, as OSC 8 hyperlinks the
+// terminal opens with one click.
+const forceHyperlink = "FORCE_HYPERLINK"
+
+// ForceHyperlinkEnv is the entry Session adds to an interactive session's environment. Artisans' print-mode
+// commands do not get it: Guildhall redraws their output itself, so Claude Code's renderer never draws their links.
+const ForceHyperlinkEnv = forceHyperlink + "=1"
+
+// lookupEnv reads the environment a session inherits from its supervisor; tests replace it.
+var lookupEnv = os.LookupEnv
 
 // TurnEndHook reports true: Settings registers TurnStartCommand as the session's UserPromptSubmit hook and
 // TurnEndCommand as its Stop and StopFailure hooks.

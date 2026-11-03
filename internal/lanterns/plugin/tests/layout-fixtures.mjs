@@ -17,3 +17,10 @@ export const grill=[
  '**Needs you**','- d104 · grill round 1 · grill-1','',
  'Round 1 for d104, three questions.','','1. Should the export include hidden columns?','   I recommend no.',
 ].join('\n');
+
+// A decision whose Needs you line and full question end with a Markdown link to its task page (d146).
+export const linked=[
+ '🟡 Guildmaster, one thing needs you.','',
+ '**Needs you**','- d122 · approve the plan · accept-1 · [open](http://andrew-lap-wsl.tail5da40a.ts.net:4388/guildhall/d122#accept-1)','',
+ 'd122 waits for you to approve its plan: approve or revise. [open](http://andrew-lap-wsl.tail5da40a.ts.net:4388/guildhall/d122#accept-1)',
+].join('\n');

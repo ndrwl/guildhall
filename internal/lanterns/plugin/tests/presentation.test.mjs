@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {urgency, smithy, raster, layout, routineEdge, routineBox, rule} from '../lib/presentation.mjs';
 import {assertS2} from './s2-contract.mjs';
-import {twoAsks, nothing, grill} from './layout-fixtures.mjs';
+import {twoAsks, nothing, grill, linked} from './layout-fixtures.mjs';
 
 test('only opening markers select urgency; unknown is neutral',()=>{
  for (const [text,want] of [['🔴 act','red'],['🟡 decide','yellow'],['🟢 done','green'],['unmarked','gray'],['later 🔴','gray'],['','gray']]) assert.equal(urgency(text),want);
@@ -45,6 +45,12 @@ test('the reply layout splits into marker line, Needs you, What I did and the Ro
   did:'Round 1 for d104, three questions.\n\n1. Should the export include hidden columns?\n   I recommend no.',routine:undefined,asOf:undefined,
  });
  assert.deepEqual(layout('\n'+nothing+'\n'),layout(nothing));
+ // A Markdown link as a Needs you line's last field keeps the line a list item.
+ assert.deepEqual(layout(linked),{
+  marker:'🟡 Guildmaster, one thing needs you.',
+  needs:'**Needs you**\n- d122 · approve the plan · accept-1 · [open](http://andrew-lap-wsl.tail5da40a.ts.net:4388/guildhall/d122#accept-1)',
+  did:'d122 waits for you to approve its plan: approve or revise. [open](http://andrew-lap-wsl.tail5da40a.ts.net:4388/guildhall/d122#accept-1)',routine:undefined,asOf:undefined,
+ });
 });
 test('text that is not the layout, or is in doubt, has no sections',()=>{
  const cases={

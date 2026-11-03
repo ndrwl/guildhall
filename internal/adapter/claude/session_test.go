@@ -36,14 +36,27 @@ func TestSessionCommand(t *testing.T) {
 	dir := filepath.Join(c, "director", "session-2")
 	spec := adapter.SessionSpec{Dir: dir, Copy: c, RolePrompt: filepath.Join(dir, "role.md"),
 		FirstMessage: claude.StartupMessage(filepath.Join(dir, "startup.md")), Model: "opus", Effort: "high", Env: []string{"A=1"}}
+	inherited := map[string]string{}
+	claude.SetLookupEnv(t, func(name string) (string, bool) {
+		v, ok := inherited[name]
+		return v, ok
+	})
 	cmd, err := claude.Adapter{}.Session(spec)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []string{"claude", "--append-system-prompt-file", spec.RolePrompt, "--add-dir", c, "--settings", filepath.Join(dir, claude.SettingsFile), "--plugin-dir", filepath.Join(dir, claude.PluginDir), "--plugin-dir", filepath.Join(dir, claude.ClerkPluginDir), "--model", "opus", "--effort", "high", "--", spec.FirstMessage}
-	if !slices.Equal(cmd.Argv, want) || cmd.Dir != spec.Dir || !slices.Equal(cmd.Env, []string{"A=1"}) {
-		t.Errorf("command = %+v, want %q in %s with only the spec's environment", cmd, want, spec.Dir)
+	if !slices.Equal(cmd.Argv, want) || cmd.Dir != spec.Dir || !slices.Equal(cmd.Env, []string{"A=1", "FORCE_HYPERLINK=1"}) {
+		t.Errorf("command = %+v, want %q in %s with the spec's environment and FORCE_HYPERLINK=1", cmd, want, spec.Dir)
 	}
+	if !slices.Equal(spec.Env, []string{"A=1"}) {
+		t.Errorf("Session changed the spec's environment to %q", spec.Env)
+	}
+	inherited["FORCE_HYPERLINK"] = "0"
+	if cmd, err := (claude.Adapter{}).Session(spec); err != nil || !slices.Equal(cmd.Env, []string{"A=1"}) {
+		t.Errorf("FORCE_HYPERLINK=0 inherited: env %q, %v; want only the spec's environment, so the Guildmaster's value wins", cmd.Env, err)
+	}
+	delete(inherited, "FORCE_HYPERLINK")
 	if !adapter.Under(spec.Copy, cmd.Dir) {
 		t.Errorf("session directory %s does not lie under the copy %s", cmd.Dir, spec.Copy)
 	}
