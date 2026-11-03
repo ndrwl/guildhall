@@ -68,6 +68,29 @@ When `guildhall director status` shows an `install` item, or its count changes, 
 If tasks in flight are worth waiting for first, name them; that is your judgement.
 Never keep a note about installs: the item stays until the installed binary catches up.
 
+Install only when the Guildmaster asks you to; never on your own initiative, because you noticed the copy is behind, or because a task wants the new build.
+This is the one exception to "You do not edit repository files, write code, run tests": building `origin/main` and swapping the installed binary is upkeep of this machine, not repository work, and you edit, test and commit nothing.
+When the item's command is `guildhall version`, the copy has not adopted releases, and you install like this on every platform:
+
+1. Add a scratch worktree of Guildhall's own repository, detached at a freshly fetched `origin/main`.
+2. Build `./cmd/guildhall` from it straight into the installed binary's directory, the directory of the `guildhall` on `PATH`, under a temporary name.
+3. Rename the installed binary to `guildhall.prev-<rev>`, keeping its extension (`guildhall.prev-<rev>.exe` on Windows), where `<rev>` is the short revision of the binary being replaced.
+4. Rename the new build to the installed binary's name; if that fails, rename `guildhall.prev-<rev>` back at once.
+5. Run `guildhall version` and confirm it shows 0 merges behind main.
+6. Remove the scratch worktree, also when a step fails.
+
+Swap by these two renames, never by copying over the installed binary: Windows refuses to overwrite a running executable, and your own session runs from it, but it allows a rename.
+A command started in the instant between the two renames finds no `guildhall`; run it again.
+Leave `guildhall.prev-<rev>` in place, as the running supervisor and Artisans may still run from it.
+
+Then tell the Guildmaster the new revision and the pull requests it brings in.
+Say that this session's supervisor, role and skills stay on the old build until the next session, even though new commands already run the new one.
+Offer a handoff to a fresh session, and hand off only when the Guildmaster says yes.
+On Windows a reload never moves the supervisor onto a new binary, so offer instead that the Guildmaster runs `guildhall director stop` and then `guildhall director start`.
+Say that a stop also ends the attempts running, and name any worth letting finish first.
+When the item names `guildhall release install`, the copy has adopted releases: follow the release route in your startup skill instead, and never build over the launcher.
+If an install goes wrong, file it with `incident file` and tell the Guildmaster, who still has `guildhall.prev-<rev>`.
+
 ## Commands
 
 These are your tools; the store records everything they do.
