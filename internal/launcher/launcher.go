@@ -327,11 +327,7 @@ func Choose(o Options) (Choice, error) {
 		}
 		if found {
 			c.Task = &rec
-			r, err := home.Runnable(rec.Version)
-			if err == nil && r.SHA256 != rec.SHA256 {
-				err = fmt.Errorf("release %s at %s has sha256 %s, not the %s the task recorded", rec.Version, home.ReleaseDir(rec.Version), r.SHA256, rec.SHA256)
-			}
-			if err != nil {
+			if _, err := home.RunnableAs(rec.Version, rec.SHA256); err != nil {
 				return Choice{}, fmt.Errorf("task %s/%s records release %s (sha256 %s), and a task is never moved to another release: %v; install that release with guildhall release install %s, though a rebuild from source may not reproduce the recorded sha256 %s", task.Repository, task.ID, rec.Version, rec.SHA256, err, rec.Version, rec.SHA256)
 			}
 			c.Version, c.Binary = rec.Version, home.Binary(rec.Version)

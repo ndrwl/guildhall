@@ -105,3 +105,32 @@ func (h Home) Runnable(version string) (Release, error) {
 	}
 	return r, nil
 }
+
+// NotRunnableError is why a release cannot run as a task recorded it: Why is a clause that reads after "which",
+// such as "is damaged and never run: …", and Err is the Check error when the release cannot be read, else nil.
+type NotRunnableError struct {
+	Version, Why string
+	Err          error
+}
+
+func (e *NotRunnableError) Error() string { return "release " + e.Version + " " + e.Why }
+
+func (e *NotRunnableError) Unwrap() error { return e.Err }
+
+// RunnableAs checks release version for running as a task recorded it: the release when it is installed,
+// undamaged and of that sha256, else a *NotRunnableError saying which failed. It checks in that order, so damage
+// wins over another sha256. It is the one rule the launcher and release status both apply.
+func (h Home) RunnableAs(version, sha256 string) (Release, error) {
+	r, err := h.Check(version)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return Release{}, &NotRunnableError{Version: version, Why: "is not installed: " + h.Binary(version) + " does not exist"}
+	case err != nil:
+		return Release{}, &NotRunnableError{Version: version, Why: "cannot be read: " + err.Error(), Err: err}
+	case r.Damage != "":
+		return Release{}, &NotRunnableError{Version: version, Why: "is damaged and never run: " + r.Damage}
+	case r.SHA256 != sha256:
+		return Release{}, &NotRunnableError{Version: version, Why: fmt.Sprintf("is installed with sha256 %s, not the %s the task recorded", r.SHA256, sha256)}
+	}
+	return r, nil
+}

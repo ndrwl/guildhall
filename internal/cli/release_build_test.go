@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/release"
+	"github.com/ndrwl/guildhall/internal/release/releasetest"
 )
 
 const (
@@ -21,51 +21,15 @@ const (
 	buildReport  = `{"version":"` + buildVersion + `","revision":"` + buildCommit + `","modified":false,"store_schema":1,"release_contract":2}`
 )
 
-// fakeReleaseBuilder is a release.Builder whose sources each hold the commits listed for them, recording the
-// sources it fetched and the builds it ran.
-type fakeReleaseBuilder struct {
-	sources  map[string][]string
-	buildErr error
-	fetched  []string
-	built    int
-	source   string
-}
+// buildCommits is what a source of the fake builder holds: buildVersion's commit.
+var buildCommits = []releasetest.Commit{{ID: buildCommit, Version: buildVersion}}
 
-func (f *fakeReleaseBuilder) Fetch(_ context.Context, repo, source string) error {
-	f.fetched = append(f.fetched, source)
-	f.source = source
-	return os.MkdirAll(repo, 0o755)
-}
-
-func (f *fakeReleaseBuilder) Resolve(_ context.Context, _, rev string) (string, error) {
-	for _, c := range f.sources[f.source] {
-		if strings.HasPrefix(c, rev) {
-			return c, nil
-		}
-	}
-	return "", release.ErrNotInSource
-}
-
-func (f *fakeReleaseBuilder) Checkout(context.Context, string, string) error { return nil }
-
-func (f *fakeReleaseBuilder) GoVersion(context.Context, string) (string, error) {
-	return "go1.27.2", nil
-}
-
-func (f *fakeReleaseBuilder) Build(_ context.Context, _, _, out string) error {
-	f.built++
-	if f.buildErr != nil {
-		return f.buildErr
-	}
-	return os.WriteFile(out, []byte("built"), 0o755)
-}
-
-func buildTestApp(t *testing.T, report string) (*App, *fakeReleaseBuilder, string, *strings.Builder, *strings.Builder) {
+func buildTestApp(t *testing.T, report string) (*App, *releasetest.Fake, string, *strings.Builder, *strings.Builder) {
 	t.Helper()
 	home := filepath.Join(t.TempDir(), "home")
 	var ran []string
 	app, stdout, stderr := releaseTestApp(home, report, &ran)
-	f := &fakeReleaseBuilder{sources: map[string][]string{release.DefaultSource: {buildCommit}, "https://example.com/fork/guildhall": {buildCommit}}}
+	f := &releasetest.Fake{Sources: map[string][]releasetest.Commit{release.DefaultSource: buildCommits, "https://example.com/fork/guildhall": buildCommits}}
 	app.ReleaseBuilder = f
 	return app, f, home, stdout, stderr
 }
@@ -108,16 +72,16 @@ func TestReleaseInstallBuildsAMissingRelease(t *testing.T) {
 			if stdout.String() != want {
 				t.Errorf("release install printed\n%s\nwant\n%s", stdout, want)
 			}
-			if r.Source != c.source || r.Commit != buildCommit || len(f.fetched) != 1 || f.fetched[0] != c.source {
-				t.Errorf("release = %+v, fetched %q; want built from %s", r, f.fetched, c.source)
+			if r.Source != c.source || r.Commit != buildCommit || len(f.Fetched) != 1 || f.Fetched[0] != c.source {
+				t.Errorf("release = %+v, fetched %q; want built from %s", r, f.Fetched, c.source)
 			}
 
 			// Installed, it builds nothing again, with or without --no-build.
 			for _, extra := range [][]string{nil, {"--no-build"}} {
 				stdout.Reset()
 				if code := app.Run(append([]string{"release", "install", buildVersion}, extra...)); code != 0 ||
-					!strings.HasSuffix(stdout.String(), "; nothing changed\n") || f.built != 1 {
-					t.Errorf("release install again %q = %d, %q, built %d; want already installed", extra, code, stdout, f.built)
+					!strings.HasSuffix(stdout.String(), "; nothing changed\n") || f.Built != 1 {
+					t.Errorf("release install again %q = %d, %q, built %d; want already installed", extra, code, stdout, f.Built)
 				}
 			}
 		})
@@ -133,7 +97,7 @@ func TestReleaseInstallRelativeSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	abs := filepath.Join(filepath.Dir(wd), "guildhall")
-	f.sources[abs] = []string{buildCommit}
+	f.Sources[abs] = buildCommits
 	if code := app.Run([]string{"release", "install", buildVersion, "--source", filepath.Join("..", "guildhall")}); code != 0 {
 		t.Fatalf("release install = %d; stderr %s", code, stderr)
 	}
@@ -141,8 +105,8 @@ func TestReleaseInstallRelativeSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Source != abs || len(f.fetched) != 1 || f.fetched[0] != abs || !strings.HasPrefix(stdout.String(), "building "+buildVersion+" from "+abs+" at ") {
-		t.Errorf("release = %+v, fetched %q, printed %q; want %s throughout", r, f.fetched, stdout, abs)
+	if r.Source != abs || len(f.Fetched) != 1 || f.Fetched[0] != abs || !strings.HasPrefix(stdout.String(), "building "+buildVersion+" from "+abs+" at ") {
+		t.Errorf("release = %+v, fetched %q, printed %q; want %s throughout", r, f.Fetched, stdout, abs)
 	}
 }
 
@@ -185,9 +149,9 @@ func TestReleaseInstallSourcePrecedence(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			app, f, home, stdout, stderr := buildTestApp(t, buildReport)
-			f.sources[fork] = []string{buildCommit}
-			f.sources[mirror] = []string{buildCommit}
-			f.sources[flagged] = []string{buildCommit}
+			f.Sources[fork] = buildCommits
+			f.Sources[mirror] = buildCommits
+			f.Sources[flagged] = buildCommits
 			wd := t.TempDir()
 			args := []string{"release", "install", buildVersion}
 			if c.name != "no copy found" {
@@ -210,8 +174,8 @@ func TestReleaseInstallSourcePrecedence(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if r.Source != c.want || len(f.fetched) != 1 || f.fetched[0] != c.want || !strings.HasPrefix(stdout.String(), "building "+buildVersion+" from "+c.want+" at ") {
-				t.Errorf("release = %+v, fetched %q, printed %q; want built from %s", r, f.fetched, stdout, c.want)
+			if r.Source != c.want || len(f.Fetched) != 1 || f.Fetched[0] != c.want || !strings.HasPrefix(stdout.String(), "building "+buildVersion+" from "+c.want+" at ") {
+				t.Errorf("release = %+v, fetched %q, printed %q; want built from %s", r, f.Fetched, stdout, c.want)
 			}
 		})
 	}
@@ -220,8 +184,8 @@ func TestReleaseInstallSourcePrecedence(t *testing.T) {
 	app, f, _, _, stderr := buildTestApp(t, buildReport)
 	dir := sourceCopy(t, local, "")
 	app.Getwd = func() (string, error) { return dir, nil }
-	if code := app.Run([]string{"release", "install", buildVersion, "--no-build"}); code != 1 || !strings.Contains(stderr.String(), "builds it from "+fork) || len(f.fetched) != 0 {
-		t.Errorf("release install --no-build = %d, %q, fetched %q; want a refusal naming %s", code, stderr, f.fetched, fork)
+	if code := app.Run([]string{"release", "install", buildVersion, "--no-build"}); code != 1 || !strings.Contains(stderr.String(), "builds it from "+fork) || len(f.Fetched) != 0 {
+		t.Errorf("release install --no-build = %d, %q, fetched %q; want a refusal naming %s", code, stderr, f.Fetched, fork)
 	}
 }
 
@@ -235,12 +199,12 @@ func TestReleaseInstallSourceRefusals(t *testing.T) {
 	app, f, home, _, stderr := buildTestApp(t, buildReport)
 	app.Getwd = func() (string, error) { return broken, nil }
 	if code := app.Run([]string{"release", "install", buildVersion}); code != 1 || !strings.Contains(stderr.String(), "release_source") ||
-		!strings.Contains(stderr.String(), "--source") || len(f.fetched) != 0 {
-		t.Errorf("release install from a broken copy = %d, %q, fetched %q; want a refusal naming --source", code, stderr, f.fetched)
+		!strings.Contains(stderr.String(), "--source") || len(f.Fetched) != 0 {
+		t.Errorf("release install from a broken copy = %d, %q, fetched %q; want a refusal naming --source", code, stderr, f.Fetched)
 	}
 	releasesEmpty(t, home)
-	if code := app.Run([]string{"release", "install", buildVersion, "--source", release.DefaultSource}); code != 0 || len(f.fetched) != 1 {
-		t.Errorf("release install --source from a broken copy = %d, %q, fetched %q; want it built", code, stderr, f.fetched)
+	if code := app.Run([]string{"release", "install", buildVersion, "--source", release.DefaultSource}); code != 0 || len(f.Fetched) != 1 {
+		t.Errorf("release install --source from a broken copy = %d, %q, fetched %q; want it built", code, stderr, f.Fetched)
 	}
 
 	path, sum := releaseFile(t, "binary")
@@ -255,23 +219,23 @@ func TestReleaseInstallBuildRefusals(t *testing.T) {
 		app, f, home, stdout, stderr := buildTestApp(t, buildReport)
 		code := app.Run([]string{"release", "install", buildVersion, "--no-build"})
 		want := "release " + buildVersion + " is not installed, and --no-build builds nothing; guildhall release install " + buildVersion + " builds it from " + release.DefaultSource
-		if code != 1 || stdout.String() != "" || !strings.Contains(stderr.String(), want) || len(f.fetched) != 0 {
-			t.Errorf("release install --no-build = %d, %q, %q, fetched %q; want a refusal naming the command", code, stdout, stderr, f.fetched)
+		if code != 1 || stdout.String() != "" || !strings.Contains(stderr.String(), want) || len(f.Fetched) != 0 {
+			t.Errorf("release install --no-build = %d, %q, %q, fetched %q; want a refusal naming the command", code, stdout, stderr, f.Fetched)
 		}
 		releasesEmpty(t, home)
 	})
 	t.Run("a commit not in the source", func(t *testing.T) {
 		app, f, home, _, stderr := buildTestApp(t, buildReport)
-		f.sources[release.DefaultSource] = nil
+		f.Sources[release.DefaultSource] = nil
 		code := app.Run([]string{"release", "install", buildVersion})
-		if code != 1 || !strings.Contains(stderr.String(), "commit 0123456789ab is not in "+release.DefaultSource) || f.built != 0 || len(f.fetched) != 1 {
-			t.Errorf("release install = %d, %q, fetched %q; want a refusal naming the source, with no fallback", code, stderr, f.fetched)
+		if code != 1 || !strings.Contains(stderr.String(), "commit 0123456789ab is not in "+release.DefaultSource) || f.Built != 0 || len(f.Fetched) != 1 {
+			t.Errorf("release install = %d, %q, fetched %q; want a refusal naming the source, with no fallback", code, stderr, f.Fetched)
 		}
 		releasesEmpty(t, home)
 	})
 	t.Run("a failed build", func(t *testing.T) {
 		app, f, home, _, stderr := buildTestApp(t, buildReport)
-		f.buildErr = errors.New("compile error")
+		f.BuildErr = errors.New("compile error")
 		if code := app.Run([]string{"release", "install", buildVersion}); code != 1 || !strings.Contains(stderr.String(), "compile error") {
 			t.Errorf("release install = %d, %q; want the build's failure", code, stderr)
 		}
@@ -325,7 +289,11 @@ func TestBuiltReleaseShowsItsOrigin(t *testing.T) {
 
 	// Run by its path from elsewhere, the same build is not known to be that release.
 	other := filepath.Join(t.TempDir(), release.BinaryName(runtime.GOOS))
-	if err := os.WriteFile(other, []byte("built"), 0o755); err != nil {
+	same, err := os.ReadFile(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(other, same, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	app.Executable = func() (string, error) { return other, nil }

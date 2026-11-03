@@ -1,6 +1,7 @@
 package launcher
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -108,17 +109,26 @@ func TestLauncherRefusesAnUnusableTaskRelease(t *testing.T) {
 	if err := os.WriteFile(f.home.Binary("v1.0.0"), []byte("not the binary"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	self, err := release.FileSHA256(f.self)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, tc := range []struct {
-		task string
-		want []string
+		task, version, sha256 string
+		want                  []string
 	}{
-		{"missing", []string{"records release v9.0.0", f.home.Binary("v9.0.0"), "never moved", "guildhall release install v9.0.0"}},
-		{"damaged", []string{"records release v1.0.0", "damaged", "guildhall release install v1.0.0"}},
-		{"other", []string{"records release v2.0.0", "not the " + strings.Repeat("c", 64), "guildhall release install v2.0.0, though a rebuild from source may not reproduce the recorded sha256 " + strings.Repeat("c", 64)}},
+		{"missing", "v9.0.0", self, []string{"records release v9.0.0", f.home.Binary("v9.0.0"), "never moved", "guildhall release install v9.0.0"}},
+		{"damaged", "v1.0.0", self, []string{"records release v1.0.0", "damaged", "guildhall release install v1.0.0"}},
+		{"other", "v2.0.0", strings.Repeat("c", 64), []string{"records release v2.0.0", "not the " + strings.Repeat("c", 64), "guildhall release install v2.0.0, though a rebuild from source may not reproduce the recorded sha256 " + strings.Repeat("c", 64)}},
 	} {
 		r := f.launch(a, "", nil, "step", "done", "--repo", "app", "--task", tc.task)
 		if r.code != 1 || r.stdout != "" {
 			t.Fatalf("%s: got exit %d and output %q, want a refusal", tc.task, r.code, r.stdout)
+		}
+		// The refusal is release.Home.RunnableAs's, the rule release status applies too.
+		var nr *release.NotRunnableError
+		if _, err := f.home.RunnableAs(tc.version, tc.sha256); !errors.As(err, &nr) || !strings.Contains(r.stderr, "never moved to another release: release "+tc.version+" "+nr.Why+"; install") {
+			t.Fatalf("%s: stderr %q does not give RunnableAs's refusal %v", tc.task, r.stderr, err)
 		}
 		for _, w := range tc.want {
 			if !strings.Contains(r.stderr, w) {
