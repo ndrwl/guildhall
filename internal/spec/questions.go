@@ -80,6 +80,42 @@ func (q Questions) Part() string {
 	return QuestionsInFull + "\n" + q.Render(QuestionsMax)
 }
 
+// PartWithin is Part kept within max bytes: the none line, or QuestionsInFull and the questions that fit within both
+// max and QuestionsMax, whole, ending with CutMarker when any are left out. ok is false when max leaves no room for
+// even the heading and CutMarker, and the ask then leaves the part out.
+func (q Questions) PartWithin(max int) (string, bool) {
+	if q.None {
+		return QuestionsNone, len(QuestionsNone) <= max
+	}
+	head := QuestionsInFull + "\n"
+	if part := q.Part(); len(part) <= max {
+		return part, true
+	}
+	room := max - len(head)
+	if room < len(CutMarker) {
+		return "", false
+	}
+	// Render ends a cut with "\n\n" and CutMarker after the questions it kept, so keep that much room for them.
+	return head + q.Render(min(room-2-len(CutMarker), QuestionsMax)), true
+}
+
+// ReportQuestionsHeading is the heading of a hallmark report's questions: each direction change it asks about, with a
+// Recommended: and an Alternative: line, read by OpenQuestions with no Options: rule.
+const ReportQuestionsHeading = "## Questions"
+
+// ReportPart reads a hallmark report's `## Questions` section (OpenQuestions with ReportQuestionsHeading), its text
+// made valid UTF-8 first, and returns its part kept within max bytes (PartWithin); ok is false when the report has
+// no readable section, as with reports written before the section was copied, or max leaves no room, and the ask then
+// leaves the part out. The follow-ups question text and the task page both call it, so chat and page show the same
+// questions.
+func ReportPart(data []byte, max int) (string, bool) {
+	q, err := OpenQuestions([]byte(strings.ToValidUTF8(string(data), "�")), ReportQuestionsHeading)
+	if err != nil {
+		return "", false
+	}
+	return q.PartWithin(max)
+}
+
 // SpecPart reads a spec's open questions (SpecQuestions) and returns their Part; ok is false when the spec has no
 // readable section, as with specs written before the section's shape was checked, and the ask then leaves it out.
 // The interpreter's question text and the task page both call it, so chat and page show the same text.

@@ -13,6 +13,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/git"
 	"github.com/ndrwl/guildhall/internal/render"
+	"github.com/ndrwl/guildhall/internal/spec"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
@@ -382,8 +383,10 @@ func (r *run) openFollowUps(last workflow.Step) (bool, error) {
 }
 
 // followUpsQuestion is the follow-ups decision's question for task repo/task's report at file, with content report:
-// the report's ranked "### H<n>. <title>" headings in report order, when any parse, and the answer format. The list
-// is cut, ending with followUpsCut, so the question fits store.MaxTextBytes.
+// the report's ranked "### H<n>. <title>" headings in report order, when any parse, then the report's `## Questions`
+// in full (spec.ReportPart), when it has a readable section, and the answer format. The list is cut, ending with
+// followUpsCut, and the questions after it at a question boundary, ending with spec.CutMarker, so the question fits
+// store.MaxTextBytes.
 func followUpsQuestion(repo, task, file string, report []byte) string {
 	head := fmt.Sprintf("Follow-ups of hallmark task %s/%s.\nReport: %s\n", repo, task, file)
 	tail := "\nAnswer pick, then the ids of the follow-ups to make tasks of on the following lines, one per line or comma-separated, for example:\n" +
@@ -405,12 +408,16 @@ func followUpsQuestion(repo, task, file string, report []byte) string {
 		}
 		list.WriteString(item)
 	}
-	if list.Len() == 0 && !cut {
-		return head + tail
+	text := head
+	if list.Len() > 0 || cut {
+		text += listHead + list.String()
+		if cut {
+			text += followUpsCut
+		}
 	}
-	text := head + listHead + list.String()
-	if cut {
-		text += followUpsCut
+	// The questions take the room the list left, between a blank line before them and the new line after them.
+	if part, ok := spec.ReportPart(report, store.MaxTextBytes-len(text)-len(tail)-2); ok {
+		text += "\n" + part + "\n"
 	}
 	return text + tail
 }
