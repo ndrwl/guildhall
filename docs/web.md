@@ -22,7 +22,7 @@ The page records what you give and tells the Director; it never advances, sends 
    Use this machine's Tailscale name and a port of this copy's own: each Director copy on a machine needs its own port.
    `guildmaster` is your Tailscale login, as `tailscale whois` names it; only that login can answer on the page, and with no `guildmaster` every page is read-only.
 3. Start or reload the Director session.
-   `director start` names the address in its `web` line, and `director status --json` gives a `web` object: `serving` with the address, `failed to bind` with the reason, `not serving` when no session serves it, or `not configured`.
+   `director start` names the address in its `web` line, and `director status --json` gives a `web` object: `serving` with the address, `failed to bind` with the reason, `not serving` when no session serves it, or `not configured`, and its `links`, how the Director links a decision to its page ([status](director.md#status)).
 
 The server binds only when every address the host resolves to is a Tailscale address (`100.64.0.0/10` or `fd7a:115c:a1e0::/48`).
 Anything else, such as a LAN address or `0.0.0.0`, is refused and logged in the session's pane as a warning; the session runs on without the pages.

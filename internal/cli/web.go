@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/ndrwl/guildhall/internal/adapter/claude"
 	"github.com/ndrwl/guildhall/internal/atomicfile"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -50,6 +51,8 @@ type webStatus struct {
 	State  string `json:"state"`
 	URL    string `json:"url,omitempty"`
 	Reason string `json:"reason,omitempty"`
+	// Links is how the Director links a decision: webLinksTicket or webLinksMarkdown.
+	Links string `json:"links,omitempty"`
 }
 
 // webListen binds a web address; nil means web.Listen, which binds only on the tailnet.
@@ -133,6 +136,35 @@ func (a *App) writeWebRecord(path string, rec webRecord) {
 
 // webBaseURL is the pages' base URL for address.
 func webBaseURL(address string) string { return "http://" + address }
+
+// sessionLinks is the task-page links a Claude session's Lanterns draws ticket tokens with: the pages' base URL
+// and the copy's repositories in config order, or nil with no [web] table.
+func sessionLinks(cfg *config.Config) *claude.Links {
+	if cfg == nil || cfg.Web == nil {
+		return nil
+	}
+	repos := []string{}
+	for _, r := range cfg.Repositories {
+		repos = append(repos, r.ID)
+	}
+	return &claude.Links{URL: webBaseURL(cfg.Web.Address), Repos: repos}
+}
+
+// The link styles director status's web object reports in links: ticket tokens, which Lanterns draws as links
+// when the pages are served and function hooks are on, or Markdown links otherwise.
+const (
+	webLinksTicket   = "ticket"
+	webLinksMarkdown = "markdown"
+)
+
+// webLinks is the link style for web, given the environment's CLAUDE_CODE_ENABLE_FUNCTION_HOOKS, which director
+// status inherits from the Director's Claude process.
+func webLinks(web *webStatus, functionHooks string) string {
+	if web != nil && web.State == webServing && functionHooks == "1" {
+		return webLinksTicket
+	}
+	return webLinksMarkdown
+}
 
 // readWebStatus is director status's web object for the config at cfgPath and the copy's state directory: not
 // configured with no [web] table; else the address, and the serving record's state when it was written by session,

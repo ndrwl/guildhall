@@ -24,3 +24,11 @@ export const linked=[
  '**Needs you**','- d122 · approve the plan · accept-1 · [open](http://andrew-lap-wsl.tail5da40a.ts.net:4388/guildhall/d122#accept-1)','',
  'd122 waits for you to approve its plan: approve or revise. [open](http://andrew-lap-wsl.tail5da40a.ts.net:4388/guildhall/d122#accept-1)',
 ].join('\n');
+
+// The same ask with ticket tokens, which Lanterns draws as task-page links (d146 slice 2).
+export const ticketed=[
+ '🟡 Guildmaster, one thing needs you.','',
+ '**Needs you**','- d122 · approve the plan · accept-1 · ticket:guildhall/d122#accept-1','',
+ '**What I did**','Filed ticket:guildhall/d147 for the export; d122 waits for you: ticket:guildhall/d122#accept-1.','',
+ '```text','d93 · merged · #228','7 unchanged · /clerk:guild','as of #5812','```',
+].join('\n');

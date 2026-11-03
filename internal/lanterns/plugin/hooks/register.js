@@ -1,8 +1,8 @@
-import {urgency,layout,routineBox,rule,smithy,raster} from '../lib/presentation.mjs';
+import {urgency,layout,linkTickets,routineBox,rule,smithy,raster} from '../lib/presentation.mjs';
 
 // Engine operations are kept here. Geometry and urgency classification are pure.
 // Each module lifetime owns its state; the preference survives Director sessions.
-let activated,loading,preference,calm=false,ticker,tick=0,theme='light';
+let activated,loading,preference,links,calm=false,ticker,tick=0,theme='light';
   const sites=new Map();
   const key='guildhall-lanterns-smithy';
   const active=$=>activated??= $.env.get('CLAUDE_CODE_ENABLE_FUNCTION_HOOKS').then(v=>v==='1',()=>false);
@@ -28,6 +28,13 @@ let activated,loading,preference,calm=false,ticker,tick=0,theme='light';
         const saved=await $.fs.exists(file)&&JSON.parse(await $.fs.read(file)).preference;
         preference=typeof saved==='string'&&saved?saved:undefined;
       }catch {preference=undefined}
+      // The session's links.json, rendered beside the plugin when the copy serves task pages, says where ticket tokens link;
+      // without it tokens are drawn as they are.
+      try {
+        const file=$.plugin.root+'/links.json';
+        const saved=await $.fs.exists(file)&&JSON.parse(await $.fs.read(file));
+        links=saved&&typeof saved.url==='string'&&Array.isArray(saved.repos)?{url:saved.url,repos:saved.repos}:undefined;
+      }catch {links=undefined}
       try {calm=!!preference&&(!await $.fs.exists(preference)||(await $.fs.read(preference)).trim()==='on')}catch {calm=false}
       try {theme=(await $.config.list()).find(r=>r.key==='theme')?.value??'light'}catch {}
       timer($);
@@ -35,7 +42,7 @@ let activated,loading,preference,calm=false,ticker,tick=0,theme='light';
     await loading;
   }
 export function register(on) {
-  activated=undefined;loading=undefined;preference=undefined;calm=false;ticker=undefined;tick=0;theme='light';sites.clear();
+  activated=undefined;loading=undefined;preference=undefined;links=undefined;calm=false;ticker=undefined;tick=0;theme='light';sites.clear();
   on('session.start',async($,e,next)=>{
     if(!await active($))return next(e);
     await load($);
@@ -61,15 +68,19 @@ export function register(on) {
   });
   on('ui.render',{component:'AssistantMessage'},async($,e,next)=>{
     if(!await active($)||!e.props?.text)return next(e);
+    await load($);
     const color=urgency(e.props.text);
     const frame=children=>({borderStyle:'round',borderColor:color,flexDirection:'column',paddingX:1,children});
+    // Ticket tokens are drawn as task-page links; the transcript and the model's context keep the token.
+    const linked=text=>{try {return linkTickets(text,links)}catch {return text}};
     // A reply in the Director's layout is drawn section by section, each with Claude's own drawing;
     // anything else, and any failure, keeps the single frame around the original drawing.
     try {
+      // The layout is split from the original text; each section's tokens are linked as it is drawn.
       const parts=layout(e.props.text);
       if(parts) {
         const {Box,Text}=$.ui.resolve(e);
-        const draw=text=>next({...e,props:{...e.props,text}});
+        const draw=text=>next({...e,props:{...e.props,text:linked(text)}});
         // The frame's border and padding take four columns.
         // The engine's Box takes only full borders, so the rules and the Routine box are drawn as text.
         const width=Math.max(1,Math.min(512,Math.floor(e.viewport?.columns??80)-4));
@@ -80,7 +91,8 @@ export function register(on) {
         return Box(frame(sections));
       }
     }catch {}
-    const original=await next(e);
+    const text=linked(e.props.text);
+    const original=await next(text===e.props.text?e:{...e,props:{...e.props,text}});
     try {
       const {Box}=$.ui.resolve(e);
       return Box(frame(original));

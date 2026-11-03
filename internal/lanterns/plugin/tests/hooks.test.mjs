@@ -2,12 +2,14 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {register} from '../hooks/register.js';
 import {assertS2} from './s2-contract.mjs';
-import {layout, routineBox, rule} from '../lib/presentation.mjs';
-import {twoAsks, nothing, grill} from './layout-fixtures.mjs';
+import {layout, linkTickets, routineBox, rule} from '../lib/presentation.mjs';
+import {twoAsks, nothing, grill, ticketed} from './layout-fixtures.mjs';
 
 const calmPath='/workspace/plugin/calm.json';
+const linksPath='/workspace/plugin/links.json';
 
-function engine(flag='1', preference='off\n', copy='/copy') {
+// links is the session's links.json content; undefined means the session rendered none.
+function engine(flag='1', preference='off\n', copy='/copy', links=undefined) {
  const handlers=[]; let writes=0, writtenPath, writtenValue; const calls=[];
  const on=(event,filter,handler)=>{if(typeof filter==='function'){handler=filter;filter={}}; handlers.push({event,filter,handler});return {catch(){}}};
  register(on);
@@ -15,7 +17,8 @@ function engine(flag='1', preference='off\n', copy='/copy') {
  // The session renders calm.json beside the plugin, naming the copy's preference; a null copy has none.
  const calmFile=JSON.stringify({preference:copy+'/director/lanterns-calm'});
  const $={env:{get:async key=>key==='CLAUDE_CODE_ENABLE_FUNCTION_HOOKS'?flag:undefined},plugin:{root:'/workspace/plugin'},
- fs:{exists:async path=>path===calmPath?copy!==null:preference!==null,read:async path=>path===calmPath?calmFile:preference,write:async(path,value)=>{writes++;writtenPath=path;writtenValue=value}},
+ fs:{exists:async path=>path===linksPath?links!==undefined:path===calmPath?copy!==null:preference!==null,
+  read:async path=>path===linksPath?JSON.stringify(links):path===calmPath?calmFile:preference,write:async(path,value)=>{writes++;writtenPath=path;writtenValue=value}},
  command:{register:async e=>calls.push(e)},clock:{every:(ms,fn)=>{calls.push({ms,fn});return {cancel(){calls.push('canceled')}}}},
  config:{list:async()=>[{key:'theme',value:'dark'}]},
  ui:{resolve:()=>({Box:element('Box'),Text:element('Text'),Raster:element('Raster')}),invalidate:()=>{},toast:text=>calls.push(text),blit:async()=>({deny:true})}};
@@ -128,6 +131,33 @@ test('a non-layout reply, or a section drawing that throws, gives the single fra
  assert.deepEqual(await e.run('ui.render',{component:'AssistantMessage'},{props:{text:'🟡 Guildmaster, d96 waits for you.'}}),single);
  const next=async event=>{if(event.props.text!==twoAsks)throw Error('no sections');return {kind:'original'}};
  assert.deepEqual(await e.run('ui.render',{component:'AssistantMessage'},{props:{text:twoAsks}},next),single);
+});
+test('ticket tokens are drawn as task-page links in each section and in the single frame',async()=>{
+ const links={url:'http://host.tail.ts.net:4388',repos:['guildhall']};
+ const e=engine('1','off\n','/copy',links);const drawn=[];
+ const next=async event=>{drawn.push(event.props.text);return {kind:'drawn',text:event.props.text}};
+ const event={props:{text:ticketed}};
+ const frame=await e.run('ui.render',{component:'AssistantMessage'},event,next);
+ const parts=layout(ticketed);
+ assert.deepEqual(drawn,[parts.marker,linkTickets(parts.needs,links),linkTickets(parts.did,links)]);
+ assert.ok(drawn[1].endsWith('[ticket:guildhall/d122#accept-1](http://host.tail.ts.net:4388/guildhall/d122#accept-1)'));
+ assert.equal(frame.children.length,6);
+ // The reply's own text, which the transcript and the model keep, still holds the token.
+ assert.equal(event.props.text,ticketed);
+ drawn.length=0;
+ const single=await e.run('ui.render',{component:'AssistantMessage'},{props:{text:'🟡 ticket:d147#accept-1 waits.'}},next);
+ assert.deepEqual(drawn,['🟡 [ticket:d147#accept-1](http://host.tail.ts.net:4388/guildhall/d147#accept-1) waits.']);
+ assert.equal(single.children.kind,'drawn');
+});
+test('without links.json, or without the flag, ticket tokens are drawn as they are',async()=>{
+ const drawn=[];const next=async event=>{drawn.push(event.props.text);return {kind:'drawn',text:event.props.text}};
+ await engine().run('ui.render',{component:'AssistantMessage'},{props:{text:ticketed}},next);
+ const parts=layout(ticketed);
+ assert.deepEqual(drawn,[parts.marker,parts.needs,parts.did]);
+ drawn.length=0;
+ const off=engine('0','off\n','/copy',{url:'http://host.tail.ts.net:4388',repos:['guildhall']});
+ assert.deepEqual(await off.run('ui.render',{component:'AssistantMessage'},{props:{text:ticketed}},next),{kind:'drawn',text:ticketed});
+ assert.deepEqual(drawn,[ticketed]);
 });
 test('without the flag a layout reply is drawn natively',async()=>{
  const e=engine('0');const drawn=[];

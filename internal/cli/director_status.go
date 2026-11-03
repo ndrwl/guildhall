@@ -555,6 +555,13 @@ func (a *App) directorStatusCmd(args []string) int {
 	}
 	out.SupervisorBinary = a.supervisorBinaryStatus(out.Session, out.Copy)
 	out.Web = readWebStatus(*cfg, *state, out.Session)
+	if out.Web != nil {
+		hooks := ""
+		if a.Getenv != nil {
+			hooks = a.Getenv("CLAUDE_CODE_ENABLE_FUNCTION_HOOKS")
+		}
+		out.Web.Links = webLinks(out.Web, hooks)
+	}
 	return a.printJSON(out)
 }
 

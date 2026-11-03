@@ -14,6 +14,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
+	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/git"
 	"github.com/ndrwl/guildhall/internal/reconcile"
 	"github.com/ndrwl/guildhall/internal/render"
@@ -714,5 +715,40 @@ func TestDirectorStatusInstall(t *testing.T) {
 				t.Errorf("waitingKinds = %v, want the install item not to wake the Director", n)
 			}
 		})
+	}
+}
+
+// TestWebLinks: director status asks for ticket tokens only when the pages are served and the Claude process it
+// runs under has function hooks on, which Lanterns needs to draw them; otherwise Markdown links.
+func TestWebLinks(t *testing.T) {
+	for _, c := range []struct {
+		web   *webStatus
+		hooks string
+		want  string
+	}{
+		{&webStatus{State: webServing}, "1", webLinksTicket},
+		{&webStatus{State: webServing}, "", webLinksMarkdown},
+		{&webStatus{State: webServing}, "0", webLinksMarkdown},
+		{&webStatus{State: webNotServing}, "1", webLinksMarkdown},
+		{&webStatus{State: webFailed}, "1", webLinksMarkdown},
+		{&webStatus{State: webNotConfigured}, "1", webLinksMarkdown},
+		{nil, "1", webLinksMarkdown},
+	} {
+		if got := webLinks(c.web, c.hooks); got != c.want {
+			t.Errorf("webLinks(%+v, %q) = %q, want %q", c.web, c.hooks, got, c.want)
+		}
+	}
+}
+
+// TestSessionLinks: a copy with a [web] table gives its Claude sessions the pages' URL and its repositories in
+// config order; a copy without one gives none.
+func TestSessionLinks(t *testing.T) {
+	if got := sessionLinks(&config.Config{}); got != nil {
+		t.Errorf("no [web]: %+v", got)
+	}
+	cfg := &config.Config{Web: &config.Web{Address: "host.tail.ts.net:4388"}, Repositories: []config.Repository{{ID: "site"}, {ID: "guildhall"}}}
+	got := sessionLinks(cfg)
+	if got == nil || got.URL != "http://host.tail.ts.net:4388" || strings.Join(got.Repos, ",") != "site,guildhall" {
+		t.Errorf("links = %+v", got)
 	}
 }

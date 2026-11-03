@@ -24,7 +24,7 @@ CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 guildhall director start --copy /path/to/cop
 
 Guildhall does not set that flag for you.
 It sets only `FORCE_HYPERLINK=1` in a Director's environment ([Director start](director.md#start)); `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` stays the Guildmaster's choice.
-Without its exact value `1`, the function-hook module does nothing: no `/calm`, preference reads, timers, redraws or frame changes.
+Without its exact value `1`, the function-hook module does nothing: no `/calm`, preference reads, [ticket links](#ticket-links), timers, redraws or frame changes.
 The marker instruction and native status line remain available.
 This integration is checked with Claude Code 2.1.310's zero-model-call `claude plugin test`; early-access API changes may require an adapter update.
 The automated cross-platform CI also runs the engine-independent presentation contracts with Node 24.
@@ -46,6 +46,20 @@ A thin rule in the frame's color sets off What I did and the Routine box, and th
 Any reply that is not exactly the layout, any doubt in the split and any drawing error give the single frame as before.
 Without function hooks nothing is drawn and the same text reads as plain markdown.
 This changes presentation, not transcript text, tool execution or model context.
+
+## Ticket links
+
+With function hooks enabled, Lanterns draws a ticket token in an assistant reply as a link to its [task page](web.md), so the Director need not spell out each URL.
+A token is `ticket:<repo>/<id>` or `ticket:<repo>/<id>#<record>`, such as `ticket:guildhall/d147#accept-1`; a bare `ticket:<id>` or `ticket:<id>#<record>` is accepted only when the copy configures exactly one repository.
+It starts at a word boundary, and a token in a code span or a fenced block is left as it is.
+Lanterns rewrites each token to the Markdown link `[ticket:…](<url>/<repo>/<id>#<record>)`, so the drawn text stays the short token, and draws it with Claude's own drawing, in each section of a layout reply (after the split, which reads the original text) and in the single frame.
+A token it cannot resolve, for an unknown repository or a bare id in a copy with several repositories, is drawn as written.
+The transcript and the model's context keep the token.
+
+The plugin learns where the pages are from `links.json` in its own directory, `{"url":"<web base url>","repos":["guildhall",…]}`: the [`[web] address`](web.md) as its base URL and the copy's repositories in config order.
+Every start and reload renders it with the plugin; it is left out when the copy has no `[web]` table, and then no token is linked.
+The rewrite runs only with function hooks on, so the Director uses tokens only when `guildhall director status --json` reports `web.links` as `ticket`: the pages are `serving` and the environment the status command inherits from the Director's Claude process has `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`.
+Otherwise it reports `markdown`, and the Director writes Markdown links ([status](director.md#status)).
 
 The workspace's one native status line runs `guildhall director context-report --lanterns`.
 Its first segment is the overall light, then open tasks, running attempts, open decisions, attention items and the context percentage.

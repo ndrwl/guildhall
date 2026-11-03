@@ -38,6 +38,7 @@ Calm is on when `<copy>/director/lanterns-calm` is absent; explicit `on` or `off
 An unreadable or invalid existing preference fails closed to native drawings.
 Its toggle persists before changing the live choice; a write failure leaves the choice unchanged.
 The preference path comes from `calm.json` at the plugin root, `{"preference":"<path>"}`, which `claude.Adapter.SessionFiles` renders for the copy; without that file, Calm registers no command, reads or writes no preference and leaves native tool and Spinner drawings unchanged.
+Ticket tokens are linked only from `links.json` at the plugin root, `{"url":"<base>","repos":[…]}`, which `claude.Adapter.SessionFiles` renders when the copy has a `[web]` table; without it, or when a token does not resolve, the drawn text is the reply's own, and the transcript and model context always keep the token.
 Calm hides only routine tool drawings, leaving messages, execution and stored transcripts untouched.
 Its terminal Spinner is S2, Rare forge spark: an 11-by-5-cell sprite centered in `W = max(1, min(512, floor(viewport.columns ?? 80) - 2))` Raster columns.
 The origin is `x = max(0, floor((W - 11) / 2))`; all individual writes clip without wrapping.

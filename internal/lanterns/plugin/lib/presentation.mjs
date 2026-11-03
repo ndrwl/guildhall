@@ -33,6 +33,38 @@ export function layout(text) {
   return {marker,needs,did,routine,asOf};
 }
 
+// An id segment of a ticket token: letters, digits, '.', '_' and '-', starting and ending with a letter or digit,
+// so a sentence's closing period is not part of it.
+const segment='[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?';
+// A code span (left as is) or a ticket token, `ticket:<repo>/<id>[#<record>]` or `ticket:<id>[#<record>]`, at a word
+// boundary and not already the text of a Markdown link.
+const ticketOrCode=new RegExp('(`+).*?\\1|(?<![\\w./:#-])ticket:(?:('+segment+')/)?('+segment+')(?:#('+segment+'))?(?![\\w/#]|\\]\\()','g');
+
+// linkTickets rewrites each ticket token in text to a Markdown link to its task page, `[ticket:…](<url>/<repo>/<id>#<record>)`,
+// so the drawn text stays the short token. links is the session's links.json, {url, repos}. A bare id resolves only
+// when links names exactly one repository; a token it cannot resolve, and any token in a code span or fenced block,
+// is left as it is. Without links the text is unchanged.
+export function linkTickets(text,links) {
+  const url=typeof links?.url==='string'?links.url.replace(/\/+$/,''):'';
+  const repos=Array.isArray(links?.repos)?links.repos.filter(r=>typeof r==='string'):[];
+  if(typeof text!=='string'||!url||repos.length===0)return text;
+  let fence;
+  return text.split('\n').map(line=>{
+    const open=/^\s*(`{3,}|~{3,})/.exec(line);
+    if(fence) {
+      if(open&&open[1][0]===fence[0]&&open[1].length>=fence.length&&line.trim()===open[1])fence=undefined;
+      return line;
+    }
+    if(open){fence=open[1];return line}
+    return line.replace(ticketOrCode,(token,code,repo,id,record)=>{
+      if(code)return token;
+      const r=repo??(repos.length===1?repos[0]:undefined);
+      if(!r||!repos.includes(r))return token;
+      return `[${token}](${url}/${r}/${id}${record?'#'+record:''})`;
+    });
+  }).join('\n');
+}
+
 // routineEdge is the Routine box's top border, naming the box and the feed sequence it was read at.
 export function routineEdge(width,asOf) {
   const left='┌─ routine ',right=` as of #${asOf} ─┐`;
