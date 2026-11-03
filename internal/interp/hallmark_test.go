@@ -270,6 +270,61 @@ func TestHallmarkFollowUpsCut(t *testing.T) {
 	}
 }
 
+// reportQuestions is a hallmark report's `## Questions` in the template's shape, each question with Recommended: and
+// Alternative: lines.
+const reportQuestions = "**Q1. Change direction**\nShould the next slice move to the web page?\nRecommended: yes, because the relay is done.\nAlternative: finish the CLI first, a week later.\n\n" +
+	"**Q2. Drop the legacy reader**\nRecommended: drop it, because no record needs it.\nAlternative: keep it a release, at the cost of its tests."
+
+// TestHallmarkFollowUpsQuestions: the follow-ups question carries, after its ranked list and before the answer
+// format, the report's questions in full, each Alternative: line byte for byte, or the none line; a report with no
+// questions section, or a malformed one, has no part and keeps its question as before.
+func TestHallmarkFollowUpsQuestions(t *testing.T) {
+	const list = "\nRanked follow-ups:\nH1. Tighten the parser\nH2. Drop the stale cache\n"
+	const answer = "\nAnswer pick, then the ids"
+	for name, c := range map[string]struct{ report, want string }{
+		"in full":   {rankedReport + "\n## Questions\n\n" + strings.ReplaceAll(reportQuestions, "\n", "\r\n") + "\n\n## Procedure\n\n- none.\n", list + "\nOpen questions in full:\n" + reportQuestions + "\n" + answer},
+		"none":      {rankedReport + "\n## Questions\n\nNone.\n", list + "\nOpen questions: none.\n" + answer},
+		"no list":   {"# Hallmark\n\n## Questions\n\n" + reportQuestions + "\n", "\nOpen questions in full:\n" + reportQuestions + "\n" + answer},
+		"older":     {rankedReport, list + answer},
+		"malformed": {rankedReport + "\n## Questions\n\nAsk me later.\n", list + answer},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h, d := followUpsOf(t, backends[0], c.report)
+			path := filepath.Join(h.eng.DocumentDir, filepath.FromSlash(h.documents(t)["hallmark-1-report"].Path))
+			if want := "Follow-ups of hallmark task app/t7.\nReport: " + path + "\n" + c.want; !strings.HasPrefix(d.Question, want) {
+				t.Errorf("question = %q, want it to start %q", d.Question, want)
+			}
+			if !slices.Equal(d.Options, []string{"pick", "none"}) || !strings.HasSuffix(d.Question, "the Director creates one for each id picked.\n") {
+				t.Errorf("decision = %+v, want the pick and none answer format kept", d)
+			}
+		})
+	}
+}
+
+// TestHallmarkFollowUpsQuestionsCut: questions that do not fit the question's room are cut at a question boundary,
+// ending with the cut marker, after the whole ranked list, and the question stays within store.MaxTextBytes.
+func TestHallmarkFollowUpsQuestionsCut(t *testing.T) {
+	var qs strings.Builder
+	for i := 1; qs.Len() <= 2*store.MaxTextBytes; i++ {
+		fmt.Fprintf(&qs, "**Q%d. Question %d**\n%s\nRecommended: yes.\nAlternative: no.\n\n", i, i, strings.Repeat("why ", 200))
+	}
+	_, d := followUpsOf(t, backends[0], rankedReport+"\n## Questions\n\n"+qs.String())
+	if len(d.Question) > store.MaxTextBytes || !strings.Contains(d.Question, "\nH2. Drop the stale cache\n\nOpen questions in full:\n**Q1. Question 1**\n") ||
+		!strings.Contains(d.Question, "Alternative: no.\n\n(cut; read the spec)\n\nAnswer pick") {
+		t.Errorf("question of %d bytes = %.300q…, want the questions cut within %d bytes", len(d.Question), d.Question, store.MaxTextBytes)
+	}
+	// The ranked list fills the question first; the questions then get the room left, here the heading and marker.
+	var full strings.Builder
+	full.WriteString("# Hallmark\n\n")
+	for i := 1; full.Len() <= 2*store.MaxTextBytes; i++ {
+		fmt.Fprintf(&full, "### H%d. %s\n", i, strings.Repeat("fix ", 20))
+	}
+	_, d = followUpsOf(t, backends[0], full.String()+"\n## Questions\n\n"+qs.String())
+	if len(d.Question) > store.MaxTextBytes || !strings.Contains(d.Question, "\n… see the report\n") {
+		t.Errorf("question of %d bytes, want the cut list within %d bytes", len(d.Question), store.MaxTextBytes)
+	}
+}
+
 // TestHallmarkRefusesChanges: a hallmark result that leaves a tracked file changed, staged or not, or a new commit,
 // is refused at intake as the result's fault, naming why: the attempt fails, no report is recorded and the task stays
 // open for the Director.

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"html/template"
+	"math"
 	"net/http"
 	"slices"
 	"strconv"
@@ -79,8 +80,9 @@ type askView struct {
 	Plan    bool
 	Summary template.HTML
 	// Questions is that spec's open-questions part (spec.SpecPart), shown after Summary, or on a design ask its
-	// design's, shown in a box of its own: the questions in full, rendered by goldmark, or the line saying there are
-	// none; empty when the document has no readable section.
+	// design's, or on a follow-ups ask its hallmark report's (spec.ReportPart), shown in a box of its own: the
+	// questions in full, rendered by goldmark, or the line saying there are none; empty when the document has no
+	// readable section.
 	Questions template.HTML
 	// MockupHref links a design ask's mock-up as MockupLabel: an HTML mock-up's frame route, opened in a new tab, or
 	// the reader page of one the page cannot show inline. Mockup is a Markdown mock-up rendered by goldmark, shown
@@ -308,6 +310,8 @@ func (s *Server) askView(t Task, a Ask) askView {
 			s.planSummary(*doc, &v)
 		} else if a.Kind == "approval" && doc != nil && doc.Kind == "Design" {
 			s.designQuestions(*doc, &v)
+		} else if a.Kind == "follow-ups" && doc != nil {
+			s.reportQuestions(*doc, &v)
 		}
 	}
 	if doc := taskDocument(t, a.Mockup); a.Mockup != "" && doc != nil {
@@ -377,6 +381,43 @@ func (s *Server) designQuestions(doc Document, v *askView) {
 	}
 	v.Questions = questionsHTML(part)
 	v.Rest = stripSummary(v.Rest, "", part)
+}
+
+// reportQuestions adds a hallmark report's questions to its follow-ups ask, whose subject is the report document doc:
+// the report's `## Questions` in full (spec.ReportPart), read verified and rendered as a plan approval's are, the
+// part the follow-ups question carries after its ranked list, which is taken out of the rest of the question so it
+// shows once. The box is cut only at QuestionsMax, so it shows every question the question text had room for. A
+// report with no readable section, or whose file does not verify, shows none and keeps its question whole.
+func (s *Server) reportQuestions(doc Document, v *askView) {
+	body, status, _ := s.verified(doc)
+	if status != http.StatusOK {
+		return
+	}
+	part, ok := spec.ReportPart(body, math.MaxInt)
+	if !ok {
+		return
+	}
+	v.Questions = questionsHTML(part)
+	v.Rest = stripReportQuestions(v.Rest)
+}
+
+// followUpsAnswer starts the answer format that ends a follow-ups question, after its questions.
+const followUpsAnswer = "\n\nAnswer pick, then "
+
+// stripReportQuestions takes a follow-ups question's open-questions part out of rest, the question after its first
+// line: from the part's heading, after the ranked list, up to the answer format, whatever the stored copy holds.
+func stripReportQuestions(rest string) string {
+	i := strings.Index(rest, "\n\n"+spec.QuestionsInFull+"\n")
+	if i < 0 {
+		i = strings.Index(rest, "\n\n"+spec.QuestionsNone)
+	}
+	if i < 0 {
+		return rest
+	}
+	if end := strings.LastIndex(rest, followUpsAnswer); end > i {
+		return rest[:i] + rest[end:]
+	}
+	return rest[:i]
 }
 
 // questionsHTML renders an open-questions part (spec.Part) for an ask's box: "Open questions in full" and the

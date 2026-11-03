@@ -147,3 +147,89 @@ func TestSpecPart(t *testing.T) {
 		}
 	}
 }
+
+// hallmarkQuestions is a hallmark report's `## Questions` in the hallmark template's shape: Recommended: and
+// Alternative: lines, no Options: line.
+const hallmarkQuestions = `**Q1. Change direction**
+Should the next slice move to the web page?
+Recommended: yes, because the chat relay is done.
+Alternative: finish the CLI first, a week later.
+
+**Q2. Drop the legacy reader**
+Recommended: drop it, because no record still needs it.
+Alternative: keep it one more release, at the cost of its tests.`
+
+func reportWith(questions string) string {
+	return "# Hallmark 2026-11-03\n\n## Fixes\n\n### H1. Tighten the parser\n\n## Questions\n\n" + questions + "\n\n## Procedure\n\n- none.\n"
+}
+
+// TestPartWithin: the part is whole when it fits, cut at a question boundary with CutMarker within max when it does
+// not, and refused when max has no room for the heading and the marker; the none line fits or is refused whole.
+func TestPartWithin(t *testing.T) {
+	q, err := SpecQuestions([]byte(specWith(d150Questions)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := QuestionsInFull + "\n"
+	first, second := q.Items[0].Text, q.Items[1].Text
+	for _, c := range []struct {
+		max  int
+		want string
+		ok   bool
+	}{
+		{len(head) + len(d150Questions), head + d150Questions, true},
+		{len(head) + len(d150Questions) - 1, head + first + "\n\n" + second + "\n\n" + CutMarker, true},
+		{len(head) + len(first) + 2 + len(CutMarker), head + first + "\n\n" + CutMarker, true},
+		{len(head) + len(first) + 1 + len(CutMarker), head + CutMarker, true},
+		{len(head) + len(CutMarker), head + CutMarker, true},
+		{len(head) + len(CutMarker) - 1, "", false},
+	} {
+		got, ok := q.PartWithin(c.max)
+		if got != c.want || ok != c.ok {
+			t.Errorf("PartWithin(%d) = %q, %v; want %q, %v", c.max, got, ok, c.want, c.ok)
+		}
+		if len(got) > c.max {
+			t.Errorf("PartWithin(%d) is %d bytes", c.max, len(got))
+		}
+	}
+	none := Questions{None: true}
+	if got, ok := none.PartWithin(len(QuestionsNone)); !ok || got != QuestionsNone {
+		t.Errorf("none PartWithin = %q, %v", got, ok)
+	}
+	if _, ok := none.PartWithin(len(QuestionsNone) - 1); ok {
+		t.Error("none PartWithin with no room is not refused")
+	}
+	long := Questions{Items: []Question{{N: 1, Text: strings.Repeat("a", QuestionsMax)}, {N: 2, Text: "b"}}}
+	if got, ok := long.PartWithin(1 << 20); !ok || got != long.Part() {
+		t.Errorf("PartWithin of a long section = %d bytes, %v; want Part, cut at QuestionsMax", len(got), ok)
+	}
+}
+
+// TestReportPart: a hallmark report's `## Questions` is copied verbatim with each Alternative: line, CRLF read as LF;
+// "None" gives the none line; a report with no section, or a malformed one, has no part; text that is not UTF-8 is
+// made valid; and max cuts it as PartWithin does.
+func TestReportPart(t *testing.T) {
+	want := QuestionsInFull + "\n" + hallmarkQuestions
+	if got, ok := ReportPart([]byte(reportWith(hallmarkQuestions)), QuestionsMax*2); !ok || got != want {
+		t.Errorf("ReportPart = %q, %v; want %q", got, ok, want)
+	}
+	if got, ok := ReportPart([]byte(strings.ReplaceAll(reportWith(hallmarkQuestions), "\n", "\r\n")), QuestionsMax*2); !ok || got != want {
+		t.Errorf("ReportPart of CRLF = %q, %v", got, ok)
+	}
+	if got, ok := ReportPart([]byte(reportWith("None.")), 100); !ok || got != QuestionsNone {
+		t.Errorf("ReportPart none = %q, %v", got, ok)
+	}
+	for _, doc := range []string{"# Hallmark\n\n## Fixes\n", reportWith("Ask the Guildmaster."), reportWith("**Q1. No answer**\nAlternative: x.")} {
+		if got, ok := ReportPart([]byte(doc), QuestionsMax); ok || got != "" {
+			t.Errorf("ReportPart of an unreadable section = %q, %v", got, ok)
+		}
+	}
+	bad := "**Q1. Bad \xff byte**\nRecommended: yes.\nAlternative: no."
+	if got, ok := ReportPart([]byte(reportWith(bad)), QuestionsMax); !ok || got != QuestionsInFull+"\n**Q1. Bad � byte**\nRecommended: yes.\nAlternative: no." {
+		t.Errorf("ReportPart of invalid UTF-8 = %q, %v", got, ok)
+	}
+	first := strings.Split(hallmarkQuestions, "\n\n")[0]
+	if got, ok := ReportPart([]byte(reportWith(hallmarkQuestions)), len(want)-1); !ok || got != QuestionsInFull+"\n"+first+"\n\n"+CutMarker {
+		t.Errorf("ReportPart cut = %q, %v", got, ok)
+	}
+}
