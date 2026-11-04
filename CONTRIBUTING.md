@@ -35,6 +35,8 @@ python3 .github/tests/test_release.py
 ```
 
 `go test -race` needs cgo and a C compiler; the release test needs PyYAML 6.0.1 ([D7](docs/decisions/release-policy-regression-test.md)).
+CI splits the race run into the parallel jobs `race (1)`–`race (3)`, each running the packages `.github/race-shards.txt` assigns it ([CI race shards](docs/decisions/ci-race-shards.md)).
+A new package must be added to `.github/race-shards.txt`, or all three race jobs fail; `bash .github/race-shards.sh check` checks the list.
 
 `gofmt -l .` must print nothing.
 Use the golangci-lint version pinned in `.github/workflows/ci.yml`; the lint policy is recorded in [D4](docs/decisions/ci-matrix-and-lint.md).

@@ -75,11 +75,6 @@ jobs:
       - name: Run release-policy test
         if: matrix.os == 'ubuntu-latest'
         run: python .github/tests/test_release.py
-      - name: Test with race detector
-        if: matrix.os == 'ubuntu-latest'
-        env:
-          GUILDHALL_CI_REQUIRE: ${{ matrix.require }}
-        run: go test -race ./...
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
@@ -89,3 +84,37 @@ jobs:
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
           version: v2.15.0
+
+  # The race detector, split by package across three parallel jobs
+  # (docs/decisions/ci-race-shards.md). .github/race-shards.txt assigns each
+  # package to one shard. No needs:, so every race check appears at once.
+  race:
+    name: race (${{ matrix.shard }})
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+      - name: Check race shards cover every package
+        run: bash .github/race-shards.sh check
+      - name: Test with race detector
+        env:
+          # The ubuntu-latest require value of the test matrix.
+          GUILDHALL_CI_REQUIRE: pwsh
+        run: |
+          mapfile -t packages < <(bash .github/race-shards.sh packages ${{ matrix.shard }})
+          if [ "${#packages[@]}" -eq 0 ]; then
+            echo "race shard ${{ matrix.shard }} has no packages"
+            exit 1
+          fi
+          go test -race "${packages[@]}"

@@ -14,7 +14,7 @@ The skips that use it:
 - `skills` `TestScriptsAreTwinnedAndParse` and `TestContractTDDCheckTwinsAgree`, `pwsh` (and `sh`, which is not requirable) not on `PATH`;
 - `internal/adapter` `TestOwnedWorkerStopContract` and `TestOwnedWorkerRejectsUnverifiedIdentity`, which need Windows.
 
-The [CI workflow's matrix](../../.github/workflows/ci.yml) owns the required capabilities for each runner.
+The [CI workflow's matrix](../../.github/workflows/ci.yml) owns the required capabilities for each runner; the `race (1)`–`race (3)` jobs, which run on Linux outside that matrix, set `GUILDHALL_CI_REQUIRE=pwsh` themselves.
 
 `Ceiling(d)` scales the longest a test waits for an event before it fails: `d` times `CISlowdown` (5), but no more than the larger of `d` and `CIMaxCeiling` (2 minutes), when `CI` is set to anything but empty, as on every hosted runner, and `d` unchanged otherwise ([windows-ci-speed](../decisions/windows-ci-speed.md)).
 The cap keeps a stuck wait failing with its message inside `go test`'s ten-minute package timeout, which otherwise stops the package and loses the test's messages.

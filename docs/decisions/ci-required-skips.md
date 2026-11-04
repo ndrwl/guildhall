@@ -27,4 +27,4 @@ The requirable names are a fixed list, so a misspelt requirement fails every run
 ## Consequences
 
 A runner image that loses a promised tool turns CI red rather than silently running fewer cases.
-New steps that run tests must carry the same `GUILDHALL_CI_REQUIRE`, as the [race step](ci-action-pins-and-race.md) does.
+New steps that run tests must carry the same `GUILDHALL_CI_REQUIRE`, as the [race jobs](ci-race-shards.md) do.
