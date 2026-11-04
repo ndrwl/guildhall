@@ -56,9 +56,23 @@ func TestExternalMessage(t *testing.T) {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
+	// in_reply_to is carried to the record, where the store refuses it on anything but a peer's answer.
 	e.InReplyTo = "q-1"
-	if _, err := messaging.ExternalMessage(store.SenderSteward, "alpha", e); !errors.Is(err, messaging.ErrInvalid) {
-		t.Errorf("in_reply_to: %v", err)
+	m, err = messaging.ExternalMessage(store.SenderSteward, "alpha", e)
+	if err != nil || m.InReplyTo != "q-1" {
+		t.Fatalf("in_reply_to: %+v, %v", m, err)
+	}
+	if err := store.ValidateExternalMessage(m); !errors.Is(err, store.ErrInvalid) || !strings.Contains(err.Error(), "in_reply_to") {
+		t.Errorf("a steward-report with in_reply_to: %v", err)
+	}
+	// A peer is its own sender: the envelope's from must be the identity its receiving command records.
+	peer := messaging.DirectorEnvelope{Schema: "guildhall.director-message/1", ID: "q-1", From: "web", To: "alpha", Type: store.MessageQuestion,
+		Subject: "Which flag?", Text: "Does cli list take --json on release 3?"}
+	if m, err := messaging.ExternalMessage("web", "alpha", peer); err != nil || store.ValidateExternalMessage(m) != nil {
+		t.Errorf("peer question: %+v, %v", m, err)
+	}
+	if _, err := messaging.ExternalMessage("tools", "alpha", peer); !errors.Is(err, messaging.ErrInvalid) {
+		t.Errorf("a peer's envelope received from another peer: %v", err)
 	}
 }
 

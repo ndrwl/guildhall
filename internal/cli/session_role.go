@@ -49,6 +49,8 @@ type sessionSettings struct {
 type sessionStart struct {
 	inFlight, running, parked, held, policies []string
 	closes, prunes, backups, collects         *workspaceCloseWatch
+	// deliveries is a Director session's retry of its pending peer messages, nil for a copy with no [[peer]].
+	deliveries *workspaceCloseWatch
 }
 
 // wait waits for the session's running sweeps.
@@ -57,6 +59,7 @@ func (s sessionStart) wait() {
 	s.prunes.wait()
 	s.backups.wait()
 	s.collects.wait()
+	s.deliveries.wait()
 }
 
 // sessionWatchers are a role's watchers of one session, nil for none, and the task pages the session serves, nil
@@ -162,6 +165,11 @@ func (a *App) directorSessionStart(p startPlan, copyDir, storePath, state string
 	if bk != nil {
 		out.backups = &workspaceCloseWatch{every: bk.every, round: bk.run}
 		out.backups.tick(time.Now())
+	}
+	// With a [[peer]], the session retries its pending peer messages at its start and then every minute, off the
+	// decision path and with no model turn, so a message to a sleeping machine is delivered once it wakes.
+	if out.deliveries = a.sessionPeerDeliveries(p.cfg, storePath); out.deliveries != nil {
+		out.deliveries.tick(time.Now())
 	}
 	status, err := readDirectorStatusConfig(context.Background(), storePath, state, p.cfgPath, a.Now)
 	if err != nil {

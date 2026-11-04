@@ -643,7 +643,7 @@ var MessageTypes = map[string]string{
 	MessageWorkerStalled: "engine and launcher", MessageWorkspaceKept: "engine",
 	MessageMergeQueued: "engine", MessageRebased: "engine", MessageRebaseEscalated: "engine", MessageRebaseStuck: "engine",
 	MessageApprovalCarried: "engine", MessageLateSteering: "engine",
-	MessageQuestion: "local", MessageNote: "local",
+	MessageQuestion: "local and director", MessageNote: "local",
 	MessageJudgeFailed: "quality", MessageJudgement: "quality", MessageJudgementRefused: "quality",
 	MessageHerdrLeftOpen: "supervisor", MessagePruneKept: "supervisor", MessageHoldReleased: "supervisor",
 	MessageTriageOpened: "supervisor", MessageLockBusy: "supervisor",
@@ -651,6 +651,9 @@ var MessageTypes = map[string]string{
 	MessageDecisionAnswered:    "page",
 	MessageGrillAnswered:       "page",
 	MessageStewardReport:       "steward",
+	MessageHandoffOffer:        "director",
+	MessageDependencyNotice:    "director",
+	MessageAnswer:              "director",
 }
 
 // UnreadFrom is DirectorUnread's key for unread messages of type t from sender: "<t> from <sender>".
@@ -660,7 +663,7 @@ func UnreadFrom(t, sender string) string { return t + " from " + sender }
 // MessageTypes and "other", which counts every other type. Notes are counted by sender instead, keyed
 // UnreadFrom(MessageNote, sender) with the sender from MessageSenders, and so are external messages, such as a
 // Steward message, keyed UnreadFrom(type, sender) with the type in MessageTypes or "other" and the sender from
-// ExternalSenders, so no key carries free text.
+// ValidateExternalSender, the Steward or a peer the receiving copy's config lists, so no key carries free text.
 // Its cost grows with the number of unread messages and repositories, not with the store.
 // The session's inbox is the Director's or, in a Steward store, the Steward's (RecipientRole.SessionInbox); both
 // are counted, since a store has only one session.
@@ -838,8 +841,10 @@ func validateWake(w Wake) error {
 	if err := validateIDs(w.SenderType); err != nil {
 		return err
 	}
-	if w.ExternalSender != "" && !slices.Contains(ExternalSenders, w.ExternalSender) {
-		return invalid("external sender %q must be one of %s", w.ExternalSender, strings.Join(ExternalSenders, ", "))
+	if w.ExternalSender != "" {
+		if err := ValidateExternalSender(w.ExternalSender); err != nil {
+			return err
+		}
 	}
 	switch {
 	case w.Sequence != 0 || !w.Time.IsZero():

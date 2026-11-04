@@ -187,9 +187,14 @@ func (p storeRecords) External(sender, id string) (store.ExternalMessage, error)
 }
 
 // wakeExternal runs messaging.WakeExternal for an external message just received, over the store file at path
-// opened for each record operation, so no lock is held while it wakes.
+// opened for each record operation, so no lock is held while it wakes. Its sender type is steward for a Steward
+// message and director for a peer's.
 func (a *App) wakeExternal(path, sender, id string) (store.Wake, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), wakeTimeout)
 	defer cancel()
-	return messaging.WakeExternal(ctx, storeRecords{path: path}, a.directorPane(), sender, id, sender)
+	senderType := messaging.SenderPeer
+	if sender == store.SenderSteward {
+		senderType = messaging.SenderSteward
+	}
+	return messaging.WakeExternal(ctx, storeRecords{path: path}, a.directorPane(), sender, id, senderType)
 }

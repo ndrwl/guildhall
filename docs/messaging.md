@@ -16,6 +16,7 @@ Supported today, on a local store file named on the command line:
 - acknowledging a consumed message;
 - [waking the Director](#waking-the-director) when a message to it is stored;
 - [Steward messages](#steward-messages): the Steward telling an enrolled Director about an issue it found, which the Director's external inbox receives from the `steward` sender;
+- [Director-to-Director messages](#director-to-director-messages): a Director sending another Director, its [peer](#peers), a `handoff-offer`, `dependency-notice`, `question` or `answer`, over SSH between machines and in process on one machine and account;
 - [steering a running attempt](#steering-an-attempt): every `guildhall` command the Artisan runs shows its unacknowledged messages, and intake refuses a succeeded result until each is acknowledged.
 
 Not provided yet:
@@ -23,9 +24,8 @@ Not provided yet:
 - showing a running Artisan a message between its `guildhall` commands on a runtime with no hook: only Claude has the [after-tool-use hook](#steering-an-attempt).
   An Artisan elsewhere that runs no `guildhall` command for a long stretch sees a message at its next one, or when its result is refused;
 - finding the store from a Director's runtime context: every Director command takes `--store <path>` or a copy;
-- messaging another Director, on this machine or another.
-  Work still moves between Directors only by manual handoff (R1.15); [Director messaging](#director-messaging-designed-not-built) is designed, not built;
-- authentication of the sender: anyone who can write the store file can send a message.
+- tickets from messages: a Director message informs only, and work still moves between Directors only by manual handoff (R1.15); filing a message as a ticket is [designed, not built](#director-messaging-designed-not-built);
+- authentication of a local sender: anyone who can write the store file can send a message. A peer on another machine is identified by its SSH key's forced command ([identity](#peer-identity)).
 
 ## Authority
 
@@ -145,6 +145,7 @@ An envelope cannot declare its own sender: `sender` is not an envelope field, so
 | `other-director` | `GUILDHALL_SESSION` is set and copy discovery finds a different copy. |
 | `guildmaster` | Neither `GUILDHALL_SESSION` nor `GUILDHALL_ATTEMPT` is set, wherever it runs. |
 | `steward` | `messages receive` took in a [Steward message](#steward-messages). It is the sender of an external message only, never of `messages send`, whose sender comes from its environment, so no local process becomes the Steward by setting a variable. |
+| a peer's name | `messages receive --from <peer>` took in a [Director-to-Director message](#director-to-director-messages) from a [peer](#peers) the receiving copy's config lists, such as `web`. Like `steward` it is recorded only by `messages receive`, and a peer is never named for one of the words in this table. |
 | `unknown` | Anything else, such as `GUILDHALL_SESSION` where copy discovery finds no copy. A message stored with no sender also reads as `unknown`. |
 
 The copy's name is not stored.
@@ -256,7 +257,8 @@ guildhall: 3 unread (merged 1, note 1 from artisan, note 1 from guildmaster)
 The sender is Guildhall's own word from the fixed vocabulary, never text a sender chose; a note with no recorded sender reads `note <n> from unknown`.
 A line with no unread note is unchanged.
 Because a sender chooses its message's type, the line names only the types in `store.MessageTypes`, the one registry of the types Guildhall sends, each with its sender: those the engine and the launcher send (`advance-failed`, `attempt-failed`, `attempt-retried`, `branch-kept`, `budget-refused`, `changes-requested`, `checks-failed`, `checks-passed`, `checks-pending`, `checks-missing`, `flake`, `decision`, `dependency-held`, `director-stage`, `finished`, `late-steering`, `loop-exit-rejected`, `merge-held`, `merge-refused`, `merged`, `slice-delivered`, `published`, `stall`, `worker-stalled`, `workspace-kept`, and the [merge queue](interpreter.md#the-merge-queue)'s `merge-queued`, `rebased`, `rebase-escalated`, `rebase-stuck` and `approval-carried`), those a [judge](quality.md) sends (`judge-failed`, `judgement`, `judgement-refused`), the session supervisor's `herdr-workspace-left-open`, `prune-workspace-kept` and `hold-released`, the Steward supervisor's `triage-opened` and `lock-busy`, [`task cancel`](tasks.md#task-cancel)'s `dependency-cancelled`, id `<repo>.<task>.dependency-cancelled.<cancelled repo>.<cancelled task>` for each open dependent, the [task page](web.md#answering)'s `decision-answered` and `grill-answered` ([grill rounds](web.md#grill-rounds)), the Steward's [`steward-report`](#steward-messages), and the local `question` and `note`; every other type counts as `other`, and `DirectorUnread` counts by the same registry.
-An external message, such as a Steward message, is counted by type and sender like a note, `steward-report <n> from steward`, its type `other` unless the registry names it.
+An external message, such as a Steward message, is counted by type and sender like a note, `steward-report <n> from steward`, its type `other` unless the registry names it; a peer's is counted by the peer's name, which the receiving copy's own config chose, such as `question 1 from web`.
+The registry names the four [Director message types](#message-types), `handoff-offer`, `dependency-notice`, `question` and `answer`.
 The engine sends `dependency-held` while the [dependency gate](interpreter.md#the-dependency-gate) holds a task, once per state of its unmerged dependencies; it is not the between-Directors [`dependency-notice`](#message-types).
 It sends `branch-kept`, id `<repo>.<task>.branch-kept.<step>-<n>`, at most once per Artisan attempt, when the attempt's untouched task branch could not be fast-forwarded to the current main and the attempt runs on it as it is ([the working directory](interpreter.md#the-working-directory)); a branch with commits of its own sends nothing.
 It sends `flake`, id `<repo>.<task>.flake.<step>.<first 12 hex digits of the head>.<8 hex digits of the check name's digest>`, under [`flaky_checks`](configuration.md#repositories) `rerun-and-file`, once per check that failed and then passed on its one [rerun](interpreter.md#validate-reruns) on a head, before that head's `checks-passed`; its first line, `policy: rerun-and-file`, is the policy the Director's inbox skill acts on, and the rest is the evidence: check, platform, job, failed and passing runs, failing test names and the `guildhall ci log` command.
@@ -287,7 +289,7 @@ The pane is reached through the Herdr session it was recorded in, with `herdr` f
 
 The separate [resume wake](director.md#pause-and-resume) leaves each message's recorded wake unchanged.
 
-Every wake records its sender type: `guildhall` for the engine, `local` for `messages send`, `page` for the [task page](web.md#answering) and `steward` for `messages receive`.
+Every wake records its sender type: `guildhall` for the engine, `local` for `messages send`, `page` for the [task page](web.md#answering), `steward` for `messages receive` of a Steward message and `director` for `messages receive` of a peer's.
 The message's own [`sender`](#senders) is the finer field, telling the Guildmaster, a Director and an Artisan apart.
 Every sender type wakes on every message, through the coalescing above; there is no wake budget ([decision](decisions/steward-messages-directors.md)).
 
@@ -392,10 +394,99 @@ A sender keeps each message in its own store's outbox: `pending` when recorded, 
 A delivery that fails, such as an unreachable or sleeping machine, stays `pending` with its error, and the sender's session supervisor retries it on its schedule, deterministic and with no model call.
 `guildhall messages outbox [--all]` lists the entries not delivered, or every one; it is the Steward's in a Steward copy.
 
+## Director-to-Director messages
+
+A Director tells another Director, its **peer**, something with a Director message: an external message, as a Steward message is, built from the [Director messaging](#director-messaging-designed-not-built) design.
+It informs only, under the [authority](#authority) rule: it never creates a task, answers a decision or starts anything in the receiver, and only the Guildmaster's `accept` of a ticket will create a task from one (tickets are [designed, not built](#authority-1)).
+No Steward is needed: two standalone Directors message each other with no Steward anywhere.
+
+### Peers
+
+A Director's peers are `[[peer]]` entries written by hand in its own `config.toml`, in both modes, since managed settings cannot carry a table ([configuration](configuration.md#peers)):
+
+```toml
+[[peer]]
+name = "web"
+machine = "vds"
+ssh_alias = "guild-vds"
+copy_dir = "/home/guild/directors/web"
+```
+
+- `name` is the peer Director's own name, its config's `name`. It is the sender this copy records for the peer's messages and the `to` of its own; it is never `steward`, `guildmaster` or another [sender](#senders) word, nor this Director's own name.
+- `machine` labels the machine; with `ssh_alias`, it is the machine's Tailscale MagicDNS name, which [`messages peer setup`](#setting-up-a-peer) writes as the alias's `HostName`.
+- `ssh_alias` is the Host in this account's SSH config that reaches the peer's account. A peer on this machine and account omits it and receives in process, with no SSH.
+- `copy_dir` is the peer's copy directory on its machine, an absolute POSIX or `C:/...` path of letters, digits, `.`, `_`, `-` and `/`.
+
+WSL and its Windows side are two machines here, each with its own account, sshd, key and `[[peer]]` entry, never one account.
+The Linux VDS is a third.
+Each Director lists the peers it sends to and receives from; a receiver refuses a message from a Director it does not list.
+
+### Message types
+
+A Director message has one of four types, each in the [envelope](#external-messages) `guildhall.director-message/1` with `from` the sender's name and `to` the peer's:
+
+| Type | Meaning |
+|---|---|
+| `handoff-offer` | The sender offers work, with a handoff bundle reference in `artifacts`, for the receiver to take on. |
+| `dependency-notice` | The sender's work depends on, or changes something used by, the receiver's repositories. |
+| `question` | The sender asks something it cannot find out itself. |
+| `answer` | A reply to one `question` the receiver sent this sender, named in `in_reply_to`; only an `answer` has `in_reply_to`, and it must. |
+
+No `kind`; `about` and `artifacts` are optional.
+Further types are added by a decision, never by a sender.
+
+### Sending
+
+`guildhall messages send --to <peer> [--copy <dir>] <envelope-file|->` sends one envelope to the peer named `--to`:
+
+1. It checks the envelope as the receiver will: `from` this Director's name, `to` the peer's, a Director message type, and for an `answer` an `in_reply_to` that is a `question` this copy received from that peer. A refused envelope is not recorded.
+2. It records the message `pending` in the copy's [outbox](#the-outbox) under its id, mutation `outbox:<id>`; sending the same envelope again prints its entry and delivers it only while it is pending, and another envelope under that id is refused.
+3. It delivers it: for a peer with an `ssh_alias`, it runs `ssh -o BatchMode=yes -- <alias> guildhall messages receive --copy <copy_dir> --from <this Director> --to <peer> -` with the envelope on standard input; for a peer on this machine and account it runs the same receive in process against the peer's copy.
+4. It records the attempt and prints the outbox entry: `delivered` with the peer's receipt, `refused` with its reason, or still `pending` with the error. It exits 0 for delivered or pending, with one `guildhall: messages send: not delivered yet, kept pending ...` line on standard error for pending, and 1 for refused.
+
+A pending entry, such as one to a laptop that is asleep, is retried by the sender's session supervisor at its start and then every minute, deterministic code with no model call, so it is delivered once the peer is reachable; a refused one is never retried.
+`guildhall messages outbox` shows the entries not yet delivered.
+
+### Receiving
+
+`guildhall messages receive --from <peer> --to <this Director> [--copy <dir>] <envelope-file|->` is the receiving side, run by the peer's key's forced command over SSH, or in process by a peer on the same account; it is never run by hand.
+It is the [Steward's receive](#messages-receive) with the sender taken from `--from` instead of fixed to `steward`, and prints the same `guildhall.receive-result/1`:
+
+- refused `unknown sender` when `--from` is not a `[[peer]]` of the receiving copy, which is never `steward`, and refused `invalid` when `--to` is not this copy's name, the envelope's `from` is not `--from`, its `to` is not this Director, its type is not a Director message type, or an `answer` names in `in_reply_to` no `question` in this copy's outbox to that peer;
+- otherwise as for a Steward message: mutation `dmessage:<peer>:<id>` resolved first, so an identical retry returns its original receipt and never wakes again; a conflicting one refused; a new one refused `closed` while the inbox is [closed](#closing-the-inbox-to-a-sender) to that peer, or `mailbox full`.
+
+It exits 1, storing nothing, when there is no envelope to read or the store or config fails, and the sender retries.
+A new message is stored, then surfaced with one Herdr toast titled `guildhall: <type> from <peer>`, its body the sanitised subject and `guildhall messages read --sender <peer> <id>`, then woken for: the wake records sender type `director`, and its line counts it, `question 1 from web`, with no text.
+The Director reads, acknowledges and closes its inbox to a peer by the peer's name, as for the Steward: `messages summary`, `messages list --from <peer>`, `messages read --sender <peer> <id>`, `messages ack --sender <peer> director <id>`, and `messages inbox close|open --sender <peer>`, whose alert decision is on the reserved task `messages/inbox-<peer>`.
+
+### What the receiving Director does
+
+The receiving Director judges each Director message ([inbox skill](../skills/guildhall-director-inbox/SKILL.md)).
+It never creates a task, starts work or changes a decision because of one, whoever sent it; it tells the Guildmaster what a `handoff-offer` or `dependency-notice` says when it is worth doing, and it may reply to a `question` with an `answer`.
+Filing a message as a ticket, which opens an `accept`/`decline` decision only the Guildmaster answers, is the next step of this design and not built yet.
+
+### Peer identity
+
+- Over SSH, the sender is the identity fixed by the forced command on its key in the receiver's `authorized_keys`: one key per sender and peer, whose line fixes the whole receive command, `--copy`, `--from` and `--to`, so the key can run nothing else and its `--from` is the sender's name whatever command the sender asks for. The envelope's `from` must equal it.
+- Locally, on one account, a peer is asserted, not authenticated, as for the local inbox: Directors sharing an account are one trust domain.
+- Tailscale is the network: `ssh_alias` reaches the peer's MagicDNS name, and SSH's own config, key and host-key checks decide access; Guildhall adds no credentials and runs no service (R1.29).
+
+### Setting up a peer
+
+`guildhall messages peer setup <peer> [--copy <dir>]` prints, as one JSON document, the exact commands that make this Director's key reach the peer's receive command and nothing else; Guildhall runs none of them (R1.47):
+
+- `this_machine`, for this machine's `os`, `linux` or `windows`: create the key `~/.ssh/guildhall-<this Director>-to-<peer>` with no passphrase, since a delivery cannot prompt; add the SSH alias, `HostName` the peer's `machine`, `IdentityFile` the key and `IdentitiesOnly yes`; then check it with `ssh -n -o BatchMode=yes <alias> true`, which runs the forced receive with no message and prints a refused receive result, storing nothing.
+- `peer_linux` and `peer_windows`, for the peer's account, a non-administrator account: the `authorized_keys` line `command="<guildhall> messages receive --copy <copy_dir> --from <this Director> --to <peer> -",restrict <public key>`, with the peer's `guildhall` found by `command -v guildhall` on Linux and `(Get-Command guildhall).Source` in PowerShell on Windows, where a non-administrator's keys are read from `%USERPROFILE%\.ssh\authorized_keys` and OpenSSH Server must already run.
+- `peer_config`, the `[[peer]]` entry the peer's own config needs for this Director, and `notes`.
+
+The public key is read from this machine's `~/.ssh/<key>.pub` when it exists and is a plain key line; until then the lines carry a placeholder and the notes say to run the command again.
+For a peer on this machine and account it prints `local: true`, no commands, and the peer's `[[peer]]` entry.
+
 ## Director messaging (designed, not built)
 
-Everything in this section is designed, not built, except the [local wake](#waking-the-director) and its wake record.
-No command, flag, config key or other store record below exists yet; later slices build each contract red-first, as [contracts](contracts.md#method) describes.
+Everything in this section is designed, not built, except the [local wake](#waking-the-director) and its wake record, and what [Steward messages](#steward-messages) and [Director-to-Director messages](#director-to-director-messages) build: the external message record, `steward` and peer senders, `[[peer]]`, `messages send --to`, `messages receive`, the four message types, the outbox with its supervisor retry, and the per-sender closed inbox.
+Where this design and those sections differ, those sections are the contract: the wake budget is dropped, the inbox closes per sender, a sender's supervisor retries its outbox, and the forced command fixes the whole receive command of one key per sender and peer.
+Tickets, `--as guildmaster` and Guildmaster messages over SSH are not built; later slices build each contract red-first, as [contracts](contracts.md#method) describes.
 The decision is recorded in [Director messaging](decisions/director-messaging.md).
 It extends the local inbox above so a Director can hear from the Guildmaster and from other Directors, without giving any message more authority than the local inbox has today.
 

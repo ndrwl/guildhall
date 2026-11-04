@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -10,7 +11,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/ndrwl/guildhall/internal/config"
@@ -66,15 +66,48 @@ func (a *App) externalCopy(name string, fl *flag.FlagSet, cp *copyFlags, args []
 // An identical message received before is delivered with its original receipt, whatever the inbox's state now. It
 // exits 1, keeping the drop file, when there is no message to receive or the store fails, so the Steward retries.
 // A new message is surfaced to the Guildmaster and wakes the Director; neither can fail the receive.
+//
+// With --from and --to it is instead the receiving side of a peer Director's message
+// (docs/messaging.md#director-to-director-messages): `guildhall messages receive --from <peer> --to <this Director>
+// [--copy <dir>] <envelope-file|->`, the envelope on standard input for "-". It is run over SSH by the forced command
+// of the peer's key on this account, which fixes --from, or in process by a peer on this machine and account, and
+// records the message from the peer named --from, which must be a [[peer]] of this copy's config; the envelope's from
+// must equal it. It prints the same result, and exits 1, storing nothing, when there is no envelope to read or the
+// store or config fails, so the peer retries.
 func (a *App) messagesReceive(args []string) int {
 	const name = "messages receive"
 	fl := flag.NewFlagSet(name, flag.ContinueOnError)
 	fl.SetOutput(io.Discard)
 	var cp copyFlags
 	cp.register(fl)
+	from := fl.String("from", "", "the peer Director the message is from, fixed by its key's forced command")
+	to := fl.String("to", "", "this Director's name")
 	dir, storePath, code := a.externalCopy(name, fl, &cp, args)
 	if code >= 0 {
 		return code
+	}
+	set := map[string]bool{}
+	fl.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	if set["from"] || set["to"] {
+		switch {
+		case !set["from"] || !set["to"]:
+			return a.messagesUsage(name + ": --from and --to go together, for a peer Director's message")
+		case fl.NArg() != 1:
+			return a.messagesUsage(name + " --from takes one envelope file or - for standard input")
+		}
+		data, err := a.readBounded(fl.Arg(0))
+		if err != nil {
+			return a.fail(fmt.Errorf("%s: no message to receive: %w", name, err))
+		}
+		cfg, err := config.Load(filepath.Join(dir, "config.toml"))
+		if err != nil {
+			return a.fail(fmt.Errorf("%s: %w", name, err))
+		}
+		res, err := a.acceptPeer(cfg, storePath, *from, *to, data)
+		if err != nil {
+			return a.fail(fmt.Errorf("%s: %w", name, err))
+		}
+		return a.printReceived(name, storePath, *from, res)
 	}
 	if fl.NArg() > 0 {
 		return a.messagesUsage(fmt.Sprintf("%s: unexpected argument %q", name, fl.Arg(0)))
@@ -88,25 +121,110 @@ func (a *App) messagesReceive(args []string) int {
 	if err != nil {
 		return a.fail(fmt.Errorf("%s: %w", name, err))
 	}
-	most, err := cfg.MailboxMax()
+	res, err := a.acceptSteward(cfg, storePath, data)
 	if err != nil {
 		return a.fail(fmt.Errorf("%s: %w", name, err))
 	}
-	refused := func(reason string) int {
-		if err := os.Remove(drop); err != nil {
-			return a.fail(fmt.Errorf("%s: refused (%s), but the message stays: %w", name, reason, err))
+	if err := os.Remove(drop); err != nil {
+		if res.Status == messaging.ReceiveRefused {
+			return a.fail(fmt.Errorf("%s: refused (%s), but the message stays: %w", name, res.Reason, err))
 		}
-		return a.printJSON(messaging.ReceiveResult{Schema: messaging.ReceiveSchema, Status: messaging.ReceiveRefused, Reason: oneLine(reason)})
+		return a.fail(fmt.Errorf("%s: received, but the drop file stays: %w", name, err))
+	}
+	return a.printReceived(name, storePath, store.SenderSteward, res)
+}
+
+// printReceived prints res and, for a delivered message, surfaces it to the Guildmaster and wakes the Director; the
+// message is stored whatever the surfacing and wake do, so a failure of either is reported, not an error.
+func (a *App) printReceived(name, storePath, sender string, res messaging.ReceiveResult) int {
+	if code := a.printJSON(res); code != 0 || res.Status != messaging.ReceiveDelivered {
+		return code
+	}
+	a.announceExternal(name, storePath, sender, res.Receipt)
+	return 0
+}
+
+// announceExternal surfaces and wakes for the external message receipt r recorded, from sender.
+func (a *App) announceExternal(name, storePath, sender string, r *store.Receipt) {
+	id := strings.TrimPrefix(r.MutationID, "dmessage:"+sender+":")
+	if err := a.surfaceExternal(storePath, sender, id); err != nil {
+		_, _ = fmt.Fprintf(a.Stderr, "guildhall: %s: surface: %v\n", name, err)
+	}
+	if _, err := a.wakeExternal(storePath, sender, id); err != nil {
+		_, _ = fmt.Fprintf(a.Stderr, "guildhall: %s: wake: %v\n", name, err)
+	}
+}
+
+// readBounded reads an envelope's bytes from a file, or from standard input for "-", at most one byte past the
+// envelope limit, so decoding refuses an oversized one.
+func (a *App) readBounded(name string) ([]byte, error) {
+	r := a.Stdin
+	if name != "-" {
+		f, err := os.Open(name)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = f.Close() }()
+		r = f
+	}
+	if r == nil {
+		return nil, errors.New("no standard input")
+	}
+	return io.ReadAll(io.LimitReader(r, messaging.MaxEnvelopeBytes+1))
+}
+
+// acceptSteward takes data, the Steward message envelope from the copy's drop file, into the inbox of the Director copy
+// whose config is cfg and store is at storePath, as acceptFrom does.
+func (a *App) acceptSteward(cfg *config.Config, storePath string, data []byte) (messaging.ReceiveResult, error) {
+	return a.acceptFrom(cfg, storePath, store.SenderSteward, "", false, data)
+}
+
+// acceptPeer takes data, a Director message envelope from the peer named sender to the Director named to, into the
+// inbox of the Director copy whose config is cfg and store is at storePath, as acceptFrom does. It is refused unless
+// sender is one of cfg's peers, so it is never the Steward, whatever --from names, and unless to is cfg's name.
+func (a *App) acceptPeer(cfg *config.Config, storePath, sender, to string, data []byte) (messaging.ReceiveResult, error) {
+	return a.acceptFrom(cfg, storePath, sender, to, true, data)
+}
+
+// acceptFrom takes data, one external message envelope from sender, into the inbox of the Director copy whose config
+// is cfg and store is at storePath. It returns delivered with the receipt, or refused with the reason when a peer's
+// message is from no peer of cfg or sent to another name, the envelope is invalid, is addressed to another Director,
+// conflicts with one received before, is an answer to no question this copy sent the peer, or, for a new message
+// only, finds the sender's inbox closed or the mailbox full. An identical message received before is delivered with
+// its original receipt, whatever the inbox's state now. An error is a failure the sender retries, such as a locked
+// store.
+func (a *App) acceptFrom(cfg *config.Config, storePath, sender, to string, peer bool, data []byte) (messaging.ReceiveResult, error) {
+	refused := func(reason string) (messaging.ReceiveResult, error) {
+		return messaging.ReceiveResult{Schema: messaging.ReceiveSchema, Status: messaging.ReceiveRefused, Reason: oneLine(reason)}, nil
+	}
+	if peer {
+		if _, ok := cfg.Peer(sender); !ok {
+			return refused(fmt.Sprintf("unknown sender: %q is not a [[peer]] of the Director %s", sender, cfg.Name))
+		}
+		if to != cfg.Name {
+			return refused(fmt.Sprintf("invalid: this copy is the Director %q, not %q", cfg.Name, to))
+		}
+	}
+	most, err := cfg.MailboxMax()
+	if err != nil {
+		return messaging.ReceiveResult{}, err
 	}
 	env, err := messaging.DecodeDirector(bytes.NewReader(data))
 	if err != nil {
 		return refused("invalid: " + err.Error())
 	}
-	m, err := messaging.ExternalMessage(store.SenderSteward, cfg.Name, env)
+	m, err := messaging.ExternalMessage(sender, cfg.Name, env)
 	if err != nil {
 		return refused("invalid: " + err.Error())
 	}
-	r, err := withStoreClock(storePath, false, a.Now, func(s *store.Store) (store.Receipt, error) { return s.ReceiveExternal(m, most) })
+	r, err := withStoreClock(storePath, false, a.Now, func(s *store.Store) (store.Receipt, error) {
+		if m.Type == store.MessageAnswer {
+			if err := answersQuestion(s, m); err != nil {
+				return store.Receipt{}, err
+			}
+		}
+		return s.ReceiveExternal(m, most)
+	})
 	switch {
 	case errors.Is(err, store.ErrInboxClosed):
 		return refused(store.ErrInboxClosed.Error() + ": " + afterSentinel(err, store.ErrInboxClosed))
@@ -117,22 +235,28 @@ func (a *App) messagesReceive(args []string) int {
 	case errors.Is(err, store.ErrInvalid):
 		return refused("invalid: " + err.Error())
 	case err != nil:
-		return a.fail(fmt.Errorf("%s: %w", name, err))
+		return messaging.ReceiveResult{}, err
 	}
-	if err := os.Remove(drop); err != nil {
-		return a.fail(fmt.Errorf("%s: received, but the drop file stays: %w", name, err))
+	return messaging.ReceiveResult{Schema: messaging.ReceiveSchema, Status: messaging.ReceiveDelivered, Receipt: &r}, nil
+}
+
+// answersQuestion refuses, as invalid, an answer m whose in_reply_to is not a question this copy sent m's sender: an
+// entry of its outbox to that peer whose envelope's type is question.
+func answersQuestion(s *store.Store, m store.ExternalMessage) error {
+	e, err := s.OutboxEntryOf(m.InReplyTo)
+	if errors.Is(err, store.ErrNotFound) {
+		return fmt.Errorf("%w: answer %q is in reply to %q, which this Director never sent", store.ErrInvalid, m.ID, m.InReplyTo)
 	}
-	if code := a.printJSON(messaging.ReceiveResult{Schema: messaging.ReceiveSchema, Status: messaging.ReceiveDelivered, Receipt: &r}); code != 0 {
-		return code
+	if err != nil {
+		return err
 	}
-	// The message is stored whatever the surfacing and wake do; a failure of either is reported, not an error.
-	if err := a.surfaceExternal(storePath, m.Sender, m.ID); err != nil {
-		_, _ = fmt.Fprintf(a.Stderr, "guildhall: %s: surface: %v\n", name, err)
+	var sent struct {
+		Type string `json:"type"`
 	}
-	if _, err := a.wakeExternal(storePath, m.Sender, m.ID); err != nil {
-		_, _ = fmt.Fprintf(a.Stderr, "guildhall: %s: wake: %v\n", name, err)
+	if err := json.Unmarshal(e.Envelope, &sent); err != nil || e.To != m.Sender || sent.Type != store.MessageQuestion {
+		return fmt.Errorf("%w: answer %q is in reply to %q, which is not a question this Director sent %s", store.ErrInvalid, m.ID, m.InReplyTo, m.Sender)
 	}
-	return 0
+	return nil
 }
 
 // afterSentinel is err's text after its sentinel's, the refusal's detail.
@@ -172,16 +296,20 @@ func (a *App) messagesSummaryCmd(args []string) int {
 	fl.SetOutput(io.Discard)
 	var cp copyFlags
 	cp.register(fl)
-	_, storePath, code := a.externalCopy(name, fl, &cp, args)
+	dir, storePath, code := a.externalCopy(name, fl, &cp, args)
 	if code >= 0 {
 		return code
 	}
 	if fl.NArg() > 0 {
 		return a.messagesUsage(fmt.Sprintf("%s: unexpected argument %q", name, fl.Arg(0)))
 	}
+	cfg, err := config.Load(filepath.Join(dir, "config.toml"))
+	if err != nil {
+		return a.fail(fmt.Errorf("%s: %w", name, err))
+	}
 	out, err := withStore(storePath, true, func(s *store.Store) (messagesSummary, error) {
 		sum := messagesSummary{Unread: map[string]int{}, Inbox: []store.InboxState{}, Messages: []externalHeader{}}
-		for _, sender := range store.ExternalSenders {
+		for _, sender := range append([]string{store.SenderSteward}, cfg.PeerNames()...) {
 			st, err := s.InboxStateOf(sender)
 			if err != nil {
 				return sum, err
@@ -301,8 +429,8 @@ func (a *App) messagesInboxCmd(args []string) int {
 	switch {
 	case fl.NArg() > 0:
 		return a.messagesUsage(fmt.Sprintf("%s: unexpected argument %q", name, fl.Arg(0)))
-	case !slices.Contains(store.ExternalSenders, *sender):
-		return a.messagesUsage(fmt.Sprintf("%s: --sender must be one of %s", name, strings.Join(store.ExternalSenders, ", ")))
+	case store.ValidateExternalSender(*sender) != nil:
+		return a.messagesUsage(fmt.Sprintf("%s: --sender must be %s or a peer Director's name", name, store.SenderSteward))
 	case sub == "close" && strings.TrimSpace(*reason) == "":
 		return a.messagesUsage(name + ": --reason is required")
 	case sub == "open" && set["reason"]:

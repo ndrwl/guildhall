@@ -405,6 +405,9 @@ type Config struct {
 	// Backup backs the copy up to its own branch of a private repository (docs/running.md#backups); Director mode
 	// only. It is never in JSON, so adding or editing it changes no config digest.
 	Backup *Backup `toml:"backup" json:"-"`
+	// Peers are the other Directors this one exchanges Director messages with (docs/messaging.md#director-to-director-messages);
+	// Director mode only. They are never in JSON, so adding or editing one changes no config digest.
+	Peers []Peer `toml:"peer" json:"-"`
 }
 
 // Web is the [web] table: where a Director's session supervisor, or a hand-run `guildhall web`, serves the task pages,
@@ -950,6 +953,7 @@ func (c *Config) validate() []string {
 	if b := c.Backup; b != nil && c.Mode == ModeDirector {
 		problems = append(problems, checkBackup(*b, c.Name)...)
 	}
+	problems = append(problems, checkPeers(c.Peers, c.Mode, c.Name)...)
 	if d := c.Director; d != nil {
 		if d.Adapter != "" && !workflow.ValidID(d.Adapter) {
 			add("director: invalid adapter %q", d.Adapter)

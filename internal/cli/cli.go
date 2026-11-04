@@ -282,6 +282,9 @@ type App struct {
 	// Runner runs the fixed remote commands on enrolled machines, such as config reload after a rollout writes a
 	// copy; nil means ssh, found with LookPath.
 	Runner steward.Runner
+	// PeerRunner runs a peer Director's receive command over SSH for messages send --to and the session supervisor's
+	// retries; nil means ssh, found with LookPath.
+	PeerRunner messaging.PeerRunner
 	// Forge publishes and merges task branches for task start and step done; nil means forge.GitHub over git
 	// and gh found on PATH.
 	Forge interp.Forge

@@ -27,11 +27,15 @@ const messagesUsage = `usage:
   guildhall messages ack --store <path> --sender <sender> director <message-id>
   guildhall messages summary [--copy <dir>]
   guildhall messages receive --copy <dir>
+  guildhall messages receive --from <peer> --to <director> [--copy <dir>] <envelope-file|->
+  guildhall messages send --to <peer> [--copy <dir>] <envelope-file|->
+  guildhall messages peer setup <peer> [--copy <dir>]
   guildhall messages inbox close --sender <sender> --reason <text> [--copy <dir>]
   guildhall messages inbox open --sender <sender> [--copy <dir>]
   guildhall messages outbox [--all] [--copy <dir>]
 a recipient is "director", "steward" (a Steward's store only, from the Guildmaster only) or "artisan:<repository>/<task>/<step>/<attempt>"
-an external sender is "steward": --from and --sender select external messages, which messages receive records
+an external sender is "steward" or a peer Director's name: --from and --sender select external messages, which messages receive records
+a peer is a [[peer]] of the copy's config.toml
 --copy <dir>, or the copy found from the current directory, may stand in for --store and --config: the copy's director.store, or a Steward copy's steward.store, and config.toml`
 
 // messages runs a messages subcommand against an existing store and prints its result as one JSON document.
@@ -58,6 +62,15 @@ func (a *App) messages(args []string) int {
 		return a.messagesOutboxCmd(args[1:])
 	case "inbox":
 		return a.messagesInboxCmd(args[1:])
+	case "peer":
+		return a.messagesPeerCmd(args[1:])
+	case "send":
+		// --to names a peer Director: the Director message form of send, beside the positional-recipient one.
+		if slices.ContainsFunc(args[1:], func(s string) bool {
+			return s == "--to" || s == "-to" || strings.HasPrefix(s, "--to=") || strings.HasPrefix(s, "-to=")
+		}) {
+			return a.messagesSendPeer(args[1:])
+		}
 	}
 	flags := flag.NewFlagSet("messages "+sub, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -106,8 +119,8 @@ func (a *App) messages(args []string) int {
 		return a.messagesUsage("--from applies only to messages list; read and ack take --sender")
 	case set["sender"] && sub != "read" && sub != "ack":
 		return a.messagesUsage("--sender applies only to messages read and ack; list takes --from")
-	case external && !slices.Contains(store.ExternalSenders, *from+*sender):
-		return a.messagesUsage(fmt.Sprintf("an external sender is one of %s", strings.Join(store.ExternalSenders, ", ")))
+	case external && store.ValidateExternalSender(*from+*sender) != nil:
+		return a.messagesUsage(fmt.Sprintf("an external sender is %s or a peer Director's name, not %q", store.SenderSteward, *from+*sender))
 	case sub == "ack" && set["sender"] && flags.Arg(0) != string(store.RecipientDirector):
 		return a.messagesUsage(fmt.Sprintf("an external message is acknowledged by %q, not %q", store.RecipientDirector, flags.Arg(0)))
 	case external && filepath.Base(*path) == stewardStoreFile:
