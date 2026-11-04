@@ -37,9 +37,27 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+      # setup-go's own cache is a snapshot keyed on go.sum; the rolling cache
+      # below replaces it (docs/decisions/ci-go-cache.md).
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        id: setup-go
         with:
           go-version-file: go.mod
+          cache: false
+      - name: Go cache paths
+        id: go-paths
+        run: |
+          echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+      - name: Restore Go cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.go-paths.outputs.gocache }}
+            ${{ steps.go-paths.outputs.gomodcache }}
+          key: go-test-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-${{ github.sha }}
+          restore-keys: |
+            go-test-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-
       - name: Check formatting
         run: |
           unformatted=$(gofmt -l .)
@@ -57,6 +75,9 @@ jobs:
       # Packages with no OS-specific files and no runtime.GOOS run on Linux
       # only; Windows and macOS test the rest
       # (docs/decisions/ci-neutral-packages-ubuntu-only.md).
+      # -count=1 re-runs every test even when the Go build cache holds a
+      # passing result; the rolling cache requires it on every go test step
+      # (docs/decisions/ci-go-cache.md).
       - name: Test
         env:
           GUILDHALL_CI_REQUIRE: ${{ matrix.require }}
@@ -65,8 +86,8 @@ jobs:
           if [ "${{ matrix.os }}" = ubuntu-latest ]; then
             echo "neutral packages (run on ubuntu only):"
             echo "$neutral"
-            echo "go test -timeout 20m ./..."
-            go test -timeout 20m ./...
+            echo "go test -count=1 -timeout 20m ./..."
+            go test -count=1 -timeout 20m ./...
             exit 0
           fi
           tested=$(bash .github/neutral-packages.sh tested)
@@ -79,14 +100,14 @@ jobs:
           echo "tested here:"
           echo "$tested"
           # Import paths hold no spaces, so word splitting gives one each.
-          go test -timeout 20m $tested
+          go test -count=1 -timeout 20m $tested
       # The Director suites again, each copy managed with the same effective
       # settings (docs/director-modes.md#testing-both-ways).
       - name: Test Director suites managed
         env:
           GUILDHALL_CI_REQUIRE: ${{ matrix.require }}
           GUILDHALL_TEST_DIRECTOR_MODE: managed
-        run: go test -timeout 20m ./internal/cli
+        run: go test -count=1 -timeout 20m ./internal/cli
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         if: matrix.os == 'ubuntu-latest'
         with:
@@ -106,6 +127,16 @@ jobs:
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
           version: v2.15.0
+      # Only main pushes and workflow_dispatch runs write entries; pull
+      # requests restore main's entry and never save.
+      - name: Save Go cache
+        if: github.event_name != 'pull_request'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.go-paths.outputs.gocache }}
+            ${{ steps.go-paths.outputs.gomodcache }}
+          key: go-test-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-${{ github.sha }}
 
   # The race detector, split by package across three parallel jobs
   # (docs/decisions/ci-race-shards.md). .github/race-shards.txt assigns each
@@ -124,11 +155,30 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+      # Each shard has its own rolling cache key (docs/decisions/ci-go-cache.md);
+      # the restore comes before the guard, whose go list needs modules.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        id: setup-go
         with:
           go-version-file: go.mod
+          cache: false
+      - name: Go cache paths
+        id: go-paths
+        run: |
+          echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+      - name: Restore Go cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.go-paths.outputs.gocache }}
+            ${{ steps.go-paths.outputs.gomodcache }}
+          key: go-race${{ matrix.shard }}-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-${{ github.sha }}
+          restore-keys: |
+            go-race${{ matrix.shard }}-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-
       - name: Check race shards cover every package
         run: bash .github/race-shards.sh check
+      # -count=1: the rolling cache requires it (docs/decisions/ci-go-cache.md).
       - name: Test with race detector
         env:
           # The ubuntu-latest require value of the test matrix.
@@ -139,4 +189,12 @@ jobs:
             echo "race shard ${{ matrix.shard }} has no packages"
             exit 1
           fi
-          go test -race -timeout 20m "${packages[@]}"
+          go test -count=1 -race -timeout 20m "${packages[@]}"
+      - name: Save Go cache
+        if: github.event_name != 'pull_request'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.go-paths.outputs.gocache }}
+            ${{ steps.go-paths.outputs.gomodcache }}
+          key: go-race${{ matrix.shard }}-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-${{ github.sha }}
