@@ -29,10 +29,10 @@
 {{- if .Mockup}}<div class="plan md"><p class="ph">Mock-up</p>{{.Mockup}}</div>{{end}}
 {{- if .Rest}}<details class="ctx"><summary>The rest of the question</summary><div><pre>{{.Rest}}</pre></div></details>{{end}}
 {{- if .Findings}}<details class="ctx"><summary>{{.FindingsSummary}}</summary><div><ul class="find">{{range .Findings}}<li>{{if .Rule}}<span class="sev">{{.Rule}}</span>{{end}}<span><b>{{.ID}}</b> {{.Summary}}</span></li>{{end}}</ul></div></details>{{end}}
-{{- if .Talk}}<div class="talk" id="{{.TalkID}}"><p class="pick">Talk on #{{.ID}}</p>{{range .Talk}}{{template "msg" .}}{{end}}</div>{{end}}
+{{- if .Talk}}<div class="talk" id="{{.TalkID}}"><p class="pick">Talk on #{{.ID}}</p>{{range .Talk}}{{template "msg" .}}{{end}}{{with .Confirm}}{{template "confirm" .}}{{end}}</div>{{else}}{{with .Confirm}}{{template "confirm" .}}{{end}}{{end}}
 {{- if .Refused}}<p class="state bad"><b>Refused · nothing written:</b> {{.Refused}}.</p>{{end}}
 {{- if .Sent}}<p class="state ok"><b>Words only sent:</b> your words reached the Director as a message; nothing is answered.</p>{{end}}
-{{- if .Form}}<label class="yw" for="w-{{.ID}}">Your words <span>{{.Hint}}</span></label><textarea id="w-{{.ID}}" name="text" rows="3">{{.Words}}</textarea>
+{{- if .Form}}<label class="yw" for="w-{{.ID}}">Your words <span>{{.Hint}}</span></label><textarea id="w-{{.ID}}" name="text" rows="3">{{if or .Words .Refused}}{{.Words}}{{else}}{{.Prefill}}{{end}}</textarea>
 {{- else if .Words}}<p class="yw">Your words, kept</p><textarea rows="3" readonly>{{.Words}}</textarea>{{end}}
 {{- template "answers" .}}
 {{- if .Form}}<div class="wo"><button class="opt" type="submit" name="send" value="words"><b>Send words only</b><span>answers nothing; your words reach the Director as a message</span></button></div>{{end}}
@@ -54,11 +54,22 @@ that shows questions or answers draws them through these two, so a change here c
 <div class="opts">{{range .Tiles}}{{if $.Form}}<button class="opt{{if .Tone}} {{.Tone}}{{end}}{{if .Rec}} rec{{end}}" type="submit" name="option" value="{{.Option}}">{{else}}<button class="opt{{if .Tone}} {{.Tone}}{{end}}{{if .Rec}} rec{{end}}" type="button" disabled>{{end}}<b>{{.Word}}{{if .Rec}} <i class="badge">Recommended</i>{{end}}</b>{{if .Text}}<span>{{.Text}}</span>{{end}}</button>{{end}}</div>{{end}}
 {{- if and .Form (not .Tiles)}}<div class="opts"><button class="opt pos" type="submit" name="send" value="answer"><b>Answer with your words</b><span>your words are the answer</span></button></div>{{end}}{{end}}
 
-{{define "msg"}}<div class="{{.Class}}"><div class="mh"><b>{{.Who}}</b>{{if .Src}}<span class="src">{{.Src}}</span>{{end}}{{if .Time}}<time>{{.Time}}</time>{{end}}</div><div class="mb">{{.Body}}</div></div>{{end}}
+{{define "msg"}}<div class="{{.Class}}"><div class="mh"><b>{{.Who}}</b>{{if .Src}}<span class="src">{{.Src}}</span>{{end}}{{if .Rec}}<span class="rk">recommends <b>{{.Rec}}</b></span>{{end}}{{if .Time}}<time>{{.Time}}</time>{{end}}</div><div class="mb">{{.Body}}</div></div>{{end}}
 
-{{define "talk"}}<div class="talk" id="{{.ID}}"><p class="th">Talk on <a class="tg" href="#{{.ID}}">{{.Chip}}</a> · oldest first</p>
+{{/* confirm: the Director's recommendation as one tile of the ask's form, which answers with its option and the
+words box below (docs/web.md#confirm-and-say). */}}
+{{define "confirm"}}<div class="recd"><p class="ph">Recommended by the Director</p><div class="opts">{{if .Form}}<button class="opt rec{{if .Tone}} {{.Tone}}{{end}}" type="submit" name="confirm" value="{{.Number}}">{{else}}<button class="opt rec{{if .Tone}} {{.Tone}}{{end}}" type="button" disabled>{{end}}<b>Confirm: {{.Word}}</b><span>answers #{{.Decision}} with {{.Word}} and your words below</span></button></div></div>{{end}}
+
+{{define "talk"}}<div class="talk"{{if .ID}} id="{{.ID}}"{{end}}><p class="th">Talk on <a class="tg" href="#{{.Tag}}-talk">{{.Chip}}</a>{{if or .Shown .Earlier}} · oldest first{{end}}</p>
 {{- if .Earlier}}<details class="fold"><summary>{{len .Earlier}} earlier {{plural (len .Earlier) "message" "messages"}} on {{.Tag}}</summary><div class="talk">{{range .Earlier}}{{template "msg" .}}{{end}}</div></details>{{end}}
-{{- range .Shown}}{{template "msg" .}}{{end}}</div>{{end}}
+{{- range .Shown}}{{template "msg" .}}{{end}}
+{{- with .Say}}{{template "say" .}}{{end}}</div>{{end}}
+
+{{define "say"}}<form class="say" id="say" method="post" action="{{.Action}}"><input type="hidden" name="tag" value="{{.Tag}}"><input type="hidden" name="token" value="{{.Token}}">
+{{- if .Refused}}<p class="state bad"><b>Refused · nothing sent:</b> {{.Refused}}.</p>{{end}}
+{{- if .Said}}<p class="state ok"><b>Sent:</b> your words reached the Director as a message; its reply shows in this talk.</p>{{end}}
+<label class="yw" for="say-text">Say to the Director about {{.Tag}} <span>answers nothing</span></label><textarea id="say-text" name="text" rows="3">{{.Words}}</textarea>
+<div class="wo"><button class="opt" type="submit"><b>Send to the Director</b><span>answers nothing; your words reach the Director, who replies here</span></button></div></form>{{end}}
 
 {{define "gone"}}<div class="ask refused" id="{{if .ID}}{{.ID}}{{else}}not-recorded{{end}}">
 <div class="ah"><span class="kind">{{.KindName}}</span>{{if .ID}}<a class="aid" href="#{{.ID}}">#{{.ID}}</a>{{end}}</div>

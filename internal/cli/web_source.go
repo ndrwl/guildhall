@@ -190,11 +190,12 @@ func (b webBuilder) task() web.Task {
 	t.Story = b.story(t.Documents)
 	for _, e := range b.h.Conversation {
 		t.Conversation = append(t.Conversation, web.Message{Number: e.Number, Author: e.Author, Tag: e.Tag, Stage: webTagStage(e.Tag),
-			Kind: e.Kind, Text: e.Text, At: e.At})
+			Kind: e.Kind, Text: e.Text, At: e.At, Option: e.Option, Words: e.Words, Confirms: e.Confirms})
 	}
 	if n := len(b.tl.Attempts); n > 0 && v.State == store.TaskOpen {
 		at := b.tl.Attempts[n-1]
 		t.Tag = interp.DecisionID(at.Step, at.Number, false)
+		t.TagStage = webTagStage(t.Tag)
 	}
 	return t
 }
@@ -353,6 +354,12 @@ func (b webBuilder) asks(docs []web.Document) []web.Ask {
 		}
 		a := web.Ask{ID: dec.ID, Kind: string(dec.Kind), Question: dec.Question, Options: dec.Options, OpenedAt: dec.OpenedAt, Deferred: dec.Deferred,
 			Stage: webTagStage(dec.ID)}
+		// The recommended option is the store's own record, not the status feed's, whose JSON stays as it was.
+		for _, hd := range b.h.Decisions {
+			if hd.ID == dec.ID {
+				a.Recommended = hd.Recommended
+			}
+		}
 		if s := dec.Subject; s != nil {
 			a.Subject = s.Digest
 			a.SubjectDocument = subjectDocument(docs, v, *s)

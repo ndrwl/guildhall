@@ -12,7 +12,7 @@ guildhall decide show --store <path> --repo <id> --task <id> --decision <id>
 guildhall decide answer --store <path> --repo <id> --task <id> --decision <id> --answer-file <path|->
 guildhall decide defer --store <path> --repo <id> --task <id> --decision <id> --until-merged <repo>/<task>... --reason <text>
 guildhall decide undefer --store <path> --repo <id> --task <id> --decision <id>
-guildhall decide open --store <path> --repo <id> --task <id> (--question <text> | --question-file <path|->) [--option <text>]...
+guildhall decide open --store <path> --repo <id> --task <id> (--question <text> | --question-file <path|->) [--option <text>]... [--recommend <option>]
 ```
 
 Every command needs an existing store and never creates one; `list` and `show` open it read-only.
@@ -64,11 +64,12 @@ On an open task the answer is also recorded, in the same transaction, on the tas
 `decide open` is the Director's: it records a question the Director puts to the Guildmaster about a task, such as which grill to run first, as a **question decision** on that task, so it is not left in chat alone.
 The question is `--question <text>`, or `--question-file <path|->`, read with the same byte order mark, CRLF and UTF-16 rules as an [answer](#answers); exactly one is given.
 `--option <text>` may be repeated to suggest answers, under the store's rules: at most 16, each one line, unpadded, distinct and at most 256 bytes.
+`--recommend <option>` names the option the Director recommends, which must be one of the `--option` values (else exit 2); it is stored on the decision as `recommended` and the task page marks its tile Recommended ([Confirm and Say](web.md#confirm-and-say)).
 The Guildmaster's reply is recorded with `decide answer` like any other, and free text is always allowed ([answers](#answers)).
 
 - The task must be open: a `done` or `cancelled` task is refused with exit 1, naming the task and its state, and nothing is written.
 - The decision id is chosen for you: `q<n>`, one more than the highest `q<n>` on the task, starting at `q1`. An id with no `-` is never read as a step round or loop exit, and does not clash with the engine's own decisions.
-- An open question decision on the task with the same question and options is printed instead, and nothing is written, so a retry opens no second question; otherwise the decision is opened with mutation id `decision-open:<repo>:<task>:<id>`.
+- An open question decision on the task with the same question, options and recommended option is printed instead, and nothing is written, so a retry opens no second question; otherwise the decision is opened with mutation id `decision-open:<repo>:<task>:<id>`.
 - It prints the decision as one JSON document, as `show` does, and sends no `decision` message: the Director asked the question.
 - The question is also recorded, in the same transaction, as the Director's words under the decision on the task page's [conversation](web.md#the-conversation), where the Guildmaster can answer it.
 

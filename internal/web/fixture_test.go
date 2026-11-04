@@ -175,8 +175,8 @@ func fixtureTalk(sums map[string]string) Task {
 				Events: []Event{ev("2026-11-04 14:31", "decision grant-1 opened · grant")}},
 		},
 		// The talk: two grill-2 messages and an accept-2 answer from chat fold under their story nodes, a page note
-		// and the Director's reply sit inside grant-1's ask, and the current stage's five messages sit under the
-		// asks, the earliest two folded.
+		// and the Director's reply and recommendation, offered as Confirm, sit inside grant-1's ask, and the current
+		// stage's five messages sit under the asks, the earliest two folded, with the Say box at their end.
 		Conversation: []Message{
 			{Number: 1, Author: AuthorDirector, Tag: "grill-2", Stage: "grill", Kind: "say", Text: "Round 2 is three questions on **access**.", At: *at("2026-10-31 11:05")},
 			{Number: 2, Author: AuthorGuildmasterChat, Tag: "grill-2", Stage: "grill", Kind: "say", Text: "tailnet only", At: *at("2026-10-31 11:20")},
@@ -188,6 +188,8 @@ func fixtureTalk(sums map[string]string) Task {
 			{Number: 8, Author: AuthorDirector, Tag: "grant-1", Stage: "grant", Kind: "say", Text: "Its contract test calls `tailscale whois`, which needs the tailnet.", At: *at("2026-11-04 14:42")},
 			{Number: 9, Author: AuthorGuildmasterPage, Tag: "review--s2-2", Stage: "review", Kind: "say", Text: "Then continue the loop.", At: *at("2026-11-04 14:45")},
 			{Number: 10, Author: AuthorDirector, Tag: "review--s2-2", Stage: "review", Kind: "say", Text: "Understood:\n\n- answer **Continue** on #review--s2-x2\n- I start build round 3", At: *at("2026-11-04 14:46")},
+			{Number: 11, Author: AuthorDirector, Tag: "grant-1", Stage: "grant", Kind: KindRecommendation, Text: "You asked why; the test needs the tailnet and nothing else, so I recommend **Approve**.",
+				Option: "approve", At: *at("2026-11-04 14:43")},
 		},
 		Tag:    "review--s2-2",
 		ReadAt: *at("2026-11-04 14:52"),

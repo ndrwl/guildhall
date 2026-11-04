@@ -76,7 +76,7 @@ button{font:inherit;color:inherit}
 .ask form{margin:0}
 .yw{display:block;font-size:13px;color:var(--mut);margin:12px 0 6px;font-weight:600}
 .yw span{font-weight:400;color:var(--faint);margin-left:6px}
-.ask textarea{display:block;width:100%;box-sizing:border-box;min-height:88px;padding:10px 12px;border-radius:10px;border:1px solid var(--line2);background:var(--bg);color:inherit;font:15px/1.45 system-ui,sans-serif;resize:vertical}
+.ask textarea,.say textarea{display:block;width:100%;box-sizing:border-box;min-height:88px;padding:10px 12px;border-radius:10px;border:1px solid var(--line2);background:var(--bg);color:inherit;font:15px/1.45 system-ui,sans-serif;resize:vertical}
 .wo{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line2);display:grid}
 .wo .opt{min-height:44px}
 .state{margin:12px 0 0;padding:8px 12px;border-radius:8px;font-size:14px}
@@ -322,3 +322,11 @@ button{font:inherit;color:inherit}
 .talkf{margin-top:6px}
 .talkf>.talk{padding:4px 0 0}
 .stage.done{background:var(--okbg);border-color:var(--line)}
+/* Confirm and Say (docs/web.md#confirm-and-say): the amber recommendation box, its row's mark, a confirmation's row
+   and the Say box at the end of the stage's talk */
+.mh .rk{color:var(--you)}
+.msg.conf{border-left-color:var(--ok)}
+.recd{margin:0 0 12px;padding:10px 12px;border-radius:8px;background:var(--youbg);border:1px solid var(--youline)}
+.recd .ph{font-weight:650;font-size:13px;color:var(--you);margin:0 0 8px}
+.recd .opts{margin:0}
+.say{margin:12px 0 0;padding-top:4px;border-top:1px dashed var(--line2)}

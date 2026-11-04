@@ -80,7 +80,7 @@ button{font:inherit;color:inherit}
 .ask form{margin:0}
 .yw{display:block;font-size:13px;color:var(--mut);margin:12px 0 6px;font-weight:600}
 .yw span{font-weight:400;color:var(--faint);margin-left:6px}
-.ask textarea{display:block;width:100%;box-sizing:border-box;min-height:88px;padding:10px 12px;border-radius:10px;border:1px solid var(--line2);background:var(--bg);color:inherit;font:15px/1.45 system-ui,sans-serif;resize:vertical}
+.ask textarea,.say textarea{display:block;width:100%;box-sizing:border-box;min-height:88px;padding:10px 12px;border-radius:10px;border:1px solid var(--line2);background:var(--bg);color:inherit;font:15px/1.45 system-ui,sans-serif;resize:vertical}
 .wo{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line2);display:grid}
 .wo .opt{min-height:44px}
 .state{margin:12px 0 0;padding:8px 12px;border-radius:8px;font-size:14px}
@@ -326,6 +326,14 @@ button{font:inherit;color:inherit}
 .talkf{margin-top:6px}
 .talkf>.talk{padding:4px 0 0}
 .stage.done{background:var(--okbg);border-color:var(--line)}
+/* Confirm and Say (docs/web.md#confirm-and-say): the amber recommendation box, its row's mark, a confirmation's row
+   and the Say box at the end of the stage's talk */
+.mh .rk{color:var(--you)}
+.msg.conf{border-left-color:var(--ok)}
+.recd{margin:0 0 12px;padding:10px 12px;border-radius:8px;background:var(--youbg);border:1px solid var(--youline)}
+.recd .ph{font-weight:650;font-size:13px;color:var(--you);margin:0 0 8px}
+.recd .opts{margin:0}
+.say{margin:12px 0 0;padding-top:4px;border-top:1px dashed var(--line2)}
 </style></head>
 <body>
 <header class="band">
@@ -338,7 +346,7 @@ button{font:inherit;color:inherit}
 <div class="c2-body">
 <aside class="c2-rail">
 <section class="r-status"><h2>Status</h2>
-<dl class="kv"><dt>Where it stands</dt><dd><span class="tag you">? Waiting for you</span> · 2 asks</dd><dt>Step</dt><dd><b>Slice 2 review, round 2</b> · slice 2 of 2</dd><dt>Last attempt</dt><dd><span title="review--s2-2">Slice 2 review, attempt 2</span> · finished 4 Nov 14:20</dd><dt>Talk</dt><dd>10 messages · last 14:46</dd>
+<dl class="kv"><dt>Where it stands</dt><dd><span class="tag you">? Waiting for you</span> · 2 asks</dd><dt>Step</dt><dd><b>Slice 2 review, round 2</b> · slice 2 of 2</dd><dt>Last attempt</dt><dd><span title="review--s2-2">Slice 2 review, attempt 2</span> · finished 4 Nov 14:20</dd><dt>Talk</dt><dd>11 messages · last 14:46</dd>
 <dt>PR</dt><dd><a href="https://github.com/ndrwl/guildhall/pull/251">#251</a> · open</dd>
 <dt>CI</dt><dd><span class="tag ok">✓ passed</span></dd><dt>Slices</dt><dd><ul class="sl"><li>1. Serve read-only task and reader pages on the tailnet · merged · <a href="https://github.com/ndrwl/guildhall/pull/247">#247</a></li><li class="cur">2. Answer decisions on the task page · current · <a href="https://github.com/ndrwl/guildhall/pull/251">#251</a></li></ul></dd><dt>linked from</dt><dd><a href="/guildhall/d105">d105</a></dd><dt>depends on</dt><dd><a href="/other/d7">other/d7</a></dd>
 </dl><p class="asof">Waiting on the Director:</p><ul class="waits"><li>checks of PR #251 are pending</li></ul>
@@ -368,7 +376,8 @@ button{font:inherit;color:inherit}
 <div class="ah"><span class="kind">Grant</span><a class="aid" href="#grant-1">#grant-1</a><a class="tg" href="#grant-1-talk">grant · grant-1</a><span class="since">open since 4 Nov 14:31</span></div>
 <p class="q">Grant network to build-3, so it can run the real tailscale whois contract test?</p><div class="talk" id="grant-1-talk"><p class="pick">Talk on #grant-1</p><div class="msg"><div class="mh"><b>Guildmaster</b><span class="src">page</span><time>14:40</time></div><div class="mb"><p>Why does build-3 need the network?</p>
 </div></div><div class="msg dir"><div class="mh"><b>Director</b><time>14:42</time></div><div class="mb"><p>Its contract test calls <code>tailscale whois</code>, which needs the tailnet.</p>
-</div></div></div><p class="pick">Answer</p>
+</div></div><div class="msg dir wait"><div class="mh"><b>Director</b><span class="rk">recommends <b>Approve</b></span><time>14:43</time></div><div class="mb"><p>You asked why; the test needs the tailnet and nothing else, so I recommend <strong>Approve</strong>.</p>
+</div></div><div class="recd"><p class="ph">Recommended by the Director</p><div class="opts"><button class="opt rec pos" type="button" disabled><b>Confirm: Approve</b><span>answers #grant-1 with Approve and your words below</span></button></div></div></div><p class="pick">Answer</p>
 <div class="opts"><button class="opt pos" type="button" disabled><b>Approve</b><span>the grant takes effect for its attempt</span></button><button class="opt neg" type="button" disabled><b>Reject</b><span>the attempt runs without it</span></button></div>
 <p class="who">Only the Guildmaster's Tailscale login can answer here. Answer in chat or with <code>guildhall decide answer</code>.</p>
 </div><div class="ask def" id="accept--s2-1">
@@ -423,7 +432,7 @@ design-5 brief recorded
 <section class="c2-story"><h2>The story · newest first</h2>
 <ul class="key"><li><span class="dot">✓</span>finished</li><li><span class="dot back">↩&#xFE0E;</span>sent back</li><li><span class="dot run">▸</span>running</li><li><span class="dot you">?</span>waiting on you</li><li><span class="dot later"></span>later</li></ul>
 <ol class="spine">
-<li class="node later"><div class="nh"><span class="t">Publish and deliver come next</span><span class="st">not started</span></div></li><li class="node you" id="story-grant-1"><div class="nh"><span class="t" title="grant-1">An attempt asked for a grant</span><span class="st">waiting on you</span><time>4 Nov 14:31</time></div><div class="nb">Its talk is on Now, inside the ask: 2 messages.</div><div class="links"><a class="flag" href="#grant-1">Answer #grant-1 above ↑</a></div><details class="fold raw"><summary>Raw events · 1</summary><pre>14:31 decision grant-1 opened · grant</pre></details></li><li class="node you" id="story-review--s2-2"><div class="nh"><span class="t" title="review--s2-2">The slice 2 review asked for changes (round 2)</span><span class="st">changes requested · waiting on you</span><time>4 Nov 13:58–14:20</time></div><div class="nb">Its talk is on Now, under the asks.</div><div class="links"><a class="att" href="/guildhall/d122/doc/review--s2-2-outcome" title="review--s2-2-outcome">Slice 2 review, round 2</a><a class="flag" href="#review--s2-x2">Answer #review--s2-x2 above ↑</a></div><details class="fold raw"><summary>Raw events · 2</summary><pre>13:58 attempt review--s2-2 started · review
+<li class="node later"><div class="nh"><span class="t">Publish and deliver come next</span><span class="st">not started</span></div></li><li class="node you" id="story-grant-1"><div class="nh"><span class="t" title="grant-1">An attempt asked for a grant</span><span class="st">waiting on you</span><time>4 Nov 14:31</time></div><div class="nb">Its talk is on Now, inside the ask: 3 messages.</div><div class="links"><a class="flag" href="#grant-1">Answer #grant-1 above ↑</a></div><details class="fold raw"><summary>Raw events · 1</summary><pre>14:31 decision grant-1 opened · grant</pre></details></li><li class="node you" id="story-review--s2-2"><div class="nh"><span class="t" title="review--s2-2">The slice 2 review asked for changes (round 2)</span><span class="st">changes requested · waiting on you</span><time>4 Nov 13:58–14:20</time></div><div class="nb">Its talk is on Now, under the asks.</div><div class="links"><a class="att" href="/guildhall/d122/doc/review--s2-2-outcome" title="review--s2-2-outcome">Slice 2 review, round 2</a><a class="flag" href="#review--s2-x2">Answer #review--s2-x2 above ↑</a></div><details class="fold raw"><summary>Raw events · 2</summary><pre>13:58 attempt review--s2-2 started · review
 14:20 attempt review--s2-2 succeeded</pre></details></li><li class="node ok" id="story-build--s2-1"><div class="nh"><span class="t" title="build--s2-1">Slice 2 was built (round 1)</span><span class="st">finished</span><time>4 Nov 12:10–13:52</time></div><details class="fold raw"><summary>Raw events · 2</summary><pre>12:10 attempt build--s2-1 started · build
 13:52 attempt build--s2-1 succeeded</pre></details></li><li class="node ok"><div class="nh"><span class="t" title="deliver-1-merge">Slice 1 was merged</span><span class="st">merged</span><time>4 Nov 12:00</time></div><details class="fold raw"><summary>Raw events · 1</summary><pre>12:00 document deliver-1-merge recorded</pre></details></li><li class="node back" id="story-review-1"><div class="nh"><span class="t" title="review-1">The review sent the build back (round 1)</span><span class="st">changes requested · sent back to build</span><time>4 Nov 10:02–11:40</time></div><ul class="find"><li><span class="sev">high</span><span><b>F1</b> an answer with no Origin is accepted</span><span class="fx">fixed</span></li></ul><div class="links"><a class="att" href="/guildhall/d122/doc/review-1-outcome" title="review-1-outcome">Review</a></div><details class="fold raw"><summary>Raw events · 2</summary><pre>10:02 attempt review-1 started · review
 11:40 attempt review-1 succeeded</pre></details></li><li class="node ok" id="story-accept-2"><div class="nh"><span class="t" title="accept-2">You approved the plan</span><span class="st">Approved</span><time>31 Oct 17:00–17:05</time></div><div class="said">“approve all”<small>answered via the Director or decide answer</small></div><details class="fold talkf"><summary>Talk · 1 message</summary><div class="talk"><div class="msg"><div class="mh"><b>Guildmaster</b><span class="src">chat</span><time>31 Oct 17:05</time></div><div class="mb"><p>approve all</p>

@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/ndrwl/guildhall/internal/digest"
@@ -16,17 +17,22 @@ import (
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
-const taskSayUsage = `usage: guildhall task say --store <path> --repo <id> --task <id> --tag <attempt|decision> --text-file <path|-> [--author director|guildmaster-chat]
+const taskSayUsage = `usage: guildhall task say --store <path> --repo <id> --task <id> --tag <attempt|decision> --text-file <path|-> [--author director|guildmaster-chat] [--recommend <option> [--words-file <path|->]]
 --copy <dir>, or the copy found from the current directory, may stand in for --store: the copy's director.store
 Write on the task page's conversation, under the attempt (such as grill-2) or decision (such as accept-1) of the task
 that --tag names: the Director's own words, or with --author guildmaster-chat the Guildmaster's words in chat about
 the task, quoted. The text is Markdown; - reads it from standard input. It answers nothing and sends no message.
+With --recommend the text is the Director's reading of the Guildmaster's words on the open decision --tag names,
+and the option is its recommended answer, one of the decision's options: the page shows it under the ask with a
+Confirm that answers with that option in one click. --words-file pre-fills the ask's Your words box, which otherwise
+holds the Guildmaster's latest words on the ask.
 A closed task's conversation stays readable and takes nothing new. Running the same command again prints the
 original receipt and writes nothing.`
 
 // taskSay runs `guildhall task say`: it appends one entry to an open task's conversation (docs/web.md#the-conversation)
 // with the mutation "task-say:<repo>:<task>:<tag>:<author>:<sha256 of the text>", hashed as mutationID does, and
-// prints its receipt. It exits 0 on success, 1 when the store refuses or fails and 2 on a usage error.
+// prints its receipt; with --recommend the entry is a recommendation and its mutation also names the option and the
+// sha256 of the words. It exits 0 on success, 1 when the store refuses or fails and 2 on a usage error.
 func (a *App) taskSay(args []string) int {
 	const name = "task say"
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
@@ -49,9 +55,13 @@ func (a *App) taskSay(args []string) int {
 	tag := fl.String("tag", "", "the attempt or decision the words are about")
 	textFile := fl.String("text-file", "", "Markdown text file, or - for standard input")
 	author := fl.String("author", store.ConversationDirector, "director, or guildmaster-chat for the Guildmaster's words in chat")
+	recommend := fl.String("recommend", "", "the option of the decision --tag names that the Director recommends")
+	wordsFile := fl.String("words-file", "", "the words the ask's Your words box is pre-filled with, or - for standard input")
 	if err := fl.Parse(args); err != nil {
 		return usage(err.Error())
 	}
+	set := map[string]bool{}
+	fl.Visit(func(f *flag.Flag) { set[f.Name] = true })
 	switch err := cp.apply(a, path, nil, nil); {
 	case fl.NArg() > 0:
 		return usage(name + " takes no arguments")
@@ -65,6 +75,16 @@ func (a *App) taskSay(args []string) int {
 		return usage("--repo, --task and --tag must be ids: lowercase letters, digits and hyphens, starting with a letter")
 	case *author != store.ConversationDirector && *author != store.ConversationGuildmasterChat:
 		return usage(fmt.Sprintf("--author %q is not director or guildmaster-chat; the page writes the Guildmaster's page words itself", *author))
+	case set["recommend"] && strings.TrimSpace(*recommend) == "":
+		return usage("--recommend needs the option recommended")
+	case set["recommend"] && *author != store.ConversationDirector:
+		return usage("--recommend is the Director's; it takes no --author")
+	case set["words-file"] && !set["recommend"]:
+		return usage("--words-file goes with --recommend")
+	case set["words-file"] && *wordsFile == "":
+		return usage("--words-file needs a path, or - for standard input")
+	case *textFile == "-" && set["words-file"] && *wordsFile == "-":
+		return usage("--text-file and --words-file cannot both read standard input")
 	}
 	fail := func(err error) int {
 		_, _ = fmt.Fprintf(a.Stderr, "guildhall: %s: %v\n", name, err)
@@ -77,15 +97,34 @@ func (a *App) taskSay(args []string) int {
 	if strings.TrimSpace(text) == "" {
 		return fail(errors.New("the text is empty"))
 	}
+	var words string
+	if set["words-file"] {
+		if words, err = a.readText("words", *wordsFile, store.MaxTextBytes); err != nil {
+			return fail(err)
+		}
+		if strings.TrimSpace(words) == "" {
+			words = ""
+		}
+	}
 	if _, err := os.Stat(*path); errors.Is(err, fs.ErrNotExist) {
 		return fail(noStore(*path))
 	}
 	say := store.Saying{Author: *author, Tag: *tag, Kind: store.ConversationSay, Text: text}
+	mutation := mutationID("task-say", *repo, *task, *tag, *author, digest.Of([]byte(text)).Hex())
+	if set["recommend"] {
+		say.Kind, say.Option, say.Words = store.ConversationRecommendation, *recommend, words
+		mutation = mutationID("task-say", *repo, *task, *tag, *author, digest.Of([]byte(text)).Hex(), "recommend", *recommend,
+			digest.Of([]byte(words)).Hex())
+	}
 	rc, err := withStore(*path, false, func(s *store.Store) (store.Receipt, error) {
-		if err := checkTag(s, *repo, *task, *tag); err != nil {
+		if set["recommend"] {
+			if err := checkRecommend(s, *repo, *task, *tag, *recommend); err != nil {
+				return store.Receipt{}, err
+			}
+		} else if err := checkTag(s, *repo, *task, *tag); err != nil {
 			return store.Receipt{}, err
 		}
-		return s.AddConversation(mutationID("task-say", *repo, *task, *tag, *author, digest.Of([]byte(text)).Hex()), *repo, *task, say)
+		return s.AddConversation(mutation, *repo, *task, say)
 	})
 	if err != nil {
 		return fail(err)
@@ -94,6 +133,30 @@ func (a *App) taskSay(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// checkRecommend refuses a recommendation unless tag names an open decision of task repo/task and option is one of
+// its options, so the page's Confirm can answer with it.
+func checkRecommend(s *store.Store, repo, task, tag, option string) error {
+	if _, err := s.Task(repo, task); err != nil {
+		return err
+	}
+	d, err := findDecision(s, repo, task, tag)
+	if errors.Is(err, store.ErrNotFound) {
+		return fmt.Errorf("%w: task %s/%s has no decision %q; --recommend tags the decision it recommends an answer to", store.ErrInvalid, repo, task, tag)
+	}
+	if err != nil {
+		return err
+	}
+	switch {
+	case !d.Open():
+		return fmt.Errorf("%w: decision %s of %s/%s is no longer open, so there is nothing to recommend", store.ErrInvalid, tag, repo, task)
+	case len(d.Options) == 0:
+		return fmt.Errorf("%w: decision %s of %s/%s has no options to recommend; reply without --recommend", store.ErrInvalid, tag, repo, task)
+	case !slices.Contains(d.Options, option):
+		return fmt.Errorf("%w: %q is not one of decision %s's options %v", store.ErrInvalid, option, tag, d.Options)
+	}
+	return nil
 }
 
 // checkTag refuses a tag that names neither a decision nor an attempt (<step>-<n>) of task repo/task, so every

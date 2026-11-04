@@ -65,10 +65,11 @@ type Options struct {
 //	GET /<repo>/<task>/doc/<name>       the reader page of one of the task's documents
 //	GET /<repo>/<task>/doc/<name>/raw   the document as text/plain
 //	GET /<repo>/<task>/doc/<name>/frame an HTML document, sandboxed, for the reader page's frame
-//	POST /<repo>/<task>/answer          an answer to one of the task's decisions, or words only
+//	POST /<repo>/<task>/answer          an answer to one of the task's decisions, a confirmed recommendation, or words only
+//	POST /<repo>/<task>/say             words to the Director about the current stage, from the Say box
 //
 // Each path segment is path-escaped. Anything else, including any other method, is 404.
-// Any request whose Host is not Options.Host is 421, before routing.
+// Any request whose Host is not Options.Host is 421, before routing, and every POST passes one gate (Server.gate).
 type Server struct {
 	o Options
 	// token is the per-process form token every answer must carry.
@@ -99,9 +100,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	segs, ok := segments(r.URL.EscapedPath())
-	if ok && r.Method == http.MethodPost && len(segs) == 3 && segs[2] == "answer" {
-		s.answer(w, r, segs[0], segs[1])
-		return
+	if ok && r.Method == http.MethodPost && len(segs) == 3 {
+		switch segs[2] {
+		case "answer":
+			s.answer(w, r, segs[0], segs[1])
+			return
+		case "say":
+			s.say(w, r, segs[0], segs[1])
+			return
+		}
 	}
 	if !ok || (r.Method != http.MethodGet && r.Method != http.MethodHead) {
 		s.refuse(w, http.StatusNotFound, "Not found", "There is no page here. A task page is /<repo>/<task>.")
@@ -186,7 +193,8 @@ func (s *Server) taskList(w http.ResponseWriter) {
 }
 
 // taskPage serves the task page to whoever r is from: with the forms for the Guildmaster's login, read-only for
-// anyone else. ?sent=<message id>&ask=<decision> after words only shows that ask's words-only-sent state.
+// anyone else. ?sent=<message id>&ask=<decision> after words only shows that ask's words-only-sent state, and
+// ?said=<message id> after the Say box shows its sent state.
 func (s *Server) taskPage(w http.ResponseWriter, r *http.Request, repo, id string) {
 	t, ok := s.read(w, repo, id)
 	if !ok {
@@ -195,6 +203,9 @@ func (s *Server) taskPage(w http.ResponseWriter, r *http.Request, repo, id strin
 	st := pageState{identity: s.who(r), Token: s.token}
 	if sent := r.URL.Query().Get("sent"); strings.HasPrefix(sent, NoteIDPrefix) {
 		st.Sent, st.Decision = sent, r.URL.Query().Get("ask")
+	}
+	if said := r.URL.Query().Get("said"); strings.HasPrefix(said, NoteIDPrefix) {
+		st.Said = said
 	}
 	s.render(w, http.StatusOK, "task", s.taskView(t, st))
 }

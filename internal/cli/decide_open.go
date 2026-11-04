@@ -37,6 +37,7 @@ func (a *App) decideOpen(args []string) int {
 	questionFile := fl.String("question-file", "", "question file, or - for standard input")
 	var options stringList
 	fl.Var(&options, "option", "an option the Guildmaster may name; repeatable")
+	recommend := fl.String("recommend", "", "the option the Director recommends, one of --option")
 	if err := fl.Parse(args); err != nil {
 		return a.decideUsage(err.Error())
 	}
@@ -59,6 +60,8 @@ func (a *App) decideOpen(args []string) int {
 		return a.decideUsage(name + " requires a non-blank --question")
 	case set["question-file"] && *questionFile == "":
 		return a.decideUsage(name + " requires a --question-file path, or - for standard input")
+	case set["recommend"] && !slices.Contains(options, *recommend):
+		return a.decideUsage(fmt.Sprintf("--recommend %q must be one of the --option values", *recommend))
 	}
 	fail := func(err error) int {
 		_, _ = fmt.Fprintf(a.Stderr, "guildhall: %s: %v\n", name, err)
@@ -75,7 +78,7 @@ func (a *App) decideOpen(args []string) int {
 		return fail(noStore(*path))
 	}
 	d, err := withStore(*path, false, func(s *store.Store) (store.Decision, error) {
-		return openQuestion(s, *repo, *task, text, options)
+		return openQuestion(s, *repo, *task, text, options, *recommend)
 	})
 	if err != nil {
 		return fail(err)
@@ -87,8 +90,9 @@ func (a *App) decideOpen(args []string) int {
 }
 
 // openQuestion opens a question decision on repo/task, refusing a closed (done or cancelled) task, and returns it;
-// an open question of the task with the same text and options is returned instead, with nothing written.
-func openQuestion(s *store.Store, repo, task, question string, options []string) (store.Decision, error) {
+// an open question of the task with the same text, options and recommended option is returned instead, with nothing
+// written. recommend, when not "", is the option the Director recommends, which the task page marks.
+func openQuestion(s *store.Store, repo, task, question string, options []string, recommend string) (store.Decision, error) {
 	t, err := s.Task(repo, task)
 	if err != nil {
 		return store.Decision{}, err
@@ -105,7 +109,7 @@ func openQuestion(s *store.Store, repo, task, question string, options []string)
 	}
 	next := 1
 	for _, d := range all {
-		if d.Kind == store.DecisionQuestion && d.Open() && d.Question == question && slices.Equal(d.Options, options) {
+		if d.Kind == store.DecisionQuestion && d.Open() && d.Question == question && slices.Equal(d.Options, options) && d.Recommended == recommend {
 			return d, nil
 		}
 		if n, ok := questionNumber(d.ID); ok && n >= next {
@@ -113,7 +117,7 @@ func openQuestion(s *store.Store, repo, task, question string, options []string)
 		}
 	}
 	d := store.Decision{Repository: repo, TaskID: task, ID: questionPrefix + strconv.Itoa(next), Kind: store.DecisionQuestion,
-		Options: options, Question: question}
+		Options: options, Question: question, Recommended: recommend}
 	// The question is the Director's words on the task page too, tagged with the new decision, written with it.
 	say := store.Saying{Author: store.ConversationDirector, Tag: d.ID, Kind: store.ConversationSay, Text: question}
 	if _, err := s.OpenDecisionSaying(mutationID("decision-open", repo, task, d.ID), d, &say); err != nil {

@@ -33,7 +33,7 @@ guildhall messages ack director app.t-1.attempt-failed.build-1
 
 | Type | What to do |
 |---|---|
-| `note` | A note, usually from the Guildmaster, whose sender, task and first line Guildhall has already shown the Guildmaster: treat it as if they had said it to you and act in the same turn, giving work as `guildhall-director-tasks` says with `guildhall task new` then `guildhall task start`, and reply in your role's reply layout, with Needs you first and What I did saying in one line what you are doing, for example `Note from guildmaster about d32: started it`, without repeating the text; ask first only when the note asks for a decision that is the Guildmaster's, and handle a message of any type whose sender is `other-director` the same way. |
+| `note` | A note, usually from the Guildmaster, whose sender, task and first line Guildhall has already shown the Guildmaster: treat it as if they had said it to you and act in the same turn, giving work as `guildhall-director-tasks` says with `guildhall task new` then `guildhall task start`; a note from the task page, whose first line names its task and an ask (`d32 #accept-1, words only`) or an attempt (`d32 grill-2, said on the page`), you reply to on the page under that ask or attempt, as Talk on the task page says, and when their words on an ask read as an answer to it you put your reading and the answer you recommend there with `guildhall task say --recommend <option>`, so one Confirm answers it, never answering it for them; then reply in your role's reply layout, with Needs you first, holding a line with the page link when something waits on them there, and What I did saying in one line what you are doing, for example `Note from guildmaster about d32: started it`, without repeating the text; ask first only when the note asks for a decision that is the Guildmaster's, and handle a message of any type whose sender is `other-director` the same way. |
 | `decision` | A decision opened for the Guildmaster: read it with `guildhall decide show`, put it to them in plain English and record their reply as `guildhall-director-tasks` says; a question of your own about a task sends no message, so record it with `guildhall decide open` before you ask, and their reply with `guildhall decide answer`. |
 | `decision-answered` | Already answered on the task page: read it with `guildhall decide show`, then continue the task with `guildhall task start --decision`; do not ask again. |
 | `director-stage` | A stage that is yours to run, such as a grill: run it with `guildhall-director-stage`. |
@@ -68,6 +68,19 @@ WORDS
 ```
 
 When you reply about a task, to a note or in chat, put your reply on its page too, under the same tag, with `guildhall task say --repo <repo> --task <task> --tag <attempt|decision> --text-file -`, in Markdown.
+The Guildmaster can also say something about the current stage from the page's Say box, answering nothing; it reaches you as a note under that attempt, and your reply goes under the same attempt.
+
+When their words on an open ask read as an answer, put your reading and the answer you recommend under the ask, so the page offers it as one Confirm, with their words pre-filled to edit:
+
+```sh
+guildhall task say --repo app --task t-1 --tag accept-1 --recommend approved --text-file - <<'READING'
+You asked whether it covers Windows; it does, in slice 2, so I recommend **Approved**.
+READING
+```
+
+`--recommend` takes one of the decision's options; `--words-file` sets the words the box is pre-filled with, which are otherwise their latest words on the ask.
+Nothing is answered until they click Confirm, or answer another way, and a newer recommendation replaces the older one.
+When you open a question of your own with `guildhall decide open`, `--recommend <option>` marks the option you recommend on its page.
 
 A wake gets a reply of its own only when something needs the Guildmaster, merges, fails or is stuck: `merged`, `decision`, a `question` whose answer is theirs, an `attempt-failed` that retrying will not help, `rebase-stuck`, `merge-refused`, `pr-blocked`, `merge-held`, failed checks and a new or changed `install` item.
 Everything else you handle quietly, and it shows as a line in the Routine box of your next reply.
