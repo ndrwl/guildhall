@@ -97,6 +97,7 @@ A pull request that adds or changes a package's contract edits only that package
 - [`internal/release/releasetest`](contracts/release-releasetest.md)
 - [`internal/render`](contracts/render.md)
 - [`internal/session`](contracts/session.md)
+- [`internal/setup`](contracts/setup.md)
 - [`internal/steward/stewardtest`](contracts/steward-stewardtest.md)
 - [`internal/steward`](contracts/steward.md)
 - [`internal/store`](contracts/store.md)

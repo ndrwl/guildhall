@@ -1,0 +1,62 @@
+# The tools a person installs, some with administrator rights: Git, the GitHub CLI and Claude Code. The engine never
+# runs sudo, so each is a human step the wizard walks through.
+schema = "guildhall.steps/1"
+name = "git-and-claude"
+title = "Git, the GitHub CLI and Claude Code"
+
+[[step]]
+id = "git"
+title = "Install Git"
+tag = "human"
+os = ["linux", "darwin"]
+check = ["git", "--version"]
+instructions = '''
+Install Git as an administrator, in your own terminal:
+
+    Debian or Ubuntu:  sudo apt-get update && sudo apt-get install -y git
+    Fedora:            sudo dnf install -y git
+    macOS:             xcode-select --install
+
+Then run `git --version` to see it.
+'''
+undo = "Remove Git with the same package manager (for example sudo apt-get remove git)."
+
+[[step.prompt]]
+kind = "confirm"
+text = "Is Git installed, so `git --version` prints a version?"
+
+[[step]]
+id = "gh"
+title = "Install the GitHub CLI"
+tag = "human"
+os = ["linux", "darwin"]
+check = ["gh", "--version"]
+instructions = '''
+Install the GitHub CLI, gh, following https://github.com/cli/cli#installation:
+
+    Debian or Ubuntu:  sudo apt-get install -y gh   (after adding GitHub's apt repository, as that page shows)
+    macOS:             brew install gh
+
+Then run `gh --version` to see it.
+'''
+undo = "Remove gh with the same package manager."
+
+[[step.prompt]]
+kind = "confirm"
+text = "Is the GitHub CLI installed, so `gh --version` prints a version?"
+
+[[step]]
+id = "claude"
+title = "Install Claude Code"
+tag = "human"
+os = ["linux", "darwin"]
+check = ["claude", "--version"]
+instructions = '''
+Install Claude Code following https://code.claude.com/docs/en/setup, then open a new shell and run
+`claude --version` to see it. Do not sign in here; the sign-in step file does that.
+'''
+undo = "Uninstall Claude Code as its setup page describes."
+
+[[step.prompt]]
+kind = "confirm"
+text = "Is Claude Code installed, so `claude --version` prints a version?"

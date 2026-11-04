@@ -52,6 +52,13 @@ Commands:
                  print the Guildhall home, its installed releases with any damage and the copies pinning them,
                  its copies, and the selected copy's pin
   doctor         report the platform and the tools guildhall uses
+  setup doctor [--json] [--fix [--only <ids>]] [--steps <file|built-in> [--digest <hex>]] [--set <name>=<value>]... [--setup-dir <dir>]
+                 check this machine against step files, every built-in without --steps: each gap is fixable or human
+                 with its exact action line; --fix closes fixable gaps only
+  setup wizard --steps <file|built-in> [--digest <hex>] [--only <ids>] [--set <name>=<value>]... [--setup-dir <dir>] [--dry-run]
+                 walk through a step file as numbered cards, recording a journal and completion record and no secret
+  setup run --steps <file|built-in> [--digest <hex>] [--only <ids>] [--set <name>=<value>]... [--setup-dir <dir>]
+                 run a step file's steps in order, stopping at the first human step not done
   signin [--check] [--copy <dir>] [claude|codex|gh]...
                  check each runtime's sign-in on this machine, print the command and link for a missing one,
                  wait, then verify it with a real call; --check reports only
@@ -398,6 +405,8 @@ func (a *App) Run(args []string) int {
 			return a.usageError("doctor takes no arguments")
 		}
 		out = a.doctor()
+	case "setup":
+		return a.setupCmd(rest)
 	case "signin":
 		return a.signinCmd(rest)
 	case "secrets":

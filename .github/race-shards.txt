@@ -60,6 +60,7 @@
 3 github.com/ndrwl/guildhall/internal/render
 3 github.com/ndrwl/guildhall/internal/secrets
 3 github.com/ndrwl/guildhall/internal/session
+3 github.com/ndrwl/guildhall/internal/setup
 3 github.com/ndrwl/guildhall/internal/spec
 3 github.com/ndrwl/guildhall/internal/steward/stewardtest
 3 github.com/ndrwl/guildhall/internal/strictjson

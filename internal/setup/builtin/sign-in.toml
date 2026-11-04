@@ -1,0 +1,70 @@
+# Signing this machine in to Claude Code, Codex and GitHub, each to the Guildmaster's own account. The engine never
+# holds a login or token: each step tells the person the command to run in their own terminal and checks the
+# runtime's own status command afterwards (docs/signin.md).
+schema = "guildhall.steps/1"
+name = "sign-in"
+title = "Sign in to Claude Code, Codex and GitHub"
+
+[[step]]
+id = "claude-sign-in"
+title = "Sign in to Claude Code"
+tag = "human"
+os = ["linux", "darwin"]
+check = ["claude", "auth", "status"]
+instructions = '''
+In another terminal on this machine, run:
+
+    claude auth login
+
+or start claude and type /login. It signs this machine into your own Claude account.
+Help: https://code.claude.com/docs/en/authentication
+Never copy a Claude login or token from another machine.
+'''
+undo = "Run `claude auth logout` to sign this machine out again."
+
+[[step.prompt]]
+kind = "confirm"
+text = "Have you signed in to Claude Code?"
+
+[[step]]
+id = "codex-sign-in"
+title = "Sign in to Codex"
+tag = "human"
+os = ["linux", "darwin"]
+check = ["codex", "login", "status"]
+instructions = '''
+In another terminal on this machine, run:
+
+    codex login --device-auth
+
+Device-code sign-in must be enabled for your ChatGPT account first: in ChatGPT, Settings > Security, turn on device
+code authorization for Codex.
+Help: https://developers.openai.com/codex/auth
+Never copy ~/.codex/auth.json from another machine.
+'''
+undo = "Run `codex logout` to sign this machine out again."
+
+[[step.prompt]]
+kind = "confirm"
+text = "Have you signed in to Codex?"
+
+[[step]]
+id = "gh-sign-in"
+title = "Sign in to GitHub"
+tag = "human"
+os = ["linux", "darwin"]
+check = ["gh", "auth", "status", "--hostname", "github.com"]
+instructions = '''
+In another terminal on this machine, run:
+
+    gh auth login --hostname github.com
+    gh auth setup-git
+
+The second command makes git pushes use the same sign-in.
+Help: https://cli.github.com/manual/gh_auth_login
+'''
+undo = "Run `gh auth logout --hostname github.com` to sign this machine out again."
+
+[[step.prompt]]
+kind = "confirm"
+text = "Have you signed in to GitHub and run gh auth setup-git?"

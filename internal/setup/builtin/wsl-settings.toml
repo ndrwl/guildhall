@@ -1,0 +1,64 @@
+# The WSL settings a Director needs on a Windows laptop's Linux side: systemd, and a virtual machine that is not
+# shut down when idle. Outside WSL every check passes, so the file is safe to run on any Linux machine.
+schema = "guildhall.steps/1"
+name = "wsl-settings"
+title = "WSL settings for a Director"
+
+[[step]]
+id = "wsl-systemd"
+title = "Turn on systemd in WSL"
+tag = "human"
+os = ["linux"]
+instructions = '''
+As an administrator inside WSL, make /etc/wsl.conf hold:
+
+    [boot]
+    systemd=true
+
+for example with `sudoedit /etc/wsl.conf`. Then, from Windows PowerShell, run `wsl --shutdown` and open WSL again.
+'''
+undo = "Remove the systemd=true line from /etc/wsl.conf and run `wsl --shutdown` from Windows."
+
+[step.check]
+shell = "sh"
+script = '''
+grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null || { echo "not WSL"; exit 0; }
+grep -Eq '^[[:space:]]*systemd[[:space:]]*=[[:space:]]*true' /etc/wsl.conf 2>/dev/null || { echo "/etc/wsl.conf has no systemd=true"; exit 1; }
+[ -d /run/systemd/system ] || { echo "systemd is configured but not running; run wsl --shutdown from Windows"; exit 1; }
+echo "systemd on"
+'''
+
+[[step.prompt]]
+kind = "confirm"
+text = "Have you set systemd=true, run wsl --shutdown and reopened WSL?"
+
+[[step]]
+id = "wsl-keep-running"
+title = "Keep the WSL machine running while idle"
+tag = "human"
+os = ["linux"]
+instructions = '''
+On Windows, make %UserProfile%\.wslconfig hold:
+
+    [wsl2]
+    vmIdleTimeout=-1
+
+so WSL does not stop the Director when no window is open. Then run `wsl --shutdown` from Windows PowerShell and
+open WSL again.
+'''
+undo = "Remove the vmIdleTimeout line from %UserProfile%\\.wslconfig and run `wsl --shutdown`."
+
+[step.check]
+shell = "sh"
+script = '''
+grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null || { echo "not WSL"; exit 0; }
+profile=$(cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r')
+[ -n "$profile" ] || { echo "cannot read %USERPROFILE% through cmd.exe"; exit 1; }
+config="$(wslpath "$profile")/.wslconfig"
+grep -Eq '^[[:space:]]*vmIdleTimeout[[:space:]]*=[[:space:]]*-1' "$config" 2>/dev/null || { echo "$config has no vmIdleTimeout=-1"; exit 1; }
+echo "vmIdleTimeout=-1"
+'''
+
+[[step.prompt]]
+kind = "confirm"
+text = "Have you set vmIdleTimeout=-1, run wsl --shutdown and reopened WSL?"

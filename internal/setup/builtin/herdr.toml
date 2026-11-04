@@ -1,0 +1,43 @@
+# Herdr, installed into the user's own directory with no administrator rights. The Go form of Firstmate's
+# bin/fm-install-herdr.sh at ndrwl/firstmate 2add138ffe92309787dbbedf375beb4f05704f7b (MIT, see NOTICE). The version, download URL and sha256 come from the caller, such as a
+# Steward plan's pins; a wrong checksum is refused before anything is put in place. A running Herdr server is never
+# started, stopped or replaced.
+schema = "guildhall.steps/1"
+name = "herdr"
+title = "Herdr, the terminal host"
+
+[params]
+herdr_version = ""
+herdr_url = ""
+herdr_sha256 = ""
+
+[[step]]
+id = "herdr"
+title = "Install Herdr into ~/.local/bin"
+tag = "fixable"
+os = ["linux", "darwin"]
+expect = "${herdr_version}"
+creates = ["${home}/.local/bin/herdr"]
+undo = "Remove ~/.local/bin/herdr and its line in the setup manifest. A Herdr server that was already running is left as it was; restart it yourself when you choose."
+
+[step.check]
+shell = "sh"
+script = '''
+if command -v herdr >/dev/null 2>&1; then
+  herdr --version
+elif [ -x "$SETUP_HOME/.local/bin/herdr" ]; then
+  "$SETUP_HOME/.local/bin/herdr" --version
+else
+  echo "herdr is not on PATH or in ~/.local/bin"
+  exit 1
+fi
+'''
+
+[step.fetch]
+url = "${herdr_url}"
+sha256 = "${herdr_sha256}"
+dest = "${home}/.local/bin/herdr"
+
+[step.verify]
+shell = "sh"
+script = '"$SETUP_HOME/.local/bin/herdr" --version'
