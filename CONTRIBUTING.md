@@ -37,6 +37,7 @@ python3 .github/tests/test_release.py
 `go test -race` needs cgo and a C compiler; the release test needs PyYAML 6.0.1 ([D7](docs/decisions/release-policy-regression-test.md)).
 CI splits the race run into the parallel jobs `race (1)`–`race (3)`, each running the packages `.github/race-shards.txt` assigns it ([CI race shards](docs/decisions/ci-race-shards.md)).
 A new package must be added to `.github/race-shards.txt`, or all three race jobs fail; `bash .github/race-shards.sh check` checks the list.
+A pull request that changes only `docs/`, `README.md` or `CONTRIBUTING.md` runs only the docs tests ([CI docs-only skip](docs/decisions/ci-docs-only-skip.md)); a new test that reads any of them must be added to the `Docs tests` step in `.github/workflows/ci.yml`.
 The `Test` step runs packages with no OS-specific files and no `runtime.GOOS` on Linux only, so adding either to a package moves it onto all three operating systems ([CI neutral packages](docs/decisions/ci-neutral-packages-ubuntu-only.md)).
 Each `test (…)` run's summary page lists the 20 slowest packages and tests, and its `test-timings-<os>` artifact holds the raw `go test -json` streams; `./...` skips the summariser, so run its tests with `go test .github/tests/timings/*.go` ([CI test timings](docs/decisions/ci-test-timings.md)).
 
