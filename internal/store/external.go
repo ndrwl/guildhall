@@ -30,6 +30,9 @@ var (
 	bucketOutbox = []byte("outbox")
 	// bucketCopyReach holds, by "<machine>/<director>", when a Steward first found an enrolled copy unreachable.
 	bucketCopyReach = []byte("copy-reach")
+	// bucketCopyConditions holds, by "<machine>/<director> <kind>", each Director condition a Steward has found on an
+	// enrolled copy and not yet seen clear.
+	bucketCopyConditions = []byte("copy-conditions")
 )
 
 // Operations recorded on external message, inbox state and outbox receipts.
@@ -40,6 +43,7 @@ const (
 	opRecordOutbox    = "record-outbox"
 	opOutboxAttempt   = "outbox-attempt"
 	opCopyReach       = "copy-reach"
+	opCopyCondition   = "copy-condition"
 )
 
 // SenderSteward is the sender of a Steward message: one `messages receive` took in from the drop file a Steward copied
@@ -59,10 +63,17 @@ const (
 	ReportRolloutFailed = "rollout-failed"
 	// ReportUnreachableRecovered: the copy was unreachable for at least the configured span and is reachable again.
 	ReportUnreachableRecovered = "unreachable-recovered"
+	// ReportDirectorStuck: the Director took no turn for the configured span while messages waited for it.
+	ReportDirectorStuck = "director-stuck"
+	// ReportDirectorUnhealthy: the session's supervisor is gone while its session is not stopped, or the session
+	// has stayed recovering for the configured span.
+	ReportDirectorUnhealthy = "director-unhealthy"
+	// ReportReleaseBehind: the session runs a release older than the copy's pin, and has for the configured span.
+	ReportReleaseBehind = "release-behind"
 )
 
 // ReportKinds lists the kinds a steward-report may have.
-var ReportKinds = []string{ReportRolloutFailed, ReportUnreachableRecovered}
+var ReportKinds = []string{ReportRolloutFailed, ReportUnreachableRecovered, ReportDirectorStuck, ReportDirectorUnhealthy, ReportReleaseBehind}
 
 // Bounds of an external message's fields beyond a local message's.
 const (
@@ -660,4 +671,80 @@ func (s *Store) MarkCopyReach(name string, reached bool, at time.Time) (time.Tim
 			return nil
 		})
 	return since, err
+}
+
+// CopyCondition is a Director condition a Steward found on an enrolled copy (docs/steward.md#director-health): its
+// copy, its report kind, Mark, which names what holds, such as the release and the pin, and Since, when the Steward
+// first found it with that mark. It is kept until the Steward sees it clear.
+type CopyCondition struct {
+	Copy  string    `json:"copy"`
+	Kind  string    `json:"kind"`
+	Mark  string    `json:"mark"`
+	Since time.Time `json:"since"`
+}
+
+// MarkCopyCondition records whether condition kind holds on the copy named name ("<machine>/<director>") at the
+// time at, with mark naming what holds: a condition found with the mark it already has keeps its Since, one found
+// with another mark or not yet recorded starts again at at, and one that does not hold has its record removed. It
+// returns the condition's Since, zero when it does not hold, so one condition is one report until it clears.
+func (s *Store) MarkCopyCondition(name, kind, mark string, holds bool, at time.Time) (time.Time, error) {
+	if err := validateText("copy name", name, 256); err != nil {
+		return time.Time{}, err
+	}
+	if !slices.Contains(ReportKinds, kind) {
+		return time.Time{}, invalid("a copy condition kind must be one of %s, not %q", strings.Join(ReportKinds, ", "), kind)
+	}
+	if holds {
+		if err := validateText("copy condition mark", mark, 512); err != nil {
+			return time.Time{}, err
+		}
+	}
+	key := name + " " + kind
+	var since time.Time
+	req := struct {
+		Copy  string    `json:"copy"`
+		Kind  string    `json:"kind"`
+		Mark  string    `json:"mark"`
+		Holds bool      `json:"holds"`
+		At    time.Time `json:"at"`
+	}{name, kind, mark, holds, at.UTC()}
+	id := digest.Of([]byte(fmt.Sprintf("%s\n%s\n%t\n%s", key, mark, holds, at.UTC().Format(time.RFC3339Nano)))).Hex()[:32]
+	_, err := s.mutate("copy-condition:"+id, opCopyCondition, req, func(tx *bolt.Tx, r *Receipt) error {
+		b, err := createDirectorBucket(tx, bucketCopyConditions)
+		if err != nil {
+			return err
+		}
+		r.Record = "copy-condition/" + key
+		if !holds {
+			return b.Delete([]byte(key))
+		}
+		if b.Get([]byte(key)) != nil {
+			var prior CopyCondition
+			if err := getJSON(b, []byte(key), &prior); err != nil {
+				return err
+			}
+			if prior.Mark == mark {
+				since = prior.Since
+				return nil
+			}
+		}
+		since = at.UTC()
+		return putJSON(b, []byte(key), CopyCondition{Copy: name, Kind: kind, Mark: mark, Since: since})
+	})
+	if err != nil || !holds || !since.IsZero() {
+		return since, err
+	}
+	// A replay of the same mutation runs nothing, so the condition's Since is read from its record.
+	err = s.view(func(tx *bolt.Tx) error {
+		var c CopyCondition
+		if err := getJSON(directorBucket(tx, bucketCopyConditions), []byte(key), &c); err != nil {
+			return err
+		}
+		since = c.Since
+		return nil
+	})
+	if err != nil {
+		return time.Time{}, fmt.Errorf("store: copy condition %s: %w", key, err)
+	}
+	return since, nil
 }

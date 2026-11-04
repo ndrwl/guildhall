@@ -929,5 +929,12 @@
   "web": {
     "state": "not configured",
     "links": "markdown"
+  },
+  "health": {
+    "supervisor": "gone",
+    "waiting": 2,
+    "waiting_since": "2026-10-22T09:19:00Z",
+    "release": "v0.4.0",
+    "behind": false
   }
 }

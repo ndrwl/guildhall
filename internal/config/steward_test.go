@@ -79,6 +79,27 @@ func TestStewardCollectEvery(t *testing.T) {
 	}
 }
 
+// TestStewardReportDirectorAfter: [steward] report_director_after defaults to an hour and is a duration of at least
+// a minute.
+func TestStewardReportDirectorAfter(t *testing.T) {
+	cfg, err := Parse([]byte(stewardConfig + "\n[steward]\nname = \"steward\"\nreport_director_after = \"3h\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d, err := cfg.Steward.ReportDirectorAfterDuration(); err != nil || d != 3*time.Hour {
+		t.Fatalf("report_director_after = %v, %v; want 3h", d, err)
+	}
+	if d, err := (Steward{Name: "steward"}).ReportDirectorAfterDuration(); err != nil || d != time.Hour {
+		t.Fatalf("unset report_director_after = %v, %v; want 1h", d, err)
+	}
+	for _, v := range []string{"soon", "30s", "-1h"} {
+		body := "report_director_after = \"" + v + "\"\n"
+		if _, err := Parse([]byte(stewardConfig + "\n[steward]\nname = \"steward\"\n" + body)); err == nil || !strings.Contains(err.Error(), "report_director_after") {
+			t.Errorf("%q: err = %v", body, err)
+		}
+	}
+}
+
 // TestStewardRunsTheDefaultSessionSettings: the Steward's session runs the default idle_after, handoff triggers and
 // wake_quiet (docs/steward.md#lifecycle), so a Steward config refuses each of them under [steward] and
 // wake_quiet in [local] or [managed]; the [director] table that holds the others is refused by

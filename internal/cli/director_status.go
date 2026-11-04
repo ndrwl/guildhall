@@ -24,6 +24,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/quality"
 	"github.com/ndrwl/guildhall/internal/reconcile"
+	"github.com/ndrwl/guildhall/internal/release"
 	"github.com/ndrwl/guildhall/internal/session"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
@@ -77,9 +78,83 @@ type directorStatus struct {
 	// [web] table, else its url and "serving", "failed to bind" with the reason, or "not serving" (docs/web.md);
 	// absent when status reads no config.
 	Web *webStatus `json:"web,omitempty"`
+	// Health is what a Steward's status read checks to find a stuck, unhealthy or out-of-date Director
+	// (docs/steward.md#director-health); the supervisor's own snapshot leaves it out.
+	Health *statusHealth `json:"health,omitempty"`
 
 	// released are the released holds that still matter, which the holds watcher wakes the Director for once each.
 	released []releasedHold
+}
+
+// statusHealth is the newest session's supervisor, last turn and release beside what waits for the Director and the
+// copy's pin, which a Steward's status read checks (docs/steward.md#director-health). It reads apart from the feed's
+// store transaction, so it may be a moment newer than the rest.
+type statusHealth struct {
+	// Supervisor is the newest session's supervisor process while the session is not stopped: alive, gone or
+	// unverified; none when there is no session or it is stopped.
+	Supervisor string `json:"supervisor"`
+	// LastTurn is the newest turn signal of the newest session's runtime hooks, absent when it gave none or the feed
+	// was read with no copy.
+	LastTurn *session.LastTurn `json:"last_turn,omitempty"`
+	// Waiting counts the messages waiting for the Director, local and external, and WaitingSince is when the oldest
+	// of them arrived.
+	Waiting      int       `json:"waiting"`
+	WaitingSince time.Time `json:"waiting_since,omitzero"`
+	// Release is the release the newest session's supervisor runs, while it is not stopped.
+	Release string `json:"release,omitempty"`
+	// Pin is the copy's release pin once it has adopted releases, or PinError why it cannot be read.
+	Pin      string `json:"pin,omitempty"`
+	PinError string `json:"pin_error,omitempty"`
+	// Behind is set when Release and Pin are both release versions and Release is the older.
+	Behind bool `json:"behind"`
+}
+
+// probeSupervisor is the liveness of a session supervisor's recorded identity; tests replace it.
+var probeSupervisor = func(id store.ProcessIdentity) string {
+	lv, _ := artisan.Probe(artisan.Identity(id))
+	return lv.String()
+}
+
+// readStatusHealth reads the health of the copy whose store is at path, with its newest session d, from the copy
+// directory copyDir, which may be empty, so the last turn and the pin are unknown.
+func readStatusHealth(path, copyDir string, d statusSession) (*statusHealth, error) {
+	h := &statusHealth{Supervisor: "none"}
+	type waiting struct {
+		n     int
+		since time.Time
+	}
+	w, err := withStore(path, true, func(s *store.Store) (waiting, error) {
+		n, since, err := s.DirectorWaiting()
+		return waiting{n, since}, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	h.Waiting, h.WaitingSince = w.n, w.since
+	if d.Number > 0 && d.State != string(store.DirectorStopped) {
+		if d.Identity != nil {
+			h.Supervisor = probeSupervisor(*d.Identity)
+		}
+		h.Release = d.Release
+	}
+	if copyDir == "" {
+		return h, nil
+	}
+	if d.Number > 0 {
+		if lt, err := session.ReadLastTurn(filepath.Join(sessionDir(copyDir, d.Number), session.TurnFile)); err == nil {
+			h.LastTurn = &lt
+		}
+	}
+	if release.HasPin(copyDir) {
+		if h.Pin, err = release.ReadPin(copyDir); err != nil {
+			h.Pin, h.PinError = "", oneLine(err.Error())
+		}
+	}
+	if h.Release != "" && h.Pin != "" {
+		order, ok := release.CompareVersions(h.Release, h.Pin)
+		h.Behind = ok && order < 0
+	}
+	return h, nil
 }
 
 // supervisorBinaryStatus is the newest session's supervisor binary beside the guildhall binary on PATH: their
@@ -573,6 +648,9 @@ func (a *App) directorStatusCmd(args []string) int {
 		out.NeedsMe = append(out.NeedsMe, it)
 	}
 	out.SupervisorBinary = a.supervisorBinaryStatus(out.Session, out.Copy)
+	if out.Health, err = readStatusHealth(*path, out.Copy, out.Session); err != nil {
+		return a.fail(fmt.Errorf("director status: health: %w", err))
+	}
 	out.Web = readWebStatus(*cfg, *state, out.Session)
 	if out.Web != nil {
 		hooks := ""

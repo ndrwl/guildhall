@@ -44,7 +44,7 @@ var allowedCommands = []struct {
 	// (docs/decisions/steward-messages-directors.md).
 	{args: []string{"messages", "receive", "--copy"}},
 	// The takeover commands of an approved setup plan (docs/decisions/steward-setup-plans.md): director status
-	// --json only reads; pause and resume move the copy's session; backup now and store export back its store up;
+	// --json only reads, and the Director health checks read it too (docs/decisions/steward-reads-director-status.md); pause and resume move the copy's session; backup now and store export back its store up;
 	// director enrol records the copy's enrolment with this Steward.
 	{args: []string{"director", "status", "--json", "--copy"}},
 	{args: []string{"director", "pause", "--copy"}},
@@ -183,8 +183,9 @@ func validFile(path string) bool {
 
 // Runner runs the fixed remote commands on enrolled machines: `config reload` after a rollout publishes a copy's
 // managed.toml, the read-only `director mode --json`, collection's read-only pending lists and
-// `director collected`, `messages receive` after Deliver copies a Steward message, and an approved takeover's
-// status, pause, resume, backup, export and enrol. SSH is the ssh implementation and stewardtest.Fleet an
+// `director collected`, `messages receive` after Deliver copies a Steward message, the read-only
+// `director status --json` of the Director health checks, and an approved takeover's status, pause, resume,
+// backup, export and enrol. SSH is the ssh implementation and stewardtest.Fleet an
 // in-memory one; both pass stewardtest.RunRunnerContract.
 //
 // Run refuses an alias and argv that CheckRun refuses, with an error wrapping ErrNotAllowed, and runs nothing. Otherwise it runs argv as one fixed command on the machine

@@ -320,7 +320,7 @@ Its envelope is `guildhall.director-message/1`, decoded with the local envelope'
 | `id` | Chosen by the sender, unique among its messages: the local id rules. |
 | `from` | `steward`; it must match the sender `messages receive` records. |
 | `to` | The receiving copy's Director name, its config's `name`. |
-| `type`, `kind` | `steward-report`, with the `kind` `rollout-failed` (the Steward's newest rollout to the copy failed) or `unreachable-recovered` (the copy was unreachable for a configured span and is reachable again). Only a `steward-report` has a `kind`. |
+| `type`, `kind` | `steward-report`, with the `kind` `rollout-failed` (the Steward's newest rollout to the copy failed), `unreachable-recovered` (the copy was unreachable for a configured span and is reachable again), `director-stuck` (no Director turn for a configured span while messages waited), `director-unhealthy` (the session's supervisor is gone, or the session stayed recovering) or `release-behind` (the session runs a release older than the copy's pin), the last three from the Steward's [Director health](steward.md#director-health) checks. Only a `steward-report` has a `kind`. |
 | `subject` | The one-line header a summary shows: non-blank, no line break, at most 200 bytes. |
 | `text` | As in `guildhall.message/1`. |
 | `about`, `artifacts` | Optional, as designed; `in_reply_to` is refused until a Director's answer is built. |

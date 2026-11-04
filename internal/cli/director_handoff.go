@@ -88,6 +88,11 @@ func (a *App) directorTurnSignal(turn session.Turn, args []string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), turnSignalTimeout)
 	defer cancel()
 	dir := filepath.Join(copyDir, "director", fmt.Sprintf("session-%d", d.Number))
+	// The last turn is what the Steward's status read compares with waiting work (docs/steward.md#director-health);
+	// a record that cannot be written leaves the older one and never fails the hook.
+	if err := session.WriteLastTurn(dir, session.LastTurn{Turn: turn, At: a.now()}); err != nil {
+		_, _ = fmt.Fprintf(a.Stderr, "guildhall: %s: last turn not recorded: %v\n", name, err)
+	}
 	if turn == session.TurnEnded {
 		if err := a.contextFromTurn(dir); err != nil {
 			_, _ = fmt.Fprintf(a.Stderr, "Lanterns: context refresh unavailable: %v\n", err)

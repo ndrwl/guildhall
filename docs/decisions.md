@@ -304,6 +304,7 @@ Regenerate it with `go test ./internal/doccheck -run TestDecisionIndex -update`,
 - [A machine's secrets are sops+age ciphertext encrypted to its own key, decrypted in memory at start](decisions/secrets-sops-age.md)
 - [Steward collection adds three fixed commands and marks items through an scp receipt](decisions/steward-collection-commands.md)
 - [The Steward runs only a fixed allow-list of Guildhall commands over ssh](decisions/steward-fixed-remote-commands.md)
+- [The Steward reads each enrolled Director's status to report a stuck, unhealthy or out-of-date Director](decisions/steward-reads-director-status.md)
 - [Steward rollouts copy files with scp and run no remote command](decisions/steward-rollouts-copy-with-scp.md)
 - [A Steward changes a machine only through the steps of a setup plan the Guildmaster approved](decisions/steward-setup-plans.md)
 
