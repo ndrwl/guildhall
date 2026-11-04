@@ -58,6 +58,12 @@ jobs:
           key: go-test-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-${{ github.sha }}
           restore-keys: |
             go-test-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-
+      # Runs that save an entry re-run every test, so each pass a pull request
+      # replays was proved on main. This condition must stay identical to the
+      # "Save Go cache" step's (docs/decisions/ci-cached-test-results.md).
+      - name: Expire cached test results
+        if: github.event_name != 'pull_request'
+        run: go clean -testcache
       - name: Check formatting
         run: |
           unformatted=$(gofmt -l .)
@@ -83,9 +89,10 @@ jobs:
       # Packages with no OS-specific files and no runtime.GOOS run on Linux
       # only; Windows and macOS test the rest
       # (docs/decisions/ci-neutral-packages-ubuntu-only.md).
-      # -count=1 re-runs every test even when the Go build cache holds a
-      # passing result; the rolling cache requires it on every go test step
-      # (docs/decisions/ci-go-cache.md).
+      # No -count=1: pull requests replay the passes main recorded for
+      # packages they do not change, and main and workflow_dispatch runs
+      # expire the test cache first, so they re-run every test
+      # (docs/decisions/ci-cached-test-results.md).
       - name: Test
         env:
           GUILDHALL_CI_REQUIRE: ${{ matrix.require }}
@@ -97,8 +104,8 @@ jobs:
           if [ "${{ matrix.os }}" = ubuntu-latest ]; then
             echo "neutral packages (run on ubuntu only):"
             echo "$neutral"
-            echo "go test -json -count=1 -timeout 20m ./..."
-            go test -json -count=1 -timeout 20m ./... | summarise
+            echo "go test -json -timeout 20m ./..."
+            go test -json -timeout 20m ./... | summarise
             exit 0
           fi
           tested=$(bash .github/neutral-packages.sh tested)
@@ -111,7 +118,7 @@ jobs:
           echo "tested here:"
           echo "$tested"
           # Import paths hold no spaces, so word splitting gives one each.
-          go test -json -count=1 -timeout 20m $tested | summarise
+          go test -json -timeout 20m $tested | summarise
       # The Director suites again, each copy managed with the same effective
       # settings (docs/director-modes.md#testing-both-ways).
       # Ubuntu only: H3b of d178, a coverage-reducing choice the Guildmaster
@@ -121,7 +128,7 @@ jobs:
         env:
           GUILDHALL_CI_REQUIRE: ${{ matrix.require }}
           GUILDHALL_TEST_DIRECTOR_MODE: managed
-        run: go test -json -count=1 -timeout 20m ./internal/cli | "$RUNNER_TEMP/timings/summarise.exe" -json-out "$RUNNER_TEMP/test-timings/managed.json" -title "Test Director suites managed (${{ matrix.os }})"
+        run: go test -json -timeout 20m ./internal/cli | "$RUNNER_TEMP/timings/summarise.exe" -json-out "$RUNNER_TEMP/test-timings/managed.json" -title "Test Director suites managed (${{ matrix.os }})"
       - name: Upload test timings
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -203,7 +210,14 @@ jobs:
             go-race${{ matrix.shard }}-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-
       - name: Check race shards cover every package
         run: bash .github/race-shards.sh check
-      # -count=1: the rolling cache requires it (docs/decisions/ci-go-cache.md).
+      # Runs that save an entry re-run every test, so each pass a pull request
+      # replays was proved on main. This condition must stay identical to the
+      # "Save Go cache" step's (docs/decisions/ci-cached-test-results.md).
+      - name: Expire cached test results
+        if: github.event_name != 'pull_request'
+        run: go clean -testcache
+      # No -count=1: pull requests replay main's race passes for unchanged
+      # packages (docs/decisions/ci-cached-test-results.md).
       - name: Test with race detector
         env:
           # The ubuntu-latest require value of the test matrix.
@@ -214,7 +228,7 @@ jobs:
             echo "race shard ${{ matrix.shard }} has no packages"
             exit 1
           fi
-          go test -count=1 -race -timeout 20m "${packages[@]}"
+          go test -race -timeout 20m "${packages[@]}"
       - name: Save Go cache
         if: github.event_name != 'pull_request'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

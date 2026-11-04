@@ -4,6 +4,7 @@ date: 2026-11-04
 topic: ci
 tasks: d196
 amends: ci-action-pins-and-race.md, ci-race-shards.md
+amended-by: ci-cached-test-results.md
 ---
 
 # CI restores a rolling Go build cache and runs every `go test` step with `-count=1`
