@@ -1,0 +1,58 @@
+# token-usage-audit-2026-11 review intake refusals
+
+ran_at: 2026-11-04T13:54:01Z
+store_read_only_held: 97ms
+audit window: starts up to 2026-11-03T20:58:32Z
+
+## In the audit window
+
+TASK           STEP    ATTEMPT  STARTED_AT            TOOLS_AT_START
+guildhall/d3   review  1        2026-10-25T21:37:08Z  before #191
+guildhall/d3   review  2        2026-10-26T16:58:24Z  before #191
+guildhall/d4   review  1        2026-10-27T09:27:59Z  before #191
+guildhall/d4   review  2        2026-10-27T09:29:36Z  before #191
+guildhall/d4   review  3        2026-10-27T09:32:15Z  before #191
+guildhall/d8   review  1        2026-10-27T22:16:27Z  before #191
+guildhall/d8   review  2        2026-10-27T22:19:11Z  before #191
+guildhall/d8   review  3        2026-10-27T22:32:40Z  before #191
+guildhall/d27  review  5        2026-10-29T21:10:11Z  before #191
+guildhall/d12  review  3        2026-10-29T21:45:57Z  before #191
+refusals: 10
+reasons, as stored:
+- guildhall/d3/review-1: "a succeeded result lists no output for port outcome"
+- guildhall/d3/review-2: "invalid review outcome: standards_revision is required"
+- guildhall/d4/review-1: "invalid review outcome: finding id \"S1\" must be lowercase letters, digits and hyphens; finding id \"S2\" must be lowercase letters, digits and hyphens; finding id \"S3\" must be lowercase letters, digits and hyphens; finding id \"S4\" must be lowercase letters, digits and hyphens"
+- guildhall/d4/review-2: "invalid review outcome: finding id \"R1\" must be lowercase letters, digits and hyphens; finding id \"S1\" must be lowercase letters, digits and hyphens; finding id \"S2\" must be lowercase letters, digits and hyphens; finding id \"S3\" must be lowercase letters, digits and hyphens"
+- guildhall/d4/review-3: "invalid review outcome: finding id \"R1\" must be lowercase letters, digits and hyphens; finding id \"S1\" must be lowercase letters, digits and hyphens; finding id \"S2\" must be lowercase letters, digits and hyphens; finding id \"S3\" must be lowercase letters, digits and hyphens"
+- guildhall/d8/review-1: "invalid review outcome: finding id \"F1\" must be lowercase letters, digits and hyphens; finding id \"F2\" must be lowercase letters, digits and hyphens"
+- guildhall/d8/review-2: "invalid review outcome: finding id \"F1\" must be lowercase letters, digits and hyphens; finding id \"F2\" must be lowercase letters, digits and hyphens"
+- guildhall/d8/review-3: "invalid review outcome: finding id \"S1\" must be lowercase letters, digits and hyphens; finding id \"S2\" must be lowercase letters, digits and hyphens"
+- guildhall/d27/review-5: "invalid review outcome: resolved finding \"relaunch-base\" is still listed in findings or suggestions"
+- guildhall/d12/review-3: "invalid review outcome: resolved finding \"suggest-4\" is still listed in findings or suggestions; resolved finding \"suggest-5\" is still listed in findings or suggestions"
+
+## After the audit window, before #320 (2026-11-04T08:21:00Z)
+
+TASK  STEP  ATTEMPT  STARTED_AT  TOOLS_AT_START
+refusals: 0
+reasons, as stored:
+
+## Since #320 (started at or after 2026-11-04T08:21:00Z)
+
+TASK  STEP  ATTEMPT  STARTED_AT  TOOLS_AT_START
+refusals: 0
+reasons, as stored:
+
+## Rows for the audit doc (family and verdict are a first reading; check each by hand)
+
+| Attempt | Started (UTC) | Tools at start | Reason (as stored) | Family | Verdict |
+|---|---|---|---|---|---|
+| guildhall/d3/review-1 | 2026-10-25 21:37 | before #191 | `a succeeded result lists no output for port outcome` | generic output or identity | caught by #306+#320 |
+| guildhall/d3/review-2 | 2026-10-26 16:58 | before #191 | `invalid review outcome: standards_revision is required` | outcome form | caught by #191 |
+| guildhall/d4/review-1 | 2026-10-27 09:27 | before #191 | `invalid review outcome: finding id "S1" must be lowercase letters, digits and hyphens; finding id "S2" must be lowercase letters, digits and hyphens; finding id "S3" must be lowercase letters, digits and hyphens; finding id "S4" must be lowercase letters, digits and hyphens` | outcome form | caught by #191 |
+| guildhall/d4/review-2 | 2026-10-27 09:29 | before #191 | `invalid review outcome: finding id "R1" must be lowercase letters, digits and hyphens; finding id "S1" must be lowercase letters, digits and hyphens; finding id "S2" must be lowercase letters, digits and hyphens; finding id "S3" must be lowercase letters, digits and hyphens` | outcome form | caught by #191 |
+| guildhall/d4/review-3 | 2026-10-27 09:32 | before #191 | `invalid review outcome: finding id "R1" must be lowercase letters, digits and hyphens; finding id "S1" must be lowercase letters, digits and hyphens; finding id "S2" must be lowercase letters, digits and hyphens; finding id "S3" must be lowercase letters, digits and hyphens` | outcome form | caught by #191 |
+| guildhall/d8/review-1 | 2026-10-27 22:16 | before #191 | `invalid review outcome: finding id "F1" must be lowercase letters, digits and hyphens; finding id "F2" must be lowercase letters, digits and hyphens` | outcome form | caught by #191 |
+| guildhall/d8/review-2 | 2026-10-27 22:19 | before #191 | `invalid review outcome: finding id "F1" must be lowercase letters, digits and hyphens; finding id "F2" must be lowercase letters, digits and hyphens` | outcome form | caught by #191 |
+| guildhall/d8/review-3 | 2026-10-27 22:32 | before #191 | `invalid review outcome: finding id "S1" must be lowercase letters, digits and hyphens; finding id "S2" must be lowercase letters, digits and hyphens` | outcome form | caught by #191 |
+| guildhall/d27/review-5 | 2026-10-29 21:10 | before #191 | `invalid review outcome: resolved finding "relaunch-base" is still listed in findings or suggestions` | outcome form | caught by #191 |
+| guildhall/d12/review-3 | 2026-10-29 21:45 | before #191 | `invalid review outcome: resolved finding "suggest-4" is still listed in findings or suggestions; resolved finding "suggest-5" is still listed in findings or suggestions` | outcome form | caught by #191 |
