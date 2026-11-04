@@ -13,6 +13,12 @@ concurrency:
   group: ci-${{ github.ref == 'refs/heads/main' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+# A pull request that changes only docs/**, README.md or CONTRIBUTING.md skips
+# the Go, Python, node and lint steps, and its test jobs run only the docs
+# tests; every job still runs and reports under its own name
+# (docs/decisions/ci-docs-only-skip.md). push and workflow_dispatch always run
+# everything. The "Classify changes" step is the same in both jobs.
+
 jobs:
   test:
     name: test (${{ matrix.os }})
@@ -37,6 +43,32 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          fetch-depth: 2
+      - name: Classify changes
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          docs_only=false
+          if [ "$EVENT_NAME" != pull_request ]; then
+            echo "event $EVENT_NAME always runs everything"
+          elif ! changed=$(git diff --name-only HEAD^1 HEAD); then
+            echo "git diff failed; running everything"
+          elif [ -z "$changed" ]; then
+            echo "no changed files; running everything"
+          else
+            echo "changed files:"
+            echo "$changed"
+            docs_only=true
+            while IFS= read -r path; do
+              case "$path" in
+                docs/*|README.md|CONTRIBUTING.md) ;;
+                *) docs_only=false ;;
+              esac
+            done <<< "$changed"
+          fi
+          echo "docs_only=$docs_only"
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
       # setup-go's own cache is a snapshot keyed on go.sum; the rolling cache
       # below replaces it (docs/decisions/ci-go-cache.md).
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
@@ -64,7 +96,31 @@ jobs:
       - name: Expire cached test results
         if: github.event_name != 'pull_request'
         run: go clean -testcache
+      # The tests that read docs/, README.md or CONTRIBUTING.md. A new test
+      # that reads any of them must be added to this list, or a docs-only pull
+      # request can pass while main fails. The Go cache steps above still run
+      # on a docs-only pull request, so these compile warm.
+      - name: Docs tests
+        if: steps.changes.outputs.docs_only == 'true'
+        env:
+          GUILDHALL_CI_REQUIRE: ${{ matrix.require }}
+        run: |
+          go test -count=1 -timeout 20m ./internal/doccheck/...
+          out=$(mktemp)
+          status=0
+          go test -v -count=1 -timeout 20m -run '^TestEventsDocumented$' ./internal/artisan | tee -a "$out" || status=1
+          go test -v -count=1 -timeout 20m -run '^TestHelpNamesReadmeCommands$' ./internal/cli | tee -a "$out" || status=1
+          go test -v -count=1 -timeout 20m -run '^TestDirectorSkillsNameEveryReadmeCommand$' ./skills | tee -a "$out" || status=1
+          # An anchor that matches no test passes silently, so require each PASS line.
+          for name in TestEventsDocumented TestHelpNamesReadmeCommands TestDirectorSkillsNameEveryReadmeCommand; do
+            if ! grep -q -- "--- PASS: $name " "$out"; then
+              echo "docs test $name did not pass; was it renamed or moved?"
+              status=1
+            fi
+          done
+          exit "$status"
       - name: Check formatting
+        if: steps.changes.outputs.docs_only != 'true'
         run: |
           unformatted=$(gofmt -l .)
           if [ -n "$unformatted" ]; then
@@ -73,15 +129,19 @@ jobs:
             exit 1
           fi
       - name: Test timing policy
+        if: steps.changes.outputs.docs_only != 'true'
         run: go test -timeout 20m ./internal/testenv -run '^TestTimingPolicy' -count=1
       - name: Build
+        if: steps.changes.outputs.docs_only != 'true'
         run: go build ./...
       - name: Vet
+        if: steps.changes.outputs.docs_only != 'true'
         run: go vet ./...
       # The summariser the two test steps pipe go test -json through
       # (docs/decisions/ci-test-timings.md). ./... skips .github, so its own
       # vet and tests run here; summarise.exe runs on every OS.
       - name: Test timing summariser
+        if: steps.changes.outputs.docs_only != 'true'
         run: |
           go vet .github/tests/timings/*.go
           go test -count=1 .github/tests/timings/*.go
@@ -94,6 +154,7 @@ jobs:
       # expire the test cache first, so they re-run every test
       # (docs/decisions/ci-cached-test-results.md).
       - name: Test
+        if: steps.changes.outputs.docs_only != 'true'
         env:
           GUILDHALL_CI_REQUIRE: ${{ matrix.require }}
         run: |
@@ -124,13 +185,13 @@ jobs:
       # Ubuntu only: H3b of d178, a coverage-reducing choice the Guildmaster
       # made for speed; Windows and macOS run these suites standalone only.
       - name: Test Director suites managed
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && steps.changes.outputs.docs_only != 'true'
         env:
           GUILDHALL_CI_REQUIRE: ${{ matrix.require }}
           GUILDHALL_TEST_DIRECTOR_MODE: managed
         run: go test -json -timeout 20m ./internal/cli | "$RUNNER_TEMP/timings/summarise.exe" -json-out "$RUNNER_TEMP/test-timings/managed.json" -title "Test Director suites managed (${{ matrix.os }})"
       - name: Upload test timings
-        if: always()
+        if: always() && steps.changes.outputs.docs_only != 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: test-timings-${{ matrix.os }}
@@ -138,24 +199,25 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && steps.changes.outputs.docs_only != 'true'
         with:
           python-version: '3.12'
       - name: Install release-policy test dependencies
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && steps.changes.outputs.docs_only != 'true'
         run: python -m pip install PyYAML==6.0.1
       - name: Run release-policy test
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && steps.changes.outputs.docs_only != 'true'
         run: python .github/tests/test_release.py
       # Pure-JS contracts with no OS dependency (docs/lanterns.md); Linux only (d204).
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && steps.changes.outputs.docs_only != 'true'
         with:
           node-version: '24'
       - name: Lanterns presentation contracts
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && steps.changes.outputs.docs_only != 'true'
         run: node --test internal/lanterns/plugin/tests/*.test.mjs
       - name: Lint
+        if: steps.changes.outputs.docs_only != 'true'
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
           version: v2.15.0
@@ -173,6 +235,8 @@ jobs:
   # The race detector, split by package across three parallel jobs
   # (docs/decisions/ci-race-shards.md). .github/race-shards.txt assigns each
   # package to one shard. No needs:, so every race check appears at once.
+  # On a docs-only pull request each shard only checks out and classifies;
+  # the test job already runs the docs tests.
   race:
     name: race (${{ matrix.shard }})
     strategy:
@@ -187,19 +251,48 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          fetch-depth: 2
+      - name: Classify changes
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          docs_only=false
+          if [ "$EVENT_NAME" != pull_request ]; then
+            echo "event $EVENT_NAME always runs everything"
+          elif ! changed=$(git diff --name-only HEAD^1 HEAD); then
+            echo "git diff failed; running everything"
+          elif [ -z "$changed" ]; then
+            echo "no changed files; running everything"
+          else
+            echo "changed files:"
+            echo "$changed"
+            docs_only=true
+            while IFS= read -r path; do
+              case "$path" in
+                docs/*|README.md|CONTRIBUTING.md) ;;
+                *) docs_only=false ;;
+              esac
+            done <<< "$changed"
+          fi
+          echo "docs_only=$docs_only"
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
       # Each shard has its own rolling cache key (docs/decisions/ci-go-cache.md);
       # the restore comes before the guard, whose go list needs modules.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        if: steps.changes.outputs.docs_only != 'true'
         id: setup-go
         with:
           go-version-file: go.mod
           cache: false
       - name: Go cache paths
+        if: steps.changes.outputs.docs_only != 'true'
         id: go-paths
         run: |
           echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
           echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
       - name: Restore Go cache
+        if: steps.changes.outputs.docs_only != 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -209,6 +302,7 @@ jobs:
           restore-keys: |
             go-race${{ matrix.shard }}-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-
       - name: Check race shards cover every package
+        if: steps.changes.outputs.docs_only != 'true'
         run: bash .github/race-shards.sh check
       # Runs that save an entry re-run every test, so each pass a pull request
       # replays was proved on main. This condition must stay identical to the
@@ -219,6 +313,7 @@ jobs:
       # No -count=1: pull requests replay main's race passes for unchanged
       # packages (docs/decisions/ci-cached-test-results.md).
       - name: Test with race detector
+        if: steps.changes.outputs.docs_only != 'true'
         env:
           # The ubuntu-latest require value of the test matrix.
           GUILDHALL_CI_REQUIRE: pwsh

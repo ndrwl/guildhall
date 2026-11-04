@@ -128,6 +128,7 @@ Regenerate it with `go test ./internal/doccheck -run TestDecisionIndex -update`,
 
 - [CI pins actions by commit, runs a Linux race step and runs the release test](decisions/ci-action-pins-and-race.md)
 - [Pull requests replay main's cached test passes; main and `workflow_dispatch` runs expire them and re-run every test](decisions/ci-cached-test-results.md)
+- [Docs-only pull requests skip the Go CI steps and run only the docs tests](decisions/ci-docs-only-skip.md)
 - [CI restores a rolling Go build cache and runs every `go test` step with `-count=1`](decisions/ci-go-cache.md)
 - [CI builds, vets, tests and lints on Linux, Windows and macOS with a pinned golangci-lint](decisions/ci-matrix-and-lint.md)
 - [CI tests platform-neutral packages on Linux only](decisions/ci-neutral-packages-ubuntu-only.md)
