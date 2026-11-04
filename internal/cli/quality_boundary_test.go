@@ -19,13 +19,13 @@ import (
 func TestQualityJudgeRepositoryBoundary(t *testing.T) {
 	t.Setenv(roleEnv, "guildhall")
 	for _, command := range [][]string{
-		{"quality", "judge", "--review", "1", "t-1"},
-		{"quality", "judged", "--attempt", "1", "--task", "t-1"},
+		{"quality", "judge", "--review", "1", "t1"},
+		{"quality", "judged", "--attempt", "1", "--task", "t1"},
 	} {
 		t.Run(command[1], func(t *testing.T) {
 			dir := shortCopy(t)
 			cfg := filepath.Join(dir, "config.toml")
-			newTask(t, filepath.Join(dir, "director.store"), cfg, "app", "Task", "t-1")
+			newTask(t, filepath.Join(dir, "director.store"), cfg, "app", "Task")
 			data, err := os.ReadFile(cfg)
 			if err != nil {
 				t.Fatal(err)
@@ -40,7 +40,7 @@ func TestQualityJudgeRepositoryBoundary(t *testing.T) {
 			if code == 0 || !strings.Contains(stderr.String(), config.ErrRepositoryNotListed.Error()) {
 				t.Fatalf("exit %d, stderr %s; want repository guard rail", code, stderr)
 			}
-			if _, err := os.Stat(filepath.Join(dir, "state", "app", "t-1")); !os.IsNotExist(err) {
+			if _, err := os.Stat(filepath.Join(dir, "state", "app", "t1")); !os.IsNotExist(err) {
 				t.Fatalf("task directory created: %v", err)
 			}
 		})
@@ -54,8 +54,8 @@ func TestQualityJudgeConfiguredLockWait(t *testing.T) {
 	const lockWait = 5 * time.Second
 	const refusalCeiling = 4 * lockWait
 	for _, command := range [][]string{
-		{"quality", "judge", "--review", "1", "t-1"},
-		{"quality", "judged", "--attempt", "1", "--task", "t-1"},
+		{"quality", "judge", "--review", "1", "t1"},
+		{"quality", "judged", "--attempt", "1", "--task", "t1"},
 	} {
 		for _, lock := range []string{"task", "store"} {
 			t.Run(command[1]+"/"+lock, func(t *testing.T) {
@@ -68,9 +68,9 @@ func TestQualityJudgeConfiguredLockWait(t *testing.T) {
 				if err := os.WriteFile(d.config, []byte(strings.Replace(string(data), "[local]", "[local]\nlock_wait = \""+lockWait.String()+"\"", 1)), 0600); err != nil {
 					t.Fatal(err)
 				}
-				want := "lock task app/t-1"
+				want := "lock task app/t1"
 				if lock == "task" {
-					taskDir := filepath.Join(d.state, "app", "t-1")
+					taskDir := filepath.Join(d.state, "app", "t1")
 					if err := os.MkdirAll(taskDir, 0755); err != nil {
 						t.Fatal(err)
 					}
@@ -118,7 +118,7 @@ func TestQualityJudgePassesLockWaitToDependencies(t *testing.T) {
 	app.Executable = os.Executable
 	app.InstallBaseline = baseline.Install
 	called := false
-	err = app.withJudge(f, "t-1", func(j *quality.Judge) error {
+	err = app.withJudge(f, "t1", func(j *quality.Judge) error {
 		called = true
 		records := j.Records.(storeRecords)
 		launcher := j.Launcher.(*launch.Process)

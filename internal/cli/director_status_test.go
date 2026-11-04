@@ -57,15 +57,15 @@ func exitedLauncher(t *testing.T) store.ProcessIdentity {
 }
 
 // statusCopy builds a Director copy whose store has a fixed clock advancing one minute per mutation, with one
-// app task in each state: t-1 unstarted, t-2 running with no owner, t-3 failed latest with a next.json waiting
-// for the Director, t-4 with an open decision, t-5 done, and t-6 running under a killed launcher whose attempt
-// directory remains, as the reconcile fixtures leave it. lib/t-1 sends a question; app/t-2 has an unread
-// worker-stalled message and an acknowledged note. app/t-7's plan attempt succeeded with its result file and app/t-8's
+// app task in each state: t1 unstarted, t2 running with no owner, t3 failed latest with a next.json waiting
+// for the Director, t4 with an open decision, t5 done, and t6 running under a killed launcher whose attempt
+// directory remains, as the reconcile fixtures leave it. lib/t1 sends a question; app/t2 has an unread
+// worker-stalled message and an acknowledged note. app/t7's plan attempt succeeded with its result file and app/t8's
 // was stopped, while each task's next.json still waits on that attempt, as a watcher whose advance failed leaves them.
-// app/t-3's plan attempt reported a measured and estimated spend and its build attempt an unknown one. app/t-9's
-// plan attempt is a Director stage the engine handed to the Director, with no ownership record (F46). app/t-10's
-// build attempt failed and was parked, while its next.json waits for the Director on it. t-6's attempt has a heartbeat.
-// app/t-11's plan attempt, on an open task, and app/t-12's, on a done one, have a failed outcome.json the store never
+// app/t3's plan attempt reported a measured and estimated spend and its build attempt an unknown one. app/t9's
+// plan attempt is a Director stage the engine handed to the Director, with no ownership record (F46). app/t10's
+// build attempt failed and was parked, while its next.json waits for the Director on it. t6's attempt has a heartbeat.
+// app/t11's plan attempt, on an open task, and app/t12's, on a done one, have a failed outcome.json the store never
 // recorded, as a launcher that died before FinishAttempt leaves them.
 // The question woke the Director and the worker-stalled message, woken last, was queued.
 func statusCopy(t *testing.T) string {
@@ -91,51 +91,51 @@ func statusCopy(t *testing.T) string {
 	}
 	killed := exitedLauncher(t)
 	steps := []func() (store.Receipt, error){
-		func() (store.Receipt, error) { return s.CreateTask("i-1", task("app", "t-1", "Unstarted")) },
-		func() (store.Receipt, error) { return s.CreateTask("i-2", task("app", "t-2", "Running")) },
-		func() (store.Receipt, error) { return s.CreateTask("i-3", task("app", "t-3", "Failed latest")) },
-		func() (store.Receipt, error) { return s.CreateTask("i-4", task("app", "t-4", "Decision open")) },
-		func() (store.Receipt, error) { return s.CreateTask("i-5", task("app", "t-5", "Done")) },
-		func() (store.Receipt, error) { return s.CreateTask("i-6", task("app", "t-6", "Killed launcher")) },
-		func() (store.Receipt, error) { return s.CreateTask("i-7", task("lib", "t-1", "Other repository")) },
-		func() (store.Receipt, error) { return s.StartAttempt("i-8", "app", "t-2", "plan") },
-		func() (store.Receipt, error) { return s.StartAttempt("i-9", "app", "t-3", "plan") },
+		func() (store.Receipt, error) { return s.CreateTask("i-1", task("app", "t1", "Unstarted")) },
+		func() (store.Receipt, error) { return s.CreateTask("i-2", task("app", "t2", "Running")) },
+		func() (store.Receipt, error) { return s.CreateTask("i-3", task("app", "t3", "Failed latest")) },
+		func() (store.Receipt, error) { return s.CreateTask("i-4", task("app", "t4", "Decision open")) },
+		func() (store.Receipt, error) { return s.CreateTask("i-5", task("app", "t5", "Done")) },
+		func() (store.Receipt, error) { return s.CreateTask("i-6", task("app", "t6", "Killed launcher")) },
+		func() (store.Receipt, error) { return s.CreateTask("i-7", task("lib", "t1", "Other repository")) },
+		func() (store.Receipt, error) { return s.StartAttempt("i-8", "app", "t2", "plan") },
+		func() (store.Receipt, error) { return s.StartAttempt("i-9", "app", "t3", "plan") },
 		func() (store.Receipt, error) {
-			return s.FinishAttempt("i-10", "app", "t-3", "plan", 1, store.AttemptSucceeded)
+			return s.FinishAttempt("i-10", "app", "t3", "plan", 1, store.AttemptSucceeded)
 		},
-		func() (store.Receipt, error) { return s.StartAttempt("i-11", "app", "t-3", "build") },
+		func() (store.Receipt, error) { return s.StartAttempt("i-11", "app", "t3", "build") },
 		func() (store.Receipt, error) {
-			return s.FinishAttempt("i-12", "app", "t-3", "build", 1, store.AttemptFailed)
+			return s.FinishAttempt("i-12", "app", "t3", "build", 1, store.AttemptFailed)
 		},
-		func() (store.Receipt, error) { return s.StartAttempt("i-13", "app", "t-4", "plan") },
+		func() (store.Receipt, error) { return s.StartAttempt("i-13", "app", "t4", "plan") },
 		func() (store.Receipt, error) {
-			return s.FinishAttempt("i-14", "app", "t-4", "plan", 1, store.AttemptSucceeded)
+			return s.FinishAttempt("i-14", "app", "t4", "plan", 1, store.AttemptSucceeded)
 		},
 		func() (store.Receipt, error) {
-			return s.OpenDecision("i-15", store.Decision{Repository: "app", TaskID: "t-4", ID: "accept-plan", Kind: store.DecisionApproval,
+			return s.OpenDecision("i-15", store.Decision{Repository: "app", TaskID: "t4", ID: "accept-plan", Kind: store.DecisionApproval,
 				Subject: &store.Subject{Kind: store.SubjectDocument, Digest: "sha256:" + strings.Repeat("a", 64)},
 				Options: []string{"approve", "reject"}, Question: "Accept the plan?"})
 		},
-		func() (store.Receipt, error) { return s.StartAttempt("i-16", "app", "t-5", "plan") },
+		func() (store.Receipt, error) { return s.StartAttempt("i-16", "app", "t5", "plan") },
 		func() (store.Receipt, error) {
-			return s.FinishAttempt("i-17", "app", "t-5", "plan", 1, store.AttemptStopped)
+			return s.FinishAttempt("i-17", "app", "t5", "plan", 1, store.AttemptStopped)
 		},
-		func() (store.Receipt, error) { return s.SetTaskState("i-18", "app", "t-5", store.TaskDone) },
+		func() (store.Receipt, error) { return s.SetTaskState("i-18", "app", "t5", store.TaskDone) },
 		func() (store.Receipt, error) {
-			return s.StartOwnedAttempt("i-19", store.Ownership{Repository: "app", TaskID: "t-6", Step: "build", LauncherIdentity: killed})
+			return s.StartOwnedAttempt("i-19", store.Ownership{Repository: "app", TaskID: "t6", Step: "build", LauncherIdentity: killed})
 		},
 		func() (store.Receipt, error) {
-			return s.SendMessage(store.Message{ID: "app.t-2.worker-stalled.plan-1.abc", Recipient: store.RecipientDirector, Repository: "app", TaskID: "t-2",
+			return s.SendMessage(store.Message{ID: "app.t2.worker-stalled.plan-1.abc", Recipient: store.RecipientDirector, Repository: "app", TaskID: "t2",
 				Step: "plan", Attempt: 1, Type: "worker-stalled", Text: "No output for 20m."})
 		},
 		func() (store.Receipt, error) {
-			return s.SendMessage(store.Message{ID: "n-1", Recipient: store.RecipientDirector, Repository: "app", TaskID: "t-4", Type: "note", Text: "Read."})
+			return s.SendMessage(store.Message{ID: "n-1", Recipient: store.RecipientDirector, Repository: "app", TaskID: "t4", Type: "note", Text: "Read."})
 		},
 		func() (store.Receipt, error) {
 			return s.AckMessage(store.Recipient{Role: store.RecipientDirector}, "n-1")
 		},
 		func() (store.Receipt, error) {
-			return s.SendMessage(store.Message{ID: "q-1", Recipient: store.RecipientDirector, Repository: "lib", TaskID: "t-1", Type: "question", Text: "Which parser?",
+			return s.SendMessage(store.Message{ID: "q-1", Recipient: store.RecipientDirector, Repository: "lib", TaskID: "t1", Type: "question", Text: "Which parser?",
 				Sender: store.SenderArtisan})
 		},
 		func() (store.Receipt, error) {
@@ -144,46 +144,46 @@ func statusCopy(t *testing.T) string {
 				Pane: store.DirectorPane{Session: "lab", Workspace: "w1", Tab: "w1:t2", Pane: "w1:p2"}})
 		},
 		func() (store.Receipt, error) { return s.SetDirectorState(1, store.DirectorRunning, 24) },
-		func() (store.Receipt, error) { return s.CreateTask("i-26", task("app", "t-7", "Result not taken")) },
-		func() (store.Receipt, error) { return s.StartAttempt("i-27", "app", "t-7", "plan") },
+		func() (store.Receipt, error) { return s.CreateTask("i-26", task("app", "t7", "Result not taken")) },
+		func() (store.Receipt, error) { return s.StartAttempt("i-27", "app", "t7", "plan") },
 		func() (store.Receipt, error) {
-			return s.FinishAttempt("i-28", "app", "t-7", "plan", 1, store.AttemptSucceeded)
+			return s.FinishAttempt("i-28", "app", "t7", "plan", 1, store.AttemptSucceeded)
 		},
-		func() (store.Receipt, error) { return s.CreateTask("i-29", task("app", "t-8", "Stop not taken")) },
-		func() (store.Receipt, error) { return s.StartAttempt("i-30", "app", "t-8", "plan") },
+		func() (store.Receipt, error) { return s.CreateTask("i-29", task("app", "t8", "Stop not taken")) },
+		func() (store.Receipt, error) { return s.StartAttempt("i-30", "app", "t8", "plan") },
 		func() (store.Receipt, error) {
-			return s.FinishAttempt("i-31", "app", "t-8", "plan", 1, store.AttemptStopped)
+			return s.FinishAttempt("i-31", "app", "t8", "plan", 1, store.AttemptStopped)
 		},
 		func() (store.Receipt, error) {
-			return s.RecordAttemptSpend("i-32", "app", "t-3", "plan", 1, store.Spend{Tokens: store.SpendMeasured, InputTokens: 1000, OutputTokens: 200,
+			return s.RecordAttemptSpend("i-32", "app", "t3", "plan", 1, store.Spend{Tokens: store.SpendMeasured, InputTokens: 1000, OutputTokens: 200,
 				CacheCreationInputTokens: 300, CacheReadInputTokens: 400, Cost: store.SpendEstimated, CostUSD: 0.5})
 		},
 		func() (store.Receipt, error) {
-			return s.RecordAttemptSpend("i-33", "app", "t-3", "build", 1, store.UnknownSpend)
+			return s.RecordAttemptSpend("i-33", "app", "t3", "build", 1, store.UnknownSpend)
 		},
 		func() (store.Receipt, error) {
 			return s.RecordWake(store.Wake{MessageID: "q-1", SenderType: "local", Decision: store.WakeWoke})
 		},
 		func() (store.Receipt, error) {
-			return s.RecordWake(store.Wake{MessageID: "app.t-2.worker-stalled.plan-1.abc", SenderType: "guildhall", Decision: store.WakeQueued, Reason: "runtime not running"})
+			return s.RecordWake(store.Wake{MessageID: "app.t2.worker-stalled.plan-1.abc", SenderType: "guildhall", Decision: store.WakeQueued, Reason: "runtime not running"})
 		},
-		func() (store.Receipt, error) { return s.CreateTask("i-34", task("app", "t-9", "Director stage")) },
-		func() (store.Receipt, error) { return s.StartAttempt("i-35", "app", "t-9", "plan") },
-		func() (store.Receipt, error) { return s.CreateTask("i-36", task("app", "t-10", "Parked")) },
-		func() (store.Receipt, error) { return s.StartAttempt("i-37", "app", "t-10", "build") },
+		func() (store.Receipt, error) { return s.CreateTask("i-34", task("app", "t9", "Director stage")) },
+		func() (store.Receipt, error) { return s.StartAttempt("i-35", "app", "t9", "plan") },
+		func() (store.Receipt, error) { return s.CreateTask("i-36", task("app", "t10", "Parked")) },
+		func() (store.Receipt, error) { return s.StartAttempt("i-37", "app", "t10", "build") },
 		func() (store.Receipt, error) {
-			return s.FinishAttempt("i-38", "app", "t-10", "build", 1, store.AttemptFailed)
+			return s.FinishAttempt("i-38", "app", "t10", "build", 1, store.AttemptFailed)
 		},
 		func() (store.Receipt, error) {
-			return s.ParkAttempt("i-39", "app", "t-10", "build", 1, "Held until app/t-4 merges.", 0, nil)
+			return s.ParkAttempt("i-39", "app", "t10", "build", 1, "Held until app/t4 merges.", 0, nil)
 		},
-		func() (store.Receipt, error) { return s.CreateTask("i-40", task("app", "t-11", "Settled on disk")) },
-		func() (store.Receipt, error) { return s.StartAttempt("i-41", "app", "t-11", "plan") },
+		func() (store.Receipt, error) { return s.CreateTask("i-40", task("app", "t11", "Settled on disk")) },
+		func() (store.Receipt, error) { return s.StartAttempt("i-41", "app", "t11", "plan") },
 		func() (store.Receipt, error) {
-			return s.CreateTask("i-42", task("app", "t-12", "Settled on disk, done"))
+			return s.CreateTask("i-42", task("app", "t12", "Settled on disk, done"))
 		},
-		func() (store.Receipt, error) { return s.StartAttempt("i-43", "app", "t-12", "plan") },
-		func() (store.Receipt, error) { return s.SetTaskState("i-44", "app", "t-12", store.TaskDone) },
+		func() (store.Receipt, error) { return s.StartAttempt("i-43", "app", "t12", "plan") },
+		func() (store.Receipt, error) { return s.SetTaskState("i-44", "app", "t12", store.TaskDone) },
 	}
 	for _, step := range steps {
 		if _, err := step(); err != nil {
@@ -193,46 +193,46 @@ func statusCopy(t *testing.T) string {
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	t6 := artisan.AttemptKey{Repository: "app", TaskID: "t-6", Step: "build", Attempt: 1}
+	t6 := artisan.AttemptKey{Repository: "app", TaskID: "t6", Step: "build", Attempt: 1}
 	if err := os.MkdirAll(t6.Dir(state), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := artisan.WriteHeartbeat(t6.Dir(state), artisan.Heartbeat{Repository: "app", TaskID: "t-6", Step: "build", Attempt: 1, Sequence: 7,
+	if err := artisan.WriteHeartbeat(t6.Dir(state), artisan.Heartbeat{Repository: "app", TaskID: "t6", Step: "build", Attempt: 1, Sequence: 7,
 		Time: time.Date(2026, 10, 22, 11, 59, 40, 0, time.UTC), WorkerState: "running", LastOutputAt: time.Date(2026, 10, 22, 11, 57, 0, 0, time.UTC)}); err != nil {
 		t.Fatal(err)
 	}
-	// The launchers of t-11 and t-12 wrote a failed outcome.json and died before the store recorded it.
-	for _, task := range []string{"t-11", "t-12"} {
+	// The launchers of t11 and t12 wrote a failed outcome.json and died before the store recorded it.
+	for _, task := range []string{"t11", "t12"} {
 		dir := artisan.AttemptKey{Repository: "app", TaskID: task, Step: "plan", Attempt: 1}.Dir(state)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
 		writeFile(t, filepath.Join(dir, artisan.OutcomeFile), `{"schema":"`+artisan.OutcomeSchema+`","state":"failed","detail":"worker exited 1"}`+"\n")
 	}
-	for _, task := range []string{"t-3", "t-4"} {
+	for _, task := range []string{"t3", "t4"} {
 		if err := os.MkdirAll(filepath.Join(state, "app", task), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	writeFile(t, filepath.Join(state, "app", "t-3", "next.json"), `{"wait":"director","step":"build","attempt":1}`+"\n")
-	writeFile(t, filepath.Join(state, "app", "t-4", "next.json"), `{"wait":"decision","step":"plan","decision":"accept-plan"}`+"\n")
-	for _, task := range []string{"t-7", "t-8"} {
+	writeFile(t, filepath.Join(state, "app", "t3", "next.json"), `{"wait":"director","step":"build","attempt":1}`+"\n")
+	writeFile(t, filepath.Join(state, "app", "t4", "next.json"), `{"wait":"decision","step":"plan","decision":"accept-plan"}`+"\n")
+	for _, task := range []string{"t7", "t8"} {
 		if err := os.MkdirAll(artisan.AttemptKey{Repository: "app", TaskID: task, Step: "plan", Attempt: 1}.Dir(state), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		writeFile(t, filepath.Join(state, "app", task, "next.json"), `{"wait":"attempt","step":"plan","attempt":1}`+"\n")
 	}
-	writeFile(t, filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t-7", Step: "plan", Attempt: 1}.Dir(state), artisan.ResultFile), "{}\n")
-	handed := artisan.AttemptKey{Repository: "app", TaskID: "t-9", Step: "plan", Attempt: 1}.Dir(state)
+	writeFile(t, filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t7", Step: "plan", Attempt: 1}.Dir(state), artisan.ResultFile), "{}\n")
+	handed := artisan.AttemptKey{Repository: "app", TaskID: "t9", Step: "plan", Attempt: 1}.Dir(state)
 	if err := os.MkdirAll(handed, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(handed, "launched.json"), `{"launcher":"director","identity":{"task_id":"t-9","attempt_id":"plan-1"}}`+"\n")
-	writeFile(t, filepath.Join(state, "app", "t-9", "next.json"), `{"wait":"director-stage","step":"plan","attempt":1}`+"\n")
-	if err := os.MkdirAll(filepath.Join(state, "app", "t-10"), 0o755); err != nil {
+	writeFile(t, filepath.Join(handed, "launched.json"), `{"launcher":"director","identity":{"task_id":"t9","attempt_id":"plan-1"}}`+"\n")
+	writeFile(t, filepath.Join(state, "app", "t9", "next.json"), `{"wait":"director-stage","step":"plan","attempt":1}`+"\n")
+	if err := os.MkdirAll(filepath.Join(state, "app", "t10"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(state, "app", "t-10", "next.json"), `{"wait":"director","step":"build","attempt":1}`+"\n")
+	writeFile(t, filepath.Join(state, "app", "t10", "next.json"), `{"wait":"director","step":"build","attempt":1}`+"\n")
 	return dir
 }
 
@@ -298,7 +298,7 @@ owner_machine = "workstation"
 		t.Fatalf("status prints one JSON line: %q", out)
 	}
 	// The step done command names the result file under the copy, written in the golden as $COPY/....
-	result, err := json.Marshal(filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t-7", Step: "plan", Attempt: 1}.Dir(filepath.Join(dir, "state")), artisan.ResultFile))
+	result, err := json.Marshal(filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t7", Step: "plan", Attempt: 1}.Dir(filepath.Join(dir, "state")), artisan.ResultFile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +311,7 @@ owner_machine = "workstation"
 	if !strings.Contains(out, string(copyField)) {
 		t.Fatalf("status does not name the copy as %s: %s", copyField, out)
 	}
-	golden := strings.Replace(out, strings.Trim(string(result), `"`), "$COPY/state/app/t-7/plan-1/result.json", 1)
+	golden := strings.Replace(out, strings.Trim(string(result), `"`), "$COPY/state/app/t7/plan-1/result.json", 1)
 	checkIndentedGolden(t, "director-status.json", strings.Replace(golden, string(copyField), `"copy":"$COPY",`, 1))
 	if after, err := os.ReadFile(path); err != nil || !bytes.Equal(before, after) {
 		t.Fatalf("status changed the store (%v)", err)
@@ -348,18 +348,18 @@ func TestDirectorStatusShowsSpend(t *testing.T) {
 	}
 	t3 := store.SpendTotal{Attempts: 2, TokensUnknown: 1, CostUnknown: 1, Tokens: store.SpendMeasured, InputTokens: 1000, OutputTokens: 200,
 		CacheCreationInputTokens: 300, CacheReadInputTokens: 400, Cost: store.SpendEstimated, CostUSD: 0.5}
-	if got := spend["app/t-3"]; got != t3 {
-		t.Errorf("app/t-3 spend = %+v, want %+v", got, t3)
+	if got := spend["app/t3"]; got != t3 {
+		t.Errorf("app/t3 spend = %+v, want %+v", got, t3)
 	}
 	// A running attempt is not counted; a finished one without a record is unknown.
-	if got := spend["app/t-2"]; got != store.NoSpend {
-		t.Errorf("app/t-2 spend = %+v, want no attempts", got)
+	if got := spend["app/t2"]; got != store.NoSpend {
+		t.Errorf("app/t2 spend = %+v, want no attempts", got)
 	}
-	if got, want := spend["app/t-5"], (store.SpendTotal{Attempts: 1, TokensUnknown: 1, CostUnknown: 1, Tokens: store.SpendUnknown, Cost: store.SpendUnknown}); got != want {
-		t.Errorf("app/t-5 spend = %+v, want %+v", got, want)
+	if got, want := spend["app/t5"], (store.SpendTotal{Attempts: 1, TokensUnknown: 1, CostUnknown: 1, Tokens: store.SpendUnknown, Cost: store.SpendUnknown}); got != want {
+		t.Errorf("app/t5 spend = %+v, want %+v", got, want)
 	}
-	// Every attempt in the fixture started today: of the seven finished (t-3 twice, t-4, t-5, t-7, t-8 and t-10)
-	// only t-3's plan attempt reported its spend, so six are unknown.
+	// Every attempt in the fixture started today: of the seven finished (t3 twice, t4, t5, t7, t8 and t10)
+	// only t3's plan attempt reported its spend, so six are unknown.
 	today := st.Session.GuardRails.SpendToday
 	want := t3
 	want.Attempts, want.TokensUnknown, want.CostUnknown = 7, 6, 6
@@ -375,7 +375,7 @@ func TestDirectorStatusMarksOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.AddTaskOverride("override", "app", "t-2", store.TaskOverrideSet, "default_effort", "high", 0, "Guildmaster: high."); err != nil {
+	if _, err := s.AddTaskOverride("override", "app", "t2", store.TaskOverrideSet, "default_effort", "high", 0, "Guildmaster: high."); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {
@@ -395,7 +395,7 @@ func TestDirectorStatusMarksOverrides(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, task := range st.Tasks {
-		if want := task.Repository == "app" && task.ID == "t-2"; task.Overrides != want {
+		if want := task.Repository == "app" && task.ID == "t2"; task.Overrides != want {
 			t.Errorf("%s/%s overrides = %t, want %t", task.Repository, task.ID, task.Overrides, want)
 		}
 	}
@@ -508,9 +508,9 @@ func TestDirectorStatusWaitsForTheWriter(t *testing.T) {
 func TestDirectorStatusNext(t *testing.T) {
 	dir := statusCopy(t)
 	state := filepath.Join(dir, "state")
-	written := `{"wait":"attempt","step":"build","attempt":2,"result":"C:\\Users\\gm\\copy\\state\\app\\t-3\\build-2\\result.json"}`
-	writeFile(t, filepath.Join(state, "app", "t-3", "next.json"), written+"\n")
-	writeFile(t, filepath.Join(state, "app", "t-4", "next.json"), "{not json")
+	written := `{"wait":"attempt","step":"build","attempt":2,"result":"C:\\Users\\gm\\copy\\state\\app\\t3\\build-2\\result.json"}`
+	writeFile(t, filepath.Join(state, "app", "t3", "next.json"), written+"\n")
+	writeFile(t, filepath.Join(state, "app", "t4", "next.json"), "{not json")
 	code, out, stderr := directorCmd(t, nil, "status", "--copy", dir, "--json")
 	if code != 0 {
 		t.Fatalf("exit %d, %s", code, stderr)
@@ -530,13 +530,13 @@ func TestDirectorStatusNext(t *testing.T) {
 	}
 	for _, task := range got.Tasks {
 		switch task.ID {
-		case "t-3":
+		case "t3":
 			if string(task.Next) != written || task.NextError != "" {
-				t.Errorf("t-3 next %s (%s), want %s", task.Next, task.NextError, written)
+				t.Errorf("t3 next %s (%s), want %s", task.Next, task.NextError, written)
 			}
-		case "t-4":
+		case "t4":
 			if task.Next != nil || !strings.Contains(task.NextError, "not JSON") {
-				t.Errorf("t-4 next %s, error %q", task.Next, task.NextError)
+				t.Errorf("t4 next %s, error %q", task.Next, task.NextError)
 			}
 		}
 	}
@@ -563,21 +563,21 @@ func TestDirectorStatusMeasuresHeartbeatsByItsClock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateTask("i-1", store.Task{Repository: "app", ID: "t-1", Title: "Live", Workflow: def.Revision(), ConfigDigest: "sha256:" + strings.Repeat("c", 64)}); err != nil {
+	if _, err := s.CreateTask("i-1", store.Task{Repository: "app", ID: "t1", Title: "Live", Workflow: def.Revision(), ConfigDigest: "sha256:" + strings.Repeat("c", 64)}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.StartOwnedAttempt("i-2", store.Ownership{Repository: "app", TaskID: "t-1", Step: "build", LauncherIdentity: store.ProcessIdentity(self)}); err != nil {
+	if _, err := s.StartOwnedAttempt("i-2", store.Ownership{Repository: "app", TaskID: "t1", Step: "build", LauncherIdentity: store.ProcessIdentity(self)}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
 	beat := time.Now().UTC().Truncate(time.Second)
-	key := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}
+	key := artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "build", Attempt: 1}
 	if err := os.MkdirAll(key.Dir(filepath.Join(dir, "state")), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := artisan.WriteHeartbeat(key.Dir(filepath.Join(dir, "state")), artisan.Heartbeat{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1,
+	if err := artisan.WriteHeartbeat(key.Dir(filepath.Join(dir, "state")), artisan.Heartbeat{Repository: "app", TaskID: "t1", Step: "build", Attempt: 1,
 		Sequence: 1, Time: beat, WorkerState: "running", LastOutputAt: beat}); err != nil {
 		t.Fatal(err)
 	}
@@ -591,7 +591,7 @@ func TestDirectorStatusMeasuresHeartbeatsByItsClock(t *testing.T) {
 	}
 	r := st.Running[0]
 	if r.State != reconcile.Stuck || r.Launcher != "alive" || !r.HeartbeatAt.Equal(beat) || !r.LastOutputAt.Equal(beat) || r.WorkerState != "running" ||
-		r.Command != "guildhall artisan status --repo app --task t-1 --step build --attempt 1" {
+		r.Command != "guildhall artisan status --repo app --task t1 --step build --attempt 1" {
 		t.Errorf("running entry %+v, want stuck with the heartbeat's times", r)
 	}
 	if len(st.NeedsMe) != 1 || st.NeedsMe[0].Kind != "resume" || !strings.HasPrefix(st.NeedsMe[0].Reason, "stuck: ") {
@@ -607,17 +607,17 @@ func TestDirectorStartStartupListsRunningAttempts(t *testing.T) {
 	if code, out, stderr := runDirectorCmd(t, "start", "--copy", dir); code != 0 {
 		t.Fatalf("first session: exit %d\n%s\n%s", code, out, stderr)
 	}
-	newTask(t, filepath.Join(dir, "director.store"), filepath.Join(dir, "config.toml"), "app", "Sort", "t-2")
+	newTask(t, filepath.Join(dir, "director.store"), filepath.Join(dir, "config.toml"), "app", "Sort")
 	killed := exitedLauncher(t)
 	withTestStore(t, dir, func(s *store.Store) (store.Receipt, error) {
-		return s.StartOwnedAttempt("start", store.Ownership{Repository: "app", TaskID: "t-2", Step: "build", LauncherIdentity: killed})
+		return s.StartOwnedAttempt("start", store.Ownership{Repository: "app", TaskID: "t1", Step: "build", LauncherIdentity: killed})
 	})
-	attempt := artisan.AttemptKey{Repository: "app", TaskID: "t-2", Step: "build", Attempt: 1}.Dir(filepath.Join(dir, "state"))
+	attempt := artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "build", Attempt: 1}.Dir(filepath.Join(dir, "state"))
 	if err := os.MkdirAll(attempt, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	if err := artisan.WriteHeartbeat(attempt, artisan.Heartbeat{Repository: "app", TaskID: "t-2", Step: "build", Attempt: 1, Sequence: 3,
+	if err := artisan.WriteHeartbeat(attempt, artisan.Heartbeat{Repository: "app", TaskID: "t1", Step: "build", Attempt: 1, Sequence: 3,
 		Time: now.Add(-2 * time.Minute), WorkerState: "running", LastOutputAt: now.Add(-3 * time.Minute)}); err != nil {
 		t.Fatal(err)
 	}
@@ -636,8 +636,8 @@ func TestDirectorStartStartupListsRunningAttempts(t *testing.T) {
 	if !strings.Contains(inFlight, "## In flight\n") || !strings.Contains(inFlight, "resume: exited: ") {
 		t.Errorf("in-flight section before Running lacks the exited attempt's resume item:\n%s", startup)
 	}
-	want := "- running: attempt 1 of build of app/t-2; state exited; heartbeat 2m ago; last output 3m ago; launcher identity gone; no containment recorded; " +
-		"check with `guildhall artisan status --repo app --task t-2 --step build --attempt 1`\n"
+	want := "- running: attempt 1 of build of app/t1; state exited; heartbeat 2m ago; last output 3m ago; launcher identity gone; no containment recorded; " +
+		"check with `guildhall artisan status --repo app --task t1 --step build --attempt 1`\n"
 	if !strings.Contains(running, "guildhall director ready") || !strings.HasSuffix(running, want) {
 		t.Errorf("running section = %q, want it to ask for confirmation before director ready and end with %q", running, want)
 	}

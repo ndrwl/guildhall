@@ -44,12 +44,12 @@ func TestTaskStartObservesAStalledWorker(t *testing.T) {
 		t.Helper()
 		e := d
 		e.config = config
-		if code, out, stderr := e.run(t, append([]string{"task", "start"}, e.flags("t-1")...)...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
+		if code, out, stderr := e.run(t, append([]string{"task", "start"}, e.flags("t1")...)...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
 			t.Fatalf("task start --config %s: exit %d, %q, stderr %s", filepath.Base(config), code, out, stderr)
 		}
 	}
 	start(d.config)
-	key := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}
+	key := artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "plan", Attempt: 1}
 	// Kill the launcher only once its worker runs: on Windows the worker starts suspended and joins the
 	// launcher's Job Object before it resumes, so a launcher killed in between leaves it suspended outside any job.
 	var o store.Ownership
@@ -142,7 +142,7 @@ func TestTheLauncherSendsAStallWithoutAnAdvance(t *testing.T) {
 	d := newRunDirectorAt(t, cfg)
 	start := func() {
 		t.Helper()
-		if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
+		if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
 			t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 		}
 	}
@@ -153,7 +153,7 @@ func TestTheLauncherSendsAStallWithoutAnAdvance(t *testing.T) {
 			t.Fatalf("the launcher sent no worker-stalled message within %v", testenv.Ceiling(time.Minute))
 		}
 	}
-	key := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}
+	key := artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "plan", Attempt: 1}
 	hb, err := artisan.ReadHeartbeat(key.Dir(d.state))
 	if err != nil {
 		t.Fatal(err)
@@ -236,7 +236,7 @@ func stallCopy(t *testing.T, value string) string {
 func TestTaskStallIntervalOverrideReachesTheLauncher(t *testing.T) {
 	d := newRunDirectorAt(t, stallCopy(t, "0s"))
 	recordOverrides(t, d.store, "stall_interval", "2s")
-	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
+	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
 		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 	}
 	for end := time.Now().Add(testenv.Ceiling(time.Minute)); d.stalls(t) == 0; time.Sleep(50 * time.Millisecond) {
@@ -254,12 +254,12 @@ func TestTaskStallIntervalOverrideReachesTheEngine(t *testing.T) {
 	recordOverrides(t, d.store, "stall_interval", "15m")
 	start := func() {
 		t.Helper()
-		if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
+		if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
 			t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 		}
 	}
 	start()
-	key := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}
+	key := artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "plan", Attempt: 1}
 	var o store.Ownership
 	for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(20 * time.Millisecond) {
 		s, err := store.Open(d.store, store.Options{ReadOnly: true})

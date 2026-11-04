@@ -201,7 +201,7 @@ func TestAWaiterEndingWithoutAReplacementShowsTheNotice(t *testing.T) {
 	waiter.state.Registered = true
 	w.decide(session.TurnEnded)
 	if _, err := withStore(path, false, func(s *store.Store) (store.Receipt, error) {
-		return s.SendMessage(store.Message{ID: "n-1", Recipient: store.RecipientDirector, Repository: "app", TaskID: "t-1", Type: "note", Text: "x", Sender: store.SenderGuildmaster})
+		return s.SendMessage(store.Message{ID: "n-1", Recipient: store.RecipientDirector, Repository: "app", TaskID: "t1", Type: "note", Text: "x", Sender: store.SenderGuildmaster})
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +327,7 @@ func TestASecondWakeWithinTheLeaseIsCaughtUpOnceByTheNextWaiter(t *testing.T) {
 func storeNote(t *testing.T, path, id string) {
 	t.Helper()
 	if _, err := withStore(path, false, func(s *store.Store) (store.Receipt, error) {
-		return s.SendMessage(store.Message{ID: id, Recipient: store.RecipientDirector, Repository: "app", TaskID: "t-1", Type: "note", Text: "x", Sender: store.SenderGuildmaster})
+		return s.SendMessage(store.Message{ID: id, Recipient: store.RecipientDirector, Repository: "app", TaskID: "t1", Type: "note", Text: "x", Sender: store.SenderGuildmaster})
 	}); err != nil {
 		t.Fatal(err)
 	}

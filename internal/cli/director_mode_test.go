@@ -66,10 +66,10 @@ func receiptCount(t *testing.T, dir string) int {
 	return rep.Receipts
 }
 
-// newTaskIn runs `task new` for app in the copy in dir.
-func newTaskIn(t *testing.T, dir, id string) (int, string) {
+// newTaskIn runs `task new` for app in the copy in dir, which assigns the next id, t1 for the first.
+func newTaskIn(t *testing.T, dir string) (int, string) {
 	t.Helper()
-	code, _, stderr := runTask(t, "new", "--copy", dir, "--repo", "app", "--title", "Sort", id)
+	code, _, stderr := runTask(t, "new", "--copy", dir, "--repo", "app", "--title", "Sort")
 	return code, stderr
 }
 
@@ -117,7 +117,7 @@ func TestModeTable(t *testing.T) {
 			if got.Mode != c.mode || !strings.Contains(got.Refusal, c.refusal) || (c.refusal == "") != (got.Refusal == "") {
 				t.Fatalf("mode = %+v; want %s refusing %q", got, c.mode, c.refusal)
 			}
-			code, stderr := newTaskIn(t, dir, "t-1")
+			code, stderr := newTaskIn(t, dir)
 			if c.refusal == "" && code != 0 || c.refusal != "" && (code != 1 || !strings.Contains(stderr, c.refusal)) {
 				t.Fatalf("task new: exit %d, %s; want refusal %q", code, stderr, c.refusal)
 			}
@@ -149,7 +149,7 @@ func TestInlineManagedRefusedInEveryMode(t *testing.T) {
 			dir := newCopy(t)
 			setup(t, dir)
 			appendFile(t, filepath.Join(dir, "config.toml"), inline)
-			if code, stderr := newTaskIn(t, dir, "t-1"); code != 1 || !strings.Contains(stderr, want) {
+			if code, stderr := newTaskIn(t, dir); code != 1 || !strings.Contains(stderr, want) {
 				t.Fatalf("task new: exit %d, %s", code, stderr)
 			}
 			if got := copyMode(t, dir); !strings.Contains(got.Refusal, want) {
@@ -171,7 +171,7 @@ func TestUnauthorizedDigestRefusesRecordingOnce(t *testing.T) {
 	}
 	before := receiptCount(t, dir)
 	want := "managed.toml " + d + " is not authorized: this copy's store records no reload or Guildmaster approval of that digest, so its settings are not applied"
-	if code, stderr := newTaskIn(t, dir, "t-1"); code != 1 || !strings.Contains(stderr, want) {
+	if code, stderr := newTaskIn(t, dir); code != 1 || !strings.Contains(stderr, want) {
 		t.Fatalf("task new: exit %d, %s", code, stderr)
 	}
 	// The observed-untrusted revision, the reserved task and the alert decision.
@@ -205,13 +205,13 @@ func TestUnauthorizedDigestRefusesRecordingOnce(t *testing.T) {
 	authorized := newCopy(t)
 	writeManaged(t, authorized, pinned)
 	enrolManaged(t, authorized)
-	if code, stderr := newTaskIn(t, authorized, "t-1"); code != 0 {
+	if code, stderr := newTaskIn(t, authorized); code != 0 {
 		t.Fatalf("task new on the authorized revision: exit %d, %s", code, stderr)
 	}
 	edited := writeManaged(t, authorized, map[string]config.ManagedSetting{"max_running_attempts": {Value: "1"}, config.LockWaitKey: {Value: "40s", Overridable: true}})
 	before = receiptCount(t, authorized)
 	want = "managed.toml " + edited + " is not authorized"
-	if code, stderr := newTaskIn(t, authorized, "t-2"); code != 1 || !strings.Contains(stderr, want) {
+	if code, stderr := newTaskIn(t, authorized); code != 1 || !strings.Contains(stderr, want) {
 		t.Fatalf("task new after a hand edit: exit %d, %s", code, stderr)
 	}
 	if after := receiptCount(t, authorized); after != before+3 {
@@ -229,10 +229,10 @@ func TestEnrolAndLeave(t *testing.T) {
 	// A comment and an overriding local value, both kept.
 	local := strings.Replace(directorTOML, "[local]\n", "[local]\n# my lock wait\nlock_wait = \"50s\" # mine\n", 1)
 	writeFile(t, cfgPath, local)
-	if code, stderr := newTaskIn(t, dir, "t-1"); code != 0 {
+	if code, stderr := newTaskIn(t, dir); code != 0 {
 		t.Fatalf("task new: exit %d, %s", code, stderr)
 	}
-	task := readTask(t, filepath.Join(dir, directorStoreFile), "app", "t-1")
+	task := readTask(t, filepath.Join(dir, directorStoreFile), "app", "t1")
 
 	if code, _, stderr := modeCmd(t, "enrol", "--copy", dir, "--steward", "hq"); code != 1 || !strings.Contains(stderr, "needs a valid managed.toml") {
 		t.Fatalf("enrol without managed.toml: exit %d, %s", code, stderr)
@@ -289,10 +289,10 @@ func TestEnrolAndLeave(t *testing.T) {
 			t.Errorf("%s = %q after leave, want %q", k, g, w)
 		}
 	}
-	if got := readTask(t, filepath.Join(dir, directorStoreFile), "app", "t-1"); got.ConfigDigest != task.ConfigDigest || got.Workflow != task.Workflow {
+	if got := readTask(t, filepath.Join(dir, directorStoreFile), "app", "t1"); got.ConfigDigest != task.ConfigDigest || got.Workflow != task.Workflow {
 		t.Fatalf("task changed: %+v, was %+v", got, task)
 	}
-	if code, stderr := newTaskIn(t, dir, "t-2"); code != 0 {
+	if code, stderr := newTaskIn(t, dir); code != 0 {
 		t.Fatalf("task new after leave: exit %d, %s", code, stderr)
 	}
 }

@@ -473,14 +473,14 @@ func mapsEqual(a, b map[string]string) bool {
 // second prune is a no-op; spend report reads the same totals before and after.
 func TestPruneRemovesAMergedWorktreeAndAttemptFiles(t *testing.T) {
 	f := newPruneFixture(t)
-	f.task("app", "t-1")
-	f.attempt("app", "t-1", "plan", store.AttemptSucceeded, nil)
-	f.attempt("app", "t-1", "build", store.AttemptFailed, nil)
-	f.attempt("app", "t-1", "build", store.AttemptSucceeded, map[string]string{launch.PaneClaimFile: "{}\n", paneClosed: "{}\n"})
-	f.worktree("t-1")
-	f.close("app", "t-1")
-	writeTree(t, filepath.Join(f.state, "app", "t-1", artisan.LockFile), "")
-	logs := f.ciLog("t-1")
+	f.task("app", "t1")
+	f.attempt("app", "t1", "plan", store.AttemptSucceeded, nil)
+	f.attempt("app", "t1", "build", store.AttemptFailed, nil)
+	f.attempt("app", "t1", "build", store.AttemptSucceeded, map[string]string{launch.PaneClaimFile: "{}\n", paneClosed: "{}\n"})
+	f.worktree("t1")
+	f.close("app", "t1")
+	writeTree(t, filepath.Join(f.state, "app", "t1", artisan.LockFile), "")
+	logs := f.ciLog("t1")
 	spendBefore := f.spend()
 
 	dry := f.run(true)
@@ -501,10 +501,10 @@ func TestPruneRemovesAMergedWorktreeAndAttemptFiles(t *testing.T) {
 		}
 	}
 	slices.Sort(want)
-	if left := listFiles(t, filepath.Join(f.state, "app", "t-1")); !slices.Equal(left, want) {
+	if left := listFiles(t, filepath.Join(f.state, "app", "t1")); !slices.Equal(left, want) {
 		t.Fatalf("left %q\nwant %q", left, want)
 	}
-	w := f.workspace("t-1")
+	w := f.workspace("t1")
 	if _, err := os.Lstat(w.Dir); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("worktree: %v, want it removed", err)
 	}
@@ -516,7 +516,7 @@ func TestPruneRemovesAMergedWorktreeAndAttemptFiles(t *testing.T) {
 	if list := f.git(f.repository, "worktree", "list", "--porcelain"); strings.Contains(filepath.ToSlash(list), "/work") {
 		t.Errorf("the worktree is still registered:\n%s", list)
 	}
-	rec, err := f.record("t-1")
+	rec, err := f.record("t1")
 	if err != nil || !rec.Complete || rec.Worktree != store.WorktreeRemoved || rec.BytesFreed != got[0].Bytes || !rec.PrunedAt.Equal(f.now) {
 		t.Fatalf("record = %+v, %v", rec, err)
 	}
@@ -540,7 +540,7 @@ func TestPruneRemovesAMergedWorktreeAndAttemptFiles(t *testing.T) {
 // pruned, its untracked report a recorded output; a finished record without a head keeps the worktree.
 func TestPruneRemovesAFinishedHallmarkWorktree(t *testing.T) {
 	f := newPruneFixture(t)
-	for _, id := range []string{"t-1", "t-2"} {
+	for _, id := range []string{"t1", "t2"} {
 		f.task("app", id)
 		f.attempt("app", id, "hallmark", store.AttemptSucceeded, nil)
 		w := f.workspace(id)
@@ -553,25 +553,25 @@ func TestPruneRemovesAFinishedHallmarkWorktree(t *testing.T) {
 		writeTree(t, filepath.Join(w.Dir, "report.md"), "# Hallmark\n")
 		f.document(id, "hallmark-1-report", "hallmark-1/report.md", "# Hallmark\n")
 		finished := `{"schema":"guildhall.finished/1"}`
-		if id == "t-1" {
+		if id == "t1" {
 			finished = `{"schema":"guildhall.finished/1","head":"` + f.git(w.Dir, "rev-parse", "HEAD") + `"}`
 		}
 		f.document(id, interp.FinishedDocument, "finished.json", finished)
 		f.close("app", id)
 	}
 	got := f.run(false)
-	if len(got) != 2 || got[0].Task.ID != "t-1" || !got[0].complete() || got[1].Worktree != store.WorktreeKept || !strings.Contains(got[1].Kept, "no merge record") {
+	if len(got) != 2 || got[0].Task.ID != "t1" || !got[0].complete() || got[1].Worktree != store.WorktreeKept || !strings.Contains(got[1].Kept, "no merge record") {
 		t.Fatalf("prune = %+v", got)
 	}
-	w := f.workspace("t-1")
+	w := f.workspace("t1")
 	if _, err := os.Lstat(w.Dir); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("worktree: %v, want it removed", err)
 	}
 	if exec.Command("git", "-C", f.repository, "show-ref", "--verify", "--quiet", "refs/heads/"+w.Branch).Run() == nil {
 		t.Errorf("branch %s survived the prune", w.Branch)
 	}
-	if _, err := os.Lstat(f.workspace("t-2").Dir); err != nil {
-		t.Errorf("t-2 worktree: %v, want it kept", err)
+	if _, err := os.Lstat(f.workspace("t2").Dir); err != nil {
+		t.Errorf("t2 worktree: %v, want it kept", err)
 	}
 }
 
@@ -580,16 +580,16 @@ func TestPruneRemovesAFinishedHallmarkWorktree(t *testing.T) {
 // would keep the worktree for an unmerged commit.
 func TestPruneRetiresAtTheNewestMergeRecord(t *testing.T) {
 	f := newPruneFixture(t)
-	f.task("app", "t-1")
-	f.attempt("app", "t-1", "build", store.AttemptSucceeded, nil)
-	older := f.worktree("t-1")
-	w := f.workspace("t-1")
+	f.task("app", "t1")
+	f.attempt("app", "t1", "build", store.AttemptSucceeded, nil)
+	older := f.worktree("t1")
+	w := f.workspace("t1")
 	writeTree(t, filepath.Join(w.Dir, "more.txt"), "more\n")
 	f.git(w.Dir, "add", "more.txt")
 	f.git(w.Dir, "commit", "-q", "-m", "more")
 	newer := f.git(w.Dir, "rev-parse", "HEAD")
-	f.document("t-1", "outside-3-merge", "outside-3/merge.json", `{"schema":"guildhall.pull-request/1","remote":"origin","number":3,"head":"`+newer+`","state":"merged"}`)
-	f.close("app", "t-1")
+	f.document("t1", "outside-3-merge", "outside-3/merge.json", `{"schema":"guildhall.pull-request/1","remote":"origin","number":3,"head":"`+newer+`","state":"merged"}`)
+	f.close("app", "t1")
 	if older == newer {
 		t.Fatal("the two merge records name one head")
 	}
@@ -607,10 +607,10 @@ func TestPruneRetiresAtTheNewestMergeRecord(t *testing.T) {
 // slice merged at; slice 1's head is not behind slice 2's, so one head for both would keep slice 1's.
 func TestPruneRetiresEachSlicesWorktree(t *testing.T) {
 	f := newPruneFixture(t)
-	f.task("app", "t-1")
-	f.attempt("app", "t-1", "build", store.AttemptSucceeded, nil)
-	f.worktree("t-1")
-	w := git.Workspace{Repository: f.repository, Remote: f.remote, Branch: "guildhall/t-1.s2", Dir: filepath.Join(f.state, "app", "t-1", "work.s2")}
+	f.task("app", "t1")
+	f.attempt("app", "t1", "build", store.AttemptSucceeded, nil)
+	f.worktree("t1")
+	w := git.Workspace{Repository: f.repository, Remote: f.remote, Branch: "guildhall/t1.s2", Dir: filepath.Join(f.state, "app", "t1", "work.s2")}
 	if err := (git.Program{}).Ensure(context.Background(), w); err != nil {
 		t.Fatal(err)
 	}
@@ -618,18 +618,18 @@ func TestPruneRetiresEachSlicesWorktree(t *testing.T) {
 	f.git(w.Dir, "add", "second.txt")
 	f.git(w.Dir, "commit", "-q", "-m", "second slice")
 	second := f.git(w.Dir, "rev-parse", "HEAD")
-	f.document("t-1", "deliver--s2-1-merge", "deliver--s2-1/merge.json", `{"schema":"guildhall.pull-request/1","remote":"origin","number":2,"head":"`+second+`","state":"merged"}`)
-	f.close("app", "t-1")
+	f.document("t1", "deliver--s2-1-merge", "deliver--s2-1/merge.json", `{"schema":"guildhall.pull-request/1","remote":"origin","number":2,"head":"`+second+`","state":"merged"}`)
+	f.close("app", "t1")
 	got := f.run(false)
 	if len(got) != 1 || got[0].Worktree != store.WorktreeRemoved || !got[0].complete() {
 		t.Fatalf("prune = %+v, want both slices' worktrees retired", got)
 	}
-	for _, dir := range []string{f.workspace("t-1").Dir, w.Dir} {
+	for _, dir := range []string{f.workspace("t1").Dir, w.Dir} {
 		if _, err := os.Lstat(dir); !errors.Is(err, fs.ErrNotExist) {
 			t.Errorf("worktree %s: %v, want it removed", dir, err)
 		}
 	}
-	if branches := f.git(f.repository, "branch", "--list", "guildhall/t-1*"); branches != "" {
+	if branches := f.git(f.repository, "branch", "--list", "guildhall/t1*"); branches != "" {
 		t.Errorf("branches left: %q", branches)
 	}
 }
@@ -639,30 +639,30 @@ func TestPruneRetiresEachSlicesWorktree(t *testing.T) {
 func TestPruneFailsOnABadMergeRecord(t *testing.T) {
 	for name, record := range map[string]func(f *pruneFixture){
 		"no valid head": func(f *pruneFixture) {
-			f.document("t-1", "outside-3-merge", "outside-3/merge.json", `{"schema":"guildhall.pull-request/1","head":"nope"}`)
+			f.document("t1", "outside-3-merge", "outside-3/merge.json", `{"schema":"guildhall.pull-request/1","head":"nope"}`)
 		},
 		"not JSON": func(f *pruneFixture) {
-			f.document("t-1", "outside-3-merge", "outside-3/merge.json", `{"schema":`)
+			f.document("t1", "outside-3-merge", "outside-3/merge.json", `{"schema":`)
 		},
 		"no file": func(f *pruneFixture) {
 			f.mutate(func(s *store.Store) error {
-				_, err := s.PutDocument(f.id(), store.DocumentRef{Repository: "app", TaskID: "t-1", Name: "outside-3-merge", Path: "tasks/app/t-1/outside-3/merge.json", SHA256: strings.Repeat("0", 64)})
+				_, err := s.PutDocument(f.id(), store.DocumentRef{Repository: "app", TaskID: "t1", Name: "outside-3-merge", Path: "tasks/app/t1/outside-3/merge.json", SHA256: strings.Repeat("0", 64)})
 				return err
 			})
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newPruneFixture(t)
-			f.task("app", "t-1")
-			f.attempt("app", "t-1", "build", store.AttemptSucceeded, nil)
-			f.worktree("t-1")
+			f.task("app", "t1")
+			f.attempt("app", "t1", "build", store.AttemptSucceeded, nil)
+			f.worktree("t1")
 			record(f)
-			f.close("app", "t-1")
+			f.close("app", "t1")
 			_, err := f.pruner().run(context.Background(), "", "", false, nil)
-			if err == nil || !strings.Contains(err.Error(), "prune app/t-1: ") || !strings.Contains(err.Error(), "outside-3-merge") {
+			if err == nil || !strings.Contains(err.Error(), "prune app/t1: ") || !strings.Contains(err.Error(), "outside-3-merge") {
 				t.Fatalf("prune = %v, want an error naming outside-3-merge", err)
 			}
-			if _, err := os.Lstat(f.workspace("t-1").Dir); err != nil {
+			if _, err := os.Lstat(f.workspace("t1").Dir); err != nil {
 				t.Errorf("worktree: %v, want it kept", err)
 			}
 		})
@@ -714,12 +714,12 @@ func TestPruneKeepsAWorktreeRetireKeeps(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newPruneFixture(t)
-			f.task("app", "t-1")
-			k := f.attempt("app", "t-1", "build", store.AttemptSucceeded, nil)
-			f.worktree("t-1")
-			w := f.workspace("t-1")
+			f.task("app", "t1")
+			k := f.attempt("app", "t1", "build", store.AttemptSucceeded, nil)
+			f.worktree("t1")
+			w := f.workspace("t1")
 			tc.setup(f, w)
-			f.close("app", "t-1")
+			f.close("app", "t1")
 			before := listFiles(t, w.Dir)
 
 			p := f.pruner()
@@ -734,12 +734,12 @@ func TestPruneKeepsAWorktreeRetireKeeps(t *testing.T) {
 			if left := listFiles(t, k.Dir(f.state)); len(left) != len(keptFiles) {
 				t.Errorf("attempt files left %q, want the attempt pruned", left)
 			}
-			rec, err := f.record("t-1")
+			rec, err := f.record("t1")
 			if err != nil || rec.Worktree != store.WorktreeKept || rec.Kept != got[0].Kept || rec.Complete {
 				t.Fatalf("record = %+v, %v", rec, err)
 			}
 			var out strings.Builder
-			if err := writePruneReport(&out, got, false); err != nil || !strings.HasPrefix(out.String(), "skipped app/t-1: worktree kept: ") {
+			if err := writePruneReport(&out, got, false); err != nil || !strings.HasPrefix(out.String(), "skipped app/t1: worktree kept: ") {
 				t.Errorf("report %q", out.String())
 			}
 
@@ -752,7 +752,7 @@ func TestPruneKeepsAWorktreeRetireKeeps(t *testing.T) {
 				t.Error("a rerun that found nothing new wrote to the store")
 			}
 			msgs := f.messages(store.MessagePruneKept)
-			if len(msgs) != 1 || msgs[0].ID != "app.t-1."+store.MessagePruneKept || !strings.Contains(msgs[0].Text, tc.want) {
+			if len(msgs) != 1 || msgs[0].ID != "app.t1."+store.MessagePruneKept || !strings.Contains(msgs[0].Text, tc.want) {
 				t.Fatalf("messages = %+v, want one kept message", msgs)
 			}
 		})
@@ -764,17 +764,17 @@ func TestPruneKeepsAWorktreeRetireKeeps(t *testing.T) {
 // other bytes at that path, is retired by the next prune.
 func TestPruneRetiresAnEarlierAttemptsOutput(t *testing.T) {
 	f := newPruneFixture(t)
-	f.task("app", "t-1")
-	f.attempt("app", "t-1", "build", store.AttemptSucceeded, nil)
-	f.worktree("t-1")
-	w := f.workspace("t-1")
+	f.task("app", "t1")
+	f.attempt("app", "t1", "build", store.AttemptSucceeded, nil)
+	f.worktree("t1")
+	w := f.workspace("t1")
 	rebased := `{"verdict":"approved","attempt":"deliver-rebase-review-1"}` + "\n"
-	f.document("t-1", "deliver-rebase-review-1-outcome", "deliver-rebase-review-1/outcome.json", rebased)
-	f.document("t-1", "review-1-outcome", "review-1/outcome.json", `{"verdict":"approved","attempt":"review-1"}`+"\n")
+	f.document("t1", "deliver-rebase-review-1-outcome", "deliver-rebase-review-1/outcome.json", rebased)
+	f.document("t1", "review-1-outcome", "review-1/outcome.json", `{"verdict":"approved","attempt":"review-1"}`+"\n")
 	writeTree(t, filepath.Join(w.Dir, "outcome.json"), rebased)
-	f.close("app", "t-1")
+	f.close("app", "t1")
 	f.mutate(func(s *store.Store) error {
-		_, err := s.PruneTask(f.id(), store.TaskPrune{Repository: "app", TaskID: "t-1", Worktree: store.WorktreeKept, Kept: "untracked outcome.json"})
+		_, err := s.PruneTask(f.id(), store.TaskPrune{Repository: "app", TaskID: "t1", Worktree: store.WorktreeKept, Kept: "untracked outcome.json"})
 		return err
 	})
 
@@ -785,7 +785,7 @@ func TestPruneRetiresAnEarlierAttemptsOutput(t *testing.T) {
 	if _, err := os.Lstat(w.Dir); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("worktree: %v, want it removed", err)
 	}
-	if rec, err := f.record("t-1"); err != nil || rec.Worktree != store.WorktreeRemoved || !rec.Complete {
+	if rec, err := f.record("t1"); err != nil || rec.Worktree != store.WorktreeRemoved || !rec.Complete {
 		t.Fatalf("record = %+v, %v", rec, err)
 	}
 }
@@ -812,26 +812,26 @@ func (f *pruneFixture) messages(typ string) []store.Message {
 // and untouched, in a dry run and a real one.
 func TestPruneLeavesAPlainWorkDirectory(t *testing.T) {
 	f := newPruneFixture(t)
-	f.task("app", "t-1")
-	f.attempt("app", "t-1", "build", store.AttemptSucceeded, nil)
-	f.document("t-1", "deliver-1-merge", "deliver-1/merge.json", `{"schema":"guildhall.pull-request/1","head":"`+strings.Repeat("b", 40)+`"}`)
-	work := filepath.Join(f.state, "app", "t-1", "work")
+	f.task("app", "t1")
+	f.attempt("app", "t1", "build", store.AttemptSucceeded, nil)
+	f.document("t1", "deliver-1-merge", "deliver-1/merge.json", `{"schema":"guildhall.pull-request/1","head":"`+strings.Repeat("b", 40)+`"}`)
+	work := filepath.Join(f.state, "app", "t1", "work")
 	writeTree(t, filepath.Join(work, "notes.md"), "old\n")
-	f.close("app", "t-1")
+	f.close("app", "t1")
 	for _, dry := range []bool{true, false} {
 		got := f.run(dry)
 		if len(got) != 1 || got[0].Worktree != store.WorktreeNotWorkspace || !strings.Contains(got[0].Kept, "is not a worktree") {
 			t.Fatalf("dry %v: prune = %+v", dry, got)
 		}
 		var out strings.Builder
-		if err := writePruneReport(&out, got, dry); err != nil || !strings.HasPrefix(out.String(), "skipped app/t-1: not a worktree: ") {
+		if err := writePruneReport(&out, got, dry); err != nil || !strings.HasPrefix(out.String(), "skipped app/t1: not a worktree: ") {
 			t.Errorf("dry %v: report %q", dry, out.String())
 		}
 		if left := listFiles(t, work); !slices.Equal(left, []string{"notes.md"}) {
 			t.Fatalf("dry %v: work left %q", dry, left)
 		}
 	}
-	if rec, err := f.record("t-1"); err != nil || rec.Worktree != store.WorktreeNotWorkspace || rec.Complete {
+	if rec, err := f.record("t1"); err != nil || rec.Worktree != store.WorktreeNotWorkspace || rec.Complete {
 		t.Fatalf("record = %+v, %v", rec, err)
 	}
 }
@@ -841,28 +841,28 @@ func TestPruneLeavesAPlainWorkDirectory(t *testing.T) {
 // finishes.
 func TestPruneAfterACrashAndAPartialRemoval(t *testing.T) {
 	f := newPruneFixture(t)
-	f.task("app", "t-1")
-	f.task("app", "t-2")
-	f.attempt("app", "t-1", "build", store.AttemptSucceeded, nil)
-	k2 := f.attempt("app", "t-2", "build", store.AttemptSucceeded, nil)
-	f.worktree("t-1")
-	f.close("app", "t-1")
-	f.close("app", "t-2")
+	f.task("app", "t1")
+	f.task("app", "t2")
+	f.attempt("app", "t1", "build", store.AttemptSucceeded, nil)
+	k2 := f.attempt("app", "t2", "build", store.AttemptSucceeded, nil)
+	f.worktree("t1")
+	f.close("app", "t1")
+	f.close("app", "t2")
 
-	// The crash: t-1's removal ran to its end and the store write never happened.
+	// The crash: t1's removal ran to its end and the store write never happened.
 	p := f.pruner()
-	h, err := withStore(f.store, true, func(s *store.Store) (store.TaskHistory, error) { return s.TaskHistory("app", "t-1") })
+	h, err := withStore(f.store, true, func(s *store.Store) (store.TaskHistory, error) { return s.TaskHistory("app", "t1") })
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := pruneResult{Task: store.TaskRef{Repository: "app", ID: "t-1"}}
+	r := pruneResult{Task: store.TaskRef{Repository: "app", ID: "t1"}}
 	if err := p.retire(context.Background(), &r, h); err != nil || r.Worktree != store.WorktreeRemoved {
 		t.Fatalf("retire = %+v, %v", r, err)
 	}
-	if err := p.pruneAttempt(&r, artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}, false); err != nil {
+	if err := p.pruneAttempt(&r, artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "build", Attempt: 1}, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.record("t-1"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := f.record("t1"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("record after the crash: %v", err)
 	}
 
@@ -872,22 +872,22 @@ func TestPruneAfterACrashAndAPartialRemoval(t *testing.T) {
 	for _, r := range got {
 		results[r.Task.ID] = r
 	}
-	if r := results["t-1"]; r.Skip != "" || !r.complete() {
-		t.Errorf("t-1 after the crash = %+v, want it pruned completely", r)
+	if r := results["t1"]; r.Skip != "" || !r.complete() {
+		t.Errorf("t1 after the crash = %+v, want it pruned completely", r)
 	}
-	if rec, err := f.record("t-1"); err != nil || !rec.Complete {
-		t.Errorf("t-1 record = %+v, %v", rec, err)
+	if rec, err := f.record("t1"); err != nil || !rec.Complete {
+		t.Errorf("t1 record = %+v, %v", rec, err)
 	}
-	r2 := results["t-2"]
+	r2 := results["t2"]
 	if r2.Skip != "" || r2.complete() || !slices.Equal(r2.Failed, []string{"build-1/" + artisan.EventsFile}) {
-		t.Fatalf("t-2 = %+v, want a partial prune", r2)
+		t.Fatalf("t2 = %+v, want a partial prune", r2)
 	}
 	var out strings.Builder
-	if err := writePruneReport(&out, got, false); err != nil || !strings.Contains(out.String(), "pruned app/t-2: ") || !strings.Contains(out.String(), "(partial: could not remove build-1/"+artisan.EventsFile+")") {
+	if err := writePruneReport(&out, got, false); err != nil || !strings.Contains(out.String(), "pruned app/t2: ") || !strings.Contains(out.String(), "(partial: could not remove build-1/"+artisan.EventsFile+")") {
 		t.Errorf("report %q", out.String())
 	}
-	if rec, err := f.record("t-2"); err != nil || rec.Complete || rec.Runs != 1 {
-		t.Fatalf("t-2 record = %+v, %v; want an incomplete record", rec, err)
+	if rec, err := f.record("t2"); err != nil || rec.Complete || rec.Runs != 1 {
+		t.Fatalf("t2 record = %+v, %v; want an incomplete record", rec, err)
 	}
 	if _, err := os.Lstat(filepath.Join(k2.Dir(f.state), artisan.EventsFile)); err != nil {
 		t.Fatalf("the unremovable file: %v", err)
@@ -895,11 +895,11 @@ func TestPruneAfterACrashAndAPartialRemoval(t *testing.T) {
 
 	f.removeFails = nil
 	again := f.run(false)
-	if len(again) != 1 || again[0].Task.ID != "t-2" || !again[0].complete() {
-		t.Fatalf("rerun = %+v, want t-2 completed", again)
+	if len(again) != 1 || again[0].Task.ID != "t2" || !again[0].complete() {
+		t.Fatalf("rerun = %+v, want t2 completed", again)
 	}
-	if rec, err := f.record("t-2"); err != nil || !rec.Complete || rec.Runs != 2 {
-		t.Fatalf("t-2 record = %+v, %v", rec, err)
+	if rec, err := f.record("t2"); err != nil || !rec.Complete || rec.Runs != 2 {
+		t.Fatalf("t2 record = %+v, %v", rec, err)
 	}
 }
 
@@ -909,7 +909,7 @@ func TestPruneAfterACrashAndAPartialRemoval(t *testing.T) {
 // nothing.
 func TestPruneCatchesUpACILogCache(t *testing.T) {
 	f := newPruneFixture(t)
-	for _, id := range []string{"t-1", "t-2"} {
+	for _, id := range []string{"t1", "t2"} {
 		f.task("app", id)
 		f.attempt("app", id, "build", store.AttemptSucceeded, nil)
 		f.close("app", id)
@@ -917,25 +917,25 @@ func TestPruneCatchesUpACILogCache(t *testing.T) {
 	if got := f.run(false); len(got) != 2 || !got[0].complete() || !got[1].complete() {
 		t.Fatalf("first prune = %+v", got)
 	}
-	logs := f.ciLog("t-1")
+	logs := f.ciLog("t1")
 	receipts := f.receipts()
 
 	dry := f.run(true)
-	if len(dry) != 1 || dry[0].Task.ID != "t-1" || dry[0].Skip != "" || dry[0].Bytes != ciLogSize {
-		t.Fatalf("dry run = %+v, want t-1 with its cache's %d bytes", dry, ciLogSize)
+	if len(dry) != 1 || dry[0].Task.ID != "t1" || dry[0].Skip != "" || dry[0].Bytes != ciLogSize {
+		t.Fatalf("dry run = %+v, want t1 with its cache's %d bytes", dry, ciLogSize)
 	}
 	if _, err := os.Lstat(logs); err != nil {
 		t.Fatalf("CI log cache after a dry run: %v", err)
 	}
 	got := f.run(false)
-	if len(got) != 1 || got[0].Task.ID != "t-1" || !got[0].complete() || got[0].Bytes != ciLogSize {
-		t.Fatalf("catch-up = %+v, want t-1 pruned of its cache", got)
+	if len(got) != 1 || got[0].Task.ID != "t1" || !got[0].complete() || got[0].Bytes != ciLogSize {
+		t.Fatalf("catch-up = %+v, want t1 pruned of its cache", got)
 	}
 	if _, err := os.Lstat(logs); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("CI log cache: %v, want it removed", err)
 	}
-	if rec, err := f.record("t-1"); err != nil || rec.Runs != 2 || !rec.Complete || rec.BytesFreed != ciLogSize {
-		t.Fatalf("t-1 record = %+v, %v; want run 2, complete, %d bytes", rec, err, ciLogSize)
+	if rec, err := f.record("t1"); err != nil || rec.Runs != 2 || !rec.Complete || rec.BytesFreed != ciLogSize {
+		t.Fatalf("t1 record = %+v, %v; want run 2, complete, %d bytes", rec, err, ciLogSize)
 	}
 	if f.receipts() != receipts+1 {
 		t.Errorf("receipts = %d, want one more than %d", f.receipts(), receipts)
@@ -948,8 +948,8 @@ func TestPruneCatchesUpACILogCache(t *testing.T) {
 	if f.receipts() != receipts {
 		t.Error("the next prune wrote to the store")
 	}
-	if got, err := f.pruner().run(context.Background(), "app", "t-2", true, nil); err != nil || len(got) != 1 || !strings.HasPrefix(got[0].Skip, "already pruned on ") {
-		t.Errorf("--task t-2 = %+v, %v; want already pruned", got, err)
+	if got, err := f.pruner().run(context.Background(), "app", "t2", true, nil); err != nil || len(got) != 1 || !strings.HasPrefix(got[0].Skip, "already pruned on ") {
+		t.Errorf("--task t2 = %+v, %v; want already pruned", got, err)
 	}
 }
 
@@ -957,10 +957,10 @@ func TestPruneCatchesUpACILogCache(t *testing.T) {
 // incomplete, which the next run finishes.
 func TestPruneACILogCacheThatCannotBeRemoved(t *testing.T) {
 	f := newPruneFixture(t)
-	f.task("app", "t-1")
-	f.attempt("app", "t-1", "build", store.AttemptSucceeded, nil)
-	f.close("app", "t-1")
-	logs := f.ciLog("t-1")
+	f.task("app", "t1")
+	f.attempt("app", "t1", "build", store.AttemptSucceeded, nil)
+	f.close("app", "t1")
+	logs := f.ciLog("t1")
 
 	f.removeFails = func(path string) bool { return path == logs }
 	got := f.run(false)
@@ -971,7 +971,7 @@ func TestPruneACILogCacheThatCannotBeRemoved(t *testing.T) {
 	if err := writePruneReport(&out, got, false); err != nil || !strings.Contains(out.String(), "(partial: could not remove ci-logs)") {
 		t.Errorf("report %q", out.String())
 	}
-	if rec, err := f.record("t-1"); err != nil || rec.Complete || rec.Runs != 1 {
+	if rec, err := f.record("t1"); err != nil || rec.Complete || rec.Runs != 1 {
 		t.Fatalf("record = %+v, %v; want an incomplete record", rec, err)
 	}
 	if _, err := os.Lstat(logs); err != nil {
@@ -986,7 +986,7 @@ func TestPruneACILogCacheThatCannotBeRemoved(t *testing.T) {
 	if _, err := os.Lstat(logs); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("CI log cache: %v, want it removed", err)
 	}
-	if rec, err := f.record("t-1"); err != nil || !rec.Complete || rec.Runs != 2 {
+	if rec, err := f.record("t1"); err != nil || !rec.Complete || rec.Runs != 2 {
 		t.Fatalf("record = %+v, %v", rec, err)
 	}
 }
@@ -995,12 +995,12 @@ func TestPruneACILogCacheThatCannotBeRemoved(t *testing.T) {
 // task with attempt files and no worktree and a task closed too recently.
 func TestPruneCommandOutput(t *testing.T) {
 	f := newPruneFixture(t)
-	f.task("app", "t-1")
-	f.task("app", "t-2")
-	f.attempt("app", "t-1", "build", store.AttemptSucceeded, nil)
-	f.close("app", "t-1")
+	f.task("app", "t1")
+	f.task("app", "t2")
+	f.attempt("app", "t1", "build", store.AttemptSucceeded, nil)
+	f.close("app", "t1")
 	f.at = f.now.Add(-time.Hour)
-	f.close("app", "t-2")
+	f.close("app", "t2")
 	run := func(args ...string) string {
 		t.Helper()
 		f.stdout.Reset()
@@ -1012,11 +1012,11 @@ func TestPruneCommandOutput(t *testing.T) {
 	dry := run("prune", "--dry-run", "--copy", f.copy)
 	checkGolden(t, "prune-dry-run.txt", dry)
 	checkGolden(t, "prune.txt", run("prune", "--copy", f.copy))
-	checkGolden(t, "task-files-pruned.json", run("task", "files", "--store", f.store, "--repo", "app", "--json", "t-1"))
-	if out := run("task", "timeline", "--store", f.store, "--repo", "app", "--json", "t-1"); !strings.Contains(out, `"mutation_id":"prune:app:t-1","operation":"prune-task"`) || !strings.Contains(out, `"record":"prune"`) {
+	checkGolden(t, "task-files-pruned.json", run("task", "files", "--store", f.store, "--repo", "app", "--json", "t1"))
+	if out := run("task", "timeline", "--store", f.store, "--repo", "app", "--json", "t1"); !strings.Contains(out, `"mutation_id":"prune:app:t1","operation":"prune-task"`) || !strings.Contains(out, `"record":"prune"`) {
 		t.Errorf("timeline %s, want the prune receipt", out)
 	}
-	if out := run("prune", "--copy", f.copy); out != "skipped app/t-2: too recent: closed 2026-10-16, prunable from 2026-10-30\ntotal: 0 pruned, 1 skipped, 0 B freed\n" {
+	if out := run("prune", "--copy", f.copy); out != "skipped app/t2: too recent: closed 2026-10-16, prunable from 2026-10-30\ntotal: 0 pruned, 1 skipped, 0 B freed\n" {
 		t.Errorf("second prune = %q", out)
 	}
 
@@ -1037,9 +1037,9 @@ func TestPruneCommandOutput(t *testing.T) {
 // config.toml alone, here the 14-day default, until a reload authorizes the digest.
 func TestPruneIgnoresAnUnauthorizedManagedRevision(t *testing.T) {
 	f := newPruneFixture(t)
-	f.task("app", "t-1")
+	f.task("app", "t1")
 	f.at = f.now.Add(-time.Hour)
-	f.close("app", "t-1")
+	f.close("app", "t1")
 	d := writeManaged(t, f.copy, map[string]config.ManagedSetting{config.PruneAfterKey: {Value: "0"}})
 	recordEvent(t, f.copy, store.Enrolment{Event: store.Enrolled, Steward: "hq", Digest: d})
 	run := func() (string, string) {
@@ -1052,7 +1052,7 @@ func TestPruneIgnoresAnUnauthorizedManagedRevision(t *testing.T) {
 		return f.stdout.String(), f.stderr.String()
 	}
 	out, stderr := run()
-	if !strings.Contains(out, "skipped app/t-1: too recent") {
+	if !strings.Contains(out, "skipped app/t1: too recent") {
 		t.Errorf("unauthorized prune_after 0 applied: %q", out)
 	}
 	if !strings.Contains(stderr, "prune: managed settings not applied, using config.toml alone: managed.toml "+d+" is not authorized") {
@@ -1063,7 +1063,7 @@ func TestPruneIgnoresAnUnauthorizedManagedRevision(t *testing.T) {
 		_, _, err := s.RecordManagedRevision(store.ManagedRevision{Source: store.SourceReload, Digest: d})
 		return err
 	})
-	if out, stderr := run(); strings.Contains(out, "skipped app/t-1") || stderr != "" {
+	if out, stderr := run(); strings.Contains(out, "skipped app/t1") || stderr != "" {
 		t.Errorf("authorized prune_after 0 not applied: %q, stderr %q", out, stderr)
 	}
 	// A hand edit of an inline [managed] is no more applied than an unauthorized managed.toml.
@@ -1072,7 +1072,7 @@ func TestPruneIgnoresAnUnauthorizedManagedRevision(t *testing.T) {
 	}
 	recordEvent(t, f.copy, store.Enrolment{Event: store.Left, Digest: d, Revision: store.RevisionName(digest.Digest(d))})
 	appendFile(t, filepath.Join(f.copy, "config.toml"), "\n[managed.prune_after]\nvalue = \"0\"\n")
-	if out, stderr := run(); !strings.Contains(out, "skipped app/t-1: too recent") || !strings.Contains(stderr, "inline [managed]") {
+	if out, stderr := run(); !strings.Contains(out, "skipped app/t1: too recent") || !strings.Contains(stderr, "inline [managed]") {
 		t.Errorf("inline [managed] prune: %q, stderr %q", out, stderr)
 	}
 }
@@ -1081,9 +1081,9 @@ func TestPruneIgnoresAnUnauthorizedManagedRevision(t *testing.T) {
 // through a prune, and the sweep then closes it; an attempt already closed loses them, and the sweep leaves it alone.
 func TestPruneKeepsPaneFilesTheSweepStillCloses(t *testing.T) {
 	sf := newSweepFixture(t)
-	open := sf.attempt("t-1", "build", store.AttemptSucceeded, nil)
+	open := sf.attempt("t1", "build", store.AttemptSucceeded, nil)
 	sf.writeRecord(open, sf.presented(open, "w2", launch.WorkspaceLabel(open)))
-	closed := sf.attempt("t-2", "build", store.AttemptSucceeded, nil)
+	closed := sf.attempt("t2", "build", store.AttemptSucceeded, nil)
 	sf.writeRecord(closed, sf.presented(closed, "w3", launch.WorkspaceLabel(closed)))
 	writeTree(t, filepath.Join(closed.Dir(sf.state), paneClosed), "{}\n")
 	for _, k := range []artisan.AttemptKey{open, closed} {
@@ -1094,14 +1094,14 @@ func TestPruneKeepsPaneFilesTheSweepStillCloses(t *testing.T) {
 	}
 
 	p := &pruner{storePath: sf.storePath, state: sf.state}
-	r := pruneResult{Task: store.TaskRef{Repository: "app", ID: "t-1"}}
+	r := pruneResult{Task: store.TaskRef{Repository: "app", ID: "t1"}}
 	if err := p.pruneAttempt(&r, open, false); err != nil || !slices.Equal(r.Panes, []string{"build-1"}) {
 		t.Fatalf("prune of the open attempt = %+v, %v", r, err)
 	}
 	if _, err := os.Lstat(filepath.Join(open.Dir(sf.state), launch.PaneClaimFile)); err != nil {
 		t.Fatalf("pane record: %v, want it kept", err)
 	}
-	r = pruneResult{Task: store.TaskRef{Repository: "app", ID: "t-2"}}
+	r = pruneResult{Task: store.TaskRef{Repository: "app", ID: "t2"}}
 	if err := p.pruneAttempt(&r, closed, false); err != nil || len(r.Panes) != 0 {
 		t.Fatalf("prune of the closed attempt = %+v, %v", r, err)
 	}
@@ -1135,25 +1135,25 @@ func TestDailyPrune(t *testing.T) {
 	if err != nil || d == nil {
 		t.Fatalf("dailyPrune with prune_daily true = %v, %v", d, err)
 	}
-	f.task("app", "t-1")
-	k := f.attempt("app", "t-1", "build", store.AttemptSucceeded, nil)
-	f.close("app", "t-1")
-	f.task("app", "t-2")
-	f.attempt("app", "t-2", "build", store.AttemptSucceeded, nil)
+	f.task("app", "t1")
+	k := f.attempt("app", "t1", "build", store.AttemptSucceeded, nil)
+	f.close("app", "t1")
+	f.task("app", "t2")
+	f.attempt("app", "t2", "build", store.AttemptSucceeded, nil)
 
 	// Session start: the first round prunes.
 	w := &workspaceCloseWatch{every: pruneDailyEvery, round: d.run}
 	w.tick(time.Now())
 	w.wait()
 	if left := listFiles(t, k.Dir(f.state)); len(left) != len(keptFiles) {
-		t.Fatalf("after the start round, t-1 left %q", left)
+		t.Fatalf("after the start round, t1 left %q", left)
 	}
-	if !strings.Contains(f.stderr.String(), "guildhall: daily prune: pruned app/t-1: ") {
+	if !strings.Contains(f.stderr.String(), "guildhall: daily prune: pruned app/t1: ") {
 		t.Errorf("supervisor log %q", f.stderr.String())
 	}
 
-	// An hour later, and a new session's start within the day: nothing, though t-2 is now due.
-	f.close("app", "t-2")
+	// An hour later, and a new session's start within the day: nothing, though t2 is now due.
+	f.close("app", "t2")
 	f.now = f.now.Add(time.Hour)
 	d.run()
 	next, err := f.app.dailyPrune(directorConfig(t, `prune_daily = "true"`+"\n"), f.copy)
@@ -1161,14 +1161,14 @@ func TestDailyPrune(t *testing.T) {
 		t.Fatal(err)
 	}
 	next.run()
-	if rec, err := f.record("t-2"); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("t-2 pruned within the day: %+v, %v", rec, err)
+	if rec, err := f.record("t2"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("t2 pruned within the day: %+v, %v", rec, err)
 	}
 	// The day's tick prunes.
 	f.now = f.now.Add(pruneDailyGap)
 	next.run()
-	if rec, err := f.record("t-2"); err != nil || !rec.Complete {
-		t.Fatalf("t-2 after the day's tick = %+v, %v", rec, err)
+	if rec, err := f.record("t2"); err != nil || !rec.Complete {
+		t.Fatalf("t2 after the day's tick = %+v, %v", rec, err)
 	}
 }
 

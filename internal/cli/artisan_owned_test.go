@@ -16,7 +16,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
-// ownedAttempt is attempt app/t-1/build/1, running in a new store, with a
+// ownedAttempt is attempt app/t1/build/1, running in a new store, with a
 // short state directory and a prompt.
 type ownedAttempt struct {
 	store, state, prompt, workdir string
@@ -39,7 +39,7 @@ func newOwnedAttempt(t *testing.T, prompt string) ownedAttempt {
 
 // args are the flags naming the attempt, for start, stop and status.
 func (o ownedAttempt) args(cmd string, extra ...string) []string {
-	a := []string{"artisan", cmd, "--store", o.store, "--state", o.state, "--repo", "app", "--task", "t-1", "--step", "build", "--attempt", "1"}
+	a := []string{"artisan", cmd, "--store", o.store, "--state", o.state, "--repo", "app", "--task", "t1", "--step", "build", "--attempt", "1"}
 	if cmd == "start" {
 		a = append(a, "--adapter", "fake", "--prompt", o.prompt, "--workdir", o.workdir)
 	}
@@ -53,7 +53,7 @@ func (o ownedAttempt) ownership(t *testing.T) store.Ownership {
 		t.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
-	own, err := s.Ownership("app", "t-1", "build", 1)
+	own, err := s.Ownership("app", "t1", "build", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestArtisanStartOwnsTheAttemptAndExitsByOutcome(t *testing.T) {
 				t.Fatalf("exit %d, want %d; stdout %q; stderr %q", code, tc.code, stdout, stderr)
 			}
 			r := decodeJSON[runReport](t, lastLine(stdout))
-			if r.Attempt != "app/t-1/build/1" || r.AttemptOutcome != tc.outcome {
+			if r.Attempt != "app/t1/build/1" || r.AttemptOutcome != tc.outcome {
 				t.Errorf("report %+v; want attempt outcome %s", r, tc.outcome)
 			}
 			if tc.outcome == "succeeded" && (r.Result == nil || r.Result.Status != "succeeded") {
@@ -214,7 +214,7 @@ func TestArtisanStartRefusesAnUnknownAdapterByName(t *testing.T) {
 	o := newOwnedAttempt(t, "x")
 	for _, args := range [][]string{
 		o.args("start", "--adapter", "gemini"),
-		{"artisan", "start", "--adapter", "gemini", "--task", "t-1", "--attempt", "a-1", "--prompt", o.prompt,
+		{"artisan", "start", "--adapter", "gemini", "--task", "t1", "--attempt", "a-1", "--prompt", o.prompt,
 			"--result", filepath.Join(o.workdir, "r.json"), "--workdir", o.workdir, "--herdr-session", "lab", "--herdr-workspace", "w1"},
 	} {
 		app, _, stderr := newArtisanApp(t)
@@ -294,7 +294,7 @@ func TestArtisanStartCustody(t *testing.T) {
 		}
 	}
 	bounded("send a message", 0, "", envelope("q-1", "director"), "messages", "send", "--store", o.store, "director", "-")
-	bounded("answer a decision", 0, "", "Yes", "decide", "answer", "--store", o.store, "--repo", "app", "--task", "t-1", "--decision", "accept-plan", "--answer-file", "-")
+	bounded("answer a decision", 0, "", "Yes", "decide", "answer", "--store", o.store, "--repo", "app", "--task", "t1", "--decision", "accept-plan", "--answer-file", "-")
 	bounded("competing run", 1, "owned by a live launcher", "", o.args("start")...)
 	if now := o.ownership(t); now != owner {
 		t.Errorf("ownership changed from %+v to %+v", owner, now)

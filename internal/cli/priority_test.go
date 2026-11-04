@@ -13,9 +13,9 @@ import (
 func TestTaskPriority(t *testing.T) {
 	cfg := writeDirector(t, directorTOML)
 	path := emptyStore(t)
-	newTask(t, path, cfg, "app", "Default", "t-1")
+	newTask(t, path, cfg, "app", "Default")
 	approveRepo(t, path, cfg, "app")
-	code, _, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Urgent", "--priority", "urgent", "t-2")
+	code, _, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Urgent", "--priority", "urgent")
 	if code != 0 {
 		t.Fatalf("task new --priority: exit %d, stderr %s", code, stderr)
 	}
@@ -30,9 +30,9 @@ func TestTaskPriority(t *testing.T) {
 
 	var first string
 	for i, level := range []string{"p1", "1", "highest", "Highest"} {
-		code, out, stderr := runTask(t, "priority", "--store", path, "--repo", "app", "t-1", level)
+		code, out, stderr := runTask(t, "priority", "--store", path, "--repo", "app", "t1", level)
 		rc := decodeJSON[store.Receipt](t, out)
-		if code != 0 || rc.Record != store.TaskPriorityRecord || rc.MutationID != "priority:app:t-1:1" {
+		if code != 0 || rc.Record != store.TaskPriorityRecord || rc.MutationID != "priority:app:t1:1" {
 			t.Fatalf("priority %s: exit %d, %s, stderr %s", level, code, out, stderr)
 		}
 		if i > 0 && out != first {
@@ -40,14 +40,14 @@ func TestTaskPriority(t *testing.T) {
 		}
 		first = out
 	}
-	if code, out, _ := runTask(t, "priority", "--store", path, "--repo", "app", "t-1", "someday"); code != 0 || !strings.Contains(out, `"priority:app:t-1:2"`) {
+	if code, out, _ := runTask(t, "priority", "--store", path, "--repo", "app", "t1", "someday"); code != 0 || !strings.Contains(out, `"priority:app:t1:2"`) {
 		t.Fatalf("second change: exit %d, %s", code, out)
 	}
-	code, out, _ = runTask(t, "show", "--store", path, "--repo", "app", "--json", "t-1")
+	code, out, _ = runTask(t, "show", "--store", path, "--repo", "app", "--json", "t1")
 	if code != 0 || !strings.Contains(out, `"priority":"p5"`) {
 		t.Fatalf("show: exit %d, %s", code, out)
 	}
-	code, out, _ = runTask(t, "timeline", "--store", path, "--repo", "app", "--json", "t-1")
+	code, out, _ = runTask(t, "timeline", "--store", path, "--repo", "app", "--json", "t1")
 	tl := decodeJSON[struct {
 		Priority store.Priority `json:"priority"`
 		Changes  []struct {
@@ -60,17 +60,17 @@ func TestTaskPriority(t *testing.T) {
 	}
 
 	for _, args := range [][]string{
-		{"priority", "--store", path, "--repo", "app", "t-1", "p6"},
-		{"priority", "--store", path, "--repo", "app", "t-1", "top"},
-		{"priority", "--store", path, "--repo", "app", "t-1"},
-		{"priority", "--store", path, "t-1", "p1"},
-		{"new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Bad", "--priority", "-1", "t-3"},
+		{"priority", "--store", path, "--repo", "app", "t1", "p6"},
+		{"priority", "--store", path, "--repo", "app", "t1", "top"},
+		{"priority", "--store", path, "--repo", "app", "t1"},
+		{"priority", "--store", path, "t1", "p1"},
+		{"new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Bad", "--priority", "-1"},
 	} {
 		if code, _, stderr := runTask(t, args...); code != 2 {
 			t.Errorf("%v: exit %d, stderr %s; want usage error", args, code, stderr)
 		}
 	}
-	if code, _, stderr := runTask(t, "priority", "--store", path, "--repo", "app", "t-9", "p1"); code != 1 || !strings.Contains(stderr, store.ErrNotFound.Error()) {
+	if code, _, stderr := runTask(t, "priority", "--store", path, "--repo", "app", "t9", "p1"); code != 1 || !strings.Contains(stderr, store.ErrNotFound.Error()) {
 		t.Fatalf("unknown task: exit %d, stderr %s", code, stderr)
 	}
 }

@@ -152,9 +152,9 @@ func TestDirectorStartRunsASession(t *testing.T) {
 	for _, rt := range []string{"fake", "claude"} {
 		t.Run(rt, func(t *testing.T) {
 			dir := directorCopy(t, "[director]\nadapter = \""+rt+"\"\nmodel = \"opus\"\n",
-				"guildhall task new --repo app --title Early t-early",
+				"guildhall task new --repo app --title Early",
 				"guildhall director ready",
-				"guildhall task new --repo app --title Late t-late",
+				"guildhall task new --repo app --title Late",
 				"/exit")
 			if rt == "claude" {
 				claudetest.Install(t)
@@ -176,8 +176,9 @@ func TestDirectorStartRunsASession(t *testing.T) {
 				got[0].Identity.PID != os.Getpid() || got[0].Release == "" {
 				t.Fatalf("sessions = %+v; want session 1 stopped after ready, run by this process", got)
 			}
-			if hasTask(t, dir, "t-early") || !hasTask(t, dir, "t-late") {
-				t.Errorf("t-early recorded %v, t-late recorded %v; want only t-late", hasTask(t, dir, "t-early"), hasTask(t, dir, "t-late"))
+			// The refused Early takes no number, so Late is t1 and there is no t2.
+			if !hasTask(t, dir, "t1") || hasTask(t, dir, "t2") || readTask(t, filepath.Join(dir, "director.store"), "app", "t1").Title != "Late" {
+				t.Errorf("t1 recorded %v, t2 recorded %v; want only t1, Late", hasTask(t, dir, "t1"), hasTask(t, dir, "t2"))
 			}
 			session := filepath.Join(dir, "director", "session-1")
 			for _, f := range []string{render.RoleFile, render.StartupFile, render.ManifestFile} {
@@ -261,11 +262,11 @@ func TestDirectorStartStartupNamesWhatIsInFlight(t *testing.T) {
 		t.Fatalf("first session: exit %d\n%s\n%s", code, out, stderr)
 	}
 	putRetiredHandoffNote(t, filepath.Join(dir, "director.store"))
-	newTask(t, filepath.Join(dir, "director.store"), filepath.Join(dir, "config.toml"), "app", "Sort", "t-2")
+	newTask(t, filepath.Join(dir, "director.store"), filepath.Join(dir, "config.toml"), "app", "Sort")
 	withTestStore(t, dir, func(s *store.Store) (store.Receipt, error) {
-		return s.SendMessage(store.Message{ID: "q-1", Recipient: store.RecipientDirector, Repository: "app", TaskID: "t-2", Type: "question", Text: "Which parser?"})
+		return s.SendMessage(store.Message{ID: "q-1", Recipient: store.RecipientDirector, Repository: "app", TaskID: "t1", Type: "question", Text: "Which parser?"})
 	})
-	writeNext(t, filepath.Join(dir, "state"), "t-2", `{"wait":"checks","step":"validate"}`+"\n")
+	writeNext(t, filepath.Join(dir, "state"), "t1", `{"wait":"checks","step":"validate"}`+"\n")
 	if code, out, stderr := runDirectorCmd(t, "start", "fake", "--copy", dir); code != 0 {
 		t.Fatalf("second session: exit %d\n%s\n%s", code, out, stderr)
 	}
@@ -285,8 +286,8 @@ func TestDirectorStartStartupNamesWhatIsInFlight(t *testing.T) {
 		}
 	}
 	if !strings.Contains(startup, "checks: step validate waits for the checks of its published head; the session supervisor reads them again every checks_refresh, never more often than every 30 seconds, and wakes you when they finish; the session supervisor advances it") ||
-		strings.Contains(startup, "guildhall task start --repo app t-2") {
-		t.Errorf("startup.md does not list t-2's checks as the supervisor's:\n%s", startup)
+		strings.Contains(startup, "guildhall task start --repo app t1") {
+		t.Errorf("startup.md does not list t1's checks as the supervisor's:\n%s", startup)
 	}
 	if got := sessions(t, dir); len(got) != 2 || got[0].State != store.DirectorStopped || got[1].State != store.DirectorStopped {
 		t.Errorf("sessions = %+v", got)
@@ -501,11 +502,11 @@ func TestDirectorStartRecordsACrashedRuntimeStopped(t *testing.T) {
 	}
 }
 
-// recoveringCopy is a Director copy over testdata/run whose newest session is recovering, with task t-1 and no attempt.
+// recoveringCopy is a Director copy over testdata/run whose newest session is recovering, with task t1 and no attempt.
 func recoveringCopy(t *testing.T) string {
 	t.Helper()
 	dir := directorCopy(t, "")
-	newTask(t, filepath.Join(dir, "director.store"), filepath.Join(dir, "config.toml"), "app", "Sort", "t-1")
+	newTask(t, filepath.Join(dir, "director.store"), filepath.Join(dir, "config.toml"), "app", "Sort")
 	recoverSession(t, dir)
 	return dir
 }
@@ -567,16 +568,16 @@ func TestDirectorReady(t *testing.T) {
 func TestRecoveringSessionStartsNoNewWork(t *testing.T) {
 	dir := recoveringCopy(t)
 	storePath, cfg := filepath.Join(dir, "director.store"), filepath.Join(dir, "config.toml")
-	code, _, stderr := runTask(t, "new", "--store", storePath, "--config", cfg, "--repo", "app", "--title", "Early", "t-2")
-	if code != 1 || !strings.Contains(stderr, "guildhall director ready") || hasTask(t, dir, "t-2") {
+	code, _, stderr := runTask(t, "new", "--store", storePath, "--config", cfg, "--repo", "app", "--title", "Early")
+	if code != 1 || !strings.Contains(stderr, "guildhall director ready") || hasTask(t, dir, "t2") {
 		t.Fatalf("task new while recovering: exit %d, stderr %q; want exit 1 naming director ready", code, stderr)
 	}
 	markCopy(t, dir)
-	code, out, stderr := runIn(t, dir, "task", "start", "--repo", "app", "t-1")
+	code, out, stderr := runIn(t, dir, "task", "start", "--repo", "app", "t1")
 	if code != 1 || !strings.Contains(stderr, "guildhall director ready") {
 		t.Fatalf("task start while recovering: exit %d, stdout %q, stderr %q; want exit 1 naming director ready", code, out, stderr)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "state", "app", "t-1", "next.json")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(dir, "state", "app", "t1", "next.json")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("refused task start advanced the task: %v", err)
 	}
 	if code, _, stderr := runIn(t, dir, "task", "list", "--json"); code != 0 {
@@ -588,7 +589,7 @@ func TestRecoveringSessionStartsNoNewWork(t *testing.T) {
 	if code, _, stderr := runDirectorCmd(t, "ready", "--copy", dir); code != 0 {
 		t.Fatalf("ready: exit %d, %s", code, stderr)
 	}
-	if code, _, stderr := runTask(t, "new", "--store", storePath, "--config", cfg, "--repo", "app", "--title", "Late", "t-2"); code != 0 {
+	if code, _, stderr := runTask(t, "new", "--store", storePath, "--config", cfg, "--repo", "app", "--title", "Late"); code != 0 {
 		t.Fatalf("task new after ready: exit %d, %s", code, stderr)
 	}
 }

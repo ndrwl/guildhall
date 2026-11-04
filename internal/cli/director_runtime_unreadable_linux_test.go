@@ -34,7 +34,7 @@ func TestDirectorUnreadableRuntimeKeepsStopHold(t *testing.T) {
 	if current.State != store.DirectorStopping || !current.Sweeping {
 		t.Fatalf("failed sweep released hold: %+v", current)
 	}
-	code, out, stderr = d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...)
+	code, out, stderr = d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...)
 	t.Logf("task start during failed sweep: exit=%d stdout=%s stderr=%s", code, out, stderr)
 	if code != 0 || out != "{\"wait\":\"paused\",\"step\":\"plan\"}\n" {
 		t.Fatalf("admission escaped hold: %d %s %s", code, out, stderr)

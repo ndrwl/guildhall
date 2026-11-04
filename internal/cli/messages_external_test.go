@@ -124,7 +124,7 @@ func TestMessagesReceive(t *testing.T) {
 		t.Errorf("list director shows the external message: %s", out)
 	}
 	for _, args := range [][]string{
-		{"list", "--from", "guildmaster"}, {"read", "--sender", "other-director", "x"}, {"ack", "--sender", "steward", "artisan:app/t-1/build/1", "x"},
+		{"list", "--from", "guildmaster"}, {"read", "--sender", "other-director", "x"}, {"ack", "--sender", "steward", "artisan:app/t1/build/1", "x"},
 		{"list", "--sender", "steward"}, {"read", "--from", "steward", "x"},
 	} {
 		if code, _, _ := runMessages(t, "", append(args, "--copy", dir)...); code != 2 {
@@ -263,7 +263,7 @@ func TestMessagesSendNeverRecordsTheSteward(t *testing.T) {
 	markCopy(t, copyDir)
 	other := markCopy(t, t.TempDir())
 	for _, env := range []map[string]string{
-		{}, {session.NumberEnv: "1"}, {artisan.AttemptEnv: "app/t-1/build/1"}, {"GUILDHALL_SENDER": "steward"}, {"GUILDHALL_STEWARD": "1", session.NumberEnv: "2"},
+		{}, {session.NumberEnv: "1"}, {artisan.AttemptEnv: "app/t1/build/1"}, {"GUILDHALL_SENDER": "steward"}, {"GUILDHALL_STEWARD": "1", session.NumberEnv: "2"},
 	} {
 		for _, wd := range []string{copyDir, other, t.TempDir()} {
 			got := messageSender(func(k string) string { return env[k] }, func() (string, error) { return wd, nil }, path)

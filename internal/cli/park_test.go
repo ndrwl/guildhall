@@ -19,59 +19,59 @@ import (
 func TestStepParkAndUnpark(t *testing.T) {
 	d := newRunDirector(t)
 	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
-		if _, err := s.StartAttempt("m-1", "app", "t-1", "plan"); err != nil {
+		if _, err := s.StartAttempt("m-1", "app", "t1", "plan"); err != nil {
 			return store.Receipt{}, err
 		}
-		return s.FinishAttempt("m-2", "app", "t-1", "plan", 1, store.AttemptFailed)
+		return s.FinishAttempt("m-2", "app", "t1", "plan", 1, store.AttemptFailed)
 	}); err != nil {
 		t.Fatal(err)
 	}
 	next := `{"wait":"director","step":"plan","attempt":1}` + "\n"
-	writeNext(t, d.state, "t-1", next)
+	writeNext(t, d.state, "t1", next)
 	park := func(reason string) []string {
-		return append([]string{"step", "park"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--reason", reason)...)
+		return append([]string{"step", "park"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "1", "--reason", reason)...)
 	}
-	unpark := append([]string{"step", "unpark"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1")...)
-	parkedLine := `{"repository":"app","task_id":"t-1","step":"plan","attempt":1,"reason":"Held until t-9 merges.","parked":true,"cycle":0}` + "\n"
+	unpark := append([]string{"step", "unpark"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "1")...)
+	parkedLine := `{"repository":"app","task_id":"t1","step":"plan","attempt":1,"reason":"Held until t9 merges.","parked":true,"cycle":0}` + "\n"
 
-	if code, out, stderr := d.run(t, unpark...); code != 1 || out != "" || !strings.Contains(stderr, "step unpark: attempt 1 of plan of app/t-1 is not parked") {
+	if code, out, stderr := d.run(t, unpark...); code != 1 || out != "" || !strings.Contains(stderr, "step unpark: attempt 1 of plan of app/t1 is not parked") {
 		t.Errorf("unpark before any park: exit %d, %q, stderr %s", code, out, stderr)
 	}
-	if code, out, stderr := d.run(t, park("Held until t-9 merges.")...); code != 0 || out != parkedLine {
+	if code, out, stderr := d.run(t, park("Held until t9 merges.")...); code != 0 || out != parkedLine {
 		t.Fatalf("park: exit %d, %q, stderr %s; want %s", code, out, stderr, parkedLine)
 	}
 	before := lastSequence(t, d.store)
-	if code, out, stderr := d.run(t, park("Held until t-9 merges.")...); code != 0 || out != parkedLine || lastSequence(t, d.store) != before {
+	if code, out, stderr := d.run(t, park("Held until t9 merges.")...); code != 0 || out != parkedLine || lastSequence(t, d.store) != before {
 		t.Errorf("identical park: exit %d, %q, stderr %s; want a replay writing nothing", code, out, stderr)
 	}
-	want := `step park: attempt 1 of plan of app/t-1 is already parked, with reason "Held until t-9 merges."; unpark it first`
+	want := `step park: attempt 1 of plan of app/t1 is already parked, with reason "Held until t9 merges."; unpark it first`
 	if code, out, stderr := d.run(t, park("Another reason.")...); code != 1 || out != "" || !strings.Contains(stderr, want) || lastSequence(t, d.store) != before {
 		t.Errorf("park with another reason: exit %d, %q, stderr %s; want exit 1 naming %q", code, out, stderr, want)
 	}
-	unparkedLine := `{"repository":"app","task_id":"t-1","step":"plan","attempt":1,"reason":"Held until t-9 merges.","parked":false,"cycle":1}` + "\n"
+	unparkedLine := `{"repository":"app","task_id":"t1","step":"plan","attempt":1,"reason":"Held until t9 merges.","parked":false,"cycle":1}` + "\n"
 	if code, out, stderr := d.run(t, unpark...); code != 0 || out != unparkedLine {
 		t.Fatalf("unpark: exit %d, %q, stderr %s; want %s", code, out, stderr, unparkedLine)
 	}
 	if code, _, stderr := d.run(t, unpark...); code != 1 || !strings.Contains(stderr, "is not parked") {
 		t.Errorf("second unpark: exit %d, stderr %s", code, stderr)
 	}
-	again := `{"repository":"app","task_id":"t-1","step":"plan","attempt":1,"reason":"Another reason.","parked":true,"cycle":1}` + "\n"
+	again := `{"repository":"app","task_id":"t1","step":"plan","attempt":1,"reason":"Another reason.","parked":true,"cycle":1}` + "\n"
 	if code, out, stderr := d.run(t, park("Another reason.")...); code != 0 || out != again {
 		t.Errorf("park after unpark: exit %d, %q, stderr %s; want %s", code, out, stderr, again)
 	}
-	if b, err := os.ReadFile(filepath.Join(d.state, "app", "t-1", "next.json")); err != nil || string(b) != next {
+	if b, err := os.ReadFile(filepath.Join(d.state, "app", "t1", "next.json")); err != nil || string(b) != next {
 		t.Errorf("next.json = %q, %v; want it unchanged", b, err)
 	}
 	// A succeeded attempt is refused by the store.
 	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
-		if _, err := s.StartAttempt("m-3", "app", "t-1", "build"); err != nil {
+		if _, err := s.StartAttempt("m-3", "app", "t1", "build"); err != nil {
 			return store.Receipt{}, err
 		}
-		return s.FinishAttempt("m-4", "app", "t-1", "build", 1, store.AttemptSucceeded)
+		return s.FinishAttempt("m-4", "app", "t1", "build", 1, store.AttemptSucceeded)
 	}); err != nil {
 		t.Fatal(err)
 	}
-	succeeded := append([]string{"step", "park"}, d.flags("--task", "t-1", "--step", "build", "--attempt", "1", "--reason", "Hold.")...)
+	succeeded := append([]string{"step", "park"}, d.flags("--task", "t1", "--step", "build", "--attempt", "1", "--reason", "Hold.")...)
 	if code, _, stderr := d.run(t, succeeded...); code != 1 || !strings.Contains(stderr, "only a failed or stopped attempt is parked") {
 		t.Errorf("park of a succeeded attempt: exit %d, stderr %s", code, stderr)
 	}
@@ -87,19 +87,19 @@ func TestStepParkUsage(t *testing.T) {
 		t.Errorf("help does not list step park and unpark:\n%s", out)
 	}
 	for name, args := range map[string][]string{
-		"park without store":          {"step", "park", "--config", "c", "--state", "st", "--repo", "app", "--task", "t-1", "--step", "plan", "--attempt", "1", "--reason", "r"},
-		"park without reason":         append([]string{"step", "park"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1")...),
-		"park with a blank reason":    append([]string{"step", "park"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--reason", " ")...),
-		"park with a long reason":     append([]string{"step", "park"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--reason", strings.Repeat("r", store.MaxTextBytes+1))...),
-		"park without attempt":        append([]string{"step", "park"}, d.flags("--task", "t-1", "--step", "plan", "--reason", "r")...),
-		"park without step":           append([]string{"step", "park"}, d.flags("--task", "t-1", "--attempt", "1", "--reason", "r")...),
+		"park without store":          {"step", "park", "--config", "c", "--state", "st", "--repo", "app", "--task", "t1", "--step", "plan", "--attempt", "1", "--reason", "r"},
+		"park without reason":         append([]string{"step", "park"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "1")...),
+		"park with a blank reason":    append([]string{"step", "park"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "1", "--reason", " ")...),
+		"park with a long reason":     append([]string{"step", "park"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "1", "--reason", strings.Repeat("r", store.MaxTextBytes+1))...),
+		"park without attempt":        append([]string{"step", "park"}, d.flags("--task", "t1", "--step", "plan", "--reason", "r")...),
+		"park without step":           append([]string{"step", "park"}, d.flags("--task", "t1", "--attempt", "1", "--reason", "r")...),
 		"park with a bad id":          append([]string{"step", "park"}, d.flags("--task", "T 1", "--step", "plan", "--attempt", "1", "--reason", "r")...),
-		"park with a bad number":      append([]string{"step", "park"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "0", "--reason", "r")...),
-		"park with an argument":       append([]string{"step", "park"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--reason", "r", "extra")...),
+		"park with a bad number":      append([]string{"step", "park"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "0", "--reason", "r")...),
+		"park with an argument":       append([]string{"step", "park"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "1", "--reason", "r", "extra")...),
 		"unpark without task":         append([]string{"step", "unpark"}, d.flags("--step", "plan", "--attempt", "1")...),
-		"unpark with a bad number":    append([]string{"step", "unpark"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "x")...),
-		"unpark with a reason":        append([]string{"step", "unpark"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--reason", "r")...),
-		"unpark with an unknown flag": append([]string{"step", "unpark"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--force")...),
+		"unpark with a bad number":    append([]string{"step", "unpark"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "x")...),
+		"unpark with a reason":        append([]string{"step", "unpark"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "1", "--reason", "r")...),
+		"unpark with an unknown flag": append([]string{"step", "unpark"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "1", "--force")...),
 	} {
 		if code, out, _ := d.run(t, args...); code != 2 || out != "" {
 			t.Errorf("%s: exit %d, %q; want 2", name, code, out)
@@ -108,10 +108,10 @@ func TestStepParkUsage(t *testing.T) {
 }
 
 // parkCopy is a Director copy whose app tasks each failed build attempt 1, with next.json as the engine leaves a
-// failure unless a case says otherwise: t-1 parked; t-2 not parked; t-3 parked and then retried, its attempt 2
-// failed unparked; t-4 parked while its next.json still waits on the attempt; t-5 parked while its next.json waits
-// for the Director on a decision; t-6 parked while its next.json was held by a pause; t-7 parked and then
-// cancelled; t-8 parked and then unparked.
+// failure unless a case says otherwise: t1 parked; t2 not parked; t3 parked and then retried, its attempt 2
+// failed unparked; t4 parked while its next.json still waits on the attempt; t5 parked while its next.json waits
+// for the Director on a decision; t6 parked while its next.json was held by a pause; t7 parked and then
+// cancelled; t8 parked and then unparked.
 func parkCopy(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -125,12 +125,12 @@ func parkCopy(t *testing.T) string {
 		t.Fatal(err)
 	}
 	next := map[string]string{
-		"t-3": `{"wait":"director","step":"build","attempt":2}`,
-		"t-4": `{"wait":"attempt","step":"build","attempt":1}`,
-		"t-5": `{"wait":"director","step":"build","attempt":1,"decision":"accept-plan"}`,
-		"t-6": `{"wait":"paused","step":"build","attempt":1}`,
+		"t3": `{"wait":"director","step":"build","attempt":2}`,
+		"t4": `{"wait":"attempt","step":"build","attempt":1}`,
+		"t5": `{"wait":"director","step":"build","attempt":1,"decision":"accept-plan"}`,
+		"t6": `{"wait":"paused","step":"build","attempt":1}`,
 	}
-	for _, id := range []string{"t-1", "t-2", "t-3", "t-4", "t-5", "t-6", "t-7", "t-8"} {
+	for _, id := range []string{"t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8"} {
 		steps := []func() (store.Receipt, error){
 			func() (store.Receipt, error) {
 				return s.CreateTask("create-"+id, store.Task{Repository: "app", ID: id, Title: "Park " + id, Workflow: def.Revision(),
@@ -141,20 +141,20 @@ func parkCopy(t *testing.T) string {
 				return s.FinishAttempt("fail-"+id, "app", id, "build", 1, store.AttemptFailed)
 			},
 		}
-		if id != "t-2" {
+		if id != "t2" {
 			steps = append(steps, func() (store.Receipt, error) {
 				return s.ParkAttempt("park-"+id, "app", id, "build", 1, "Held for "+id+".", 0, nil)
 			})
 		}
 		switch id {
-		case "t-3":
+		case "t3":
 			steps = append(steps, func() (store.Receipt, error) { return s.StartAttempt("retry-"+id, "app", id, "build") },
 				func() (store.Receipt, error) {
 					return s.FinishAttempt("fail-2-"+id, "app", id, "build", 2, store.AttemptFailed)
 				})
-		case "t-7":
+		case "t7":
 			steps = append(steps, func() (store.Receipt, error) { return s.SetTaskState("cancel-"+id, "app", id, store.TaskCancelled) })
-		case "t-8":
+		case "t8":
 			steps = append(steps, func() (store.Receipt, error) { return s.UnparkAttempt("unpark-"+id, "app", id, "build", 1, 0) })
 		}
 		for _, step := range steps {
@@ -184,17 +184,17 @@ func TestDirectorStartStartupListsParkedAttempts(t *testing.T) {
 	if code, out, stderr := runDirectorCmd(t, "start", "--copy", dir); code != 0 {
 		t.Fatalf("first session: exit %d\n%s\n%s", code, out, stderr)
 	}
-	newTask(t, filepath.Join(dir, "director.store"), filepath.Join(dir, "config.toml"), "app", "Sort", "t-2")
+	newTask(t, filepath.Join(dir, "director.store"), filepath.Join(dir, "config.toml"), "app", "Sort")
 	withTestStore(t, dir, func(s *store.Store) (store.Receipt, error) {
-		if _, err := s.StartAttempt("start", "app", "t-2", "build"); err != nil {
+		if _, err := s.StartAttempt("start", "app", "t1", "build"); err != nil {
 			return store.Receipt{}, err
 		}
-		if _, err := s.FinishAttempt("fail", "app", "t-2", "build", 1, store.AttemptFailed); err != nil {
+		if _, err := s.FinishAttempt("fail", "app", "t1", "build", 1, store.AttemptFailed); err != nil {
 			return store.Receipt{}, err
 		}
-		return s.ParkAttempt("park", "app", "t-2", "build", 1, "Held until\napp/t-1 merges.", 0, nil)
+		return s.ParkAttempt("park", "app", "t1", "build", 1, "Held until\napp/t9 merges.", 0, nil)
 	})
-	writeNext(t, filepath.Join(dir, "state"), "t-2", `{"wait":"director","step":"build","attempt":1}`+"\n")
+	writeNext(t, filepath.Join(dir, "state"), "t1", `{"wait":"director","step":"build","attempt":1}`+"\n")
 	if code, out, stderr := runDirectorCmd(t, "start", "fake", "--copy", dir); code != 0 {
 		t.Fatalf("second session: exit %d\n%s\n%s", code, out, stderr)
 	}
@@ -207,11 +207,11 @@ func TestDirectorStartStartupListsParkedAttempts(t *testing.T) {
 	if !ok {
 		t.Fatalf("startup.md has no parked section:\n%s", startup)
 	}
-	want := "- parked: attempt 1 of build of app/t-2 failed; reason: Held until app/t-1 merges.; retry with `guildhall step retry --repo app --task t-2 --step build --attempt 1`\n"
+	want := "- parked: attempt 1 of build of app/t1 failed; reason: Held until app/t9 merges.; retry with `guildhall step retry --repo app --task t1 --step build --attempt 1`\n"
 	if !strings.Contains(parked, "held on purpose") || !strings.HasSuffix(parked, want) {
 		t.Errorf("parked section = %q, want it to say the attempts are held on purpose and end with %q", parked, want)
 	}
-	if strings.Contains(inFlight, "t-2") {
+	if strings.Contains(inFlight, "t1") {
 		t.Errorf("in-flight section names the parked task:\n%s", inFlight)
 	}
 }
@@ -233,8 +233,8 @@ func TestDirectorStatusLeavesParkedAttemptsOut(t *testing.T) {
 	for _, it := range st.NeedsMe {
 		items = append(items, fmt.Sprintf("%s %s %d", it.Kind, it.TaskID, it.Attempt))
 	}
-	want := []string{"advance t-4 1", "retry t-2 1", "retry t-3 2", "retry t-8 1",
-		"director t-2 0", "director t-3 0", "director t-5 0", "director t-8 0", "paused t-6 0"}
+	want := []string{"advance t4 1", "retry t2 1", "retry t3 2", "retry t8 1",
+		"director t2 0", "director t3 0", "director t5 0", "director t8 0", "paused t6 0"}
 	if strings.Join(items, ", ") != strings.Join(want, ", ") {
 		t.Errorf("needs_me = %v\nwant %v", items, want)
 	}
@@ -246,12 +246,12 @@ func TestDirectorStatusLeavesParkedAttemptsOut(t *testing.T) {
 			t.Errorf("parked entry %+v", p)
 		}
 	}
-	if got := strings.Join(parked, " "); got != "t-1 t-4 t-5 t-6" {
-		t.Errorf("parked = %s, want t-1 t-4 t-5 t-6", got)
+	if got := strings.Join(parked, " "); got != "t1 t4 t5 t6" {
+		t.Errorf("parked = %s, want t1 t4 t5 t6", got)
 	}
 	for _, task := range st.Tasks {
 		for _, step := range task.Steps {
-			want := task.ID == "t-1" || task.ID == "t-4" || task.ID == "t-5" || task.ID == "t-6"
+			want := task.ID == "t1" || task.ID == "t4" || task.ID == "t5" || task.ID == "t6"
 			if step.Parked != want {
 				t.Errorf("%s step %+v: parked = %v, want %v", task.ID, step, step.Parked, want)
 			}

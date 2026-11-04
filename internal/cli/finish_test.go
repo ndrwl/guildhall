@@ -16,10 +16,10 @@ import (
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
-// finish runs step finish for attempt n of step of task t-1 with extra flags.
+// finish runs step finish for attempt n of step of task t1 with extra flags.
 func (d runDirector) finish(t *testing.T, step, n string, extra ...string) (int, string, string) {
 	t.Helper()
-	return d.run(t, append([]string{"step", "finish"}, d.flags(append([]string{"--task", "t-1", "--step", step, "--attempt", n}, extra...)...)...)...)
+	return d.run(t, append([]string{"step", "finish"}, d.flags(append([]string{"--task", "t1", "--step", step, "--attempt", n}, extra...)...)...)...)
 }
 
 // grillNotesFile writes the Director's grill notes to a file outside the copy and returns it and its content.
@@ -40,7 +40,7 @@ func (d runDirector) documents(t *testing.T) []store.DocumentRef {
 		t.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
-	docs, err := s.Documents("app", "t-1")
+	docs, err := s.Documents("app", "t1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestStepFinishHandsTheGrillOn(t *testing.T) {
 	d := newRunDirectorWith(t, "grill.toml")
 	d.panes = &typedPanes{}
 	startSession(t, d.store, store.DirectorPane{Session: "lab", Workspace: "w1", Tab: "w1:t2", Pane: "w1:p2"})
-	start := append([]string{"task", "start"}, d.flags("t-1")...)
+	start := append([]string{"task", "start"}, d.flags("t1")...)
 	for range 2 {
 		if code, out, stderr := d.run(t, start...); code != 0 || out != `{"wait":"director-stage","step":"grill","attempt":1}`+"\n" {
 			t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
@@ -64,10 +64,10 @@ func TestStepFinishHandsTheGrillOn(t *testing.T) {
 	if len(d.panes.lines) != 1 {
 		t.Errorf("typed %q, want one wake", d.panes.lines)
 	}
-	if ws := readWakes(t, d.store); len(ws) != 1 || ws[0].MessageID != "app.t-1.stage.grill-1" || ws[0].Decision != store.WakeWoke {
+	if ws := readWakes(t, d.store); len(ws) != 1 || ws[0].MessageID != "app.t1.stage.grill-1" || ws[0].Decision != store.WakeWoke {
 		t.Errorf("wakes = %+v, want one woke for the stage message", ws)
 	}
-	dir := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "grill", Attempt: 1}.Dir(d.state)
+	dir := artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "grill", Attempt: 1}.Dir(d.state)
 	data, err := os.ReadFile(filepath.Join(dir, "prompt", "manifest.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -85,10 +85,10 @@ func TestStepFinishHandsTheGrillOn(t *testing.T) {
 	if code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
 		t.Fatalf("step finish: exit %d, %q, stderr %s", code, out, stderr)
 	}
-	if got, err := os.ReadFile(filepath.Join(d.state, "app", "t-1", "work", "notes.md")); err != nil || string(got) != string(notes) {
+	if got, err := os.ReadFile(filepath.Join(d.state, "app", "t1", "work", "notes.md")); err != nil || string(got) != string(notes) {
 		t.Errorf("work/notes.md = %q, %v; want the notes", got, err)
 	}
-	r, err := adapter.ReadResult(d.result("grill", 1), adapter.Identity{TaskID: "t-1", AttemptID: "grill-1"})
+	r, err := adapter.ReadResult(d.result("grill", 1), adapter.Identity{TaskID: "t1", AttemptID: "grill-1"})
 	if err != nil || r.Status != adapter.StatusSucceeded || r.Summary != "Agreed with the Guildmaster." || !slices.Equal(r.Outputs, []adapter.Output{{Path: "notes.md"}}) {
 		t.Errorf("grill 1 result = %+v, %v", r, err)
 	}
@@ -107,7 +107,7 @@ func TestStepFinishHandsTheGrillOn(t *testing.T) {
 		t.Errorf("finish of the plan: exit %d, %q, stderr %s; want 1, not a Director stage", code, out, stderr)
 	}
 	d.waitResult(t, "plan", 1)
-	data, err = os.ReadFile(filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}.Dir(d.state), "prompt", "manifest.json"))
+	data, err = os.ReadFile(filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "plan", Attempt: 1}.Dir(d.state), "prompt", "manifest.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestStepFinishHandsTheGrillOn(t *testing.T) {
 // it, and attempt 1, no longer current, is refused; each refusal records and writes nothing.
 func TestStepFinishFailedThenRetry(t *testing.T) {
 	d := newRunDirectorWith(t, "grill.toml")
-	if code, _, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 {
+	if code, _, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...); code != 0 {
 		t.Fatalf("task start: exit %d, stderr %s", code, stderr)
 	}
 	file, _ := grillNotesFile(t)
@@ -132,9 +132,9 @@ func TestStepFinishFailedThenRetry(t *testing.T) {
 		"another output port": {"--attempt", "1", "--summary", "s", "--output", "spec=" + file},
 		"a missing file":      {"--attempt", "1", "--summary", "s", "--output", "notes=" + filepath.Join(t.TempDir(), "none.md")},
 		"a step not run":      {"--attempt", "1", "--summary", "s", "--output", "notes=" + file, "--step", "nope"},
-		"an unknown task":     {"--attempt", "1", "--summary", "s", "--output", "notes=" + file, "--task", "t-2"},
+		"an unknown task":     {"--attempt", "1", "--summary", "s", "--output", "notes=" + file, "--task", "t2"},
 	} {
-		args := append([]string{"step", "finish"}, d.flags(append([]string{"--task", "t-1", "--step", "grill"}, args...)...)...)
+		args := append([]string{"step", "finish"}, d.flags(append([]string{"--task", "t1", "--step", "grill"}, args...)...)...)
 		if code, out, stderr := d.run(t, args...); code != 1 || out != "" {
 			t.Errorf("%s: exit %d, %q, stderr %s; want 1", name, code, out, stderr)
 		}
@@ -142,18 +142,18 @@ func TestStepFinishFailedThenRetry(t *testing.T) {
 	if _, err := os.Stat(d.result("grill", 1)); !os.IsNotExist(err) {
 		t.Fatalf("a refused finish wrote the result: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(d.state, "app", "t-1", "work", "notes.md")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(d.state, "app", "t1", "work", "notes.md")); !os.IsNotExist(err) {
 		t.Errorf("a refused finish copied an output: %v", err)
 	}
 
 	if code, out, stderr := d.finish(t, "grill", "1", "--summary", "The Guildmaster had to leave.", "--failed"); code != 0 || out != `{"wait":"director","step":"grill","attempt":1}`+"\n" {
 		t.Fatalf("step finish --failed: exit %d, %q, stderr %s", code, out, stderr)
 	}
-	r, err := adapter.ReadResult(d.result("grill", 1), adapter.Identity{TaskID: "t-1", AttemptID: "grill-1"})
+	r, err := adapter.ReadResult(d.result("grill", 1), adapter.Identity{TaskID: "t1", AttemptID: "grill-1"})
 	if err != nil || r.Status != adapter.StatusFailed || len(r.Outputs) != 0 {
 		t.Errorf("failed result = %+v, %v", r, err)
 	}
-	retry := append([]string{"step", "retry"}, d.flags("--task", "t-1", "--step", "grill", "--attempt", "1", "--reason", "back")...)
+	retry := append([]string{"step", "retry"}, d.flags("--task", "t1", "--step", "grill", "--attempt", "1", "--reason", "back")...)
 	if code, out, stderr := d.run(t, retry...); code != 0 || out != `{"wait":"director-stage","step":"grill","attempt":2}`+"\n" {
 		t.Fatalf("step retry: exit %d, %q, stderr %s", code, out, stderr)
 	}
@@ -168,10 +168,10 @@ func TestStepFinishFailedThenRetry(t *testing.T) {
 func TestStepFinishUsage(t *testing.T) {
 	d := runDirector{store: "s", config: "c", state: "st"}
 	finish := func(extra ...string) []string {
-		return append([]string{"step", "finish"}, d.flags(append([]string{"--task", "t-1", "--step", "grill", "--attempt", "1"}, extra...)...)...)
+		return append([]string{"step", "finish"}, d.flags(append([]string{"--task", "t1", "--step", "grill", "--attempt", "1"}, extra...)...)...)
 	}
 	for name, args := range map[string][]string{
-		"without store":          {"step", "finish", "--config", "c", "--state", "st", "--repo", "app", "--task", "t-1", "--step", "grill", "--attempt", "1", "--summary", "s", "--failed"},
+		"without store":          {"step", "finish", "--config", "c", "--state", "st", "--repo", "app", "--task", "t1", "--step", "grill", "--attempt", "1", "--summary", "s", "--failed"},
 		"without task":           append([]string{"step", "finish"}, d.flags("--step", "grill", "--attempt", "1", "--summary", "s", "--failed")...),
 		"without summary":        finish("--output", "notes=n.md"),
 		"with an empty summary":  finish("--summary", " ", "--output", "notes=n.md"),
@@ -181,7 +181,7 @@ func TestStepFinishUsage(t *testing.T) {
 		"output without a file":  finish("--summary", "s", "--output", "notes="),
 		"output with a bad port": finish("--summary", "s", "--output", "Bad Port=n.md"),
 		"one port twice":         finish("--summary", "s", "--output", "notes=n.md", "--output", "notes=m.md"),
-		"a bad number":           append([]string{"step", "finish"}, d.flags("--task", "t-1", "--step", "grill", "--attempt", "0", "--summary", "s", "--failed")...),
+		"a bad number":           append([]string{"step", "finish"}, d.flags("--task", "t1", "--step", "grill", "--attempt", "0", "--summary", "s", "--failed")...),
 		"a bad id":               append([]string{"step", "finish"}, d.flags("--task", "T 1", "--step", "grill", "--attempt", "1", "--summary", "s", "--failed")...),
 		"an argument":            finish("--summary", "s", "--failed", "extra"),
 		"an unknown flag":        finish("--summary", "s", "--failed", "--force"),
@@ -208,22 +208,22 @@ func TestPublishedStageResultRecovers(t *testing.T) {
 			return append(append([]string{"step", "done"}, d.flags(strings.Fields(flags)...)...), "--result", result)
 		}},
 		{"acknowledged, task start", true, func(d runDirector, _, _ string) []string {
-			return append([]string{"task", "start"}, d.flags("t-1")...)
+			return append([]string{"task", "start"}, d.flags("t1")...)
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d := newRunDirectorWith(t, "grill.toml")
-			if code, _, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 {
+			if code, _, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...); code != 0 {
 				t.Fatalf("task start: exit %d, stderr %s", code, stderr)
 			}
 			file, _ := grillNotesFile(t)
 			f := advanceFlags{store: d.store, config: d.config, state: d.state, repo: "app"}
-			k := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "grill", Attempt: 1}
+			k := artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "grill", Attempt: 1}
 			if err := finishStage(f, k, "Agreed.", stageOutputs{{"notes", file}}, false); err != nil {
 				t.Fatal(err)
 			}
 			if tc.ack {
-				if code, _, stderr := d.run(t, "messages", "ack", "--store", d.store, "director", "app.t-1.stage.grill-1"); code != 0 {
+				if code, _, stderr := d.run(t, "messages", "ack", "--store", d.store, "director", "app.t1.stage.grill-1"); code != 0 {
 					t.Fatalf("messages ack: exit %d, stderr %s", code, stderr)
 				}
 			}
@@ -232,7 +232,7 @@ func TestPublishedStageResultRecovers(t *testing.T) {
 				t.Fatal(err)
 			}
 			result := d.result("grill", 1)
-			flags := "--repo app --task t-1 --step grill --attempt 1"
+			flags := "--repo app --task t1 --step grill --attempt 1"
 			i := slices.IndexFunc(st.NeedsMe, func(it needsMeItem) bool { return it.Kind == "advance" && it.Step == "grill" })
 			if i < 0 || st.NeedsMe[i].Command != "guildhall step done "+flags+" --result "+result {
 				t.Fatalf("needs_me = %+v, want an advance taking grill 1's result with step done", st.NeedsMe)

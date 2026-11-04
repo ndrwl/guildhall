@@ -34,7 +34,7 @@ func TestTaskStartRunsTheProfilesModelAndEffort(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			code, out, stderr := d.run(t, "task", "start", "--copy", copyDir, "--repo", "app", "t-1")
+			code, out, stderr := d.run(t, "task", "start", "--copy", copyDir, "--repo", "app", "t1")
 			if code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
 				t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 			}
@@ -59,11 +59,11 @@ func TestTaskStartRefusesSettingsARuntimeCannotHonour(t *testing.T) {
 	if err := os.WriteFile(d.config, bytes.Replace(b, []byte(`effort = "high"`), []byte(`effort = "extreme"`), 1), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	code, out, stderr := runTask(t, "new", "--store", d.store, "--config", d.config, "--repo", "app", "--title", "Another", "t-2")
+	code, out, stderr := runTask(t, "new", "--store", d.store, "--config", d.config, "--repo", "app", "--title", "Another")
 	if code != 1 || out != "" || !strings.Contains(stderr, "profile planner") || !strings.Contains(stderr, "extreme") {
 		t.Errorf("task new: exit %d, %q, stderr %s; want exit 1 naming profile planner and its effort", code, out, stderr)
 	}
-	code, out, stderr = d.run(t, "task", "start", "--copy", copyDir, "--repo", "app", "t-1")
+	code, out, stderr = d.run(t, "task", "start", "--copy", copyDir, "--repo", "app", "t1")
 	if code != 1 || out != "" || !strings.Contains(stderr, "profile planner") || !strings.Contains(stderr, "extreme") {
 		t.Fatalf("task start: exit %d, %q, stderr %s; want exit 1 naming profile planner and its effort", code, out, stderr)
 	}

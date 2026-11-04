@@ -19,7 +19,7 @@ import (
 func TestRealClaudeIsRefused(t *testing.T) {
 	d := newBinDirector(t, filepath.Join(runCopy(t), "claude.toml"))
 	d.newTask()
-	d.want(d.advance([]string{"task", "start"}, "t-1"), `{"wait":"attempt","step":"plan","attempt":1}`)
+	d.want(d.advance([]string{"task", "start"}, "t1"), `{"wait":"attempt","step":"plan","attempt":1}`)
 	d.launched("plan", 1)
 	var outcome store.AttemptOutcome
 	testenv.WaitFor(t, "plan-1 to end", func() bool {
@@ -27,7 +27,7 @@ func TestRealClaudeIsRefused(t *testing.T) {
 		if err != nil {
 			return false
 		}
-		attempts, err := s.Attempts("app", "t-1")
+		attempts, err := s.Attempts("app", "t1")
 		_ = s.Close()
 		if err != nil || len(attempts) != 1 {
 			return false
@@ -35,7 +35,7 @@ func TestRealClaudeIsRefused(t *testing.T) {
 		outcome = attempts[0].Outcome
 		return outcome != ""
 	})
-	log, err := os.ReadFile(filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}.Dir(d.state), "launcher.log"))
+	log, err := os.ReadFile(filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "plan", Attempt: 1}.Dir(d.state), "launcher.log"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -66,11 +66,11 @@ func noCopyLine(wd string) string {
 // The copy form reads the same store as naming the copy's store directly, and task new takes the copy's config.
 func TestCopySelectsStoreAndConfig(t *testing.T) {
 	dir := newCopy(t)
-	code, _, stderr := runIn(t, "", "task", "new", "--copy", dir, "--repo", "app", "--title", "From the copy", "t-1")
+	code, _, stderr := runIn(t, "", "task", "new", "--copy", dir, "--repo", "app", "--title", "From the copy")
 	if code != 0 {
 		t.Fatalf("task new --copy: exit %d, stderr %s", code, stderr)
 	}
-	if got, want := readTask(t, filepath.Join(dir, "director.store"), "app", "t-1").ConfigDigest, configDigest(t, filepath.Join(dir, "config.toml")); got != want {
+	if got, want := readTask(t, filepath.Join(dir, "director.store"), "app", "t1").ConfigDigest, configDigest(t, filepath.Join(dir, "config.toml")); got != want {
 		t.Errorf("config digest %s, want the copy's %s", got, want)
 	}
 	_, want, _ := runTask(t, "list", "--store", filepath.Join(dir, "director.store"), "--json")
@@ -90,7 +90,7 @@ func TestCopySelectsStoreAndConfig(t *testing.T) {
 func TestCopyDiscovery(t *testing.T) {
 	dir := markCopy(t, newCopy(t))
 	other := newCopy(t)
-	if code, _, stderr := runIn(t, "", "task", "new", "--copy", dir, "--repo", "app", "--title", "Only in dir", "t-1"); code != 0 {
+	if code, _, stderr := runIn(t, "", "task", "new", "--copy", dir, "--repo", "app", "--title", "Only in dir"); code != 0 {
 		t.Fatalf("task new: exit %d, stderr %s", code, stderr)
 	}
 	_, inDir, _ := runIn(t, "", "task", "list", "--copy", dir, "--json")
@@ -119,7 +119,7 @@ func TestCopyDiscoveryNearestMarker(t *testing.T) {
 	if err := os.Rename(markCopy(t, newCopy(t)), inner); err != nil {
 		t.Fatal(err)
 	}
-	if code, _, stderr := runIn(t, "", "task", "new", "--copy", inner, "--repo", "app", "--title", "Inner", "t-1"); code != 0 {
+	if code, _, stderr := runIn(t, "", "task", "new", "--copy", inner, "--repo", "app", "--title", "Inner"); code != 0 {
 		t.Fatalf("task new: exit %d, stderr %s", code, stderr)
 	}
 	_, want, _ := runIn(t, "", "task", "list", "--copy", inner, "--json")
@@ -179,8 +179,8 @@ func TestCopyDiscoveryNoCopy(t *testing.T) {
 		{[]string{"director", "turn-ended"}, 1},
 		{[]string{"director", "context-report"}, 1},
 		{[]string{"director", "wait-wake"}, 1},
-		{[]string{"quality", "judge", "--repo", "app", "--review", "1", "t-1"}, 2},
-		{[]string{"artisan", "start", "--adapter", "fake", "--prompt", "p", "--workdir", wd, "--repo", "app", "--task", "t-1", "--step", "plan", "--attempt", "1", "--advance"}, 2},
+		{[]string{"quality", "judge", "--repo", "app", "--review", "1", "t1"}, 2},
+		{[]string{"artisan", "start", "--adapter", "fake", "--prompt", "p", "--workdir", wd, "--repo", "app", "--task", "t1", "--step", "plan", "--attempt", "1", "--advance"}, 2},
 		{[]string{"task", "list", "--json"}, 2},
 		{[]string{"store", "doctor"}, 2},
 	} {
@@ -202,9 +202,9 @@ func TestCopyDisagreementRefused(t *testing.T) {
 	}{
 		{"store", "--store", []string{"task", "list", "--copy", dir, "--store", outside, "--json"}},
 		{"store doctor path", "store", []string{"store", "doctor", "--copy", dir, outside}},
-		{"config", "--config", []string{"task", "new", "--copy", dir, "--config", filepath.Join(elsewhere, "config.toml"), "--repo", "app", "--title", "T", "t-1"}},
-		{"state", "--state", []string{"artisan", "status", "--copy", dir, "--state", elsewhere, "--repo", "app", "--task", "t-1", "--step", "plan", "--attempt", "1"}},
-		{"advance state", "--state", []string{"task", "start", "--copy", dir, "--state", filepath.Join(dir, "state", "x"), "--repo", "app", "t-1"}},
+		{"config", "--config", []string{"task", "new", "--copy", dir, "--config", filepath.Join(elsewhere, "config.toml"), "--repo", "app", "--title", "T"}},
+		{"state", "--state", []string{"artisan", "status", "--copy", dir, "--state", elsewhere, "--repo", "app", "--task", "t1", "--step", "plan", "--attempt", "1"}},
+		{"advance state", "--state", []string{"task", "start", "--copy", dir, "--state", filepath.Join(dir, "state", "x"), "--repo", "app", "t1"}},
 	} {
 		code, stdout, stderr := runIn(t, "", tc.args...)
 		if code != 2 || stdout != "" || !strings.Contains(stderr, tc.flag) || !strings.Contains(stderr, "copy") {
@@ -218,7 +218,7 @@ func TestCopyDisagreementRefused(t *testing.T) {
 func TestCopyDiscoveryOverriddenByPathFlag(t *testing.T) {
 	here := markCopy(t, newCopy(t))
 	given := newCopy(t)
-	if code, _, stderr := runIn(t, "", "task", "new", "--copy", given, "--repo", "app", "--title", "Only in given", "t-1"); code != 0 {
+	if code, _, stderr := runIn(t, "", "task", "new", "--copy", given, "--repo", "app", "--title", "Only in given"); code != 0 {
 		t.Fatalf("task new: exit %d, stderr %s", code, stderr)
 	}
 	_, want, _ := runIn(t, "", "task", "list", "--copy", given, "--json")
@@ -226,7 +226,7 @@ func TestCopyDiscoveryOverriddenByPathFlag(t *testing.T) {
 		t.Errorf("--store inside another copy: exit %d, stdout %q, stderr %s; want %q", code, got, stderr, want)
 	}
 	code, _, stderr := runIn(t, here, "artisan", "status", "--store", filepath.Join(given, "director.store"), "--state", filepath.Join(given, "state"),
-		"--repo", "app", "--task", "t-1", "--step", "plan", "--attempt", "1")
+		"--repo", "app", "--task", "t1", "--step", "plan", "--attempt", "1")
 	if code == 2 || strings.Contains(stderr, "copy") {
 		t.Errorf("artisan status --store --state inside another copy: exit %d, stderr %q; want no usage error about the copy", code, stderr)
 	}
@@ -346,19 +346,19 @@ func TestCopyEveryStoreCommandNamesStoreInit(t *testing.T) {
 	dir := markCopy(t, bareCopy(t))
 	result := filepath.Join(t.TempDir(), "result.json")
 	writeFile(t, result, "{}")
-	attempt := []string{"--repo", "app", "--task", "t-1", "--step", "plan", "--attempt", "1"}
+	attempt := []string{"--repo", "app", "--task", "t1", "--step", "plan", "--attempt", "1"}
 	for _, args := range [][]string{
-		{"task", "new", "--repo", "app", "--title", "T", "t-1"},
-		{"task", "show", "--repo", "app", "--json", "t-1"},
+		{"task", "new", "--repo", "app", "--title", "T"},
+		{"task", "show", "--repo", "app", "--json", "t1"},
 		{"task", "list", "--json"},
-		{"task", "timeline", "--repo", "app", "--json", "t-1"},
-		{"task", "files", "--repo", "app", "--json", "t-1"},
-		{"task", "finding", "rule", "--repo", "app", "--outcome", "o", "--finding", "f", "--move", "defer", "--reason", "r", "t-1"},
-		{"task", "review", "--full", "--repo", "app", "t-1"},
-		{"task", "start", "--repo", "app", "t-1"},
+		{"task", "timeline", "--repo", "app", "--json", "t1"},
+		{"task", "files", "--repo", "app", "--json", "t1"},
+		{"task", "finding", "rule", "--repo", "app", "--outcome", "o", "--finding", "f", "--move", "defer", "--reason", "r", "t1"},
+		{"task", "review", "--full", "--repo", "app", "t1"},
+		{"task", "start", "--repo", "app", "t1"},
 		append([]string{"step", "retry"}, attempt...),
 		{"decide", "list"},
-		{"decide", "show", "--repo", "app", "--task", "t-1", "--decision", "d"},
+		{"decide", "show", "--repo", "app", "--task", "t1", "--decision", "d"},
 		{"messages", "list", "director"},
 		{"messages", "read", "m-1"},
 		{"workflow", "approvals", "--json"},
@@ -385,7 +385,7 @@ func TestCopyEveryStoreCommandNamesStoreInit(t *testing.T) {
 	}
 	// step done reads its result before the store, so it shows its state came from the copy by naming the
 	// attempt's result file there.
-	want := filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}.Dir(filepath.Join(dir, "state")), artisan.ResultFile)
+	want := filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "plan", Attempt: 1}.Dir(filepath.Join(dir, "state")), artisan.ResultFile)
 	code, _, stderr := runIn(t, dir, append([]string{"step", "done", "--result", result}, attempt...)...)
 	if code != 1 || !strings.Contains(stderr, want) {
 		t.Errorf("step done: exit %d, stderr %q; want a refusal naming %s", code, stderr, want)
@@ -396,11 +396,11 @@ func TestCopyEveryStoreCommandNamesStoreInit(t *testing.T) {
 func TestNoCopyKeepsFlagsRequired(t *testing.T) {
 	for _, args := range [][]string{
 		{"task", "list", "--json"},
-		{"task", "start", "--repo", "app", "t-1"},
+		{"task", "start", "--repo", "app", "t1"},
 		{"decide", "list"},
 		{"messages", "list", "director"},
 		{"workflow", "approvals"},
-		{"artisan", "status", "--repo", "app", "--task", "t-1", "--step", "plan", "--attempt", "1"},
+		{"artisan", "status", "--repo", "app", "--task", "t1", "--step", "plan", "--attempt", "1"},
 		{"store", "doctor"},
 	} {
 		if code, _, stderr := runIn(t, "", args...); code != 2 || !strings.Contains(strings.ToLower(stderr), "usage:") || !strings.Contains(stderr, "no Guildhall copy found") {

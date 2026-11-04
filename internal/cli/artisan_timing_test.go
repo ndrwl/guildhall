@@ -31,7 +31,7 @@ func TestArtisanResultTimeoutDoesNotBoundOwnership(t *testing.T) {
 // an endpoint stop arriving between ownership and worker startup.
 func TestArtisanStopProvesAPreStartCancellation(t *testing.T) {
 	o := newOwnedAttempt(t, "guildhall-fake: delay=5m\n")
-	at := launch.Attempt{Store: o.store, StateDir: o.state, Key: artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}}
+	at := launch.Attempt{Store: o.store, StateDir: o.state, Key: artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "build", Attempt: 1}}
 	if err := os.MkdirAll(at.Dir(), 0o700); err != nil {
 		t.Fatal(err)
 	}

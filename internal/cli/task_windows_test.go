@@ -13,8 +13,8 @@ func TestTaskNewWindowsPaths(t *testing.T) {
 	path := emptyStore(t)
 
 	approveRepo(t, path, filepath.ToSlash(cfg), "lib")
-	newTask(t, path, filepath.ToSlash(cfg), "lib", "Slash-separated config path", "t-1")
-	if got, want := readTask(t, path, "lib", "t-1").ConfigDigest, configDigest(t, cfg); got != want {
+	newTask(t, path, filepath.ToSlash(cfg), "lib", "Slash-separated config path")
+	if got, want := readTask(t, path, "lib", "l1").ConfigDigest, configDigest(t, cfg); got != want {
 		t.Fatalf("config digest %s, want %s", got, want)
 	}
 }

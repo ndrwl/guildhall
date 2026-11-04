@@ -203,12 +203,12 @@ func runCLI(t *testing.T, args ...string) (int, string, string) {
 func TestDirectorResumeListsHeldTasks(t *testing.T) {
 	d := newRunDirector(t)
 	recordSession(t, d.store, false, store.DirectorRunning, store.DirectorPaused)
-	if err := os.MkdirAll(filepath.Join(d.state, "app", "t-1"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(d.state, "app", "t1"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(d.state, "app", "t-1", "next.json"), `{"wait":"paused","step":"build"}`+"\n")
-	want := needsMeItem{Kind: "paused", Repository: "app", TaskID: "t-1", Reason: "the last advance was held while the Director was paused",
-		Command: "guildhall task start --repo app t-1"}
+	writeFile(t, filepath.Join(d.state, "app", "t1", "next.json"), `{"wait":"paused","step":"build"}`+"\n")
+	want := needsMeItem{Kind: "paused", Repository: "app", TaskID: "t1", Reason: "the last advance was held while the Director was paused",
+		Command: "guildhall task start --repo app t1"}
 	code, out, stderr := runCLI(t, "director", "status", "--json", "--store", d.store, "--state", d.state)
 	var status directorStatus
 	if err := json.Unmarshal([]byte(out), &status); code != 0 || err != nil {
@@ -236,9 +236,9 @@ func TestDirectorResumeListsHeldTasks(t *testing.T) {
 func TestHeldStartsLeaveTheirWait(t *testing.T) {
 	d := newRunDirector(t)
 	recordSession(t, d.store, false, store.DirectorRunning)
-	d.recordUnlaunched(t, "t-2")
+	d.recordUnlaunched(t, "t2")
 	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
-		return s.StopUnownedAttempt("stopped-before-the-pause", "app", "t-2", "plan", 1)
+		return s.StopUnownedAttempt("stopped-before-the-pause", "app", "t2", "plan", 1)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -250,8 +250,8 @@ func TestHeldStartsLeaveTheirWait(t *testing.T) {
 		task string
 		args []string
 	}{
-		{"t-1", append([]string{"task", "start"}, d.flags("t-1")...)},
-		{"t-2", append([]string{"step", "retry"}, d.flags("--task", "t-2", "--step", "plan", "--attempt", "1")...)},
+		{"t1", append([]string{"task", "start"}, d.flags("t1")...)},
+		{"t2", append([]string{"step", "retry"}, d.flags("--task", "t2", "--step", "plan", "--attempt", "1")...)},
 	} {
 		if code, out, stderr := d.run(t, c.args...); code != 0 || out != held {
 			t.Fatalf("%s %s while paused: exit %d, %q, stderr %s; want %q", c.args[0], c.args[1], code, out, stderr, held)
@@ -262,7 +262,7 @@ func TestHeldStartsLeaveTheirWait(t *testing.T) {
 		}
 	}
 	if got := d.attempts(t); len(got) != 0 {
-		t.Fatalf("t-1's attempts while paused = %+v; want none", got)
+		t.Fatalf("t1's attempts while paused = %+v; want none", got)
 	}
 	code, out, stderr := d.run(t, "director", "resume", "--store", d.store, "--state", d.state)
 	var doc struct {
@@ -272,12 +272,12 @@ func TestHeldStartsLeaveTheirWait(t *testing.T) {
 		t.Fatalf("resume: exit %d, %v, %s", code, err, stderr)
 	}
 	t.Logf("director resume: %s", out)
-	for _, task := range []string{"t-1", "t-2"} {
+	for _, task := range []string{"t1", "t2"} {
 		index := slices.IndexFunc(doc.NeedsMe, func(i needsMeItem) bool { return i.Kind == "paused" && i.TaskID == task })
 		if index < 0 {
 			t.Fatalf("resume needs_me = %+v; want %s paused", doc.NeedsMe, task)
 		}
-		if task == "t-2" {
+		if task == "t2" {
 			args := strings.Fields(doc.NeedsMe[index].Command)[1:]
 			args = append(args, "--store", d.store, "--state", d.state, "--config", d.config)
 			if code, out, stderr := d.run(t, args...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":2}`+"\n" {
@@ -287,7 +287,7 @@ func TestHeldStartsLeaveTheirWait(t *testing.T) {
 			}
 		}
 	}
-	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
+	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
 		t.Fatalf("task start after resume: exit %d, %q, stderr %s", code, out, stderr)
 	}
 	d.waitResult(t, "plan", 1)
@@ -307,31 +307,31 @@ func TestDecisionAnsweredWhilePausedIsFed(t *testing.T) {
 		}
 		return out
 	}
-	step(append([]string{"task", "start"}, d.flags("t-1")...)...)
+	step(append([]string{"task", "start"}, d.flags("t1")...)...)
 	d.waitResult(t, "plan", 1)
-	step(append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--result", d.result("plan", 1))...)...)
+	step(append([]string{"step", "done"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "1", "--result", d.result("plan", 1))...)...)
 	step("director", "pause", "--store", d.store)
 	answer := filepath.Join(t.TempDir(), "answer")
 	writeFile(t, answer, "approved\n")
-	step("decide", "answer", "--store", d.store, "--repo", "app", "--task", "t-1", "--decision", "accept-1", "--answer-file", answer)
+	step("decide", "answer", "--store", d.store, "--repo", "app", "--task", "t1", "--decision", "accept-1", "--answer-file", answer)
 	const held = `{"wait":"paused","step":"build"}` + "\n"
-	if out := step(append([]string{"task", "start"}, d.flags("--decision", "accept-1", "t-1")...)...); out != held {
+	if out := step(append([]string{"task", "start"}, d.flags("--decision", "accept-1", "t1")...)...); out != held {
 		t.Fatalf("task start --decision while paused = %q, want %q", out, held)
 	}
 	if got := d.attempts(t); len(got) != 1 {
 		t.Fatalf("attempts while paused = %+v, want plan-1 alone", got)
 	}
-	if b, err := os.ReadFile(filepath.Join(d.state, "app", "t-1", "next.json")); err != nil || string(b) != held {
+	if b, err := os.ReadFile(filepath.Join(d.state, "app", "t1", "next.json")); err != nil || string(b) != held {
 		t.Fatalf("next.json = %q, %v; want %q", b, err, held)
 	}
 	var doc struct {
 		NeedsMe []needsMeItem `json:"needs_me"`
 	}
 	if err := json.Unmarshal([]byte(step("director", "resume", "--store", d.store, "--state", d.state)), &doc); err != nil ||
-		!slices.ContainsFunc(doc.NeedsMe, func(i needsMeItem) bool { return i.Kind == "paused" && i.TaskID == "t-1" }) {
-		t.Fatalf("resume needs_me = %+v, %v; want t-1 paused", doc.NeedsMe, err)
+		!slices.ContainsFunc(doc.NeedsMe, func(i needsMeItem) bool { return i.Kind == "paused" && i.TaskID == "t1" }) {
+		t.Fatalf("resume needs_me = %+v, %v; want t1 paused", doc.NeedsMe, err)
 	}
-	if out := step(append([]string{"task", "start"}, d.flags("t-1")...)...); out != `{"wait":"attempt","step":"build","attempt":1}`+"\n" {
+	if out := step(append([]string{"task", "start"}, d.flags("t1")...)...); out != `{"wait":"attempt","step":"build","attempt":1}`+"\n" {
 		t.Fatalf("task start after resume = %q", out)
 	}
 	d.waitResult(t, "build", 1)
@@ -365,7 +365,7 @@ func TestHeldWhilePausedOrStopping(t *testing.T) {
 }
 
 // supervisedCopy is a short-pathed Director copy whose fake Director says it is ready and then waits on its
-// input, with task app/t-1 recorded and its plan stage running until it is stopped.
+// input, with task app/t1 recorded and its plan stage running until it is stopped.
 func supervisedCopy(t *testing.T) (string, runDirector) {
 	t.Helper()
 	long := directorCopy(t, "[director]\nadapter = \"fake\"\n", "guildhall director ready")
@@ -397,7 +397,7 @@ func supervisedCopy(t *testing.T) (string, runDirector) {
 		d.stopAll(t)
 		_ = os.RemoveAll(dir)
 	})
-	newTask(t, d.store, cfg, "app", "Sort the task list", "t-1")
+	newTask(t, d.store, cfg, "app", "Sort the task list")
 	return dir, d
 }
 
@@ -499,7 +499,7 @@ func ended(t *testing.T, done <-chan int) int {
 func TestDirectorStopEndsTheSessionAndItsAttempts(t *testing.T) {
 	dir, d := supervisedCopy(t)
 	done := supervise(t, dir, time.Nanosecond)
-	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
+	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
 		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 	}
 	for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(20 * time.Millisecond) {
@@ -507,7 +507,7 @@ func TestDirectorStopEndsTheSessionAndItsAttempts(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		o, err := s.Ownership("app", "t-1", "plan", 1)
+		o, err := s.Ownership("app", "t1", "plan", 1)
 		_ = s.Close()
 		if err == nil && o.State == store.OwnerRunning && o.Containment.Worker != (store.ProcessIdentity{}) {
 			break
@@ -588,11 +588,11 @@ func TestDirectorResumeWakesQueuedWork(t *testing.T) {
 	d.panes = panes
 	app, _, stderr := newTestApp(nil, nil)
 	app.DirectorPane = panes
-	app.Stdin = strings.NewReader(`{"schema":"guildhall.message/1","id":"n-1","recipient":"director","repository":"app","task":"t-1","type":"note","text":"Please do the queued work."}`)
+	app.Stdin = strings.NewReader(`{"schema":"guildhall.message/1","id":"n-1","recipient":"director","repository":"app","task":"t1","type":"note","text":"Please do the queued work."}`)
 	if code := app.Run([]string{"messages", "send", "--store", d.store, "director", "-"}); code != 0 {
 		t.Fatalf("messages send: exit %d, %s", code, stderr)
 	}
-	writeNext(t, d.state, "t-1", `{"wait":"paused","step":"build"}`+"\n")
+	writeNext(t, d.state, "t1", `{"wait":"paused","step":"build"}`+"\n")
 	queued := readWakes(t, d.store)
 	if len(queued) != 1 || queued[0].Decision != store.WakeQueued || queued[0].Reason != "paused" || len(panes.lines) != 0 {
 		t.Fatalf("while paused: wakes %+v, typed %q", queued, panes.lines)
@@ -676,7 +676,7 @@ func TestDirectorResumeWakesTheBlockedRuntime(t *testing.T) {
 	}
 	app, _, stderr := newTestApp(nil, nil)
 	app.DirectorPane = pane
-	app.Stdin = strings.NewReader(`{"schema":"guildhall.message/1","id":"n-1","recipient":"director","repository":"app","task":"t-1","type":"note","text":"Please do the queued work."}`)
+	app.Stdin = strings.NewReader(`{"schema":"guildhall.message/1","id":"n-1","recipient":"director","repository":"app","task":"t1","type":"note","text":"Please do the queued work."}`)
 	if code := app.Run([]string{"messages", "send", "--store", d.store, "director", "-"}); code != 0 {
 		t.Fatalf("messages send: exit %d, %s", code, stderr)
 	}
@@ -734,16 +734,16 @@ func TestDirectorResumeLeavesAParkedAttemptAsleep(t *testing.T) {
 			d := newRunDirector(t)
 			pausedInPane(t, d.store)
 			if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
-				if _, err := s.StartAttempt("m-1", "app", "t-1", "plan"); err != nil {
+				if _, err := s.StartAttempt("m-1", "app", "t1", "plan"); err != nil {
 					return store.Receipt{}, err
 				}
-				return s.FinishAttempt("m-2", "app", "t-1", "plan", 1, store.AttemptFailed)
+				return s.FinishAttempt("m-2", "app", "t1", "plan", 1, store.AttemptFailed)
 			}); err != nil {
 				t.Fatal(err)
 			}
-			writeNext(t, d.state, "t-1", `{"wait":"director","step":"plan","attempt":1}`+"\n")
+			writeNext(t, d.state, "t1", `{"wait":"director","step":"plan","attempt":1}`+"\n")
 			if parked {
-				park := append([]string{"step", "park"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--reason", "Held until app/t-9 merges.")...)
+				park := append([]string{"step", "park"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "1", "--reason", "Held until app/t9 merges.")...)
 				if code, _, stderr := d.run(t, park...); code != 0 {
 					t.Fatalf("step park: exit %d, stderr %s", code, stderr)
 				}
@@ -781,7 +781,7 @@ func TestDirectorResumeWithOnlyDecisionsTypesNothing(t *testing.T) {
 	d := newRunDirector(t)
 	pausedInPane(t, d.store)
 	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
-		return s.OpenDecision("m-1", store.Decision{Repository: "app", TaskID: "t-1", ID: "accept-plan", Kind: store.DecisionQuestion, Question: "Accept?"})
+		return s.OpenDecision("m-1", store.Decision{Repository: "app", TaskID: "t1", ID: "accept-plan", Kind: store.DecisionQuestion, Question: "Accept?"})
 	}); err != nil {
 		t.Fatal(err)
 	}

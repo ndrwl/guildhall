@@ -1055,6 +1055,98 @@ func TestStewardHandoffSkillRoutesTheWake(t *testing.T) {
 	}
 }
 
+// taskNewCommand finds a `guildhall task new` command a skill shows, in a backtick span or a code line, with a
+// shell line continuation joined.
+var taskNewCommand = regexp.MustCompile("(?m)guildhall task new((?:[^`\n\\\\]|\\\\\n)*)")
+
+// shellWords splits a command's arguments as a shell would for the quoting the skills use: words separated by spaces,
+// a single- or double-quoted string one word.
+func shellWords(s string) []string {
+	var words []string
+	var cur strings.Builder
+	var quote rune
+	in := false
+	for _, r := range s {
+		switch {
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			} else {
+				cur.WriteRune(r)
+			}
+		case r == '\'' || r == '"':
+			quote, in = r, true
+		case r == ' ' || r == '\t' || r == '\n' || r == '\\':
+			if in {
+				words = append(words, cur.String())
+				cur.Reset()
+				in = false
+			}
+		default:
+			cur.WriteRune(r)
+			in = true
+		}
+	}
+	if in {
+		words = append(words, cur.String())
+	}
+	return words
+}
+
+// TestDirectorSkillsLetGuildhallAssignTaskIDs: Guildhall assigns task ids (d167), so no Director skill shows
+// `guildhall task new` with a task id argument, and the tasks and maintenance skills tell the Director to read the
+// assigned id from the receipt's task_id.
+func TestDirectorSkillsLetGuildhallAssignTaskIDs(t *testing.T) {
+	seen := 0
+	for _, name := range directorSkills {
+		err := fs.WalkDir(skills.Release(), name, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || path.Ext(p) != ".md" {
+				return err
+			}
+			data, err := fs.ReadFile(skills.Release(), p)
+			for _, m := range taskNewCommand.FindAllStringSubmatch(string(data), -1) {
+				seen++
+				words := shellWords(m[1])
+				for i := 0; i < len(words); i++ {
+					w := words[i]
+					if strings.HasPrefix(w, "--") {
+						if !strings.Contains(w, "=") && i+1 < len(words) && !strings.HasPrefix(words[i+1], "--") {
+							i++
+						}
+						continue
+					}
+					if w == "..." || strings.HasPrefix(w, "[") {
+						continue
+					}
+					t.Errorf("%s shows guildhall task new with the argument %q, but Guildhall assigns the id: guildhall task new%s", p, w, m[1])
+				}
+			}
+			return err
+		})
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no Director skill shows guildhall task new")
+	}
+	read := func(p string) string {
+		t.Helper()
+		data, err := fs.ReadFile(skills.Release(), p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	if tasks := read("guildhall-director-tasks/SKILL.md"); !strings.Contains(tasks, "Guildhall assigns the task id") || !strings.Contains(tasks, "receipt's `task_id`") ||
+		!strings.Contains(tasks, "never choose or guess one") || strings.Contains(tasks, "Choose a short task id") {
+		t.Error("director-tasks does not tell the Director that Guildhall assigns the id it reads from the receipt")
+	}
+	if !strings.Contains(read("guildhall-maintenance/SKILL.md"), "`task new` takes no id: Guildhall assigns it") {
+		t.Error("maintenance does not say the hallmark's id is the one its task new receipt prints")
+	}
+}
+
 // TestDirectorLinksCrossTaskDocuments checks that the Director's procedures link another task's document before a task starts, rather than pasting a state path an Artisan's sandbox refuses (d141).
 func TestDirectorLinksCrossTaskDocuments(t *testing.T) {
 	read := func(p string) string {

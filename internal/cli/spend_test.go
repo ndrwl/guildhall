@@ -21,11 +21,11 @@ func TestSpendReportRecordedUsage(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i, step := range []string{"one", "two", "three"} {
-		if _, err := s.StartAttempt(step, "app", "t-1", step); err != nil {
+		if _, err := s.StartAttempt(step, "app", "t1", step); err != nil {
 			t.Fatal(err)
 		}
 		if i == 0 {
-			if _, err := s.RecordAttemptSpend("spend", "app", "t-1", step, 1, store.Spend{Tokens: store.SpendMeasured, InputTokens: 10, OutputTokens: 2, CacheCreationInputTokens: 3, CacheReadInputTokens: 4, Cost: store.SpendEstimated, CostUSD: 0.1}); err != nil {
+			if _, err := s.RecordAttemptSpend("spend", "app", "t1", step, 1, store.Spend{Tokens: store.SpendMeasured, InputTokens: 10, OutputTokens: 2, CacheCreationInputTokens: 3, CacheReadInputTokens: 4, Cost: store.SpendEstimated, CostUSD: 0.1}); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -34,7 +34,7 @@ func TestSpendReportRecordedUsage(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, step := range []string{"one", "two"} {
-		dir := (artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: step, Attempt: 1}).Dir(d.state)
+		dir := (artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: step, Attempt: 1}).Dir(d.state)
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -84,21 +84,21 @@ func TestSpendReportMetadataFiltersAndMalformedEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	started, err := s.StartAttempt("start", "app", "t-1", "build")
+	started, err := s.StartAttempt("start", "app", "t1", "build")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.FinishAttempt("finish", "app", "t-1", "build", 1, store.AttemptSucceeded); err != nil {
+	if _, err = s.FinishAttempt("finish", "app", "t1", "build", 1, store.AttemptSucceeded); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	dir := (artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}).Dir(d.state)
+	dir := (artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "build", Attempt: 1}).Dir(d.state)
 	if err = os.MkdirAll(filepath.Join(dir, "prompt"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	m := render.Manifest{Schema: render.ManifestSchema, Identity: render.Identity{Repository: "app", Task: "t-1", Step: "build", Attempt: 1, Profile: "builder"}, Role: render.File{Path: "roles/builder.md"}}
+	m := render.Manifest{Schema: render.ManifestSchema, Identity: render.Identity{Repository: "app", Task: "t1", Step: "build", Attempt: 1, Profile: "builder"}, Role: render.File{Path: "roles/builder.md"}}
 	data, err := json.Marshal(m)
 	if err != nil {
 		t.Fatal(err)
@@ -112,7 +112,7 @@ func TestSpendReportMetadataFiltersAndMalformedEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
-	got, err := readSpend(s, d.state, "app", "t-1", started.CommittedAt)
+	got, err := readSpend(s, d.state, "app", "t1", started.CommittedAt)
 	if err != nil || len(got.Rows) != 1 || got.Rows[0].Profile != "builder" || got.Rows[0].Role != "roles/builder.md" || got.Total.TokensUnknown != 1 {
 		t.Fatalf("report=%+v err=%v", got, err)
 	}
@@ -158,14 +158,14 @@ func TestSpendReportRetriesAggregateWithoutTranscriptReads(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, id := range []string{"first", "second"} {
-		r, err := s.StartAttempt(id, "app", "t-1", "build")
+		r, err := s.StartAttempt(id, "app", "t1", "build")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err = s.RecordAttemptSpend(id+"-spend", "app", "t-1", "build", r.Attempt, store.Spend{Tokens: store.SpendMeasured, InputTokens: 9, Cost: store.SpendMeasured, CostUSD: 0.25}); err != nil {
+		if _, err = s.RecordAttemptSpend(id+"-spend", "app", "t1", "build", r.Attempt, store.Spend{Tokens: store.SpendMeasured, InputTokens: 9, Cost: store.SpendMeasured, CostUSD: 0.25}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err = s.FinishAttempt(id+"-finish", "app", "t-1", "build", r.Attempt, store.AttemptFailed); err != nil {
+		if _, err = s.FinishAttempt(id+"-finish", "app", "t1", "build", r.Attempt, store.AttemptFailed); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -205,14 +205,14 @@ func (s *countedSpendStore) Attempts(repo, task string) ([]store.StageAttempt, e
 
 func TestSpendReportScansReceiptsOnlyOnceWhenFiltered(t *testing.T) {
 	d := newRunDirector(t)
-	newTask(t, d.store, d.config, "app", "Second task", "t-2")
+	newTask(t, d.store, d.config, "app", "Second task")
 	s, err := store.Open(d.store, store.Options{RequireStore: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
 	var boundary time.Time
-	for _, task := range []string{"t-1", "t-2"} {
+	for _, task := range []string{"t1", "t2"} {
 		for _, step := range []string{"build", "review"} {
 			r, err := s.StartAttempt(task+step, "app", task, step)
 			if err != nil {
@@ -248,7 +248,7 @@ func (s startIndexSpendStore) Repositories() ([]string, error) {
 }
 
 func (s startIndexSpendStore) Tasks(repo string) ([]store.Task, error) {
-	return []store.Task{{Repository: repo, ID: "t-1"}, {Repository: repo, ID: "t-2"}}, nil
+	return []store.Task{{Repository: repo, ID: "t1"}, {Repository: repo, ID: "t2"}}, nil
 }
 
 func (s startIndexSpendStore) Attempts(repo, task string) ([]store.StageAttempt, error) {
@@ -260,14 +260,14 @@ func (s startIndexSpendStore) Attempts(repo, task string) ([]store.StageAttempt,
 
 func (s startIndexSpendStore) Receipts() ([]store.Receipt, error) {
 	return []store.Receipt{
-		{Repository: "app", TaskID: "t-1", Operation: "start-attempt", Record: "attempt/build/1", CommittedAt: s.boundary},
-		{Repository: "app", TaskID: "t-1", Operation: "start-owned-attempt", Record: "attempt/build/2", CommittedAt: s.boundary.Add(time.Second)},
-		{Repository: "app", TaskID: "t-2", Operation: "start-attempt", Record: "attempt/build/1", CommittedAt: s.boundary.Add(-time.Second)},
-		{Repository: "app", TaskID: "t-2", Operation: "start-attempt", CommittedAt: s.boundary},
-		{Repository: "other", TaskID: "t-1", Operation: "start-attempt", Record: "attempt/build/1", CommittedAt: s.boundary.Add(-time.Second)},
-		{Repository: "other", TaskID: "t-1", Operation: "start-owned-attempt", Record: "attempt/build/2", CommittedAt: s.boundary.Add(-time.Second)},
-		{Repository: "other", TaskID: "t-2", Operation: "finish-attempt", Record: "attempt/build/1", CommittedAt: s.boundary},
-		{Repository: "other", TaskID: "t-2", Operation: "start-attempt", Record: "attempt/build/2", CommittedAt: s.boundary.Add(-time.Second)},
+		{Repository: "app", TaskID: "t1", Operation: "start-attempt", Record: "attempt/build/1", CommittedAt: s.boundary},
+		{Repository: "app", TaskID: "t1", Operation: "start-owned-attempt", Record: "attempt/build/2", CommittedAt: s.boundary.Add(time.Second)},
+		{Repository: "app", TaskID: "t2", Operation: "start-attempt", Record: "attempt/build/1", CommittedAt: s.boundary.Add(-time.Second)},
+		{Repository: "app", TaskID: "t2", Operation: "start-attempt", CommittedAt: s.boundary},
+		{Repository: "other", TaskID: "t1", Operation: "start-attempt", Record: "attempt/build/1", CommittedAt: s.boundary.Add(-time.Second)},
+		{Repository: "other", TaskID: "t1", Operation: "start-owned-attempt", Record: "attempt/build/2", CommittedAt: s.boundary.Add(-time.Second)},
+		{Repository: "other", TaskID: "t2", Operation: "finish-attempt", Record: "attempt/build/1", CommittedAt: s.boundary},
+		{Repository: "other", TaskID: "t2", Operation: "start-attempt", Record: "attempt/build/2", CommittedAt: s.boundary.Add(-time.Second)},
 	}, nil
 }
 
@@ -275,7 +275,7 @@ func TestSpendReportStartIndexSeparatesAttemptIdentities(t *testing.T) {
 	s := startIndexSpendStore{boundary: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
 	state := t.TempDir()
 	got, err := readSpend(s, state, "", "", s.boundary)
-	if err != nil || got.Total.Attempts != 2 || got.ExcludedUnknownStart != 2 || len(got.Rows) != 1 || got.Rows[0].Repository != "app" || got.Rows[0].Task != "t-1" {
+	if err != nil || got.Total.Attempts != 2 || got.ExcludedUnknownStart != 2 || len(got.Rows) != 1 || got.Rows[0].Repository != "app" || got.Rows[0].Task != "t1" {
 		t.Fatalf("report=%+v err=%v", got, err)
 	}
 	got, err = readSpend(s, state, "", "", time.Time{})

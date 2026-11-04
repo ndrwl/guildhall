@@ -36,20 +36,20 @@ func newBackupFixture(t *testing.T) backupFixture {
 	if out, err := exec.Command("git", "init", "--quiet", "--bare", f.remote).CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v\n%s", err, out)
 	}
-	newTask(t, f.storePath, f.cfgPath, "app", "First", "t-1")
-	newTask(t, f.storePath, f.cfgPath, "app", "Second", "t-2")
+	newTask(t, f.storePath, f.cfgPath, "app", "First")
+	newTask(t, f.storePath, f.cfgPath, "app", "Second")
 	doc := "# the spec\n"
-	writeTestFile(t, filepath.Join(f.dir, "state", "documents", "tasks", "app", "t-1", "plan-1", "spec.md"), doc)
+	writeTestFile(t, filepath.Join(f.dir, "state", "documents", "tasks", "app", "t1", "plan-1", "spec.md"), doc)
 	sum := sha256.Sum256([]byte(doc))
 	if _, err := withStore(f.storePath, false, func(s *store.Store) (store.Receipt, error) {
-		return s.PutDocument("doc-1", store.DocumentRef{Repository: "app", TaskID: "t-1", Name: "spec", Path: "tasks/app/t-1/plan-1/spec.md", SHA256: hex.EncodeToString(sum[:])})
+		return s.PutDocument("doc-1", store.DocumentRef{Repository: "app", TaskID: "t1", Name: "spec", Path: "tasks/app/t1/plan-1/spec.md", SHA256: hex.EncodeToString(sum[:])})
 	}); err != nil {
 		t.Fatal(err)
 	}
-	writeTestFile(t, filepath.Join(f.dir, "state", "app", "t-1", "build-1", "model", "transcript.jsonl"), "{\"turn\":1}\n")
-	writeTestFile(t, filepath.Join(f.dir, "state", "app", "t-1", "work", "main.go"), "package main\n")
+	writeTestFile(t, filepath.Join(f.dir, "state", "app", "t1", "build-1", "model", "transcript.jsonl"), "{\"turn\":1}\n")
+	writeTestFile(t, filepath.Join(f.dir, "state", "app", "t1", "work", "main.go"), "package main\n")
 	recordSession(t, f.storePath, false, store.DirectorRunning)
-	for _, text := range []string{"rebase t-2 after t-1 merges", "gone soon"} {
+	for _, text := range []string{"rebase t2 after t1 merges", "gone soon"} {
 		if code, _, stderr := runCLI(t, "director", "note", "add", "--store", f.storePath, "--kind", "plan", text); code != 0 {
 			t.Fatalf("note add: %s", stderr)
 		}
@@ -130,14 +130,14 @@ func TestBackupNowStatusRestore(t *testing.T) {
 			t.Errorf("%q differs after the restore:\n%s\nrestored:\n%s\nstderr %s", args, a, b, stderr)
 		}
 	}
-	for _, rel := range []string{"state/documents/tasks/app/t-1/plan-1/spec.md", "state/app/t-1/build-1/model/transcript.jsonl", "config.toml"} {
+	for _, rel := range []string{"state/documents/tasks/app/t1/plan-1/spec.md", "state/app/t1/build-1/model/transcript.jsonl", "config.toml"} {
 		a, _ := os.ReadFile(filepath.Join(f.dir, filepath.FromSlash(rel)))
 		b, err := os.ReadFile(filepath.Join(target, filepath.FromSlash(rel)))
 		if err != nil || string(a) != string(b) {
 			t.Errorf("%s restored as %q, %v; want %q", rel, b, err, a)
 		}
 	}
-	if _, err := os.Lstat(filepath.Join(target, "state", "app", "t-1", "work")); err == nil {
+	if _, err := os.Lstat(filepath.Join(target, "state", "app", "t1", "work")); err == nil {
 		t.Errorf("the restore wrote a worktree")
 	}
 	if code, _, stderr := runIn(t, f.dir, "backup", "restore", "--copy", newCopy(t), "laptop/alpha"); code != 1 || !strings.Contains(stderr, "already exists") {
@@ -170,12 +170,12 @@ func TestNoBackupTable(t *testing.T) {
 	if _, err := os.Lstat(filepath.Join(f.dir, backup.RepoDir)); err == nil {
 		t.Fatalf("a copy with no [backup] table has a backup repository")
 	}
-	before, _, err := acceptTask(f.cfgPath, "app", "feature")
+	before, _, _, err := acceptTask(f.cfgPath, "app", "feature")
 	if err != nil {
 		t.Fatal(err)
 	}
 	f.addTable(t, f.remote)
-	after, _, err := acceptTask(f.cfgPath, "app", "feature")
+	after, _, _, err := acceptTask(f.cfgPath, "app", "feature")
 	if err != nil {
 		t.Fatal(err)
 	}

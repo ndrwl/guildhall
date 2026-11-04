@@ -17,15 +17,15 @@ import (
 func TestExternalResumeDeliversQueuedWork(t *testing.T) {
 	c := newSafetyCopy(t, "", "")
 	c.approve()
-	c.guildhall("", "task", "new", "--repo", "app", "--title", "Queued work", "t-1")
+	c.guildhall("", "task", "new", "--repo", "app", "--title", "Queued work")
 	c.script("guildhall director ready")
 	s := c.start("fake", herdrBinding...)
 	c.waitFor("ready", func() bool { return c.latestSession().State == store.DirectorRunning })
 	t.Log("pause:", c.guildhall("", "director", "pause"))
-	note := `{"schema":"guildhall.message/1","id":"resume-note","recipient":"director","repository":"app","task":"t-1","type":"note","text":"Please handle queued work."}`
+	note := `{"schema":"guildhall.message/1","id":"resume-note","recipient":"director","repository":"app","task":"t1","type":"note","text":"Please handle queued work."}`
 	t.Log("send while paused:", c.guildhall(note, "messages", "send", "director", "-"))
 	// A persisted paused wait is the engine's public continuation contract.
-	dir := filepath.Join(c.dir, "state", "app", "t-1")
+	dir := filepath.Join(c.dir, "state", "app", "t1")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

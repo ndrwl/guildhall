@@ -23,7 +23,7 @@ func queueCmd(t *testing.T, stdin string, args ...string) (int, string, string) 
 const cliLesson = "# Rebase before review\r\n\r\n## Evidence\r\n\r\nd12 failed twice.\r\n\r\n## Limits\r\n\r\nLong-lived tasks only.\r\n"
 
 func cliIncident(id, errText string) string {
-	return `{"schema": "guildhall.incident/1", "id": "` + id + `", "repository": "app", "task": "t-1", "step": "build", "attempt": "build-1",
+	return `{"schema": "guildhall.incident/1", "id": "` + id + `", "repository": "app", "task": "t1", "step": "build", "attempt": "build-1",
 "release": "v1.2.3", "workflow": "sha256:` + strings.Repeat("a", 64) + `", "observed_state": "stuck in starting",
 "observed_at": "2026-11-03T09:00:00Z", "error": "` + errText + `",
 "evidence": [{"ref": "state/logs/build-1.log", "digest": "sha256:` + strings.Repeat("b", 64) + `"}],
@@ -115,7 +115,7 @@ func TestIncidentCommands(t *testing.T) {
 	if code, out, stderr := queueCmd(t, obs, "incident", "observe", "stuck-owner", "-", "--copy", dir); code != 0 || !strings.HasPrefix(out, "incident stuck-owner observation 1 recorded") {
 		t.Fatalf("observe: exit %d, %q, %s", code, out, stderr)
 	}
-	if code, out, _ := queueCmd(t, "", "incident", "list", "--copy", dir); code != 0 || out != "stuck-owner open app/t-1 build build-1: owner live (1 observations)\n" {
+	if code, out, _ := queueCmd(t, "", "incident", "list", "--copy", dir); code != 0 || out != "stuck-owner open app/t1 build build-1: owner live (1 observations)\n" {
 		t.Fatalf("list: exit %d, %q", code, out)
 	}
 	if code, _, stderr := queueCmd(t, cliIncident("second", "e"), "incident", "file", "-", "--copy", dir); code != 0 {

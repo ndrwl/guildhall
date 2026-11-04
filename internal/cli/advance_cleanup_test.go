@@ -20,14 +20,14 @@ func TestCleanupReleasedBeforeWorker(t *testing.T) {
 			d := newRunDirector(t)
 			launcher := liveLauncher(t)
 			if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
-				if _, err := s.StartAttempt("start", "app", "t-1", "plan"); err != nil {
+				if _, err := s.StartAttempt("start", "app", "t1", "plan"); err != nil {
 					return store.Receipt{}, err
 				}
-				return s.TakeOwnership("own", store.Ownership{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1, LauncherIdentity: store.ProcessIdentity(launcher)}, launch.ProbeOwner)
+				return s.TakeOwnership("own", store.Ownership{Repository: "app", TaskID: "t1", Step: "plan", Attempt: 1, LauncherIdentity: store.ProcessIdentity(launcher)}, launch.ProbeOwner)
 			}); err != nil {
 				t.Fatal(err)
 			}
-			a := launch.Attempt{Key: artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}, Store: d.store, StateDir: d.state}
+			a := launch.Attempt{Key: artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "plan", Attempt: 1}, Store: d.store, StateDir: d.state}
 			if err := os.MkdirAll(a.Dir(), 0o700); err != nil {
 				t.Fatal(err)
 			}
@@ -45,7 +45,7 @@ func TestCleanupReleasedBeforeWorker(t *testing.T) {
 				}
 			}
 			if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
-				return s.FinishAttempt("finish", "app", "t-1", "plan", 1, store.AttemptStopped)
+				return s.FinishAttempt("finish", "app", "t1", "plan", 1, store.AttemptStopped)
 			}); err != nil {
 				t.Fatal(err)
 			}

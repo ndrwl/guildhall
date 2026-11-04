@@ -31,6 +31,7 @@ adapter = "fake"
 
 [[repository]]
 id = "app"
+task_prefix = "t"
 path = "/srv/app"
 remote = "git@github.com:example/app.git"
 owner_machine = "workstation"

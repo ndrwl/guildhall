@@ -53,8 +53,8 @@ func handEdited(t *testing.T) (dir, authorized, edited string) {
 func TestHandEditedManagedTomlRaisesOneAlert(t *testing.T) {
 	t.Setenv(directorModeEnv, "")
 	dir, authorized, edited := handEdited(t)
-	for _, id := range []string{"t-1", "t-2"} {
-		if code, stderr := newTaskIn(t, dir, id); code != 1 || !strings.Contains(stderr, "managed.toml "+edited+" is not authorized") ||
+	for _, id := range []string{"t1", "t2"} {
+		if code, stderr := newTaskIn(t, dir); code != 1 || !strings.Contains(stderr, "managed.toml "+edited+" is not authorized") ||
 			!strings.Contains(stderr, "waits for the Guildmaster's answer to decision managed-mode/untrusted/untrusted-1-") {
 			t.Fatalf("task new %s: exit %d, %s", id, code, stderr)
 		}
@@ -116,7 +116,7 @@ func copyStatus(t *testing.T, dir string) directorStatus {
 func TestAlertApproveUnblocks(t *testing.T) {
 	t.Setenv(directorModeEnv, "")
 	dir, authorized, edited := handEdited(t)
-	if code, _ := newTaskIn(t, dir, "t-1"); code != 1 {
+	if code, _ := newTaskIn(t, dir); code != 1 {
 		t.Fatal("the hand edit was not refused")
 	}
 	id := admit.AlertDecisionID(1, edited)
@@ -132,7 +132,7 @@ func TestAlertApproveUnblocks(t *testing.T) {
 	if code, _, _ := answerAlert(t, dir, id, "approve\nthe Guildmaster: I lowered the cap myself\n"); code != 0 || len(managedView(t, dir).Revisions) != len(v.Revisions) {
 		t.Fatalf("a repeated answer: exit %d, revisions %+v", code, managedView(t, dir).Revisions)
 	}
-	if code, stderr := newTaskIn(t, dir, "t-1"); code != 0 {
+	if code, stderr := newTaskIn(t, dir); code != 0 {
 		t.Fatalf("task new after approval: exit %d, %s", code, stderr)
 	}
 	got := copyMode(t, dir)
@@ -149,7 +149,7 @@ func TestAlertApproveUnblocks(t *testing.T) {
 func TestAlertApprovalRecordedLate(t *testing.T) {
 	t.Setenv(directorModeEnv, "")
 	dir, _, edited := handEdited(t)
-	if code, _ := newTaskIn(t, dir, "t-1"); code != 1 {
+	if code, _ := newTaskIn(t, dir); code != 1 {
 		t.Fatal("the hand edit was not refused")
 	}
 	id := admit.AlertDecisionID(1, edited)
@@ -161,7 +161,7 @@ func TestAlertApprovalRecordedLate(t *testing.T) {
 	if got := copyMode(t, dir); got.Untrusted == nil || got.Untrusted.State != admit.AlertApproved {
 		t.Fatalf("director mode = %+v", got)
 	}
-	if code, stderr := newTaskIn(t, dir, "t-1"); code != 0 {
+	if code, stderr := newTaskIn(t, dir); code != 0 {
 		t.Fatalf("task new after the answer: exit %d, %s", code, stderr)
 	}
 	if auth := managedView(t, dir).Authorization(edited); auth == nil || auth.Decision != id {
@@ -174,7 +174,7 @@ func TestAlertApprovalRecordedLate(t *testing.T) {
 func TestAlertRejectKeepsTheRefusal(t *testing.T) {
 	t.Setenv(directorModeEnv, "")
 	dir, _, edited := handEdited(t)
-	if code, _ := newTaskIn(t, dir, "t-1"); code != 1 {
+	if code, _ := newTaskIn(t, dir); code != 1 {
 		t.Fatal("the hand edit was not refused")
 	}
 	id := admit.AlertDecisionID(1, edited)
@@ -182,7 +182,7 @@ func TestAlertRejectKeepsTheRefusal(t *testing.T) {
 		t.Fatalf("decide answer: exit %d, %s", code, stderr)
 	}
 	before := receiptCount(t, dir)
-	if code, stderr := newTaskIn(t, dir, "t-1"); code != 1 || !strings.Contains(stderr, "the Guildmaster rejected it (decision managed-mode/untrusted/"+id+")") {
+	if code, stderr := newTaskIn(t, dir); code != 1 || !strings.Contains(stderr, "the Guildmaster rejected it (decision managed-mode/untrusted/"+id+")") {
 		t.Fatalf("task new after reject: exit %d, %s", code, stderr)
 	}
 	if managedView(t, dir).Authorization(edited) != nil || receiptCount(t, dir) != before {
@@ -194,7 +194,7 @@ func TestAlertRejectKeepsTheRefusal(t *testing.T) {
 	if code, _, stderr := configCmd(t, "reload", "--copy", dir); code != 0 {
 		t.Fatalf("reload: exit %d, %s", code, stderr)
 	}
-	if code, stderr := newTaskIn(t, dir, "t-1"); code != 0 {
+	if code, stderr := newTaskIn(t, dir); code != 0 {
 		t.Fatalf("task new after reload: exit %d, %s", code, stderr)
 	}
 }
@@ -204,7 +204,7 @@ func TestAlertRejectKeepsTheRefusal(t *testing.T) {
 func TestLeaveVoidsWaitingAlerts(t *testing.T) {
 	t.Setenv(directorModeEnv, "")
 	dir, _, _ := handEdited(t)
-	if code, _ := newTaskIn(t, dir, "t-1"); code != 1 {
+	if code, _ := newTaskIn(t, dir); code != 1 {
 		t.Fatal("the hand edit was not refused")
 	}
 	writeManaged(t, dir, pinned)
@@ -226,7 +226,7 @@ func TestLeaveVoidsWaitingAlerts(t *testing.T) {
 func TestReservedAlertTaskStaysOutOfTheWay(t *testing.T) {
 	t.Setenv(directorModeEnv, "")
 	dir, _, _ := handEdited(t)
-	if code, _ := newTaskIn(t, dir, "t-1"); code != 1 {
+	if code, _ := newTaskIn(t, dir); code != 1 {
 		t.Fatal("the hand edit was not refused")
 	}
 	code, out, stderr := runTask(t, "list", "--copy", dir, "--json")
@@ -257,7 +257,7 @@ func TestReservedAlertTaskStaysOutOfTheWay(t *testing.T) {
 func TestDirectorStatusModeFieldsGolden(t *testing.T) {
 	t.Setenv(directorModeEnv, "")
 	dir, _, _ := handEdited(t)
-	if code, _ := newTaskIn(t, dir, "t-1"); code != 1 {
+	if code, _ := newTaskIn(t, dir); code != 1 {
 		t.Fatal("the hand edit was not refused")
 	}
 	untrusted := copyStatus(t, dir).Mode

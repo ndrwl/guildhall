@@ -176,14 +176,14 @@ func TestDualModeHelperGivesTheSameEffectiveConfig(t *testing.T) {
 
 	var tasks []store.Task
 	for _, dir := range []string{standalone, managed} {
-		if code, _, stderr := runTask(t, "new", "--copy", dir, "--repo", "app", "--title", "Sort", "t-1"); code != 0 {
+		if code, _, stderr := runTask(t, "new", "--copy", dir, "--repo", "app", "--title", "Sort"); code != 0 {
 			t.Fatalf("task new in %s: exit %d, %s", dir, code, stderr)
 		}
 		s, err := store.Open(filepath.Join(dir, directorStoreFile), store.Options{ReadOnly: true})
 		if err != nil {
 			t.Fatal(err)
 		}
-		task, err := s.Task("app", "t-1")
+		task, err := s.Task("app", "t1")
 		_ = s.Close()
 		if err != nil {
 			t.Fatal(err)

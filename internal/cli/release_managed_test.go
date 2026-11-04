@@ -201,10 +201,10 @@ func TestConfigReloadRefusesAnUnverifiedRelease(t *testing.T) {
 	if code := f.run("config", "reload", "--copy", f.copy); code != 0 || !strings.Contains(f.stdout.String(), "already pins v1.0.0") {
 		t.Fatalf("reload of the pinned release = %d, %q", code, f.stdout)
 	}
-	if code := f.newTask("t-1"); code != 0 {
+	if code := f.newTask("t1"); code != 0 {
 		t.Fatalf("task new = %d", code)
 	}
 	sum2 := f.install("v2.0.0", "release v2.0.0", 2)
 	f.rollout("v2.0.0", sum2)
-	check("another store schema", "t-1")
+	check("another store schema", "t1")
 }

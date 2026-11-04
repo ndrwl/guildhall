@@ -17,7 +17,7 @@ import (
 
 func TestDirectorStatusRecoversDeliveredJudges(t *testing.T) {
 	killed := exitedLauncher(t)
-	for _, task := range []string{"t-1", "t-" + strings.Repeat("a", 61)} {
+	for _, task := range []string{"t1", "t-" + strings.Repeat("a", 61)} {
 		t.Run(task, func(t *testing.T) {
 			dir := t.TempDir()
 			path := filepath.Join(dir, "director.store")

@@ -37,7 +37,7 @@ func configOnlyCopy(t *testing.T) (cfg *config.Config, cfgDir, release string) {
 
 func renderStep(t *testing.T, p func(render.Stage, []render.Input) (render.Rendered, error), s workflow.Step) (render.Rendered, error) {
 	t.Helper()
-	return p(render.Stage{Repository: "app", Task: "t-1", Attempt: 1, Dir: filepath.Join(t.TempDir(), "attempt"), Step: s}, nil)
+	return p(render.Stage{Repository: "app", Task: "t1", Attempt: 1, Dir: filepath.Join(t.TempDir(), "attempt"), Step: s}, nil)
 }
 
 func TestBareCopyRendersEveryDefaultArtisanStage(t *testing.T) {

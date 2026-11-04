@@ -31,7 +31,7 @@ func TestRunCleanupReportsAnOrphanedWorker(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := newRunDirectorAt(t, filepath.Join(dir, "config.toml"))
-	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 {
+	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...); code != 0 {
 		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 	}
 	tree := inventoryOf(t, inv, 2)
@@ -44,7 +44,7 @@ func TestRunCleanupReportsAnOrphanedWorker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	o, err := s.Ownership("app", "t-1", "plan", 1)
+	o, err := s.Ownership("app", "t1", "plan", 1)
 	_ = s.Close()
 	if err != nil {
 		t.Fatal(err)

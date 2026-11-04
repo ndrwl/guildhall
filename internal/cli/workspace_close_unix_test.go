@@ -39,7 +39,7 @@ func (l *lockedBuffer) String() string {
 	return l.b.String()
 }
 
-// sweptCopy is a supervised copy whose config names a Herdr session and a 1ns close delay, with app/t-9's plan
+// sweptCopy is a supervised copy whose config names a Herdr session and a 1ns close delay, with app/t9's plan
 // attempt finished under an exited launcher and presented in Herdr workspace w2, and the host modelling it, whose
 // workspace listing waits until its release is closed.
 func sweptCopy(t *testing.T) (string, runDirector, artisan.AttemptKey, *closeHost) {
@@ -50,19 +50,19 @@ func sweptCopy(t *testing.T) (string, runDirector, artisan.AttemptKey, *closeHos
 	killed := exitedLauncher(t)
 	_, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
 		digest := "sha256:" + strings.Repeat("a", 64)
-		if _, err := s.CreateTask("sweep-1", store.Task{Repository: "app", ID: "t-9", Title: "Swept", Workflow: workflow.Revision{Name: "default", Digest: digest}, ConfigDigest: digest}); err != nil {
+		if _, err := s.CreateTask("sweep-1", store.Task{Repository: "app", ID: "t9", Title: "Swept", Workflow: workflow.Revision{Name: "default", Digest: digest}, ConfigDigest: digest}); err != nil {
 			return store.Receipt{}, err
 		}
-		if _, err := s.StartOwnedAttempt("sweep-2", store.Ownership{Repository: "app", TaskID: "t-9", Step: "plan", LauncherIdentity: killed,
+		if _, err := s.StartOwnedAttempt("sweep-2", store.Ownership{Repository: "app", TaskID: "t9", Step: "plan", LauncherIdentity: killed,
 			Containment: store.Containment{Kind: store.ContainmentNotStarted}}); err != nil {
 			return store.Receipt{}, err
 		}
-		return s.FinishAttempt("sweep-3", "app", "t-9", "plan", 1, store.AttemptSucceeded)
+		return s.FinishAttempt("sweep-3", "app", "t9", "plan", 1, store.AttemptSucceeded)
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	k := artisan.AttemptKey{Repository: "app", TaskID: "t-9", Step: "plan", Attempt: 1}
+	k := artisan.AttemptKey{Repository: "app", TaskID: "t9", Step: "plan", Attempt: 1}
 	f := &sweepFixture{t: t, state: d.state, host: &closeHost{session: sweepSession, entered: make(chan struct{}), release: make(chan struct{})}}
 	f.writeRecord(k, f.presented(k, "w2", launch.WorkspaceLabel(k)))
 	return dir, d, k, f.host

@@ -9,7 +9,7 @@ For decisions and their answers, see the [decision commands](decisions-cli.md); 
 
 Every command takes `--store <path>`, an existing store file made by [`guildhall store init`](store.md#guildhall-store-init), or a [copy](running.md#copies) with `--copy <dir>` or found from the current directory, whose `director.store` is the store and whose `config.toml` is `task new`'s `--config`.
 
-- `guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--detail <text> | --detail-file <file|->] [--kind feature|bug|hallmark] [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] [--override <key>=<value>... --override-quote <text>] [--grill live|unattended --grill-reason <text>] <task>` creates task `<task>` of the [kind](#task-kinds) given in repository `<id>` and prints the store's receipt as one JSON document; each `--override` is a [task override](#task-overrides), checked against the config before the store opens, so a refused one creates no task, and recorded after the task as `task override set` records it, quoting `--override-quote`; `--grill` records the task's [grill mode](#grill-mode), set by the Director, with `--grill-reason`, judged before the store opens too; `task new --help` prints the usage with each kind's description, and exits 0.
+- `guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--detail <text> | --detail-file <file|->] [--kind feature|bug|hallmark] [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] [--override <key>=<value>... --override-quote <text>] [--grill live|unattended --grill-reason <text>]` creates a task of the [kind](#task-kinds) given in repository `<id>`, under the next [task id](#task-ids) Guildhall assigns, and prints the store's receipt as one JSON document, whose `task_id` is that id; a task id passed to it is a usage error saying Guildhall assigns ids, and a repository with no `task_prefix` is refused with exit 1, naming the key and the repository; each `--override` is a [task override](#task-overrides), checked against the config before the store opens, so a refused one creates no task, and recorded after the task as `task override set` records it, quoting `--override-quote`; `--grill` records the task's [grill mode](#grill-mode), set by the Director, with `--grill-reason`, judged before the store opens too; `task new --help` prints the usage with each kind's description, and exits 0.
   The title is a short name; the task's full statement, such as a bug's symptom and exact error, goes in its detail, given as text with `--detail` or read with `--detail-file` from a file, or from standard input for `-`, with the same rules as [`decide answer --answer-file`](decisions-cli.md) (a leading byte order mark is dropped, UTF-16 is refused and CRLF becomes LF).
   Both are optional, and giving both is a usage error.
   A title over 100 characters is refused with exit 1 before the configuration is read, naming `--detail` and `--detail-file`.
@@ -297,13 +297,24 @@ A merged slice's steps never run again; its records are read only to show the sl
 `director status` gives such a task a `slices` object, `{current, total, items: [{index, title, state, pull_request, delivered_by}]}`, `state` being `merged`, `delivered`, `current` or `pending`; Clerk's `/guild` shows `slice k of n` beside where it stands, `/task` and `/inspect` show the current slice and list every slice with its title, state and pull request, and the Artisan's Herdr workspace is labelled `└ <task> · slice k/n · <step> #<n>`.
 GitHub stacked pull requests are not used: each slice starts after the one before merged ([why, and when stacking may be reconsidered](decisions/stacked-prs-not-yet.md)).
 
+## Task ids
+
+Guildhall assigns each new task's id; the Director does not pick it.
+The id is the repository's [task id prefix](glossary.md#task-id), its `task_prefix` in the copy's config ([repositories](configuration.md#repositories)), followed by a [task number](glossary.md#task-id): `d42` for guildhall, whose prefix is `d`.
+The number is one more than the highest already used under that prefix in the repository, or 1 for the first: `task new` reads the repository's tasks while it holds the store's writer lock, from opening the store until it finishes, so two `task new` runs never take the same number.
+Only ids of the form `<prefix><n>`, `n` a number with no leading zero, count, compared as numbers, so `d10` follows `d9`; other ids, such as `t-1` or `d007`, are ignored.
+Every task counts, whatever its state: a cancelled or [pruned](running.md#pruning) task keeps its records, so no number is used twice.
+Changing a repository's prefix later leaves existing tasks' ids as they are, and numbering under the new prefix starts from that prefix's own highest number.
+Every other command names an existing task by the id it has, so the steward's and managed mode's reserved tasks, and tasks created before Guildhall assigned ids, keep working.
+
 ## Retries
 
-`task new` records the mutation `task:<repo>:<task>` when that string is at most 128 bytes.
+`task new` records the mutation `task:<repo>:<task>`, `<task>` the assigned id, when that string is at most 128 bytes.
 For longer strings it records `task:sha256:<digest>`, using the lowercase hex SHA-256 of the full original string.
 Repository and task ids cannot contain `:`, so the input is unambiguous; short ids remain unchanged and every valid pair has a bounded, deterministic mutation id.
-Running the same `task new` again, for example after losing its output, prints the original receipt and writes nothing, even after a restart.
-Reusing a task id with a different title, dependencies, workflow revision, such as another `--kind`'s, or configuration digest is refused with the store's mutation conflict and changes nothing.
+Before assigning a new number, `task new` looks for an open task in the repository with the same request: title, detail, dependencies, the task it fixes, and the workflow revision and configuration digest it would bind, so its kind too.
+If it finds one it reuses that task's id, so running the same `task new` again, for example after losing its output, prints the original receipt, with the same id, and writes nothing, even after a restart; `--priority`, `--grill` and each `--override` replay the same way.
+A different request always gets a new number, and so does the same request once its earlier task is done or cancelled, so a task can be filed again on purpose.
 
 The store has one writer at a time; each command holds it only for its own operation (see [the store](store.md#one-writer)).
 
@@ -469,7 +480,7 @@ The grill step runs either way; unattended questions reach the Guildmaster as op
 The Director chooses at `task new` and records a one-line reason; when it is unsure, the grill is live.
 
 ```
-guildhall task new ... --grill live|unattended --grill-reason <text> <task>
+guildhall task new ... --grill live|unattended --grill-reason <text>
 guildhall task grill --store <path> --config <director.toml> <repo>/<task> live|unattended --reason <text> [--by director|guildmaster]
 ```
 

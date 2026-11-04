@@ -13,8 +13,8 @@ import (
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
-// holdCopy is a store and state directory with open app tasks d-1 and d-2 for holds to wait on; t-1 with build
-// attempt 1 failed and parked until both merge; t-3 with open decision q-1 deferred until d-1 merges; follow-up f1
+// holdCopy is a store and state directory with open app tasks d-1 and d-2 for holds to wait on; t1 with build
+// attempt 1 failed and parked until both merge; t3 with open decision q-1 deferred until d-1 merges; follow-up f1
 // until d-2 merges; and Director session 1 running in a Herdr pane.
 func holdCopy(t *testing.T) (string, string) {
 	t.Helper()
@@ -29,25 +29,25 @@ func holdCopy(t *testing.T) (string, string) {
 		t.Fatal(err)
 	}
 	d1, d2 := store.TaskRef{Repository: "app", ID: "d-1"}, store.TaskRef{Repository: "app", ID: "d-2"}
-	for _, id := range []string{"d-1", "d-2", "t-1", "t-3"} {
+	for _, id := range []string{"d-1", "d-2", "t1", "t3"} {
 		if _, err := s.CreateTask("create-"+id, store.Task{Repository: "app", ID: id, Title: "Hold " + id, Workflow: def.Revision(),
 			ConfigDigest: "sha256:" + strings.Repeat("c", 64)}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for _, step := range []func() (store.Receipt, error){
-		func() (store.Receipt, error) { return s.StartAttempt("start-t-1", "app", "t-1", "build") },
+		func() (store.Receipt, error) { return s.StartAttempt("start-t1", "app", "t1", "build") },
 		func() (store.Receipt, error) {
-			return s.FinishAttempt("fail-t-1", "app", "t-1", "build", 1, store.AttemptFailed)
+			return s.FinishAttempt("fail-t1", "app", "t1", "build", 1, store.AttemptFailed)
 		},
 		func() (store.Receipt, error) {
-			return s.ParkAttempt("park-t-1", "app", "t-1", "build", 1, "Rebase after the store change.", 0, []store.TaskRef{d1, d2})
+			return s.ParkAttempt("park-t1", "app", "t1", "build", 1, "Rebase after the store change.", 0, []store.TaskRef{d1, d2})
 		},
 		func() (store.Receipt, error) {
-			return s.OpenDecision("open-q-1", store.Decision{Repository: "app", TaskID: "t-3", ID: "q-1", Kind: store.DecisionQuestion, Question: "Ship it?"})
+			return s.OpenDecision("open-q-1", store.Decision{Repository: "app", TaskID: "t3", ID: "q-1", Kind: store.DecisionQuestion, Question: "Ship it?"})
 		},
 		func() (store.Receipt, error) {
-			return s.DeferDecision("defer-q-1", "app", "t-3", "q-1", "Ask once d-1 is in.", []store.TaskRef{d1}, 0)
+			return s.DeferDecision("defer-q-1", "app", "t3", "q-1", "Ask once d-1 is in.", []store.TaskRef{d1}, 0)
 		},
 	} {
 		if _, err := step(); err != nil {
@@ -57,7 +57,7 @@ func holdCopy(t *testing.T) (string, string) {
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	writeNext(t, state, "t-1", `{"wait":"director","step":"build","attempt":1}`+"\n")
+	writeNext(t, state, "t1", `{"wait":"director","step":"build","attempt":1}`+"\n")
 	// The session has a pane, so needs_me holds no no_pane item and lists only what the holds release.
 	recordPanedSession(t, path, herdrPane, false, store.DirectorRunning)
 	if _, err := withStore(path, false, func(s *store.Store) (store.FollowUp, error) {
@@ -111,11 +111,11 @@ func TestDirectorStatusHolds(t *testing.T) {
 	}
 	if len(st.Parked) != 1 || !slices.Equal(st.Parked[0].UntilMerged, []string{"app/d-1", "app/d-2"}) ||
 		!slices.Equal(st.Parked[0].WaitingFor, []string{"app/d-1", "app/d-2"}) {
-		t.Errorf("parked = %+v, want t-1 waiting for d-1 and d-2", st.Parked)
+		t.Errorf("parked = %+v, want t1 waiting for d-1 and d-2", st.Parked)
 	}
 	want := []statusHeld{
-		{Kind: "decision", Repository: "app", TaskID: "t-3", Item: "q-1", Reason: "Ask once d-1 is in.", UntilMerged: []string{"app/d-1"},
-			WaitingFor: []string{"app/d-1"}, Command: "guildhall decide undefer --repo app --task t-3 --decision q-1"},
+		{Kind: "decision", Repository: "app", TaskID: "t3", Item: "q-1", Reason: "Ask once d-1 is in.", UntilMerged: []string{"app/d-1"},
+			WaitingFor: []string{"app/d-1"}, Command: "guildhall decide undefer --repo app --task t3 --decision q-1"},
 		{Kind: "follow-up", Item: "f1", Reason: "Tell the Guildmaster d-2 is in.", UntilMerged: []string{"app/d-2"}, WaitingFor: []string{"app/d-2"},
 			Command: "guildhall director follow-up done f1"},
 	}
@@ -134,14 +134,14 @@ func TestDirectorStatusHolds(t *testing.T) {
 
 	setState(t, path, "d-1", store.TaskDone)
 	st = readStatus(t, path, state)
-	if got := needsMe(st); !slices.Equal(got, []string{"decision t-3"}) {
-		t.Errorf("needs_me after d-1 merged = %v, want only decision t-3", got)
+	if got := needsMe(st); !slices.Equal(got, []string{"decision t3"}) {
+		t.Errorf("needs_me after d-1 merged = %v, want only decision t3", got)
 	}
 	if r := st.NeedsMe[0].Reason; !strings.HasPrefix(r, "Ship it?; released: app/d-1 merged 20") || !strings.HasSuffix(r, "; deferral reason: Ask once d-1 is in.") {
 		t.Errorf("released decision reason = %q", r)
 	}
 	if len(st.Parked) != 1 || !slices.Equal(st.Parked[0].WaitingFor, []string{"app/d-2"}) {
-		t.Errorf("parked after d-1 merged = %+v, want t-1 still waiting for d-2", st.Parked)
+		t.Errorf("parked after d-1 merged = %+v, want t1 still waiting for d-2", st.Parked)
 	}
 	if c := lanternCounts(st); c.Decisions != 1 {
 		t.Errorf("lantern decisions after release = %d, want 1", c.Decisions)
@@ -149,7 +149,7 @@ func TestDirectorStatusHolds(t *testing.T) {
 
 	setState(t, path, "d-2", store.TaskCancelled)
 	st = readStatus(t, path, state)
-	if got := needsMe(st); !slices.Equal(got, []string{"retry t-1", "decision t-3", "follow-up f1", "director t-1"}) {
+	if got := needsMe(st); !slices.Equal(got, []string{"retry t1", "decision t3", "follow-up f1", "director t1"}) {
 		t.Errorf("needs_me after d-2 was cancelled = %v", got)
 	}
 	if r := st.NeedsMe[0].Reason; r != "attempt 1 of build failed; dependency cancelled: app/d-2; park reason: Rebase after the store change." {
@@ -172,13 +172,13 @@ func TestDirectorStatusHolds(t *testing.T) {
 	}
 
 	if _, err := withStore(path, false, func(s *store.Store) (store.Receipt, error) {
-		if _, err := s.AnswerDecision("answer-q-1", "app", "t-3", "q-1", "yes"); err != nil {
+		if _, err := s.AnswerDecision("answer-q-1", "app", "t3", "q-1", "yes"); err != nil {
 			return store.Receipt{}, err
 		}
 		if _, _, err := s.DoneFollowUp(1, "f1"); err != nil {
 			return store.Receipt{}, err
 		}
-		return s.StartAttempt("retry-t-1", "app", "t-1", "build")
+		return s.StartAttempt("retry-t1", "app", "t1", "build")
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -204,19 +204,19 @@ func TestHoldsRoundWakesOncePerRelease(t *testing.T) {
 	setState(t, path, "d-1", store.TaskDone)
 	holdsRound(path, state, wake, logf)
 	holdsRound(path, state, wake, logf)
-	if !slices.Equal(woken, []string{"hold-released.decision.app.t-3.q-1.0"}) {
+	if !slices.Equal(woken, []string{"hold-released.decision.app.t3.q-1.0"}) {
 		t.Fatalf("woken after d-1 merged = %v, want the decision's release once", woken)
 	}
 	// The park is retried before its last task merges: its release no longer matters.
 	if _, err := withStore(path, false, func(s *store.Store) (store.Receipt, error) {
-		return s.StartAttempt("retry-t-1", "app", "t-1", "build")
+		return s.StartAttempt("retry-t1", "app", "t1", "build")
 	}); err != nil {
 		t.Fatal(err)
 	}
 	setState(t, path, "d-2", store.TaskDone)
 	holdsRound(path, state, wake, logf)
 	holdsRound(path, state, wake, logf)
-	if !slices.Equal(woken, []string{"hold-released.decision.app.t-3.q-1.0", "hold-released.follow-up.f1"}) {
+	if !slices.Equal(woken, []string{"hold-released.decision.app.t3.q-1.0", "hold-released.follow-up.f1"}) {
 		t.Fatalf("woken = %v, want the decision and then the follow-up, once each", woken)
 	}
 	m, err := withStore(path, true, func(s *store.Store) (store.Message, error) { return s.Message("hold-released.follow-up.f1") })
@@ -257,40 +257,40 @@ func TestHoldsRoundWaitsForARunningSession(t *testing.T) {
 // a park with another set while parked is refused quoting the prior one, and a task already merged is refused.
 func TestStepParkUntilMerged(t *testing.T) {
 	d := newRunDirector(t)
-	newTask(t, d.store, d.config, "app", "Dependency", "t-2")
-	newTask(t, d.store, d.config, "app", "Merged", "t-3")
+	newTask(t, d.store, d.config, "app", "Dependency")
+	newTask(t, d.store, d.config, "app", "Merged")
 	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
-		if _, err := s.StartAttempt("m-1", "app", "t-1", "plan"); err != nil {
+		if _, err := s.StartAttempt("m-1", "app", "t1", "plan"); err != nil {
 			return store.Receipt{}, err
 		}
-		if _, err := s.SetTaskState("m-3", "app", "t-3", store.TaskDone); err != nil {
+		if _, err := s.SetTaskState("m-3", "app", "t3", store.TaskDone); err != nil {
 			return store.Receipt{}, err
 		}
-		return s.FinishAttempt("m-2", "app", "t-1", "plan", 1, store.AttemptFailed)
+		return s.FinishAttempt("m-2", "app", "t1", "plan", 1, store.AttemptFailed)
 	}); err != nil {
 		t.Fatal(err)
 	}
 	park := func(extra ...string) []string {
-		return append([]string{"step", "park"}, d.flags(append([]string{"--task", "t-1", "--step", "plan", "--attempt", "1", "--reason", "After t-2."}, extra...)...)...)
+		return append([]string{"step", "park"}, d.flags(append([]string{"--task", "t1", "--step", "plan", "--attempt", "1", "--reason", "After t2."}, extra...)...)...)
 	}
-	parked := `{"repository":"app","task_id":"t-1","step":"plan","attempt":1,"reason":"After t-2.","parked":true,"cycle":0,"until_merged":[{"repository":"app","id":"t-2"}]}` + "\n"
-	if code, out, stderr := d.run(t, park("--until-merged", "app/t-3")...); code != 1 || !strings.Contains(stderr, "app/t-3 already merged; act now instead") {
+	parked := `{"repository":"app","task_id":"t1","step":"plan","attempt":1,"reason":"After t2.","parked":true,"cycle":0,"until_merged":[{"repository":"app","id":"t2"}]}` + "\n"
+	if code, out, stderr := d.run(t, park("--until-merged", "app/t3")...); code != 1 || !strings.Contains(stderr, "app/t3 already merged; act now instead") {
 		t.Errorf("park until a merged task: exit %d, %q, stderr %s", code, out, stderr)
 	}
-	if code, out, stderr := d.run(t, park("--until-merged", "app/t-9")...); code != 1 || !strings.Contains(stderr, "not found") {
+	if code, out, stderr := d.run(t, park("--until-merged", "app/t9")...); code != 1 || !strings.Contains(stderr, "not found") {
 		t.Errorf("park until an unknown task: exit %d, %q, stderr %s", code, out, stderr)
 	}
-	if code, out, stderr := d.run(t, park("--until-merged", "t-2")...); code != 2 || out != "" {
+	if code, out, stderr := d.run(t, park("--until-merged", "t2")...); code != 2 || out != "" {
 		t.Errorf("park with a malformed task: exit %d, %q, stderr %s", code, out, stderr)
 	}
-	if code, out, stderr := d.run(t, park("--until-merged", "app/t-2")...); code != 0 || out != parked {
+	if code, out, stderr := d.run(t, park("--until-merged", "app/t2")...); code != 0 || out != parked {
 		t.Fatalf("park: exit %d, %q, stderr %s; want %s", code, out, stderr, parked)
 	}
 	before := lastSequence(t, d.store)
-	if code, out, _ := d.run(t, park("--until-merged", "app/t-2")...); code != 0 || out != parked || lastSequence(t, d.store) != before {
+	if code, out, _ := d.run(t, park("--until-merged", "app/t2")...); code != 0 || out != parked || lastSequence(t, d.store) != before {
 		t.Errorf("identical park: exit %d, %q; want a replay writing nothing", code, out)
 	}
-	want := `attempt 1 of plan of app/t-1 is already parked, with reason "After t-2." until app/t-2 merges; unpark it first`
+	want := `attempt 1 of plan of app/t1 is already parked, with reason "After t2." until app/t2 merges; unpark it first`
 	if code, _, stderr := d.run(t, park()...); code != 1 || !strings.Contains(stderr, want) {
 		t.Errorf("park without the set while held: exit %d, stderr %s; want %q", code, stderr, want)
 	}
@@ -300,28 +300,28 @@ func TestStepParkUntilMerged(t *testing.T) {
 // another reason while deferred, and undefer lifts it once.
 func TestDecideDeferAndUndefer(t *testing.T) {
 	d := newRunDirector(t)
-	newTask(t, d.store, d.config, "app", "Dependency", "t-2")
+	newTask(t, d.store, d.config, "app", "Dependency")
 	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
-		return s.OpenDecision("open", store.Decision{Repository: "app", TaskID: "t-1", ID: "q-1", Kind: store.DecisionQuestion, Question: "Ship it?"})
+		return s.OpenDecision("open", store.Decision{Repository: "app", TaskID: "t1", ID: "q-1", Kind: store.DecisionQuestion, Question: "Ship it?"})
 	}); err != nil {
 		t.Fatal(err)
 	}
-	flags := []string{"--store", d.store, "--repo", "app", "--task", "t-1", "--decision", "q-1"}
+	flags := []string{"--store", d.store, "--repo", "app", "--task", "t1", "--decision", "q-1"}
 	deferArgs := func(reason string) []string {
-		return append(append([]string{"decide", "defer"}, flags...), "--until-merged", "app/t-2", "--reason", reason)
+		return append(append([]string{"decide", "defer"}, flags...), "--until-merged", "app/t2", "--reason", reason)
 	}
-	deferred := `{"repository":"app","task_id":"t-1","decision":"q-1","reason":"After t-2.","until_merged":[{"repository":"app","id":"t-2"}],"deferred":true,"cycle":0}` + "\n"
-	if code, out, stderr := runCLI(t, deferArgs("After t-2.")...); code != 0 || out != deferred {
+	deferred := `{"repository":"app","task_id":"t1","decision":"q-1","reason":"After t2.","until_merged":[{"repository":"app","id":"t2"}],"deferred":true,"cycle":0}` + "\n"
+	if code, out, stderr := runCLI(t, deferArgs("After t2.")...); code != 0 || out != deferred {
 		t.Fatalf("defer: exit %d, %q, stderr %s; want %s", code, out, stderr, deferred)
 	}
 	before := lastSequence(t, d.store)
-	if code, out, _ := runCLI(t, deferArgs("After t-2.")...); code != 0 || out != deferred || lastSequence(t, d.store) != before {
+	if code, out, _ := runCLI(t, deferArgs("After t2.")...); code != 0 || out != deferred || lastSequence(t, d.store) != before {
 		t.Errorf("identical defer: exit %d, %q; want a replay writing nothing", code, out)
 	}
-	if code, _, stderr := runCLI(t, deferArgs("Another.")...); code != 1 || !strings.Contains(stderr, `already deferred, with reason "After t-2." until app/t-2 merges`) {
+	if code, _, stderr := runCLI(t, deferArgs("Another.")...); code != 1 || !strings.Contains(stderr, `already deferred, with reason "After t2." until app/t2 merges`) {
 		t.Errorf("defer with another reason: exit %d, stderr %s", code, stderr)
 	}
-	undeferred := `{"repository":"app","task_id":"t-1","decision":"q-1","reason":"After t-2.","until_merged":[{"repository":"app","id":"t-2"}],"deferred":false,"cycle":1}` + "\n"
+	undeferred := `{"repository":"app","task_id":"t1","decision":"q-1","reason":"After t2.","until_merged":[{"repository":"app","id":"t2"}],"deferred":false,"cycle":1}` + "\n"
 	undefer := append([]string{"decide", "undefer"}, flags...)
 	if code, out, stderr := runCLI(t, undefer...); code != 0 || out != undeferred {
 		t.Errorf("undefer: exit %d, %q, stderr %s; want %s", code, out, stderr, undeferred)
@@ -331,8 +331,8 @@ func TestDecideDeferAndUndefer(t *testing.T) {
 	}
 	for name, args := range map[string][]string{
 		"defer without until":   append(append([]string{"decide", "defer"}, flags...), "--reason", "r"),
-		"defer without reason":  append(append([]string{"decide", "defer"}, flags...), "--until-merged", "app/t-2"),
-		"defer with a bad task": append(append([]string{"decide", "defer"}, flags...), "--until-merged", "t-2", "--reason", "r"),
+		"defer without reason":  append(append([]string{"decide", "defer"}, flags...), "--until-merged", "app/t2"),
+		"defer with a bad task": append(append([]string{"decide", "defer"}, flags...), "--until-merged", "t2", "--reason", "r"),
 		"undefer with a reason": append(append([]string{"decide", "undefer"}, flags...), "--reason", "r"),
 	} {
 		if code, out, _ := runCLI(t, args...); code != 2 || out != "" {
@@ -345,22 +345,22 @@ func TestDecideDeferAndUndefer(t *testing.T) {
 // follow-ups not done with what each waits for or what released it, or "No follow-ups.".
 func TestDirectorFollowUpCommands(t *testing.T) {
 	d := newRunDirector(t)
-	newTask(t, d.store, d.config, "app", "Dependency", "t-2")
+	newTask(t, d.store, d.config, "app", "Dependency")
 	run := func(args ...string) (int, string, string) {
 		return runCLI(t, append(append([]string{"director", "follow-up"}, args...), "--store", d.store)...)
 	}
-	if code, _, stderr := run("add", "--until-merged", "app/t-2", "x"); code != 1 || !strings.Contains(stderr, "no Director session") {
+	if code, _, stderr := run("add", "--until-merged", "app/t2", "x"); code != 1 || !strings.Contains(stderr, "no Director session") {
 		t.Fatalf("add with no session: exit %d, stderr %s", code, stderr)
 	}
 	recordSession(t, d.store, false, store.DirectorRunning)
-	if code, out, stderr := run("add", "--until-merged", "app/t-2", "--until-merged", "app/t-1", "Rebase d20."); code != 0 || out != "f1 added\n" {
+	if code, out, stderr := run("add", "--until-merged", "app/t2", "--until-merged", "app/t1", "Rebase d20."); code != 0 || out != "f1 added\n" {
 		t.Fatalf("add: exit %d, %q, stderr %s", code, out, stderr)
 	}
-	if code, out, stderr := run("add", "Tell the Guildmaster.", "--until-merged", "app/t-2"); code != 0 || out != "f2 added\n" {
+	if code, out, stderr := run("add", "Tell the Guildmaster.", "--until-merged", "app/t2"); code != 0 || out != "f2 added\n" {
 		t.Fatalf("second add: exit %d, %q, stderr %s", code, out, stderr)
 	}
-	setState(t, d.store, "t-2", store.TaskDone)
-	want := "- f1 until app/t-2, app/t-1 (waiting for app/t-1): Rebase d20.\n- f2 until app/t-2 [released: app/t-2 merged]: Tell the Guildmaster.\n"
+	setState(t, d.store, "t2", store.TaskDone)
+	want := "- f1 until app/t2, app/t1 (waiting for app/t1): Rebase d20.\n- f2 until app/t2 [released: app/t2 merged]: Tell the Guildmaster.\n"
 	if code, out, stderr := run("list"); code != 0 || out != want {
 		t.Errorf("list: exit %d, stderr %s\n%s\nwant\n%s", code, stderr, out, want)
 	}
@@ -378,9 +378,9 @@ func TestDirectorFollowUpCommands(t *testing.T) {
 		code int
 	}{
 		"add without until":     {[]string{"add", "x"}, 2},
-		"add without text":      {[]string{"add", "--until-merged", "app/t-1"}, 2},
-		"add until a done task": {[]string{"add", "--until-merged", "app/t-2", "x"}, 1},
-		"add a multi-line text": {[]string{"add", "--until-merged", "app/t-1", "a\nb"}, 1},
+		"add without text":      {[]string{"add", "--until-merged", "app/t1"}, 2},
+		"add until a done task": {[]string{"add", "--until-merged", "app/t2", "x"}, 1},
+		"add a multi-line text": {[]string{"add", "--until-merged", "app/t1", "a\nb"}, 1},
 		"done again replays":    {[]string{"done", "f1"}, 0},
 		"done unknown":          {[]string{"done", "f9"}, 1},
 		"unknown command":       {[]string{"remove", "f1"}, 2},
@@ -399,25 +399,25 @@ func TestDirectorStartStartupListsHeldItems(t *testing.T) {
 		t.Fatalf("first session: exit %d\n%s\n%s", code, out, stderr)
 	}
 	storePath := filepath.Join(dir, "director.store")
-	newTask(t, storePath, filepath.Join(dir, "config.toml"), "app", "Held", "t-1")
-	newTask(t, storePath, filepath.Join(dir, "config.toml"), "app", "Dependency", "t-2")
-	until := []store.TaskRef{{Repository: "app", ID: "t-2"}}
+	newTask(t, storePath, filepath.Join(dir, "config.toml"), "app", "Held")
+	newTask(t, storePath, filepath.Join(dir, "config.toml"), "app", "Dependency")
+	until := []store.TaskRef{{Repository: "app", ID: "t2"}}
 	withTestStore(t, dir, func(s *store.Store) (store.Receipt, error) {
-		if _, err := s.StartAttempt("start", "app", "t-1", "build"); err != nil {
+		if _, err := s.StartAttempt("start", "app", "t1", "build"); err != nil {
 			return store.Receipt{}, err
 		}
-		if _, err := s.FinishAttempt("fail", "app", "t-1", "build", 1, store.AttemptFailed); err != nil {
+		if _, err := s.FinishAttempt("fail", "app", "t1", "build", 1, store.AttemptFailed); err != nil {
 			return store.Receipt{}, err
 		}
-		if _, err := s.OpenDecision("open", store.Decision{Repository: "app", TaskID: "t-1", ID: "q-1", Kind: store.DecisionQuestion, Question: "Ship?"}); err != nil {
+		if _, err := s.OpenDecision("open", store.Decision{Repository: "app", TaskID: "t1", ID: "q-1", Kind: store.DecisionQuestion, Question: "Ship?"}); err != nil {
 			return store.Receipt{}, err
 		}
-		if _, err := s.DeferDecision("defer", "app", "t-1", "q-1", "After t-2.", until, 0); err != nil {
+		if _, err := s.DeferDecision("defer", "app", "t1", "q-1", "After t2.", until, 0); err != nil {
 			return store.Receipt{}, err
 		}
-		return s.ParkAttempt("park", "app", "t-1", "build", 1, "Rebase first.", 0, until)
+		return s.ParkAttempt("park", "app", "t1", "build", 1, "Rebase first.", 0, until)
 	})
-	writeNext(t, filepath.Join(dir, "state"), "t-1", `{"wait":"director","step":"build","attempt":1}`+"\n")
+	writeNext(t, filepath.Join(dir, "state"), "t1", `{"wait":"director","step":"build","attempt":1}`+"\n")
 	if code, out, stderr := runDirectorCmd(t, "start", "fake", "--copy", dir); code != 0 {
 		t.Fatalf("second session: exit %d\n%s\n%s", code, out, stderr)
 	}
@@ -427,17 +427,17 @@ func TestDirectorStartStartupListsHeldItems(t *testing.T) {
 	}
 	startup := string(b)
 	for _, line := range []string{
-		"- parked: attempt 1 of build of app/t-1 failed; reason: Rebase first.; retry with `guildhall step retry --repo app --task t-1 --step build --attempt 1` until app/t-2\n",
+		"- parked: attempt 1 of build of app/t1 failed; reason: Rebase first.; retry with `guildhall step retry --repo app --task t1 --step build --attempt 1` until app/t2\n",
 		"## Held\n",
-		"- held: decision q-1 of app/t-1 until app/t-2 (waiting for app/t-2): After t-2.; lift with `guildhall decide undefer --repo app --task t-1 --decision q-1`\n",
+		"- held: decision q-1 of app/t1 until app/t2 (waiting for app/t2): After t2.; lift with `guildhall decide undefer --repo app --task t1 --decision q-1`\n",
 	} {
 		if !strings.Contains(startup, line) {
 			t.Errorf("startup.md lacks %q:\n%s", line, startup)
 		}
 	}
-	follow := statusHeld{Kind: followUpKind, Item: "f1", Reason: "Tell the\nGuildmaster.", UntilMerged: []string{"app/t-2", "app/t-3"}, WaitingFor: []string{"app/t-3"},
+	follow := statusHeld{Kind: followUpKind, Item: "f1", Reason: "Tell the\nGuildmaster.", UntilMerged: []string{"app/t2", "app/t3"}, WaitingFor: []string{"app/t3"},
 		Command: "guildhall director follow-up done f1"}
-	if got, want := heldLine(follow), "held: follow-up f1 until app/t-2, app/t-3 (waiting for app/t-3): Tell the Guildmaster.; lift with `guildhall director follow-up done f1`"; got != want {
+	if got, want := heldLine(follow), "held: follow-up f1 until app/t2, app/t3 (waiting for app/t3): Tell the Guildmaster.; lift with `guildhall director follow-up done f1`"; got != want {
 		t.Errorf("follow-up line = %q\nwant %q", got, want)
 	}
 }

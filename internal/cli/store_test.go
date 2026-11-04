@@ -22,11 +22,11 @@ func writeStore(t *testing.T) string {
 	}
 	defer func() { _ = s.Close() }()
 	digest := "sha256:" + strings.Repeat("a", 64)
-	task := store.Task{Repository: "app", ID: "t-1", Title: "Task", Workflow: workflow.Revision{Name: "default", Digest: digest}, ConfigDigest: digest}
+	task := store.Task{Repository: "app", ID: "t1", Title: "Task", Workflow: workflow.Revision{Name: "default", Digest: digest}, ConfigDigest: digest}
 	if _, err := s.CreateTask("m-1", task); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.OpenDecision("m-2", store.Decision{Repository: "app", TaskID: "t-1", ID: "accept-plan", Kind: store.DecisionQuestion, Question: "Accept?"}); err != nil {
+	if _, err := s.OpenDecision("m-2", store.Decision{Repository: "app", TaskID: "t1", ID: "accept-plan", Kind: store.DecisionQuestion, Question: "Accept?"}); err != nil {
 		t.Fatal(err)
 	}
 	return path

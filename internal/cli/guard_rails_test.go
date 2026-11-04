@@ -32,29 +32,29 @@ func TestUnlistedRepositoryRefusedByEveryCommand(t *testing.T) {
 	d := newRunDirector(t)
 	// A task of an unlisted repository, recorded behind the config's back, so only the rail refuses it.
 	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
-		task, err := s.Task("app", "t-1")
+		task, err := s.Task("app", "t1")
 		if err != nil {
 			return store.Receipt{}, err
 		}
-		task.Repository, task.ID = "other", "t-9"
+		task.Repository, task.ID = "other", "t9"
 		return s.CreateTask("other-task", task)
 	}); err != nil {
 		t.Fatal(err)
 	}
 	flags := []string{"--store", d.store, "--config", d.config, "--state", d.state, "--repo", "other"}
-	note := `{"schema":"guildhall.message/1","id":"n-other","recipient":"director","repository":"other","task":"t-9","type":"note","text":"Hello."}`
+	note := `{"schema":"guildhall.message/1","id":"n-other","recipient":"director","repository":"other","task":"t9","type":"note","text":"Hello."}`
 	for _, tc := range []struct {
 		name  string
 		args  []string
 		stdin string
 	}{
-		{"task new", append([]string{"task", "new", "--title", "Elsewhere"}, append(flags[:4:4], "--repo", "other", "t-10")...), ""},
-		{"task start", append([]string{"task", "start"}, append(flags, "t-9")...), ""},
-		{"step done", append([]string{"step", "done"}, append(flags, "--task", "t-9", "--step", "plan", "--attempt", "1", "--result", "result.json")...), ""},
-		{"step finish", append([]string{"step", "finish"}, append(flags, "--task", "t-9", "--step", "grill", "--attempt", "1", "--summary", "Abandoned.", "--failed")...), ""},
-		{"step retry", append([]string{"step", "retry"}, append(flags, "--task", "t-9", "--step", "plan", "--attempt", "1")...), ""},
-		{"step park", append([]string{"step", "park"}, append(flags, "--task", "t-9", "--step", "plan", "--attempt", "1", "--reason", "Hold.")...), ""},
-		{"step unpark", append([]string{"step", "unpark"}, append(flags, "--task", "t-9", "--step", "plan", "--attempt", "1")...), ""},
+		{"task new", append([]string{"task", "new", "--title", "Elsewhere"}, append(flags[:4:4], "--repo", "other")...), ""},
+		{"task start", append([]string{"task", "start"}, append(flags, "t9")...), ""},
+		{"step done", append([]string{"step", "done"}, append(flags, "--task", "t9", "--step", "plan", "--attempt", "1", "--result", "result.json")...), ""},
+		{"step finish", append([]string{"step", "finish"}, append(flags, "--task", "t9", "--step", "grill", "--attempt", "1", "--summary", "Abandoned.", "--failed")...), ""},
+		{"step retry", append([]string{"step", "retry"}, append(flags, "--task", "t9", "--step", "plan", "--attempt", "1")...), ""},
+		{"step park", append([]string{"step", "park"}, append(flags, "--task", "t9", "--step", "plan", "--attempt", "1", "--reason", "Hold.")...), ""},
+		{"step unpark", append([]string{"step", "unpark"}, append(flags, "--task", "t9", "--step", "plan", "--attempt", "1")...), ""},
 		{"messages send", []string{"messages", "send", "--store", d.store, "--config", d.config, "director", "-"}, note},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -78,16 +78,16 @@ func TestUnlistedRepositoryRefusedByEveryCommand(t *testing.T) {
 func TestRunningCapQueuesTheFifthLaunch(t *testing.T) {
 	d := newRunDirector(t)
 	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
-		task, err := s.Task("app", "t-1")
+		task, err := s.Task("app", "t1")
 		if err != nil {
 			return store.Receipt{}, err
 		}
-		task.ID = "t-2"
-		if _, err := s.CreateTask("t-2", task); err != nil {
+		task.ID = "t2"
+		if _, err := s.CreateTask("t2", task); err != nil {
 			return store.Receipt{}, err
 		}
 		for i := range config.DefaultMaxRunningAttempts {
-			if _, err := s.StartAttempt(fmt.Sprintf("occupy-%d", i), "app", "t-2", fmt.Sprintf("step-%d", i)); err != nil {
+			if _, err := s.StartAttempt(fmt.Sprintf("occupy-%d", i), "app", "t2", fmt.Sprintf("step-%d", i)); err != nil {
 				return store.Receipt{}, err
 			}
 		}
@@ -95,25 +95,25 @@ func TestRunningCapQueuesTheFifthLaunch(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	// t-1 waits at the default priority; t-3, raised to p0 and queued after it, goes ahead of it.
-	newTask(t, d.store, d.config, "app", "Another", "t-3")
+	// t1 waits at the default priority; t3, raised to p0 and queued after it, goes ahead of it.
+	newTask(t, d.store, d.config, "app", "Another")
 	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
-		return s.SetTaskPriority("priority-t-3", "app", "t-3", store.PriorityUrgent)
+		return s.SetTaskPriority("priority-t3", "app", "t3", store.PriorityUrgent)
 	}); err != nil {
 		t.Fatal(err)
 	}
-	start := append([]string{"task", "start"}, d.flags("t-1")...)
+	start := append([]string{"task", "start"}, d.flags("t1")...)
 	for range 2 {
 		code, out, stderr := d.run(t, start...)
 		const want = `{"wait":"queued","step":"plan","attempt":1,"position":1}` + "\n"
 		if code != 0 || out != want || stderr != "" {
 			t.Fatalf("fifth launch: exit %d, %q, stderr %s; want exit 0 and %s", code, out, stderr, want)
 		}
-		if next := readFileString(t, filepath.Join(d.state, "app", "t-1", nextFile)); next != want {
+		if next := readFileString(t, filepath.Join(d.state, "app", "t1", nextFile)); next != want {
 			t.Fatalf("next.json = %q, want %q", next, want)
 		}
 	}
-	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-3")...)...); code != 0 || out != `{"wait":"queued","step":"plan","attempt":1,"position":1}`+"\n" {
+	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t3")...)...); code != 0 || out != `{"wait":"queued","step":"plan","attempt":1,"position":1}`+"\n" {
 		t.Fatalf("a p0 start queued after a p3: exit %d, %q, stderr %s; want it first", code, out, stderr)
 	}
 	if got := d.attempts(t); len(got) != 0 {
@@ -123,7 +123,7 @@ func TestRunningCapQueuesTheFifthLaunch(t *testing.T) {
 		t.Fatalf("budget-refused messages = %+v, want none for a queued start", got)
 	}
 	// A retry naming the queued attempt is refused, naming the queue entry.
-	if code, _, stderr := d.run(t, append([]string{"step", "retry"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--reason", "Again.")...)...); code != 1 || !strings.Contains(stderr, "attempt 1 of step plan is queued at place 2") {
+	if code, _, stderr := d.run(t, append([]string{"step", "retry"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "1", "--reason", "Again.")...)...); code != 1 || !strings.Contains(stderr, "attempt 1 of step plan is queued at place 2") {
 		t.Fatalf("a conflicting retry: exit %d, stderr %s; want exit 1 naming the queued attempt", code, stderr)
 	}
 
@@ -135,32 +135,32 @@ func TestRunningCapQueuesTheFifthLaunch(t *testing.T) {
 	for _, e := range status.Session.StartQueue {
 		queue = append(queue, fmt.Sprintf("%d:%s/%s:%d:%s:%s", e.Position, e.Task, e.Step, e.Attempt, e.Priority, e.Request))
 	}
-	if want := []string{"1:t-3/plan:1:p0:start", "2:t-1/plan:1:p3:start"}; !slices.Equal(queue, want) {
+	if want := []string{"1:t3/plan:1:p0:start", "2:t1/plan:1:p3:start"}; !slices.Equal(queue, want) {
 		t.Errorf("status start_queue = %v, want %v", queue, want)
 	}
 	for _, item := range status.NeedsMe {
-		if item.TaskID == "t-1" || item.TaskID == "t-3" {
+		if item.TaskID == "t1" || item.TaskID == "t3" {
 			t.Errorf("a queued start is in needs_me: %+v", item)
 		}
 	}
 
-	// t-2's attempt finishes and frees a slot, but its own next start queues behind the two waiting, as does
-	// t-1's, which is not the front.
+	// t2's attempt finishes and frees a slot, but its own next start queues behind the two waiting, as does
+	// t1's, which is not the front.
 	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
-		if _, err := s.FinishAttempt("finish-occupied", "app", "t-2", "step-0", 1, store.AttemptSucceeded); err != nil {
+		if _, err := s.FinishAttempt("finish-occupied", "app", "t2", "step-0", 1, store.AttemptSucceeded); err != nil {
 			return store.Receipt{}, err
 		}
-		return s.StartCappedAttempt("t-2-next", "app", "t-2", "step-0", store.AttemptCaps{MaxRunning: config.DefaultMaxRunningAttempts, Queue: &store.StartRequest{Kind: store.StartByEngine}})
+		return s.StartCappedAttempt("t2-next", "app", "t2", "step-0", store.AttemptCaps{MaxRunning: config.DefaultMaxRunningAttempts, Queue: &store.StartRequest{Kind: store.StartByEngine}})
 	}); err == nil {
-		t.Fatal("t-2's next start after its attempt finished was admitted, want it queued")
+		t.Fatal("t2's next start after its attempt finished was admitted, want it queued")
 	} else if q, ok := errors.AsType[*store.StartQueued](err); !ok || q.Position != 3 {
-		t.Fatalf("t-2's next start = %v, want it queued at place 3, behind the entries already waiting", err)
+		t.Fatalf("t2's next start = %v, want it queued at place 3, behind the entries already waiting", err)
 	}
 	if code, out, stderr := d.run(t, start...); code != 0 || out != `{"wait":"queued","step":"plan","attempt":1,"position":2}`+"\n" {
 		t.Fatalf("a start behind the front with a free slot: exit %d, %q, stderr %s; want it queued at place 2", code, out, stderr)
 	}
 
-	// The start-queue watcher's round starts the front, t-3, and stops at t-1, which stays queued. Its advance here
+	// The start-queue watcher's round starts the front, t3, and stops at t1, which stays queued. Its advance here
 	// starts in the store as an advance would, so the round does not race a fake Artisan's finish.
 	var advanced []string
 	advance := func(r taskRef) (interp.Next, bool, error) {
@@ -182,13 +182,13 @@ func TestRunningCapQueuesTheFifthLaunch(t *testing.T) {
 	var logged []string
 	logf := func(format string, args ...any) { logged = append(logged, fmt.Sprintf(format, args...)) }
 	startQueueRound(d.store, advance, logf)
-	if want := []string{"t-3", "t-1"}; !slices.Equal(advanced, want) || len(logged) != 0 {
+	if want := []string{"t3", "t1"}; !slices.Equal(advanced, want) || len(logged) != 0 {
 		t.Fatalf("the round advanced %v and logged %v; want %v and nothing", advanced, logged, want)
 	}
 
-	// Now the front, t-1 starts with a plain task start once a slot is free.
+	// Now the front, t1 starts with a plain task start once a slot is free.
 	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
-		return s.FinishAttempt("finish-t-3", "app", "t-3", "plan", 1, store.AttemptSucceeded)
+		return s.FinishAttempt("finish-t3", "app", "t3", "plan", 1, store.AttemptSucceeded)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func TestRunningCapQueuesTheFifthLaunch(t *testing.T) {
 
 	// While the session is paused the watcher starts nothing, though a slot is free.
 	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
-		if _, err := s.FinishAttempt("finish-occupied-1", "app", "t-2", "step-1", 1, store.AttemptSucceeded); err != nil {
+		if _, err := s.FinishAttempt("finish-occupied-1", "app", "t2", "step-1", 1, store.AttemptSucceeded); err != nil {
 			return store.Receipt{}, err
 		}
 		return store.Receipt{}, interptest.PauseStoreDirector(s)
@@ -217,19 +217,19 @@ func TestRunningCapQueuesTheFifthLaunch(t *testing.T) {
 // logged, so it does not hold the front.
 func TestStartQueueRoundDropsAStartNoLongerDue(t *testing.T) {
 	d := newRunDirector(t)
-	newTask(t, d.store, d.config, "app", "Another", "t-3")
+	newTask(t, d.store, d.config, "app", "Another")
 	caps := store.AttemptCaps{MaxRunning: 1, Queue: &store.StartRequest{Kind: store.StartByTask}}
-	// t-3's plan is queued twice under a store clock a second apart: on wall time a coarse clock (Windows) can give
+	// t2's plan is queued twice under a store clock a second apart: on wall time a coarse clock (Windows) can give
 	// both the same queue time, and the second entry would then leave under the first one's mutation id.
 	queuedAt := time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC)
 	clock := func() time.Time { return queuedAt }
 	if _, err := withStoreClock(d.store, false, clock, func(s *store.Store) (store.Receipt, error) {
-		if _, err := s.StartCappedAttempt("t-1-plan", "app", "t-1", "other", caps); err != nil {
+		if _, err := s.StartCappedAttempt("t1-plan", "app", "t1", "other", caps); err != nil {
 			return store.Receipt{}, err
 		}
-		return s.StartCappedAttempt("t-3-plan", "app", "t-3", "plan", caps)
+		return s.StartCappedAttempt("t2-plan", "app", "t2", "plan", caps)
 	}); !errors.Is(err, store.ErrStartQueued) {
-		t.Fatalf("t-3's start = %v, want it queued", err)
+		t.Fatalf("t2's start = %v, want it queued", err)
 	}
 	var logged []string
 	startQueueRound(d.store, func(taskRef) (interp.Next, bool, error) {
@@ -239,16 +239,16 @@ func TestStartQueueRoundDropsAStartNoLongerDue(t *testing.T) {
 	if err != nil || len(q) != 0 {
 		t.Fatalf("StartQueue = %+v, %v; want the entry dropped", q, err)
 	}
-	if len(logged) != 1 || !strings.Contains(logged[0], "app/t-3: attempt 1 of step plan left the start queue: the advance waits dependencies") {
+	if len(logged) != 1 || !strings.Contains(logged[0], "app/t2: attempt 1 of step plan left the start queue: the advance waits dependencies") {
 		t.Errorf("logged %q", logged)
 	}
 
 	// An advance that now queues another step of the task does not keep the old entry at the front.
 	queuedAt = queuedAt.Add(time.Second)
 	if _, err := withStoreClock(d.store, false, clock, func(s *store.Store) (store.Receipt, error) {
-		return s.StartCappedAttempt("t-3-plan", "app", "t-3", "plan", caps)
+		return s.StartCappedAttempt("t2-plan", "app", "t2", "plan", caps)
 	}); !errors.Is(err, store.ErrStartQueued) {
-		t.Fatalf("t-3's start again = %v, want it queued", err)
+		t.Fatalf("t2's start again = %v, want it queued", err)
 	}
 	logged = nil
 	startQueueRound(d.store, func(taskRef) (interp.Next, bool, error) {
@@ -261,7 +261,7 @@ func TestStartQueueRoundDropsAStartNoLongerDue(t *testing.T) {
 		t.Errorf("logged %q", logged)
 	}
 	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
-		return s.FinishAttempt("t-1-other", "app", "t-1", "other", 1, store.AttemptSucceeded)
+		return s.FinishAttempt("t1-other", "app", "t1", "other", 1, store.AttemptSucceeded)
 	}); err != nil {
 		t.Fatal(err)
 	}

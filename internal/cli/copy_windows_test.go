@@ -32,7 +32,7 @@ func TestCopyWindowsDriveLetterPath(t *testing.T) {
 // Discovery stops at the drive root, and the state/ rule matches however the directory's case is spelled.
 func TestCopyWindowsDiscovery(t *testing.T) {
 	dir := markCopy(t, bareCopy(t))
-	work := filepath.Join(dir, "state", "app", "t-1", "work")
+	work := filepath.Join(dir, "state", "app", "t1", "work")
 	if err := os.MkdirAll(work, 0o700); err != nil {
 		t.Fatal(err)
 	}

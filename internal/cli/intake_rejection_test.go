@@ -19,12 +19,12 @@ func TestCLIRejectedIntakeRecovery(t *testing.T) {
 		for _, bad := range []string{"missing output", "malformed result"} {
 			t.Run(command+"/"+bad, func(t *testing.T) {
 				d := newRunDirectorWith(t, "grill.toml")
-				if code, _, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 {
+				if code, _, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...); code != 0 {
 					t.Fatal(stderr)
 				}
 				result := d.result("grill", 1)
 				if bad == "missing output" {
-					if err := adapter.WriteResult(result, adapter.Result{Identity: adapter.Identity{TaskID: "t-1", AttemptID: "grill-1"}, Status: adapter.StatusSucceeded, Summary: "done"}); err != nil {
+					if err := adapter.WriteResult(result, adapter.Result{Identity: adapter.Identity{TaskID: "t1", AttemptID: "grill-1"}, Status: adapter.StatusSucceeded, Summary: "done"}); err != nil {
 						t.Fatal(err)
 					}
 				} else {
@@ -36,14 +36,14 @@ func TestCLIRejectedIntakeRecovery(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				_, err = s.FinishAttempt("launcher-success", "app", "t-1", "grill", 1, store.AttemptSucceeded)
+				_, err = s.FinishAttempt("launcher-success", "app", "t1", "grill", 1, store.AttemptSucceeded)
 				_ = s.Close()
 				if err != nil {
 					t.Fatal(err)
 				}
-				args := append([]string{"task", "start"}, d.flags("t-1")...)
+				args := append([]string{"task", "start"}, d.flags("t1")...)
 				if command == "step done" {
-					args = append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", "grill", "--attempt", "1", "--result", result)...)
+					args = append([]string{"step", "done"}, d.flags("--task", "t1", "--step", "grill", "--attempt", "1", "--result", result)...)
 				}
 				for range 2 {
 					code, out, stderr := d.run(t, args...)
@@ -51,7 +51,7 @@ func TestCLIRejectedIntakeRecovery(t *testing.T) {
 						t.Fatalf("intake: exit %d %q %s", code, out, stderr)
 					}
 				}
-				data, err := os.ReadFile(filepath.Join(d.state, "app", "t-1", "next.json"))
+				data, err := os.ReadFile(filepath.Join(d.state, "app", "t1", "next.json"))
 				if err != nil || string(data) != "{\"wait\":\"director\",\"step\":\"grill\",\"attempt\":1}\n" {
 					t.Fatalf("next.json=%q, %v", data, err)
 				}
@@ -63,7 +63,7 @@ func TestCLIRejectedIntakeRecovery(t *testing.T) {
 				if i < 0 || !st.NeedsMe[i].Retryable || !strings.Contains(st.NeedsMe[i].Reason, "result rejected:") {
 					t.Fatalf("status=%+v", st.NeedsMe)
 				}
-				code, out, stderr := d.run(t, append([]string{"step", "retry"}, d.flags("--task", "t-1", "--step", "grill", "--attempt", "1")...)...)
+				code, out, stderr := d.run(t, append([]string{"step", "retry"}, d.flags("--task", "t1", "--step", "grill", "--attempt", "1")...)...)
 				if code != 0 || out != "{\"wait\":\"director-stage\",\"step\":\"grill\",\"attempt\":2}\n" {
 					t.Fatalf("retry: exit %d %q %s", code, out, stderr)
 				}

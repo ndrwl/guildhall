@@ -73,8 +73,8 @@ func (d *watchDouble) got() ([]taskRef, []string) {
 }
 
 var (
-	t1 = taskRef{"app", "t-1"}
-	t2 = taskRef{"app", "t-2"}
+	t1 = taskRef{"app", "t1"}
+	t2 = taskRef{"app", "t2"}
 )
 
 // TestChecksWatchPacesRoundsByTheRefresh: the first tick advances every waiting task at once; a tick before the
@@ -86,7 +86,7 @@ func TestChecksWatchPacesRoundsByTheRefresh(t *testing.T) {
 	w.tick(at)
 	w.wait()
 	if got, _ := d.got(); !slices.Equal(got, []taskRef{t1, t2}) {
-		t.Fatalf("first round advanced %v, want t-1 then t-2", got)
+		t.Fatalf("first round advanced %v, want t1 then t2", got)
 	}
 	w.tick(at.Add(59 * time.Second))
 	w.wait()
@@ -184,7 +184,7 @@ func TestChecksWatchReportsAndRetriesAFailure(t *testing.T) {
 	if !slices.Equal(got, []taskRef{t1, t2, t1, t2}) {
 		t.Errorf("advanced %v, want both tasks in both rounds", got)
 	}
-	if !slices.Equal(reported, []string{"app/t-1: forge unreachable", "app/t-1: forge unreachable"}) {
+	if !slices.Equal(reported, []string{"app/t1: forge unreachable", "app/t1: forge unreachable"}) {
 		t.Errorf("reported %q", reported)
 	}
 	d = &watchDouble{tasks: []taskRef{t1}, listErr: errors.New("store locked")}
@@ -207,16 +207,16 @@ func TestChecksWatchWithNothingWaitingAdvancesNothing(t *testing.T) {
 	}
 }
 
-// checksItem is the needs_me item of task app/t-1 waiting for its checks.
-var checksItem = needsMeItem{Kind: "checks", Repository: "app", TaskID: "t-1", Step: "validate",
+// checksItem is the needs_me item of task app/t1 waiting for its checks.
+var checksItem = needsMeItem{Kind: "checks", Repository: "app", TaskID: "t1", Step: "validate",
 	Reason:  "step validate waits for the checks of its published head; the session supervisor reads them again every checks_refresh, never more often than every 30 seconds, and wakes you when they finish",
-	Command: "guildhall task start --repo app t-1"}
+	Command: "guildhall task start --repo app t1"}
 
 // TestStatusListsATaskWaitingForChecks: a task whose next.json waits for checks is listed in needs_me, after the
 // work that is the Director's, with the task start that reads them again.
 func TestStatusListsATaskWaitingForChecks(t *testing.T) {
 	d := newRunDirector(t)
-	writeNext(t, d.state, "t-1", `{"wait":"checks","step":"validate"}`+"\n")
+	writeNext(t, d.state, "t1", `{"wait":"checks","step":"validate"}`+"\n")
 	st, err := readDirectorStatus(context.Background(), d.store, d.state, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -239,18 +239,18 @@ func TestChecksWaitingListsOpenTasksWhileTheSessionWorks(t *testing.T) {
 		{[]store.DirectorState{store.DirectorRunning, store.DirectorStopping}, nil},
 	} {
 		d := newRunDirector(t)
-		newTask(t, d.store, d.config, "app", "Another", "t-2")
-		newTask(t, d.store, d.config, "app", "Cancelled", "t-3")
-		newTask(t, d.store, d.config, "app", "Elsewhere", "t-4")
+		newTask(t, d.store, d.config, "app", "Another")
+		newTask(t, d.store, d.config, "app", "Cancelled")
+		newTask(t, d.store, d.config, "app", "Elsewhere")
 		if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
-			return s.SetTaskState("cancel-t-3", "app", "t-3", store.TaskCancelled)
+			return s.SetTaskState("cancel-t3", "app", "t3", store.TaskCancelled)
 		}); err != nil {
 			t.Fatal(err)
 		}
 		recordSession(t, d.store, false, c.states...)
-		writeNext(t, d.state, "t-1", `{"wait":"checks","step":"validate"}`+"\n")
-		writeNext(t, d.state, "t-2", `{"wait":"attempt","step":"plan","attempt":1}`+"\n")
-		writeNext(t, d.state, "t-3", `{"wait":"checks","step":"validate"}`+"\n")
+		writeNext(t, d.state, "t1", `{"wait":"checks","step":"validate"}`+"\n")
+		writeNext(t, d.state, "t2", `{"wait":"attempt","step":"plan","attempt":1}`+"\n")
+		writeNext(t, d.state, "t3", `{"wait":"checks","step":"validate"}`+"\n")
 		got, err := checksWaiting(d.store, d.state)()
 		if err != nil || !slices.Equal(got, c.want) {
 			t.Errorf("after %v: waiting = %v, %v; want %v", c.states, got, err, c.want)
@@ -278,22 +278,22 @@ func TestMergeQueueWaitingListsAHeldFront(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			d := newRunDirector(t)
 			_, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
-				if _, err := s.PutDocument("auth", store.DocumentRef{Repository: "app", TaskID: "t-1", Name: "deliver-1-authorized", Path: "tasks/app/t-1/a.json", SHA256: strings.Repeat("0", 64)}); err != nil {
+				if _, err := s.PutDocument("auth", store.DocumentRef{Repository: "app", TaskID: "t1", Name: "deliver-1-authorized", Path: "tasks/app/t1/a.json", SHA256: strings.Repeat("0", 64)}); err != nil {
 					return store.Receipt{}, err
 				}
-				if _, err := s.JoinMergeQueue("join", "app", "t-1", "deliver-1", "document/deliver-1-authorized", ""); err != nil {
+				if _, err := s.JoinMergeQueue("join", "app", "t1", "deliver-1", "document/deliver-1-authorized", ""); err != nil {
 					return store.Receipt{}, err
 				}
-				if _, err := s.ClaimMergeFront("front", "app", "t-1"); err != nil {
+				if _, err := s.ClaimMergeFront("front", "app", "t1"); err != nil {
 					return store.Receipt{}, err
 				}
-				return s.SetMergeHold("hold", "app", "t-1", c.held)
+				return s.SetMergeHold("hold", "app", "t1", c.held)
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
 			recordSession(t, d.store, false, c.states...)
-			writeNext(t, d.state, "t-1", c.next+"\n")
+			writeNext(t, d.state, "t1", c.next+"\n")
 			got, err := mergeQueueWaiting(d.store, d.state)()
 			if err != nil || !slices.Equal(got, c.want) {
 				t.Errorf("waiting = %v, %v; want %v", got, err, c.want)
@@ -303,7 +303,7 @@ func TestMergeQueueWaitingListsAHeldFront(t *testing.T) {
 }
 
 // validateCopy is a short-pathed Director copy on the fake-validate workflow whose fake Director says it is ready
-// and then waits on its input, over forge f, with task app/t-1 driven by the test to its validate step, where its
+// and then waits on its input, over forge f, with task app/t1 driven by the test to its validate step, where its
 // published head's checks are pending.
 func validateCopy(t *testing.T, f *forgetest.Fake) (string, runDirector) {
 	t.Helper()
@@ -335,7 +335,7 @@ func validateCopy(t *testing.T, f *forgetest.Fake) (string, runDirector) {
 		_ = os.RemoveAll(dir)
 	})
 	approveRepo(t, d.store, cfg, "app")
-	newTask(t, d.store, cfg, "app", "Sort the task list", "t-1")
+	newTask(t, d.store, cfg, "app", "Sort the task list")
 	step := func(args ...string) string {
 		t.Helper()
 		code, out, stderr := d.run(t, args...)
@@ -346,16 +346,16 @@ func validateCopy(t *testing.T, f *forgetest.Fake) (string, runDirector) {
 	}
 	done := func(name string) {
 		d.waitResult(t, name, 1)
-		step(append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", name, "--attempt", "1", "--result", d.result(name, 1))...)...)
+		step(append([]string{"step", "done"}, d.flags("--task", "t1", "--step", name, "--attempt", "1", "--result", d.result(name, 1))...)...)
 	}
 	answer := func(decision, words string) string {
 		t.Helper()
 		file := filepath.Join(t.TempDir(), "answer")
 		writeFile(t, file, words)
-		step("decide", "answer", "--store", d.store, "--repo", "app", "--task", "t-1", "--decision", decision, "--answer-file", file)
-		return step(append([]string{"task", "start"}, d.flags("--decision", decision, "t-1")...)...)
+		step("decide", "answer", "--store", d.store, "--repo", "app", "--task", "t1", "--decision", decision, "--answer-file", file)
+		return step(append([]string{"task", "start"}, d.flags("--decision", decision, "t1")...)...)
 	}
-	step(append([]string{"task", "start"}, d.flags("t-1")...)...)
+	step(append([]string{"task", "start"}, d.flags("t1")...)...)
 	done("plan")
 	answer("accept-1", "approved\n")
 	done("build")
@@ -365,7 +365,7 @@ func validateCopy(t *testing.T, f *forgetest.Fake) (string, runDirector) {
 	return dir, d
 }
 
-// TestTheSupervisorAdvancesATaskWhenItsChecksFinish: with a session supervisor running and task t-1 waiting at
+// TestTheSupervisorAdvancesATaskWhenItsChecksFinish: with a session supervisor running and task t1 waiting at
 // validate for pending checks, the checks turning green take the task on to its merge decision with no task start
 // from the test, and send the Director the checks-passed message; while they stay pending, the supervisor's reads
 // send nothing new. The test lowers the watcher's floor so several rounds read the pending checks quickly.
@@ -403,7 +403,7 @@ func TestTheSupervisorAdvancesATaskWhenItsChecksFinish(t *testing.T) {
 	// The task lock is the completion barrier for an advance already in flight.
 	ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(time.Minute))
 	defer cancel()
-	release, err := artisan.LockAttempt(ctx, filepath.Join(d.state, "app", "t-1"))
+	release, err := artisan.LockAttempt(ctx, filepath.Join(d.state, "app", "t1"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -418,14 +418,14 @@ func TestTheSupervisorAdvancesATaskWhenItsChecksFinish(t *testing.T) {
 		paused.tick(time.Now().Add(time.Duration(i) * time.Hour))
 		paused.wait()
 	}
-	if strings.TrimSpace(readFileString(t, filepath.Join(d.state, "app", "t-1", nextFile))) != `{"wait":"checks","step":"validate"}` {
+	if strings.TrimSpace(readFileString(t, filepath.Join(d.state, "app", "t1", nextFile))) != `{"wait":"checks","step":"validate"}` {
 		t.Fatal("paused supervisor advanced green checks")
 	}
 	t.Log("green while paused: completed watcher rounds found no eligible task")
 	if code, out, stderr := d.run(t, "director", "resume", "--copy", dir); code != 0 {
 		t.Fatalf("resume: %s %s", out, stderr)
 	}
-	next := filepath.Join(d.state, "app", "t-1", nextFile)
+	next := filepath.Join(d.state, "app", "t1", nextFile)
 	want := `{"wait":"decision","step":"deliver","decision":"deliver-1"}`
 	for end := time.Now().Add(testenv.Ceiling(3 * time.Minute)); strings.TrimSpace(readFileString(t, next)) != want; time.Sleep(50 * time.Millisecond) {
 		if time.Now().After(end) {
@@ -433,7 +433,7 @@ func TestTheSupervisorAdvancesATaskWhenItsChecksFinish(t *testing.T) {
 		}
 	}
 	t.Logf("autonomous continuation, without task start: next=%s; messages=%v", readFileString(t, next), directorMessages(t, d.store))
-	if got := directorMessages(t, d.store); !slices.Contains(got, "app.t-1.checks-passed.validate-1") {
+	if got := directorMessages(t, d.store); !slices.Contains(got, "app.t1.checks-passed.validate-1") {
 		t.Errorf("Director messages = %v, want checks-passed", got)
 	}
 	if code, out, stderr := d.run(t, "director", "stop", "--now", "--copy", dir); code != 0 {

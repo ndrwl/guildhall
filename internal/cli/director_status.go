@@ -1353,7 +1353,7 @@ func maintenanceStatus(v store.DirectorView, hallmarks map[string]repoHallmarks)
 			if until == 0 && h.RunningTask == "" {
 				items = append(items, needsMeItem{Kind: maintenanceKind, Repository: r.Repository, Count: h.MergedSince,
 					Reason:  fmt.Sprintf("hallmark due: %d merged since %s", h.MergedSince, last),
-					Command: fmt.Sprintf("guildhall task new --repo %s --kind hallmark --title <text> <id>", r.Repository)})
+					Command: fmt.Sprintf("guildhall task new --repo %s --kind hallmark --title <text>", r.Repository)})
 			}
 		}
 		out.Hallmarks = append(out.Hallmarks, h)

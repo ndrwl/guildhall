@@ -30,24 +30,24 @@ func TestTaskDesignHelpAndValidation(t *testing.T) {
 	}
 	for _, args := range [][]string{
 		{"--unknown", "x"},
-		{"--task", "t-1"},
+		{"--task", "t1"},
 		{"--brief", briefFile(t, "Show the options."), "--surface", "none"},
-		{"--task", "t-1", "--brief", briefFile(t, "Show the options.")},
-		{"--task", "t-1", "--surface", "poster", "--brief", briefFile(t, "Show the options.")},
-		{"--task", "t-1", "--surface", "Web-Page", "--brief", briefFile(t, "Show the options.")},
-		{"--task", "t-1", "--surface", "none", "--brief", filepath.Join(t.TempDir(), "missing.md")},
-		{"--task", "t-1", "--surface", "none", "--brief", briefFile(t, " \n")},
-		{"--task", "t-1", "--surface", "none", "--brief", briefFile(t, "Show the options."), "extra"},
+		{"--task", "t1", "--brief", briefFile(t, "Show the options.")},
+		{"--task", "t1", "--surface", "poster", "--brief", briefFile(t, "Show the options.")},
+		{"--task", "t1", "--surface", "Web-Page", "--brief", briefFile(t, "Show the options.")},
+		{"--task", "t1", "--surface", "none", "--brief", filepath.Join(t.TempDir(), "missing.md")},
+		{"--task", "t1", "--surface", "none", "--brief", briefFile(t, " \n")},
+		{"--task", "t1", "--surface", "none", "--brief", briefFile(t, "Show the options."), "extra"},
 	} {
 		if code, _, _ := d.run(t, append([]string{"task", "design"}, d.flags(args...)...)...); code != 2 {
 			t.Errorf("%v exit %d, want 2", args, code)
 		}
 	}
-	if code, _, stderr := d.run(t, append([]string{"task", "design"}, d.flags("--task", "t-1", "--surface", "poster", "--brief", briefFile(t, "x"))...)...); code != 2 ||
+	if code, _, stderr := d.run(t, append([]string{"task", "design"}, d.flags("--task", "t1", "--surface", "poster", "--brief", briefFile(t, "x"))...)...); code != 2 ||
 		!strings.Contains(stderr, `unknown surface "poster": want one of web-page, cli, chat, none`) {
 		t.Errorf("an unknown surface = %d, %s", code, stderr)
 	}
-	if code, _, _ := d.run(t, "task", "design", "--task", "t-1", "--surface", "none", "--brief", briefFile(t, "Show the options."), "--store", filepath.Join(t.TempDir(), "none.store"), "--repo", "app"); code != 2 {
+	if code, _, _ := d.run(t, "task", "design", "--task", "t1", "--surface", "none", "--brief", briefFile(t, "Show the options."), "--store", filepath.Join(t.TempDir(), "none.store"), "--repo", "app"); code != 2 {
 		t.Errorf("missing --config and --state exit %d, want 2", code)
 	}
 	if _, out, _ := d.run(t, "help"); !strings.Contains(out, "task design") {
@@ -59,7 +59,7 @@ func TestTaskDesignHelpAndValidation(t *testing.T) {
 // and records nothing.
 func TestTaskDesignRefusesABugTask(t *testing.T) {
 	d := newRunDirector(t)
-	code, _, stderr := d.run(t, append([]string{"task", "design"}, d.flags("--task", "t-1", "--surface", "none", "--brief", briefFile(t, "Show the options."))...)...)
+	code, _, stderr := d.run(t, append([]string{"task", "design"}, d.flags("--task", "t1", "--surface", "none", "--brief", briefFile(t, "Show the options."))...)...)
 	if code != 1 || !strings.Contains(stderr, "bugs have no design round") {
 		t.Fatalf("task design = %d, %s; want the bug refusal", code, stderr)
 	}
@@ -74,10 +74,10 @@ func TestTaskDesignRefusesABugTask(t *testing.T) {
 // count one round used.
 func TestTaskDesignRunsARound(t *testing.T) {
 	d := newRunDirectorWith(t, "design.toml")
-	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"director-stage","step":"grill","attempt":1}`+"\n" {
+	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...); code != 0 || out != `{"wait":"director-stage","step":"grill","attempt":1}`+"\n" {
 		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 	}
-	design := append([]string{"task", "design"}, d.flags("--task", "t-1", "--surface", "none", "--brief", briefFile(t, "Show the sort options as a mock-up."))...)
+	design := append([]string{"task", "design"}, d.flags("--task", "t1", "--surface", "none", "--brief", briefFile(t, "Show the sort options as a mock-up."))...)
 	if code, _, stderr := d.run(t, design...); code != 1 || !strings.Contains(stderr, "grill attempt 1 is still running") {
 		t.Fatalf("task design during the grill = %d, %s", code, stderr)
 	}
@@ -86,13 +86,13 @@ func TestTaskDesignRunsARound(t *testing.T) {
 		t.Fatalf("step finish: exit %d, %q, stderr %s", code, out, stderr)
 	}
 	d.waitResult(t, "plan", 1)
-	if code, out, stderr := d.run(t, append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--result", d.result("plan", 1))...)...); code != 0 || !strings.Contains(out, `"decision":"accept-1"`) {
+	if code, out, stderr := d.run(t, append([]string{"step", "done"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "1", "--result", d.result("plan", 1))...)...); code != 0 || !strings.Contains(out, `"decision":"accept-1"`) {
 		t.Fatalf("plan done: exit %d, %q, stderr %s", code, out, stderr)
 	}
 
 	// The workspaces double makes no git repository, so the task's worktree is made one with a commit: the designer's
 	// launch records its HEAD and intake checks the project is unchanged (docs/interpreter.md#design-rounds).
-	work := filepath.Join(d.state, "app", "t-1", "work")
+	work := filepath.Join(d.state, "app", "t1", "work")
 	if _, err := os.Stat(work); err != nil {
 		t.Fatalf("task worktree: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestTaskDesignRunsARound(t *testing.T) {
 	if got := d.attempts(t); len(got) != 3 {
 		t.Errorf("attempts = %+v, want grill, plan and one designer", got)
 	}
-	if code, out, stderr := d.run(t, append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", "designer", "--attempt", "1", "--result", d.result("designer", 1))...)...); code != 0 || out != `{"wait":"decision","step":"design","decision":"design-1"}`+"\n" {
+	if code, out, stderr := d.run(t, append([]string{"step", "done"}, d.flags("--task", "t1", "--step", "designer", "--attempt", "1", "--result", d.result("designer", 1))...)...); code != 0 || out != `{"wait":"decision","step":"design","decision":"design-1"}`+"\n" {
 		t.Fatalf("designer done: exit %d, %q, stderr %s", code, out, stderr)
 	}
 	for _, doc := range d.documents(t) {
@@ -135,12 +135,12 @@ func TestTaskDesignRunsARound(t *testing.T) {
 		t.Errorf("the replay changed the brief count by %d, want no brief recorded", -briefs)
 	}
 	// The same brief under another surface is another request, refused while the round is open.
-	other := append([]string{"task", "design"}, d.flags("--task", "t-1", "--surface", "cli", "--brief", briefFile(t, "Show the sort options as a mock-up."))...)
+	other := append([]string{"task", "design"}, d.flags("--task", "t1", "--surface", "cli", "--brief", briefFile(t, "Show the sort options as a mock-up."))...)
 	if code, _, stderr := d.run(t, other...); code != 1 || !strings.Contains(stderr, "design round 1 is already open") {
 		t.Fatalf("a second request = %d, %s", code, stderr)
 	}
 	for _, sub := range []string{"show", "timeline"} {
-		code, out, stderr := d.run(t, "task", sub, "--store", d.store, "--repo", "app", "t-1", "--json")
+		code, out, stderr := d.run(t, "task", sub, "--store", d.store, "--repo", "app", "t1", "--json")
 		if code != 0 || !strings.Contains(out, `"design_rounds":1`) {
 			t.Errorf("task %s: exit %d, stderr %s; want design_rounds 1 in %s", sub, code, stderr, out)
 		}

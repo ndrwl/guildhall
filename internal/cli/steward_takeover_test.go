@@ -134,7 +134,7 @@ func TestStewardTakeover(t *testing.T) {
 	ts := newTakeoverSetup(t)
 	cfgPath := filepath.Join(ts.steward, "config.toml")
 	planDir := filepath.Join(ts.steward, "rollouts", "takeover-alpha")
-	if code, _, stderr := ts.run(t, false, "", "task", "new", "--copy", ts.director, "--repo", "app", "--title", "Kept", "t-1"); code != 0 {
+	if code, _, stderr := ts.run(t, false, "", "task", "new", "--copy", ts.director, "--repo", "app", "--title", "Kept"); code != 0 {
 		t.Fatalf("task new: %s", stderr)
 	}
 	before := ts.effective(t)
@@ -195,7 +195,7 @@ func TestStewardTakeover(t *testing.T) {
 	if after := ts.effective(t); !reflect.DeepEqual(before, after) {
 		t.Errorf("effective config changed:\nbefore %+v\nafter  %+v", before, after)
 	}
-	if code, out, _ := ts.run(t, false, "", "task", "list", "--json", "--copy", ts.director); code != 0 || !strings.Contains(out, `"t-1"`) {
+	if code, out, _ := ts.run(t, false, "", "task", "list", "--json", "--copy", ts.director); code != 0 || !strings.Contains(out, `"t1"`) {
 		t.Errorf("task list after the takeover: exit %d, %s", code, out)
 	}
 	exports, _ := filepath.Glob(filepath.Join(ts.director, "state", "steward", "takeover", "takeover-alpha", "*"))

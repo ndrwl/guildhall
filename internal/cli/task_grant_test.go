@@ -15,21 +15,21 @@ import (
 	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
-// grantFlags are the flags of a task grant command on task t-1 of d.
+// grantFlags are the flags of a task grant command on task t1 of d.
 func (d runDirector) grantFlags(sub string, extra ...string) []string {
-	args := []string{"task", "grant", sub, "--store", d.store, "--repo", "app", "--task", "t-1"}
+	args := []string{"task", "grant", sub, "--store", d.store, "--repo", "app", "--task", "t1"}
 	if sub == "create" {
 		args = append(args, "--config", d.config)
 	}
 	return append(args, extra...)
 }
 
-// answerGrant records words as the answer to decision id of task t-1 through decide answer.
+// answerGrant records words as the answer to decision id of task t1 through decide answer.
 func (d runDirector) answerGrant(t *testing.T, id, words string) {
 	t.Helper()
 	file := filepath.Join(t.TempDir(), "answer")
 	writeFile(t, file, words)
-	if code, _, stderr := d.run(t, "decide", "answer", "--store", d.store, "--repo", "app", "--task", "t-1", "--decision", id, "--answer-file", file); code != 0 {
+	if code, _, stderr := d.run(t, "decide", "answer", "--store", d.store, "--repo", "app", "--task", "t1", "--decision", id, "--answer-file", file); code != 0 {
 		t.Fatalf("decide answer %s: exit %d, stderr %s", id, code, stderr)
 	}
 }
@@ -62,7 +62,7 @@ func TestTaskGrantCommands(t *testing.T) {
 		t.Fatalf("create: exit %d, stderr %s", code, stderr)
 	}
 	var rc store.Receipt
-	if err := json.Unmarshal([]byte(out), &rc); err != nil || rc.MutationID != "task-grant:app:t-1:g1" || rc.Record != "task-grant/g1" || strings.Count(out, "\n") != 1 {
+	if err := json.Unmarshal([]byte(out), &rc); err != nil || rc.MutationID != "task-grant:app:t1:g1" || rc.Record != "task-grant/g1" || strings.Count(out, "\n") != 1 {
 		t.Fatalf("create printed %q (%v)", out, err)
 	}
 	before := lastSequence(t, d.store)
@@ -104,7 +104,7 @@ func TestTaskGrantCommands(t *testing.T) {
 
 	revoke := d.grantFlags("revoke", "--grant", "g1", "--reason", "No longer needed.")
 	code, out, stderr = d.run(t, revoke...)
-	if code != 0 || !strings.Contains(out, `"mutation_id":"task-grant-revoke:app:t-1:g1"`) {
+	if code != 0 || !strings.Contains(out, `"mutation_id":"task-grant-revoke:app:t1:g1"`) {
 		t.Fatalf("revoke: exit %d, %q, stderr %s", code, out, stderr)
 	}
 	if code, again, _ := d.run(t, revoke...); code != 0 || again != out {
@@ -117,7 +117,7 @@ func TestTaskGrantCommands(t *testing.T) {
 		t.Errorf("unknown grant: exit %d, stderr %s", code, stderr)
 	}
 
-	if code, out, stderr := d.run(t, d.grantFlags("create", "--step", "all", "--until", "done", "--tool", "Bash(herdr:*)", "--reason", "Herdr everywhere.")...); code != 0 || !strings.Contains(out, "task-grant:app:t-1:g2") {
+	if code, out, stderr := d.run(t, d.grantFlags("create", "--step", "all", "--until", "done", "--tool", "Bash(herdr:*)", "--reason", "Herdr everywhere.")...); code != 0 || !strings.Contains(out, "task-grant:app:t1:g2") {
 		t.Fatalf("create after the revoke: exit %d, %q, stderr %s", code, out, stderr)
 	}
 	d.answerGrant(t, "grant-g2", "reject")
@@ -146,8 +146,8 @@ func TestTaskGrantUsage(t *testing.T) {
 		"grant on create":    d.grantFlags("create", "--step", "plan", "--tool", "Bash(go:*)", "--reason", "Why.", "--grant", "g1"),
 		"no grant":           d.grantFlags("revoke", "--reason", "Why."),
 		"tool on revoke":     d.grantFlags("revoke", "--grant", "g1", "--reason", "Why.", "--tool", "Bash(go:*)"),
-		"list task no repo":  {"task", "grant", "list", "--store", d.store, "--task", "t-1"},
-		"argument":           append(d.grantFlags("list"), "t-1"),
+		"list task no repo":  {"task", "grant", "list", "--store", d.store, "--task", "t1"},
+		"argument":           append(d.grantFlags("list"), "t1"),
 		"bad task id":        {"task", "grant", "list", "--store", d.store, "--repo", "app", "--task", "T1"},
 	} {
 		if code, out, stderr := d.run(t, args...); code != 2 || out != "" || !strings.Contains(stderr, "usage:") {
@@ -163,15 +163,15 @@ func TestTaskGrantUsage(t *testing.T) {
 // bug task, not the repository's feature workflow, and takes the step's role profile resolved at use.
 func TestTaskGrantOnABugTask(t *testing.T) {
 	d := newRunDirectorWith(t, "claude.toml")
-	if code, stderr := kindTask(t, d.store, d.config, "t-2", "--kind", "bug"); code != 0 {
-		t.Fatalf("bug task: exit %d, stderr %s", code, stderr)
+	if code, stderr, id := kindTask(t, d.store, d.config, "--kind", "bug"); code != 0 || id != "t2" {
+		t.Fatalf("bug task: exit %d, id %s, stderr %s", code, id, stderr)
 	}
 	create := func(step string) (int, string, string) {
-		return d.run(t, "task", "grant", "create", "--store", d.store, "--config", d.config, "--repo", "app", "--task", "t-2",
+		return d.run(t, "task", "grant", "create", "--store", d.store, "--config", d.config, "--repo", "app", "--task", "t2",
 			"--step", step, "--tool", "Bash(go:*)", "--reason", "The repro needs go.")
 	}
 	// build is a step of the bug workflow only; its role profile is the shipped builder, which runs claude.
-	if code, out, stderr := create("build"); code != 0 || !strings.Contains(out, "task-grant:app:t-2:g1") {
+	if code, out, stderr := create("build"); code != 0 || !strings.Contains(out, "task-grant:app:t2:g1") {
 		t.Fatalf("create on build: exit %d, %q, stderr %s", code, out, stderr)
 	}
 	if code, _, stderr := create("nope"); code != 1 || !strings.Contains(stderr, "claude adapter") {
@@ -190,7 +190,7 @@ func TestTaskGrantReachesTheClaudeSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if code, _, stderr := d.run(t, "task", "grant", "create", "--copy", copyDir, "--repo", "app", "--task", "t-1", "--step", "plan",
+	if code, _, stderr := d.run(t, "task", "grant", "create", "--copy", copyDir, "--repo", "app", "--task", "t1", "--step", "plan",
 		"--tool", "Bash(go:*)", "--reason", "The probe builds with go."); code != 0 {
 		t.Fatalf("create: exit %d, stderr %s", code, stderr)
 	}
@@ -213,7 +213,7 @@ func TestTaskGrantReachesTheClaudeSession(t *testing.T) {
 		t.Fatalf("status grants before the attempt = %+v", g)
 	}
 
-	if code, out, stderr := d.run(t, "task", "start", "--copy", copyDir, "--repo", "app", "t-1"); code != 0 {
+	if code, out, stderr := d.run(t, "task", "start", "--copy", copyDir, "--repo", "app", "t1"); code != 0 {
 		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 	}
 	d.waitResult(t, "plan", 1)
@@ -221,7 +221,7 @@ func TestTaskGrantReachesTheClaudeSession(t *testing.T) {
 	if got, err := claudetest.Granted(d.result("plan", 1)); err != nil || !slices.Equal(got, want) {
 		t.Errorf("plan-1 was granted %q, %v; want %q", got, err, want)
 	}
-	binding, err := os.ReadFile(filepath.Join(d.state, "documents", "tasks", "app", "t-1", "plan-1.inputs.json"))
+	binding, err := os.ReadFile(filepath.Join(d.state, "documents", "tasks", "app", "t1", "plan-1.inputs.json"))
 	if err != nil || !strings.Contains(string(binding), `"grant":{"id":"g1","rules":["Bash(go:*)"]}`) {
 		t.Errorf("plan-1 binding = %s, %v", binding, err)
 	}

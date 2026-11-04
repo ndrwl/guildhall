@@ -34,7 +34,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
-// runDirector is a Director over testdata/run: a store holding task app/t-1 on the fake-straight workflow,
+// runDirector is a Director over testdata/run: a store holding task app/t1 on the fake-straight workflow,
 // its config and a short state directory, with every launcher it starts played by this test binary.
 type runDirector struct {
 	store, config, state string
@@ -85,11 +85,11 @@ var appRepo = func() string {
 func newRunDirectorAt(t *testing.T, cfg string) runDirector {
 	t.Helper()
 	d := newRunDirectorBare(t, cfg)
-	newTask(t, d.store, d.config, "app", "Sort the task list", "t-1")
+	newTask(t, d.store, d.config, "app", "Sort the task list")
 	return d
 }
 
-// newRunDirectorBare is newRunDirectorAt without task app/t-1, which the test creates itself.
+// newRunDirectorBare is newRunDirectorAt without task app/t1, which the test creates itself.
 func newRunDirectorBare(t *testing.T, cfg string) runDirector {
 	t.Helper()
 	// A managed run copies the fixture too, since it writes managed.toml and the copy's store beside the config.
@@ -161,7 +161,7 @@ func (d runDirector) flags(extra ...string) []string {
 }
 
 func (d runDirector) result(step string, n int) string {
-	return filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: step, Attempt: n}.Dir(d.state), artisan.ResultFile)
+	return filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: step, Attempt: n}.Dir(d.state), artisan.ResultFile)
 }
 
 // waitResult waits for a valid result and for its launcher to record spend before the test advances or stops
@@ -171,7 +171,7 @@ func (d runDirector) waitResult(t *testing.T, step string, n int) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(time.Minute))
 	defer cancel()
-	if _, err := adapter.WaitResult(ctx, d.result(step, n), adapter.Identity{TaskID: "t-1", AttemptID: artisan.AttemptKey{Step: step, Attempt: n}.AttemptID()}, adapter.WaitOptions{Poll: 20 * time.Millisecond}); err != nil {
+	if _, err := adapter.WaitResult(ctx, d.result(step, n), adapter.Identity{TaskID: "t1", AttemptID: artisan.AttemptKey{Step: step, Attempt: n}.AttemptID()}, adapter.WaitOptions{Poll: 20 * time.Millisecond}); err != nil {
 		t.Fatalf("result of %s-%d: %v", step, n, err)
 	}
 	d.waitSpend(t, step, n)
@@ -198,14 +198,14 @@ func (d runDirector) leftovers(t *testing.T, inv string) []string {
 	if err != nil {
 		return []string{err.Error()}
 	}
-	attempts, err := s.Attempts("app", "t-1")
+	attempts, err := s.Attempts("app", "t1")
 	_ = s.Close()
 	var out []string
 	if err != nil {
 		out = append(out, err.Error())
 	}
 	for _, a := range attempts {
-		at := []string{"--store", d.store, "--state", d.state, "--repo", "app", "--task", "t-1", "--step", a.Step, "--attempt", strconv.Itoa(a.Number)}
+		at := []string{"--store", d.store, "--state", d.state, "--repo", "app", "--task", "t1", "--step", a.Step, "--attempt", strconv.Itoa(a.Number)}
 		var procs []harnessProcess
 		args := append([]string{"artisan", "harness", "inventory", "--lab"}, at...)
 		if inv != "" {
@@ -229,7 +229,7 @@ func (d runDirector) leftovers(t *testing.T, inv string) []string {
 				// File outcomes mask the Exited classification. Check the released
 				// record itself for a launcher that never recorded a worker unit.
 				own, readErr := withStore(d.store, true, func(s *store.Store) (store.Ownership, error) {
-					return s.Ownership("app", "t-1", a.Step, a.Number)
+					return s.Ownership("app", "t1", a.Step, a.Number)
 				})
 				if readErr == nil && own.State == store.OwnerReleased && own.Containment == (store.Containment{}) {
 					return rep, nil
@@ -264,7 +264,7 @@ func (d runDirector) attempts(t *testing.T) []store.StageAttempt {
 		t.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
-	a, err := s.Attempts("app", "t-1")
+	a, err := s.Attempts("app", "t1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,13 +273,13 @@ func (d runDirector) attempts(t *testing.T) []store.StageAttempt {
 
 func TestTaskStartAndStepDone(t *testing.T) {
 	d := newRunDirector(t)
-	code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...)
+	code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...)
 	if code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
 		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 	}
 	// A repeated start replays and records no second attempt; once the launcher has recorded the plan
 	// succeeded it may already take its outputs and open the approval.
-	if code, again, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 ||
+	if code, again, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...); code != 0 ||
 		again != out && again != `{"wait":"decision","step":"accept","decision":"accept-1"}`+"\n" {
 		t.Errorf("repeated task start: exit %d, %q, stderr %s", code, again, stderr)
 	}
@@ -294,7 +294,7 @@ func TestTaskStartAndStepDone(t *testing.T) {
 	if a := d.waitSpend(t, "plan", 1); *a.Spend != want {
 		t.Errorf("plan-1 spend = %+v, want the fake's %+v", *a.Spend, want)
 	}
-	done := append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--result", d.result("plan", 1))...)
+	done := append([]string{"step", "done"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "1", "--result", d.result("plan", 1))...)
 	code, out, stderr = d.run(t, done...)
 	if code != 0 || out != `{"wait":"decision","step":"accept","decision":"accept-1"}`+"\n" {
 		t.Fatalf("step done: exit %d, %q, stderr %s", code, out, stderr)
@@ -303,7 +303,7 @@ func TestTaskStartAndStepDone(t *testing.T) {
 		t.Errorf("repeated step done: exit %d, %q, stderr %s", code, again, stderr)
 	}
 	// The answer alone advances nothing; start with the decision does.
-	if code, _, stderr := d.run(t, append([]string{"task", "start"}, d.flags("--decision", "accept-1", "t-1")...)...); code != 1 || !strings.Contains(stderr, "not answered") {
+	if code, _, stderr := d.run(t, append([]string{"task", "start"}, d.flags("--decision", "accept-1", "t1")...)...); code != 1 || !strings.Contains(stderr, "not answered") {
 		t.Errorf("start on an unanswered decision: exit %d, stderr %s", code, stderr)
 	}
 }
@@ -352,11 +352,11 @@ func newRunCopyOn(t *testing.T, workflow, configFile string) (runDirector, strin
 	})
 	maybeManage(t, dir)
 	approveRepo(t, d.store, d.config, "app")
-	newTask(t, d.store, d.config, "app", "Sort the task list", "t-1")
+	newTask(t, d.store, d.config, "app", "Sort the task list")
 	return d, dir
 }
 
-// waitDecision waits for the store to record decision id of task app/t-1.
+// waitDecision waits for the store to record decision id of task app/t1.
 func (d runDirector) waitDecision(t *testing.T, id string) {
 	t.Helper()
 	for end := time.Now().Add(testenv.Ceiling(time.Minute)); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
@@ -364,13 +364,13 @@ func (d runDirector) waitDecision(t *testing.T, id string) {
 		if err != nil {
 			continue
 		}
-		ds, err := s.Decisions("app", "t-1")
+		ds, err := s.Decisions("app", "t1")
 		_ = s.Close()
 		if err == nil && slices.ContainsFunc(ds, func(d store.Decision) bool { return d.ID == id }) {
 			return
 		}
 	}
-	log, _ := os.ReadFile(filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}.Dir(d.state), launch.LogFile))
+	log, _ := os.ReadFile(filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "plan", Attempt: 1}.Dir(d.state), launch.LogFile))
 	t.Fatalf("decision %s was not opened within %v; plan-1 launcher log:\n%s", id, testenv.Ceiling(time.Minute), log)
 }
 
@@ -379,18 +379,18 @@ func (d runDirector) waitDecision(t *testing.T, id string) {
 // task reaches the accept-1 decision without step done typed by hand.
 func TestTaskStartAndStepDoneByTheWatcher(t *testing.T) {
 	d, dir := newRunCopy(t)
-	code, out, stderr := d.run(t, "task", "start", "--copy", dir, "--repo", "app", "t-1")
+	code, out, stderr := d.run(t, "task", "start", "--copy", dir, "--repo", "app", "t1")
 	if code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
 		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 	}
 	d.waitDecision(t, "accept-1")
-	if code, out, stderr := d.run(t, "task", "start", "--copy", dir, "--repo", "app", "t-1"); code != 0 || out != `{"wait":"decision","step":"accept","decision":"accept-1"}`+"\n" {
+	if code, out, stderr := d.run(t, "task", "start", "--copy", dir, "--repo", "app", "t1"); code != 0 || out != `{"wait":"decision","step":"accept","decision":"accept-1"}`+"\n" {
 		t.Errorf("task start after the launcher's advance: exit %d, %q, stderr %s", code, out, stderr)
 	}
 	if got := d.attempts(t); len(got) != 1 || got[0].Outcome != store.AttemptSucceeded {
 		t.Errorf("attempts %+v, want plan-1 succeeded", got)
 	} // Each advance leaves what the task waits for beside its task lock, for director status.
-	if b, err := os.ReadFile(filepath.Join(d.state, "app", "t-1", "next.json")); err != nil || string(b) != `{"wait":"decision","step":"accept","decision":"accept-1"}`+"\n" {
+	if b, err := os.ReadFile(filepath.Join(d.state, "app", "t1", "next.json")); err != nil || string(b) != `{"wait":"decision","step":"accept","decision":"accept-1"}`+"\n" {
 		t.Errorf("next.json = %q, %v", b, err)
 	}
 }
@@ -400,7 +400,7 @@ func TestTaskStartAndStepDoneByTheWatcher(t *testing.T) {
 // task start takes the task lock and sends the Director attempt-failed.
 func TestTheWatcherReportsASetupFailure(t *testing.T) {
 	d, dir := newRunCopy(t)
-	k := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}
+	k := artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "plan", Attempt: 1}
 	path, err := artisan.EndpointPath(d.state, k)
 	if err != nil {
 		t.Fatal(err)
@@ -409,7 +409,7 @@ func TestTheWatcherReportsASetupFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	begun := time.Now()
-	if code, out, stderr := d.run(t, "task", "start", "--copy", dir, "--repo", "app", "t-1"); code == 0 || !strings.Contains(stderr, "plan") {
+	if code, out, stderr := d.run(t, "task", "start", "--copy", dir, "--repo", "app", "t1"); code == 0 || !strings.Contains(stderr, "plan") {
 		t.Fatalf("task start over a setup failure: exit %d, %q, stderr %s; want the launch error", code, out, stderr)
 	}
 	if took := time.Since(begun); took > 10*time.Second {
@@ -419,7 +419,7 @@ func TestTheWatcherReportsASetupFailure(t *testing.T) {
 	for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(50 * time.Millisecond) {
 		s, err := store.Open(d.store, store.Options{ReadOnly: true})
 		if err == nil {
-			msg, err = s.Message("app.t-1.attempt-failed.plan-1")
+			msg, err = s.Message("app.t1.attempt-failed.plan-1")
 			_ = s.Close()
 		}
 		if err == nil {
@@ -441,7 +441,7 @@ func TestTheWatcherReportsASetupFailure(t *testing.T) {
 // TestArtisanStartAdvanceNeedsACopy: --advance advances over a copy, so without one it is a usage error.
 func TestArtisanStartAdvanceNeedsACopy(t *testing.T) {
 	d := runDirector{store: "s", config: "c", state: "st"}
-	args := []string{"artisan", "start", "--store", "s", "--state", "st", "--repo", "app", "--task", "t-1", "--step", "plan", "--attempt", "1",
+	args := []string{"artisan", "start", "--store", "s", "--state", "st", "--repo", "app", "--task", "t1", "--step", "plan", "--attempt", "1",
 		"--adapter", "fake", "--prompt", "p", "--workdir", "w", "--advance"}
 	if code, out, stderr := d.run(t, args...); code != 2 || out != "" || !strings.Contains(stderr, "--advance") {
 		t.Errorf("artisan start --advance without a copy: exit %d, %q, stderr %s; want 2 naming --advance", code, out, stderr)
@@ -452,14 +452,14 @@ func TestArtisanStartAdvanceNeedsACopy(t *testing.T) {
 // fail or stop and records nothing; help lists the command.
 func TestStepRetryRefusesASucceededAttempt(t *testing.T) {
 	d := newRunDirector(t)
-	if code, _, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 {
+	if code, _, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...); code != 0 {
 		t.Fatalf("task start: exit %d, stderr %s", code, stderr)
 	}
 	d.waitResult(t, "plan", 1)
-	if code, _, stderr := d.run(t, append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--result", d.result("plan", 1))...)...); code != 0 {
+	if code, _, stderr := d.run(t, append([]string{"step", "done"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "1", "--result", d.result("plan", 1))...)...); code != 0 {
 		t.Fatalf("step done: exit %d, stderr %s", code, stderr)
 	}
-	retry := append([]string{"step", "retry"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--reason", "again")...)
+	retry := append([]string{"step", "retry"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "1", "--reason", "again")...)
 	if code, out, stderr := d.run(t, retry...); code != 1 || out != "" || !strings.Contains(stderr, "only a failed or stopped attempt is retried") {
 		t.Errorf("retry of a succeeded attempt: exit %d, %q, stderr %s; want 1", code, out, stderr)
 	}
@@ -478,12 +478,12 @@ func TestStepRetryRefusesASucceededAttempt(t *testing.T) {
 func TestTaskStartLaunchesClaude(t *testing.T) {
 	claudetest.Install(t)
 	d, copyDir := newRunCopyOn(t, "claude-straight", "claude.toml")
-	code, out, stderr := d.run(t, "task", "start", "--copy", copyDir, "--repo", "app", "t-1")
+	code, out, stderr := d.run(t, "task", "start", "--copy", copyDir, "--repo", "app", "t1")
 	if code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
 		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 	}
 	d.waitResult(t, "plan", 1)
-	r, err := adapter.ReadResult(d.result("plan", 1), adapter.Identity{TaskID: "t-1", AttemptID: "plan-1"})
+	r, err := adapter.ReadResult(d.result("plan", 1), adapter.Identity{TaskID: "t1", AttemptID: "plan-1"})
 	if err != nil || r.Summary != claudetest.Summary {
 		t.Errorf("plan-1 result %+v, %v; want the stub Claude's", r, err)
 	}
@@ -508,7 +508,7 @@ func TestTaskStartGrantsTheProfilesAllowedTools(t *testing.T) {
 	if code, _, stderr := d.run(t, "artisan", "start", "--allow-tool", "Bash"); code != 2 || !strings.Contains(stderr, "allow-tool") {
 		t.Fatalf("raw artisan grant: exit %d, stderr %s", code, stderr)
 	}
-	code, out, stderr := d.run(t, "task", "start", "--copy", copyDir, "--repo", "app", "t-1")
+	code, out, stderr := d.run(t, "task", "start", "--copy", copyDir, "--repo", "app", "t1")
 	if code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
 		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 	}
@@ -527,31 +527,31 @@ func (d runDirector) waitSpend(t *testing.T, step string, n int) store.StageAtte
 		if err != nil {
 			continue
 		}
-		as, err := s.Attempts("app", "t-1")
+		as, err := s.Attempts("app", "t1")
 		_ = s.Close()
 		if i := slices.IndexFunc(as, func(a store.StageAttempt) bool { return a.Step == step && a.Number == n && a.Spend != nil }); err == nil && i >= 0 {
 			return as[i]
 		}
 	}
-	log, _ := os.ReadFile(filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: step, Attempt: n}.Dir(d.state), launch.LogFile))
+	log, _ := os.ReadFile(filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: step, Attempt: n}.Dir(d.state), launch.LogFile))
 	t.Fatalf("%s-%d spend was not recorded within %v; launcher log:\n%s", step, n, testenv.Ceiling(time.Minute), log)
 	return store.StageAttempt{}
 }
 
 func TestStepDoneRefusesAResultItDoesNotTake(t *testing.T) {
 	d := newRunDirector(t)
-	if code, _, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 {
+	if code, _, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...); code != 0 {
 		t.Fatalf("task start: exit %d, stderr %s", code, stderr)
 	}
 	d.waitResult(t, "plan", 1)
 	other := filepath.Join(t.TempDir(), artisan.ResultFile)
-	if err := adapter.WriteResult(other, adapter.Result{Identity: adapter.Identity{TaskID: "t-1", AttemptID: "plan-1"}, Status: adapter.StatusSucceeded, Summary: "elsewhere", Outputs: []adapter.Output{}}); err != nil {
+	if err := adapter.WriteResult(other, adapter.Result{Identity: adapter.Identity{TaskID: "t1", AttemptID: "plan-1"}, Status: adapter.StatusSucceeded, Summary: "elsewhere", Outputs: []adapter.Output{}}); err != nil {
 		t.Fatal(err)
 	}
 	for name, args := range map[string][]string{
-		"another path":    d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--result", other),
-		"no result yet":   d.flags("--task", "t-1", "--step", "plan", "--attempt", "2", "--result", d.result("plan", 2)),
-		"another attempt": d.flags("--task", "t-1", "--step", "build", "--attempt", "1", "--result", d.result("plan", 1)),
+		"another path":    d.flags("--task", "t1", "--step", "plan", "--attempt", "1", "--result", other),
+		"no result yet":   d.flags("--task", "t1", "--step", "plan", "--attempt", "2", "--result", d.result("plan", 2)),
+		"another attempt": d.flags("--task", "t1", "--step", "build", "--attempt", "1", "--result", d.result("plan", 1)),
 	} {
 		if code, out, stderr := d.run(t, append([]string{"step", "done"}, args...)...); code != 1 || out != "" {
 			t.Errorf("%s: exit %d, %q, stderr %s; want 1 and nothing printed", name, code, out, stderr)
@@ -562,7 +562,7 @@ func TestStepDoneRefusesAResultItDoesNotTake(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	docs, err := s.Documents("app", "t-1")
+	docs, err := s.Documents("app", "t1")
 	_ = s.Close()
 	if err != nil || len(docs) != 1 || len(got) != 1 {
 		t.Errorf("after refusals: attempts %+v, documents %+v, %v; want one attempt and only its binding", got, docs, err)
@@ -572,22 +572,22 @@ func TestStepDoneRefusesAResultItDoesNotTake(t *testing.T) {
 func TestTaskStartAndStepDoneUsage(t *testing.T) {
 	d := runDirector{store: "s", config: "c", state: "st"}
 	for name, args := range map[string][]string{
-		"start without store":        {"task", "start", "--config", "c", "--state", "st", "--repo", "app", "t-1"},
+		"start without store":        {"task", "start", "--config", "c", "--state", "st", "--repo", "app", "t1"},
 		"start without task":         append([]string{"task", "start"}, d.flags()...),
-		"start with two tasks":       append([]string{"task", "start"}, d.flags("t-1", "t-2")...),
+		"start with two tasks":       append([]string{"task", "start"}, d.flags("t1", "t2")...),
 		"start with a bad id":        append([]string{"task", "start"}, d.flags("T 1")...),
 		"step without done":          {"step"},
 		"step other command":         {"step", "undo"},
-		"done without result":        append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1")...),
-		"done with a bad number":     append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "0", "--result", "r")...),
-		"done with an argument":      append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--result", "r", "extra")...),
-		"retry without store":        {"step", "retry", "--config", "c", "--state", "st", "--repo", "app", "--task", "t-1", "--step", "plan", "--attempt", "1"},
-		"retry without attempt":      append([]string{"step", "retry"}, d.flags("--task", "t-1", "--step", "plan")...),
-		"retry without step":         append([]string{"step", "retry"}, d.flags("--task", "t-1", "--attempt", "1")...),
+		"done without result":        append([]string{"step", "done"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "1")...),
+		"done with a bad number":     append([]string{"step", "done"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "0", "--result", "r")...),
+		"done with an argument":      append([]string{"step", "done"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "1", "--result", "r", "extra")...),
+		"retry without store":        {"step", "retry", "--config", "c", "--state", "st", "--repo", "app", "--task", "t1", "--step", "plan", "--attempt", "1"},
+		"retry without attempt":      append([]string{"step", "retry"}, d.flags("--task", "t1", "--step", "plan")...),
+		"retry without step":         append([]string{"step", "retry"}, d.flags("--task", "t1", "--attempt", "1")...),
 		"retry with a bad id":        append([]string{"step", "retry"}, d.flags("--task", "T 1", "--step", "plan", "--attempt", "1")...),
-		"retry with a bad number":    append([]string{"step", "retry"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "x")...),
-		"retry with an argument":     append([]string{"step", "retry"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "extra")...),
-		"retry with an unknown flag": append([]string{"step", "retry"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--force")...),
+		"retry with a bad number":    append([]string{"step", "retry"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "x")...),
+		"retry with an argument":     append([]string{"step", "retry"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "1", "extra")...),
+		"retry with an unknown flag": append([]string{"step", "retry"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "1", "--force")...),
 	} {
 		if code, out, _ := d.run(t, args...); code != 2 || out != "" {
 			t.Errorf("%s: exit %d, %q; want 2", name, code, out)
@@ -595,7 +595,7 @@ func TestTaskStartAndStepDoneUsage(t *testing.T) {
 	}
 }
 
-// TestTaskDelivers: on a workflow with publish, the sign-off's answer pushes the build's head to guildhall/t-1
+// TestTaskDelivers: on a workflow with publish, the sign-off's answer pushes the build's head to guildhall/t1
 // through the App's forge and opens the merge decision; answering merge squash-merges it and the task is done.
 func TestTaskDelivers(t *testing.T) {
 	d := newRunDirectorWith(t, "publish.toml")
@@ -609,7 +609,7 @@ func TestTaskDelivers(t *testing.T) {
 		t.Errorf("pull request = %+v, want merged", prs[0])
 	}
 	// Each attempt ran in the task's workspace, a worktree of the repository on the branch publish pushes.
-	ws := git.Workspace{Repository: appRepo, Remote: deliveryRemote, Branch: "guildhall/t-1", Dir: filepath.Join(d.state, "app", "t-1", "work")}
+	ws := git.Workspace{Repository: appRepo, Remote: deliveryRemote, Branch: "guildhall/t1", Dir: filepath.Join(d.state, "app", "t1", "work")}
 	if calls := d.workspaces.Calls(); len(calls) != 2 || calls[0] != ws || calls[1] != ws {
 		t.Errorf("workspaces = %+v, want %+v for the plan and build attempts", calls, ws)
 	}
@@ -675,7 +675,7 @@ func TestMergeRefreshesTheVersionRef(t *testing.T) {
 // deliveryRemote and deliveryHead are app's remote and the build's head in deliverToMerge.
 const deliveryRemote, deliveryHead = "git@github.com:example/app.git", "0123456789abcdef0123456789abcdef01234567"
 
-// deliverToMerge runs task t-1 of d, on publish.toml with d's forge a fake, through its plan, build and sign-off to
+// deliverToMerge runs task t1 of d, on publish.toml with d's forge a fake, through its plan, build and sign-off to
 // the merge decision, and returns the advance that answers it merge, which prints where it left the task.
 func (d runDirector) deliverToMerge(t *testing.T) func() string {
 	t.Helper()
@@ -695,7 +695,7 @@ func (d runDirector) deliverToMerge(t *testing.T) func() string {
 	}
 	done := func(name string) string {
 		d.waitResult(t, name, 1)
-		return step(append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", name, "--attempt", "1", "--result", d.result(name, 1))...)...)
+		return step(append([]string{"step", "done"}, d.flags("--task", "t1", "--step", name, "--attempt", "1", "--result", d.result(name, 1))...)...)
 	}
 	answer := func(decision, words string) string {
 		t.Helper()
@@ -703,17 +703,17 @@ func (d runDirector) deliverToMerge(t *testing.T) func() string {
 		if err := os.WriteFile(file, []byte(words), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		step("decide", "answer", "--store", d.store, "--repo", "app", "--task", "t-1", "--decision", decision, "--answer-file", file)
-		return step(append([]string{"task", "start"}, d.flags("--decision", decision, "t-1")...)...)
+		step("decide", "answer", "--store", d.store, "--repo", "app", "--task", "t1", "--decision", decision, "--answer-file", file)
+		return step(append([]string{"task", "start"}, d.flags("--decision", decision, "t1")...)...)
 	}
-	step(append([]string{"task", "start"}, d.flags("t-1")...)...)
+	step(append([]string{"task", "start"}, d.flags("t1")...)...)
 	done("plan")
 	answer("accept-1", "approved\n")
 	done("build")
 	if got := answer("sign-off-1", "approved\n"); got != `{"wait":"decision","step":"deliver","decision":"deliver-1"}` {
 		t.Fatalf("after sign-off: %s", got)
 	}
-	if prs := f.PullRequests(remote); len(prs) != 1 || prs[0].Branch != "guildhall/t-1" || prs[0].Head != head {
+	if prs := f.PullRequests(remote); len(prs) != 1 || prs[0].Branch != "guildhall/t1" || prs[0].Head != head {
 		t.Fatalf("pull requests = %+v", prs)
 	}
 	return func() string { return answer("deliver-1", "merge\n") }
@@ -722,7 +722,7 @@ func (d runDirector) deliverToMerge(t *testing.T) func() string {
 // sweep runs artisan resume over an attempt whose launcher is gone and fails the test unless it succeeds.
 func (d runDirector) sweep(t *testing.T, step string, n int) {
 	t.Helper()
-	if code, out, stderr := d.run(t, "artisan", "resume", "--store", d.store, "--state", d.state, "--repo", "app", "--task", "t-1", "--step", step, "--attempt", strconv.Itoa(n)); code != 0 {
+	if code, out, stderr := d.run(t, "artisan", "resume", "--store", d.store, "--state", d.state, "--repo", "app", "--task", "t1", "--step", step, "--attempt", strconv.Itoa(n)); code != 0 {
 		t.Errorf("artisan resume %s-%d: exit %d, %s %s", step, n, code, out, stderr)
 	}
 }

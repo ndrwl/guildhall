@@ -17,7 +17,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
-// recordOverrides records set overrides on app/t-1 straight into the store, as `task override set` would after its
+// recordOverrides records set overrides on app/t1 straight into the store, as `task override set` would after its
 // config check; a key that check would refuse stands for an override that has since stopped applying.
 func recordOverrides(t *testing.T, path string, kv ...string) {
 	t.Helper()
@@ -27,7 +27,7 @@ func recordOverrides(t *testing.T, path string, kv ...string) {
 	}
 	defer func() { _ = s.Close() }()
 	for i := 0; i < len(kv); i += 2 {
-		if _, err := s.AddTaskOverride(fmt.Sprintf("override-%d", i), "app", "t-1", store.TaskOverrideSet, kv[i], kv[i+1], 0, "Guildmaster: run it so."); err != nil {
+		if _, err := s.AddTaskOverride(fmt.Sprintf("override-%d", i), "app", "t1", store.TaskOverrideSet, kv[i], kv[i+1], 0, "Guildmaster: run it so."); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -40,7 +40,7 @@ func TestTaskOverridesReachTheArtisan(t *testing.T) {
 	claudetest.Install(t)
 	d, copyDir := newRunCopyOn(t, "claude-straight", "claude.toml")
 	recordOverrides(t, d.store, "default_effort", "high", "lock_wait", "1s")
-	code, out, stderr := d.run(t, "task", "start", "--copy", copyDir, "--repo", "app", "t-1")
+	code, out, stderr := d.run(t, "task", "start", "--copy", copyDir, "--repo", "app", "t1")
 	if code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
 		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 	}
@@ -48,7 +48,7 @@ func TestTaskOverridesReachTheArtisan(t *testing.T) {
 	if got, err := claudetest.Settings(d.result("plan", 1)); err != nil || got != (adapter.Settings{Effort: "high"}) {
 		t.Errorf("plan-1 ran on %+v, %v; want the overridden high effort", got, err)
 	}
-	data, err := os.ReadFile(filepath.Join(d.state, "documents", "tasks", "app", "t-1", "plan-1.inputs.json"))
+	data, err := os.ReadFile(filepath.Join(d.state, "documents", "tasks", "app", "t1", "plan-1.inputs.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,10 +83,10 @@ func TestTaskOverridesReachValidate(t *testing.T) {
 	const remote, head = "git@github.com:example/app.git", "0123456789abcdef0123456789abcdef01234567"
 	f.SetChecks(remote, head, forge.Check{Name: "ci", State: forge.CheckFailed, ID: "CR_1", Job: "123"})
 	f.SetLog("123", log.String())
-	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || strings.TrimSpace(out) != `{"wait":"director","step":"validate"}` {
+	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...); code != 0 || strings.TrimSpace(out) != `{"wait":"director","step":"validate"}` {
 		t.Fatalf("task start = %d, %s, %s; want the failed result, read at once under checks_refresh 0s", code, out, stderr)
 	}
-	cached, err := os.ReadFile(filepath.Join(d.state, "app", "t-1", "ci-logs", "123.log"))
+	cached, err := os.ReadFile(filepath.Join(d.state, "app", "t1", "ci-logs", "123.log"))
 	if err != nil || len(cached) > 64<<10+100 || !strings.HasPrefix(string(cached), "[guildhall: ") {
 		t.Errorf("cached log is %d bytes, %v; want it cut to the overridden 64 KiB", len(cached), err)
 	}
@@ -97,10 +97,10 @@ func TestTaskOverridesReachValidate(t *testing.T) {
 func TestTaskOverrideBindingWithoutOverrides(t *testing.T) {
 	claudetest.Install(t)
 	d, copyDir := newRunCopyOn(t, "claude-straight", "claude.toml")
-	if code, _, stderr := d.run(t, "task", "start", "--copy", copyDir, "--repo", "app", "t-1"); code != 0 {
+	if code, _, stderr := d.run(t, "task", "start", "--copy", copyDir, "--repo", "app", "t1"); code != 0 {
 		t.Fatalf("task start: exit %d, stderr %s", code, stderr)
 	}
-	data, err := os.ReadFile(filepath.Join(d.state, "documents", "tasks", "app", "t-1", "plan-1.inputs.json"))
+	data, err := os.ReadFile(filepath.Join(d.state, "documents", "tasks", "app", "t1", "plan-1.inputs.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

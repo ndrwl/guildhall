@@ -30,7 +30,7 @@ Recommended: (a).
 // preambleSpec is goodSpec with a sentence before Q1, the shape d165's plan was refused for.
 var preambleSpec = strings.Replace(goodSpec, "**Q1.", "One question is open.\n\n**Q1.", 1)
 
-// resultCopy is a Director copy whose task app/t-1 has a running plan attempt 1, with its working directory.
+// resultCopy is a Director copy whose task app/t1 has a running plan attempt 1, with its working directory.
 type resultCopy struct {
 	dir, work string
 	key       artisan.AttemptKey
@@ -39,24 +39,24 @@ type resultCopy struct {
 func newResultCopy(t *testing.T) resultCopy {
 	t.Helper()
 	dir := markCopy(t, newCopy(t))
-	if code, stderr := newTaskIn(t, dir, "t-1"); code != 0 {
+	if code, stderr := newTaskIn(t, dir); code != 0 {
 		t.Fatalf("task new: exit %d, %s", code, stderr)
 	}
 	s, err := store.Open(filepath.Join(dir, directorStoreFile), store.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.StartAttempt("start-plan-1", "app", "t-1", "plan")
+	_, err = s.StartAttempt("start-plan-1", "app", "t1", "plan")
 	_ = s.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
-	key := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}
+	key := artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "plan", Attempt: 1}
 	state := filepath.Join(dir, "state")
 	if err := os.MkdirAll(filepath.Join(key.Dir(state), artisan.ModelDir), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	work := filepath.Join(state, "app", "t-1", "work")
+	work := filepath.Join(state, "app", "t1", "work")
 	if err := os.MkdirAll(work, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func (c resultCopy) draft(t *testing.T, spec string) string {
 	if _, err := os.Stat(p); err == nil {
 		return p
 	}
-	if err := adapter.WriteResult(p, adapter.Result{Identity: adapter.Identity{TaskID: "t-1", AttemptID: "plan-1"}, Status: adapter.StatusSucceeded,
+	if err := adapter.WriteResult(p, adapter.Result{Identity: adapter.Identity{TaskID: "t1", AttemptID: "plan-1"}, Status: adapter.StatusSucceeded,
 		Summary: "planned", Outputs: []adapter.Output{{Path: "spec.md"}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestResultSubmitThirdRejection(t *testing.T) {
 func TestResultRefusals(t *testing.T) {
 	c := newResultCopy(t)
 	draft := c.draft(t, goodSpec)
-	other := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 2}
+	other := artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "plan", Attempt: 2}
 	if err := os.MkdirAll(other.Dir(filepath.Join(c.dir, "state")), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -203,9 +203,9 @@ func TestResultRefusals(t *testing.T) {
 		says      string
 	}{
 		{"no attempt env", "", []string{"result", "check", draft}, "GUILDHALL_ATTEMPT is not set"},
-		{"malformed attempt env", "app/t-1/plan", []string{"result", "submit", draft}, "is not <repository>/<task>/<step>/<n>"},
+		{"malformed attempt env", "app/t1/plan", []string{"result", "submit", draft}, "is not <repository>/<task>/<step>/<n>"},
 		{"attempt not running", other.String(), []string{"result", "submit", draft}, "attempt is not running: no attempt 2"},
-		{"attempt of no copy", "app/t-1/plan/3", []string{"result", "submit", draft}, "no Guildhall copy found"},
+		{"attempt of no copy", "app/t1/plan/3", []string{"result", "submit", draft}, "no Guildhall copy found"},
 		{"unreadable file", c.key.String(), []string{"result", "submit", "missing.json"}, "missing.json"},
 	} {
 		t.Run(r.name, func(t *testing.T) {
@@ -220,7 +220,7 @@ func TestResultRefusals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.FinishAttempt("finish-plan-1", "app", "t-1", "plan", 1, store.AttemptSucceeded)
+	_, err = s.FinishAttempt("finish-plan-1", "app", "t1", "plan", 1, store.AttemptSucceeded)
 	_ = s.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -259,14 +259,14 @@ func (c resultCopy) takeDraft(t *testing.T) store.StageAttempt {
 	app.Executable = os.Executable
 	// Intake records the attempt before the walk goes on, here to the grill step this fixture never ran, whose
 	// working directory is no worktree, so the advance's own exit is not the point.
-	code := app.Run([]string{"step", "done", "--copy", c.dir, "--repo", "app", "--task", "t-1", "--step", "plan", "--attempt", "1", "--result", result})
+	code := app.Run([]string{"step", "done", "--copy", c.dir, "--repo", "app", "--task", "t1", "--step", "plan", "--attempt", "1", "--result", result})
 	t.Logf("step done: exit %d, %s %s", code, stdout, stderr)
 	s, err := store.Open(filepath.Join(c.dir, directorStoreFile), store.Options{ReadOnly: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
-	attempts, err := s.Attempts("app", "t-1")
+	attempts, err := s.Attempts("app", "t1")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -171,14 +171,14 @@ func TestDirectorStartShowsRepositoryPolicies(t *testing.T) {
 func TestAdvanceRefreshesRepositoryPolicies(t *testing.T) {
 	d := newRunDirector(t)
 	d.policies = &fakePolicyGit{shown: map[string]git.Shown{appRepo: {Commit: mainCommit, Data: []byte("- Squash merges only.\n")}}}
-	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 {
+	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...); code != 0 {
 		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 	}
 	if got, want := d.policies.fetches(), []string{appRepo + " git@github.com:example/app.git " + policies.Ref}; !slices.Equal(got, want) {
 		t.Errorf("fetches = %q, want %q", got, want)
 	}
 	// The interpreter publishes the rendered attempt under the attempt directory's prompt directory.
-	prompt := filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}.Dir(d.state), "prompt", render.PromptFile)
+	prompt := filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "plan", Attempt: 1}.Dir(d.state), "prompt", render.PromptFile)
 	b, err := os.ReadFile(prompt)
 	if err != nil {
 		t.Fatal(err)

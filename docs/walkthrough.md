@@ -21,16 +21,17 @@ Start a role through Guildhall rather than running the agent directly, so it get
 
 ## 2. Give it work
 
-The `task new` and `task start` lines need the copy's Director config, `demo/config.toml`, to declare a `[[repository]]` with `id = "app"` whose `path` is a git checkout; the examples in [configuration and workflows](configuration.md) name other repositories, so change one to `app` before using it.
+The `task new` and `task start` lines need the copy's Director config, `demo/config.toml`, to declare a `[[repository]]` with `id = "app"` whose `path` is a git checkout, and `task_prefix = "a"`, the letters its task ids start with; the examples in [configuration and workflows](configuration.md) name other repositories, so change one to `app` before using it.
 The shipped workflows run under the shipped [role profiles](configuration.md#profiles) on Claude Code with no `[profile.*]` section and no workflow approval; declare a role profile only to choose another model, effort or adapter for it.
 `task start` uses the role prompt and stage guides shipped in the binary unless a `baseline/` directory beside the config, `demo/baseline/`, overrides them file by file; see [what an advance runs over](running.md#what-an-advance-runs-over).
 
 ```sh
-./guildhall task new --copy demo --repo app --title "Add a health check" t-1
-./guildhall task start --copy demo --repo app t-1
+./guildhall task new --copy demo --repo app --title "Add a health check"
+./guildhall task start --copy demo --repo app a1
 ```
 
 A task is one unit of work in one repository; creating it records it and binds the exact workflow and configuration it was accepted under.
+Guildhall assigns its id, `a1` for the first task, and prints it as the receipt's `task_id`; see [task ids](tasks.md#task-ids).
 `task start` launches the task's next ready stage as an owned Artisan attempt.
 The default workflow's first stage, `grill`, is a [Director stage](interpreter.md#director-stages): `task start` hands it to the Director, which interviews you and ends it with `step finish`, and only then does the first Artisan stage launch.
 Because the task runs from a copy, each attempt's launcher takes its own result with `step done`, or runs `task start` after a failure so you get an `attempt-failed` message, so you do not type `step done`; see [the watcher](running.md#the-watcher) and [tasks](tasks.md).
@@ -55,7 +56,7 @@ A repository can have you review instead of an Artisan without changing any othe
 
 ```sh
 ./guildhall task list --copy demo --json
-./guildhall task timeline --copy demo --repo app t-1 --json
+./guildhall task timeline --copy demo --repo app a1 --json
 ```
 
 `task show`, `timeline` and `files` read a task's attempts, decisions and documents without changing anything; `guildhall artisan status` classifies one Artisan attempt; see [Artisan commands](artisan.md#commands).
@@ -68,8 +69,8 @@ Decisions waiting for you are listed per machine; there is no push service.
 
 ```sh
 ./guildhall decide list --copy demo
-./guildhall decide show --copy demo --repo app --task t-1 --decision <id>
-printf 'approve\n\nKeep the migration behind a flag.\n' | ./guildhall decide answer --copy demo --repo app --task t-1 --decision <id> --answer-file -
+./guildhall decide show --copy demo --repo app --task a1 --decision <id>
+printf 'approve\n\nKeep the migration behind a flag.\n' | ./guildhall decide answer --copy demo --repo app --task a1 --decision <id> --answer-file -
 ```
 
 Your exact words are recorded; for a decision offering `approve` and `reject`, a leading `approve` is taken as the choice and the rest as a note.
@@ -89,11 +90,11 @@ With the copy from above:
 
 ```sh
 cat > note.json <<'EOF'
-{"schema": "guildhall.message/1", "id": "t-1-note-1", "recipient": "director", "repository": "app", "task": "t-1", "type": "note", "text": "Build finished; the plan is ready for review."}
+{"schema": "guildhall.message/1", "id": "a1-note-1", "recipient": "director", "repository": "app", "task": "a1", "type": "note", "text": "Build finished; the plan is ready for review."}
 EOF
 ./guildhall messages send --copy demo director note.json
 ./guildhall messages list --copy demo director
-./guildhall messages ack --copy demo director t-1-note-1
+./guildhall messages ack --copy demo director a1-note-1
 ./guildhall store doctor --copy demo
 ```
 

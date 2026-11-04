@@ -43,7 +43,7 @@ func (d runDirector) running(t *testing.T) int {
 func TestDirectorStopStopsADirectorStage(t *testing.T) {
 	d := newRunDirectorWith(t, "grill.toml")
 	recordSession(t, d.store, false, store.DirectorRunning)
-	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"director-stage","step":"grill","attempt":1}`+"\n" {
+	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...); code != 0 || out != `{"wait":"director-stage","step":"grill","attempt":1}`+"\n" {
 		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 	}
 	d.stopDirector(t)
@@ -68,7 +68,7 @@ func TestDirectorStopStopsADirectorStage(t *testing.T) {
 	if code, out, _ := d.finish(t, "grill", "1", "--summary", "agreed", "--output", "notes="+file); code == 0 {
 		t.Errorf("step finish of the stopped grill succeeded: %s", out)
 	}
-	if _, err := os.Stat(filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "grill", Attempt: 1}.Dir(d.state), artisan.ResultFile)); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "grill", Attempt: 1}.Dir(d.state), artisan.ResultFile)); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("the refused finish published a result: %v", err)
 	}
 }
@@ -78,11 +78,11 @@ func TestDirectorStopStopsADirectorStage(t *testing.T) {
 func TestDirectorStopLeavesAPublishedStageResult(t *testing.T) {
 	d := newRunDirectorWith(t, "grill.toml")
 	recordSession(t, d.store, false, store.DirectorRunning)
-	if code, _, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 {
+	if code, _, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...); code != 0 {
 		t.Fatalf("task start: exit %d, stderr %s", code, stderr)
 	}
 	file, _ := grillNotesFile(t)
-	k := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "grill", Attempt: 1}
+	k := artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "grill", Attempt: 1}
 	if err := finishStage(advanceFlags{store: d.store, config: d.config, state: d.state, repo: "app"}, k, "agreed", stageOutputs{{"notes", file}}, false); err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestDirectorStopStopsAnUnlaunchedAttempt(t *testing.T) {
 	d := newRunDirector(t)
 	recordSession(t, d.store, false, store.DirectorRunning)
 	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
-		return s.StartAttempt("recorded-not-launched", "app", "t-1", "plan")
+		return s.StartAttempt("recorded-not-launched", "app", "t1", "plan")
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -116,10 +116,10 @@ func TestDirectorStopStopsAnUnlaunchedAttempt(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"director","step":"plan","attempt":1}`+"\n" {
+	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...); code != 0 || out != `{"wait":"director","step":"plan","attempt":1}`+"\n" {
 		t.Fatalf("task start after the stop: exit %d, %q, stderr %s", code, out, stderr)
 	}
-	if _, err := os.Stat(filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}.Dir(d.state), "launched.json")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "plan", Attempt: 1}.Dir(d.state), "launched.json")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("the stopped attempt was launched: %v", err)
 	}
 }
@@ -131,7 +131,7 @@ func TestDirectorStopStopsAnUnlaunchedAttempt(t *testing.T) {
 func TestDirectorStopWaitsForAnInFlightAdvance(t *testing.T) {
 	d := newRunDirector(t)
 	recordSession(t, d.store, false, store.DirectorRunning)
-	taskDir := filepath.Join(d.state, "app", "t-1")
+	taskDir := filepath.Join(d.state, "app", "t1")
 	if err := os.MkdirAll(taskDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestDirectorStopWaitsForAnInFlightAdvance(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
-		return s.StartAttempt("in-flight", "app", "t-1", "plan")
+		return s.StartAttempt("in-flight", "app", "t1", "plan")
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestDirectorStopWaitsForAnInFlightAdvance(t *testing.T) {
 		t.Fatal("director stop never reached the task lock")
 	}
 	launcher := liveLauncher(t)
-	own := store.Ownership{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1, LauncherIdentity: store.ProcessIdentity(launcher)}
+	own := store.Ownership{Repository: "app", TaskID: "t1", Step: "plan", Attempt: 1, LauncherIdentity: store.ProcessIdentity(launcher)}
 	_, err = withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
 		return s.TakeOwnership("launched", own, func(store.Ownership) (store.Liveness, error) { return store.ProbeGone, nil })
 	})
@@ -187,7 +187,7 @@ func TestDirectorStopWaitsForAnInFlightAdvance(t *testing.T) {
 	}
 	// The stand-in owner has no endpoint the shared cleanup can reach: it finishes its attempt and exits.
 	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
-		return s.FinishAttempt("owner-finish", "app", "t-1", "plan", 1, store.AttemptStopped)
+		return s.FinishAttempt("owner-finish", "app", "t1", "plan", 1, store.AttemptStopped)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +209,7 @@ func duringSweep(t *testing.T, fn func()) {
 // stop's sweep to stop with no owner.
 func (d runDirector) recordUnlaunched(t *testing.T, id string) {
 	t.Helper()
-	newTask(t, d.store, d.config, "app", "Another task", id)
+	newTask(t, d.store, d.config, "app", "Another task")
 	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
 		return s.StartAttempt("recorded-not-launched", "app", id, "plan")
 	}); err != nil {
@@ -223,12 +223,12 @@ func (d runDirector) recordUnlaunched(t *testing.T, id string) {
 func TestDirectorStopOfAGoneSupervisorHoldsUntilItsSweepEnds(t *testing.T) {
 	d := newRunDirector(t)
 	recordSession(t, d.store, true, store.DirectorRunning)
-	d.recordUnlaunched(t, "t-2")
+	d.recordUnlaunched(t, "t2")
 	duringSweep(t, func() {
 		if got, _ := latestSession(t, d.store); got.State != store.DirectorStopping || !got.Sweeping {
 			t.Errorf("session during the sweep = %+v; want stopping and sweeping", got)
 		}
-		if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"paused","step":"plan"}`+"\n" {
+		if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...); code != 0 || out != `{"wait":"paused","step":"plan"}`+"\n" {
 			t.Errorf("task start during the sweep: exit %d, %q, stderr %s", code, out, stderr)
 		}
 	})
@@ -239,9 +239,9 @@ func TestDirectorStopOfAGoneSupervisorHoldsUntilItsSweepEnds(t *testing.T) {
 		t.Fatalf("director stop: exit %d, %q (%v), stderr %s", code, out, err, stderr)
 	}
 	if got := d.attempts(t); len(got) != 0 {
-		t.Fatalf("attempts of t-1 after the held start = %+v", got)
+		t.Fatalf("attempts of t1 after the held start = %+v", got)
 	}
-	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
+	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
 		t.Fatalf("task start after the sweep: exit %d, %q, stderr %s", code, out, stderr)
 	}
 	d.waitResult(t, "plan", 1)
@@ -253,7 +253,7 @@ func TestDirectorStopOfAGoneSupervisorHoldsUntilItsSweepEnds(t *testing.T) {
 func TestDirectorStopNowHoldsUntilItsSweepEnds(t *testing.T) {
 	dir, d := supervisedCopy(t)
 	done := supervise(t, dir, time.Hour)
-	d.recordUnlaunched(t, "t-2")
+	d.recordUnlaunched(t, "t2")
 	duringSweep(t, func() {
 		for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(20 * time.Millisecond) {
 			if got := sessions(t, dir); len(got) == 1 && got[0].State == store.DirectorStopped {
@@ -263,7 +263,7 @@ func TestDirectorStopNowHoldsUntilItsSweepEnds(t *testing.T) {
 				t.Fatalf("the supervisor never recorded the session stopped: %+v", sessions(t, dir))
 			}
 		}
-		if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"paused","step":"plan"}`+"\n" {
+		if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...); code != 0 || out != `{"wait":"paused","step":"plan"}`+"\n" {
 			t.Errorf("task start after the runtime ended, during the sweep: exit %d, %q, stderr %s", code, out, stderr)
 		}
 		startRefused(t, dir)
@@ -277,7 +277,7 @@ func TestDirectorStopNowHoldsUntilItsSweepEnds(t *testing.T) {
 		t.Errorf("director start exited %d, want 0", code)
 	}
 	if got := d.attempts(t); len(got) != 0 {
-		t.Fatalf("attempts of t-1 after the held start = %+v", got)
+		t.Fatalf("attempts of t1 after the held start = %+v", got)
 	}
 	if hold, err := withStore(d.store, true, held); err != nil || hold {
 		t.Errorf("held after the sweep = %v, %v; want the hold lifted", hold, err)
@@ -309,7 +309,7 @@ func (d runDirector) restart(t *testing.T, dir string) {
 func TestDirectorStartWaitsForAnInterruptedSweep(t *testing.T) {
 	dir, d := supervisedCopy(t)
 	recordSession(t, d.store, false, store.DirectorRunning, store.DirectorStopping, store.DirectorStopped)
-	d.recordUnlaunched(t, "t-2")
+	d.recordUnlaunched(t, "t2")
 	startRefused(t, dir)
 	code, out, stderr := d.run(t, "director", "stop", "--copy", dir)
 	var printed store.DirectorSession
@@ -349,7 +349,7 @@ func TestDirectorStartRefusesAStoppingGoneSession(t *testing.T) {
 func TestDirectorStopFinishesAnInterruptedSweep(t *testing.T) {
 	d := newRunDirector(t)
 	recordSession(t, d.store, false, store.DirectorRunning, store.DirectorStopping, store.DirectorStopped)
-	d.recordUnlaunched(t, "t-2")
+	d.recordUnlaunched(t, "t2")
 	if hold, err := withStore(d.store, true, held); err != nil || !hold {
 		t.Fatalf("held before the sweep = %v, %v; want held", hold, err)
 	}

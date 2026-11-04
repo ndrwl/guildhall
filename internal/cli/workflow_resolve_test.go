@@ -36,6 +36,7 @@ adapter = "fake"
 
 [[repository]]
 id = "app"
+task_prefix = "t"
 path = "/srv/app"
 remote = "git@github.com:example/app.git"
 owner_machine = "workstation"
@@ -104,14 +105,15 @@ func TestTaskNewBindsTheShippedWorkflows(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			cfg := writeDirector(t, toml)
 			path := emptyStore(t)
-			for id, c := range map[string]struct {
+			for _, c := range []struct {
 				kind string
 				want *workflow.Definition
-			}{"t-feature": {config.TaskKindFeature, def}, "t-bug": {config.TaskKindBug, bug}} {
-				code, _, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Task", "--kind", c.kind, id)
+			}{{config.TaskKindFeature, def}, {config.TaskKindBug, bug}} {
+				code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Task", "--kind", c.kind)
 				if code != 0 {
 					t.Fatalf("task new --kind %s: exit %d, stderr %s", c.kind, code, stderr)
 				}
+				id := decodeJSON[store.Receipt](t, out).TaskID
 				if got := readTask(t, path, "app", id).Workflow; got != c.want.Revision() {
 					t.Errorf("%s workflow = %+v, want the shipped %+v", c.kind, got, c.want.Revision())
 				}
@@ -167,7 +169,7 @@ func TestExplicitProfileChangesTheDigest(t *testing.T) {
 func TestTaskNewGuildmasterReviewGetsNoDefault(t *testing.T) {
 	cfg := writeDirector(t, rolesTOML+"\n[repository.workflow_overrides.review]\nactor = \"guildmaster\"\n")
 	path := emptyStore(t)
-	newTask(t, path, cfg, "app", "Task", "t-1")
+	newTask(t, path, cfg, "app", "Task")
 	def, err := effectiveWorkflow(filepath.Join(filepath.Dir(cfg), "workflows"), mustLoad(t, cfg), mustRepository(t, cfg, "app"), config.TaskKindFeature)
 	if err != nil {
 		t.Fatal(err)
@@ -177,7 +179,7 @@ func TestTaskNewGuildmasterReviewGetsNoDefault(t *testing.T) {
 			t.Fatalf("Guildmaster review has profile %q", workflow.EffectiveProfile(s))
 		}
 	}
-	if got := readTask(t, path, "app", "t-1").Workflow; got != def.Revision() {
+	if got := readTask(t, path, "app", "t1").Workflow; got != def.Revision() {
 		t.Fatalf("workflow = %+v, want %+v", got, def.Revision())
 	}
 	if got := storeApprovals(t, path); len(got) != 0 {
@@ -292,11 +294,11 @@ func TestLegacyDefaultedTaskStillAdvances(t *testing.T) {
 	d := newRunDirectorAt(t, cfg)
 	// The file now names no profile on plan, as the definition did before the defaults were applied.
 	writeFile(t, file, strings.Replace(string(b), plan, `{"id": "plan", "type": "plan", "version": 1}`, 1))
-	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
+	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...); code != 0 || out != `{"wait":"attempt","step":"plan","attempt":1}`+"\n" {
 		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 	}
 	d.waitResult(t, "plan", 1)
-	done := append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--result", d.result("plan", 1))...)
+	done := append([]string{"step", "done"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "1", "--result", d.result("plan", 1))...)
 	if code, out, stderr := d.run(t, done...); code != 0 || out != `{"wait":"decision","step":"accept","decision":"accept-1"}`+"\n" {
 		t.Fatalf("step done: exit %d, %q, stderr %s", code, out, stderr)
 	}
@@ -331,7 +333,7 @@ func setWorkflow(t *testing.T, cfg, from, to string) {
 func TestOpenTaskKeepsItsWorkflowWhenTheRepositorySwitches(t *testing.T) {
 	d := newRunDirectorAt(t, copyRunConfig(t, "grill.toml"))
 	setWorkflow(t, d.config, "fake-grill", "fake-straight")
-	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"director-stage","step":"grill","attempt":1}`+"\n" {
+	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...); code != 0 || out != `{"wait":"director-stage","step":"grill","attempt":1}`+"\n" {
 		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 	}
 	file, _ := grillNotesFile(t)
@@ -339,7 +341,7 @@ func TestOpenTaskKeepsItsWorkflowWhenTheRepositorySwitches(t *testing.T) {
 		t.Fatalf("step finish: exit %d, %q, stderr %s", code, out, stderr)
 	}
 	d.waitResult(t, "plan", 1)
-	done := append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", "plan", "--attempt", "1", "--result", d.result("plan", 1))...)
+	done := append([]string{"step", "done"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "1", "--result", d.result("plan", 1))...)
 	if code, out, stderr := d.run(t, done...); code != 0 || out != `{"wait":"decision","step":"accept","decision":"accept-1"}`+"\n" {
 		t.Fatalf("step done: exit %d, %q, stderr %s", code, out, stderr)
 	}
@@ -355,7 +357,7 @@ func TestOpenTaskStrandsWhenItsWorkflowFileIsEdited(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFile(t, file, strings.Replace(string(b), `"description": "The straight path`, `"description": "Edited: the straight path`, 1))
-	code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...)
+	code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...)
 	if code != 1 || out != "" || !strings.Contains(stderr, `bound workflow "fake-straight"`) || !strings.Contains(stderr, "changed after the task was created") {
 		t.Fatalf("task start: exit %d, %q, stderr %s; want 1 naming the bound workflow", code, out, stderr)
 	}

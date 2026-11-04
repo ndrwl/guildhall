@@ -38,7 +38,7 @@ func TestConfigReload(t *testing.T) {
 	if code, out, stderr := modeCmd(t, "enrol", "--steward", "hq", "--copy", dir); code != 0 {
 		t.Fatalf("enrol: exit %d\n%s%s", code, out, stderr)
 	}
-	if code, _ := newTaskIn(t, dir, "t-1"); code != 1 {
+	if code, _ := newTaskIn(t, dir); code != 1 {
 		t.Fatalf("task new before reload: exit %d, want the unauthorized refusal", code)
 	}
 	// The refusal recorded the digest observed-untrusted (event 1) and opened its alert decision.
@@ -65,10 +65,10 @@ func TestConfigReload(t *testing.T) {
 		got.LastRevision.Source != store.SourceReload || got.LastRevision.Digest != first || got.LastRevision.Previous != "" {
 		t.Fatalf("mode after reload = %+v", got)
 	}
-	if code, stderr := newTaskIn(t, dir, "t-1"); code != 0 {
+	if code, stderr := newTaskIn(t, dir); code != 0 {
 		t.Fatalf("task new after reload: exit %d, %s", code, stderr)
 	}
-	task := readTask(t, filepath.Join(dir, directorStoreFile), "app", "t-1")
+	task := readTask(t, filepath.Join(dir, directorStoreFile), "app", "t1")
 
 	second := writeManaged(t, dir, map[string]config.ManagedSetting{"max_running_attempts": {Value: "1"}, config.LockWaitKey: {Value: "40s", Overridable: true}})
 	code, out, stderr := configCmd(t, "reload", "--copy", dir)
@@ -85,13 +85,13 @@ func TestConfigReload(t *testing.T) {
 	if err != nil || receipt.Operation != "record-managed-revision" {
 		t.Fatalf("reload receipt = %+v, %v", receipt, err)
 	}
-	if got := readTask(t, filepath.Join(dir, directorStoreFile), "app", "t-1"); got.ConfigDigest != task.ConfigDigest {
+	if got := readTask(t, filepath.Join(dir, directorStoreFile), "app", "t1"); got.ConfigDigest != task.ConfigDigest {
 		t.Fatalf("reload changed an active task's config digest: %s, was %s", got.ConfigDigest, task.ConfigDigest)
 	}
-	if code, stderr := newTaskIn(t, dir, "t-2"); code != 0 {
+	if code, stderr := newTaskIn(t, dir); code != 0 {
 		t.Fatalf("task new on the new revision: exit %d, %s", code, stderr)
 	}
-	if got := readTask(t, filepath.Join(dir, directorStoreFile), "app", "t-2"); got.ConfigDigest == task.ConfigDigest {
+	if got := readTask(t, filepath.Join(dir, directorStoreFile), "app", "t2"); got.ConfigDigest == task.ConfigDigest {
 		t.Fatal("a new task did not bind the new revision")
 	}
 }

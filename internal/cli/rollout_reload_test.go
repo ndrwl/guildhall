@@ -115,14 +115,14 @@ func TestRolloutReloadAuthorizesTheEnrolledCopy(t *testing.T) {
 		!strings.Contains(last.Output, want+" authorized by reload (event 1)") {
 		t.Fatalf("reload step %+v", last)
 	}
-	if code, stderr := newTaskInRepo(t, copyDir, "cli", "t-1"); code != 0 {
+	if code, stderr := newTaskInRepo(t, copyDir, "cli"); code != 0 {
 		t.Fatalf("task new after the rollout: exit %d, %s", code, stderr)
 	}
 }
 
 // newTaskInRepo runs `task new` in the copy in dir for repository repo.
-func newTaskInRepo(t *testing.T, dir, repo, id string) (int, string) {
+func newTaskInRepo(t *testing.T, dir, repo string) (int, string) {
 	t.Helper()
-	code, _, stderr := runTask(t, "new", "--copy", dir, "--repo", repo, "--title", "Sort", id)
+	code, _, stderr := runTask(t, "new", "--copy", dir, "--repo", repo, "--title", "Sort")
 	return code, stderr
 }

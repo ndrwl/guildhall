@@ -23,7 +23,7 @@ func TestTaskNewRefusesImplicitFake(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "No pretend work", "t-1")
+	code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "No pretend work")
 	if code != 1 || out != "" || !strings.Contains(stderr, `step "refute"`) || !strings.Contains(stderr, "profile") || !strings.Contains(stderr, "custom workflow") {
 		t.Fatalf("exit %d stdout %q stderr %q", code, out, stderr)
 	}
