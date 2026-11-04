@@ -161,7 +161,8 @@ type ciJob struct {
 }
 
 // recordedJobs lists the failed checks of every failed validate result of the task, the latest round first, then
-// the failed jobs the failed-jobs block of each of a hallmark task's baselines lists, its merges newest first; each
+// the failed job of each rerun record a validate result of any verdict names, the latest round first and a job
+// already listed left out, then the failed jobs the failed-jobs block of each of a hallmark task's baselines lists, its merges newest first; each
 // document is read from under docs and checked against its recorded digest.
 func recordedJobs(s *store.Store, docs, repo, task string) ([]ciJob, error) {
 	if _, err := s.Task(repo, task); err != nil {
@@ -182,7 +183,7 @@ func recordedJobs(s *store.Store, docs, repo, task string) ([]ciJob, error) {
 		}
 		return p, data, nil
 	}
-	var out, baseline []ciJob
+	var out, reruns, baseline []ciJob
 	for _, d := range refs {
 		if interp.IsBaselineDocument(d) {
 			p, data, err := read(d)
@@ -215,15 +216,44 @@ func recordedJobs(s *store.Store, docs, repo, task string) ([]ciJob, error) {
 				Check string `json:"check"`
 				Job   string `json:"job"`
 			} `json:"logs"`
+			Reruns []struct {
+				Record string `json:"record"`
+			} `json:"reruns"`
 		}
-		if json.Unmarshal(data, &v) != nil || v.Schema != "guildhall.validation-result/1" || v.Verdict != "failed" {
+		if json.Unmarshal(data, &v) != nil || v.Schema != "guildhall.validation-result/1" {
 			continue
 		}
-		for _, l := range v.Logs {
-			out = append(out, ciJob{Check: l.Check, Job: l.Job, Result: d.Name, Path: p, round: round, Remote: v.Remote, Head: v.Head})
+		if v.Verdict == "failed" {
+			for _, l := range v.Logs {
+				out = append(out, ciJob{Check: l.Check, Job: l.Job, Result: d.Name, Path: p, round: round, Remote: v.Remote, Head: v.Head})
+			}
+		}
+		// A rerun's failed job is in no result's logs: a flake's result passed, and a failed result's logs are of the
+		// rerun's own run. Its rerun record names it, so the log command a flake message prints finds it.
+		for _, e := range v.Reruns {
+			i := slices.IndexFunc(refs, func(r store.DocumentRef) bool { return r.Name == e.Record })
+			if i < 0 {
+				return nil, fmt.Errorf("document %s at %s names rerun record %s, which is not recorded", d.Name, p, e.Record)
+			}
+			rp, rdata, err := read(refs[i])
+			if err != nil {
+				return nil, err
+			}
+			check, job, err := interp.RerunRecordJob(rdata)
+			if err != nil {
+				return nil, fmt.Errorf("document %s at %s: %w", e.Record, rp, err)
+			}
+			reruns = append(reruns, ciJob{Check: check, Job: job, Result: e.Record, Path: rp, round: round, Remote: v.Remote, Head: v.Head})
 		}
 	}
-	slices.SortStableFunc(out, func(a, b ciJob) int { return cmp.Compare(b.round, a.round) })
+	latest := func(a, b ciJob) int { return cmp.Compare(b.round, a.round) }
+	slices.SortStableFunc(out, latest)
+	slices.SortStableFunc(reruns, latest)
+	for _, j := range reruns {
+		if j.Job == "" || !slices.ContainsFunc(out, func(o ciJob) bool { return o.Job == j.Job }) {
+			out = append(out, j)
+		}
+	}
 	return append(out, baseline...), nil
 }
 

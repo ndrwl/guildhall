@@ -253,6 +253,11 @@ type Check struct {
 	// Job is the GitHub Actions job id of a check run GitHub Actions produced, whose log CheckLog reads; empty for
 	// any other check or status. It is not part of a check's JSON, so recorded checks stay as they were.
 	Job string `json:"-"`
+	// Conclusion is how a completed GitHub check run finished, lower-cased as GitHub names it: failure, cancelled,
+	// timed_out, action_required, stale, startup_failure, success, neutral or skipped. Several of these are all
+	// CheckFailed, so this says which. It is empty for a pending check run and a commit status, and is not part of a
+	// check's JSON, so recorded checks stay as they were.
+	Conclusion string `json:"-"`
 }
 
 // CheckLog is the log of one failed job, as much of it as a limit keeps.

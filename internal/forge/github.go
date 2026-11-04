@@ -307,6 +307,7 @@ func (c ghContext) check() (Check, error) {
 		default:
 			return Check{}, fmt.Errorf("check run %q has unknown conclusion %q", c.Name, deref(c.Conclusion))
 		}
+		out.Conclusion = strings.ToLower(deref(c.Conclusion))
 		return out, nil
 	case "StatusContext":
 		out := Check{Name: c.Context, URL: deref(c.TargetURL), ID: c.ID}

@@ -195,7 +195,7 @@ A missing or empty brief, a missing or unknown surface and bad flags exit 2 befo
 
 ## `ci log`
 
-[`ci log`](ci-logs.md) prints the full log of a failed CI job that one of the task's validate results records, from the CI log cache or fetched with Guildhall's own gh; it takes no task lock and changes nothing.
+[`ci log`](ci-logs.md) prints the full log of a failed CI job that one of the task's validate results or rerun records names, from the CI log cache or fetched with Guildhall's own gh; it takes no task lock and changes nothing.
 
 ## Output and exit status
 
