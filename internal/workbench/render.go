@@ -44,12 +44,14 @@ type Options struct {
 	Location *time.Location
 }
 
-// Renderer writes Workbench lines to a writer. It keeps the name of each tool call by id, so a result is labelled
-// with its own call however parallel calls interleave. The first write error is kept and ends all output.
+// Renderer writes Workbench lines to a writer. It keeps each tool call by id, so an error is labelled with its own
+// call however parallel calls interleave, and counts the calls of the open burst for its summary line. The first
+// write error is kept and ends all output.
 type Renderer struct {
 	out   io.Writer
 	opts  Options
-	calls map[string]string
+	calls map[string]call
+	burst burst
 	fence bool
 	// thinking is set while the last line written ended shown thinking, so the next shown thinking is kept apart
 	// from it by a blank line.
@@ -65,7 +67,7 @@ func NewRenderer(out io.Writer, opts Options) *Renderer {
 	if opts.Location == nil {
 		opts.Location = time.Local
 	}
-	return &Renderer{out: out, opts: opts, calls: map[string]string{}}
+	return &Renderer{out: out, opts: opts, calls: map[string]call{}}
 }
 
 // Err is the first error writing to the output.
@@ -110,8 +112,9 @@ func (r *Renderer) write(s string) {
 // Println writes s, Guildhall's own text, unchanged and unstyled, then a newline.
 func (r *Renderer) Println(s string) { r.write(s + "\n") }
 
-// Close resets the terminal's graphic rendition when colour is on.
+// Close writes any open burst's summary and resets the terminal's graphic rendition when colour is on.
 func (r *Renderer) Close() {
+	r.endBurst(time.Time{})
 	if r.opts.Color {
 		r.write(reset)
 	}
@@ -123,32 +126,40 @@ func (r *Renderer) Header(repo, task, step, attempt string) {
 	r.line(span{strings.Repeat("─", r.opts.Width), dim})
 }
 
-// Event writes one event.
+// Event writes one event. Tool calls and results write nothing of their own but are counted in the open burst,
+// whose one summary line is written when thinking, text, the end or truncation closes it; a failed call writes its
+// own error line as its result arrives.
 func (r *Renderer) Event(e Event) {
 	switch e.Kind {
 	case KindText:
+		r.endBurst(e.Time)
 		r.fence = false
 		r.Text(e.Text)
 		r.fence = false
 	case KindThinking:
+		r.endBurst(e.Time)
 		r.Thinking(e.Text)
 	case KindToolCall:
-		r.calls[e.ID] = e.Name
-		r.toolCall(r.clock(e.Time), e.Name, e.Subject)
+		r.calls[e.ID] = call{name: e.Name, subject: e.Subject}
+		r.note(e.Time)
+		r.burst.add(callKind(e.Name, e.Subject))
 	case KindToolResult:
-		name, ok := r.calls[e.ID]
-		if !ok {
-			name = "tool"
-		}
-		size := sizeText(deref(e.Bytes), deref(e.Lines))
-		if e.Error != nil && *e.Error {
-			r.line(span{r.clock(e.Time) + "   ", dim}, span{"✗ " + clean(name) + " error " + size, failure})
+		if e.Error == nil || !*e.Error {
 			return
 		}
-		r.line(span{r.clock(e.Time) + "   ", dim}, span{"✓", success}, span{" " + clean(name) + " " + size, dim})
+		// An error is counted in the open burst; one arriving after thinking or text closed its burst has only its
+		// own line.
+		r.Tick(e.Time)
+		if !r.burst.empty() {
+			r.note(e.Time)
+			r.burst.errors++
+		}
+		r.failedCall(e.Time, e.ID, sizeText(deref(e.Bytes), deref(e.Lines)))
 	case KindEnd:
+		r.endBurst(e.Time)
 		r.line(span{r.clock(e.Time) + " · exited with status " + strconv.Itoa(deref(e.Exit)), dim})
 	case KindTruncated:
+		r.endBurst(e.Time)
 		r.line(span{fmt.Sprintf("· the event file reached its %d MiB cap; the rest of the attempt is shown plain", MaxFileBytes>>20), dim})
 	}
 }
@@ -164,13 +175,9 @@ func deref[T any](p *T) T {
 // clock is t's time of day, HH:MM:SS.
 func (r *Renderer) clock(t time.Time) string { return t.In(r.opts.Location).Format("15:04:05") }
 
-// toolCall writes a tool call line; an empty clock leaves the timestamp out.
-func (r *Renderer) toolCall(clock, name, subject string) {
-	text := strings.TrimSpace("▸ " + clean(name) + " " + clean(subject))
-	if clock != "" {
-		text = clock + " " + text
-	}
-	r.line(span{text, tool})
+// toolCall writes a plain fallback tool call line, with no timestamp.
+func (r *Renderer) toolCall(name, subject string) {
+	r.line(span{strings.TrimSpace("▸ " + clean(name) + " " + clean(subject)), tool})
 }
 
 // Other writes a launcher.log line no event claims: Claude's stderr, guildhall: lines and advance output, dimmed,
@@ -188,10 +195,11 @@ func (r *Renderer) Other(line string) {
 // Plain writes a launcher.log line with no event file to say what it is: a tool: line as a tool call with no
 // timestamp, a guildhall: line as another line, and anything else as text.
 func (r *Renderer) Plain(line string) {
+	r.endBurst(time.Time{})
 	switch {
 	case strings.HasPrefix(line, "tool: "):
 		name, subject, _ := strings.Cut(strings.TrimPrefix(line, "tool: "), " ")
-		r.toolCall("", name, subject)
+		r.toolCall(name, subject)
 	case strings.HasPrefix(line, "guildhall:"):
 		r.Other(line)
 	default:
@@ -222,6 +230,7 @@ type Result struct {
 
 // Banner writes the closing banner: the result's status and its summary wrapped, or that no result was written.
 func (r *Renderer) Banner(res *Result) {
+	r.endBurst(time.Time{})
 	r.line()
 	r.line(span{strings.Repeat("─", r.opts.Width), dim})
 	switch {

@@ -89,8 +89,7 @@ func TestPresentWorkbench(t *testing.T) {
 	want := "guildhall guildhall · d36 · build · 1\n" + rule + "\n" +
 		"guildhall: claude-artisan: task grant g adds Bash(go test:*)\n" +
 		"I am working.\n" +
-		"09:15:00 ▸ Bash go test ./...\n" +
-		"09:15:00   ✓ Bash 2 lines, 20 B\n" +
+		"09:15:00 ▸ ran go test once\n" +
 		"09:15:00 · exited with status 0\n" +
 		"Done.\nstep done\n" +
 		"\n" + rule + "\n✗ failed\n  Tests fail.\n" +
