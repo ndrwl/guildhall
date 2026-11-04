@@ -103,10 +103,11 @@ Decisions are per enrolment: enrolling again starts with no answered alert.
 
 ## Enrol and leave
 
-Both are explicit commands run on the Director's machine, by the Guildmaster or by the setup wizard (R1.46), and both are store events with receipts that the task timeline and status feed show.
+Both are explicit commands run on the Director's machine, and both are store events with receipts that the task timeline and status feed show.
+The Guildmaster runs them by hand, or the Steward runs `director enrol` over SSH as a step of a [takeover](steward.md#takeover) plan the Guildmaster approved; `director leave` stays the Guildmaster's only.
 
 - `guildhall director enrol --steward <label>` requires a valid `managed.toml` beside the config and records `enrolled` with the Steward's label and the managed digest.
-  The Steward's roster entry is the other half of enrolment and is written on the Steward's side, as today.
+  The Steward's roster entry is the other half of enrolment and is written on the Steward's side, by hand or as the takeover's last step.
 - `guildhall director leave` records `left`, writes the current effective values of the managed keys into `[local]` so no guard rail silently loosens, and renames `managed.toml` to `managed.toml.rev-<first 16 hex digits of its sha256>`, keeping it as a rollout keeps a revision.
   The Guildmaster removes the copy from the roster separately.
 
@@ -124,6 +125,9 @@ It reads lessons and incidents the same way, by [collection](steward.md#collecti
 It informs an enrolled Director of issues it finds, such as a failed rollout, with a [Steward message](messaging.md#steward-messages): an envelope copied with `scp` to the copy's drop file, then `guildhall messages receive --copy <dir>` ([decision](decisions/steward-messages-directors.md)).
 A Steward message informs only: it is not a command, dispatch or a push of configuration, and the Director acts on nothing it says without the Guildmaster.
 A standalone copy is not in the roster and gets none.
+
+A [takeover](steward.md#takeover) makes a running standalone copy managed with the same fixed commands, once the Guildmaster approved its plan: `director pause`, `director status --json` until no attempt runs, `backup now` or `store export`, a first `managed.toml` with no managed key copied with `scp`, `director enrol`, `config reload` and `director resume`.
+Enrolment and the reload run back to back while the session is paused, so the copy refuses its settings only between them, and its effective settings, store and tasks are the same before and after; only its mode changes.
 
 `config reload` loads and validates the combined config, runs the migration and mode checks, and records a `managed-revision` event authorizing the rollout digest in the receiving store, with the new and previous digests and the source `reload`.
 A running Director applies the new revision at its next step boundary, for new tasks only (R1.31, R1.62); an active task keeps its bound configuration.

@@ -72,11 +72,13 @@ Commands:
   steward status [--copy <dir>]
                  print the Steward session, the roster and each copy's last rollout
   steward approval request --plan <dir> [--copy <dir>]
-                 open the decision through which the Guildmaster approves a rollout plan's digest
+                 open the decision through which the Guildmaster approves a rollout or setup plan's digest
   steward rollout ...
                  plan and apply rollouts of managed settings to enrolled Director copies
   steward collect [--machine <label>...] [--copy <dir>]
                  collect enrolled copies' lessons and incidents into the private config and open their triage
+  steward takeover ...
+                 plan, apply or abandon the takeover of an existing Director copy as managed, keeping its store
   messages send|list|read|ack --store <path> ...
                  send, list, read and acknowledge local Director and Artisan messages
   messages summary|receive|inbox|outbox [--copy <dir>] ...

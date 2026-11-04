@@ -255,6 +255,7 @@ func ensureStewardRecords(storePath string) error {
 	_, err := withStore(storePath, false, func(s *store.Store) (struct{}, error) {
 		for _, t := range []store.Task{
 			{ID: stewardRolloutsTask, Title: "Rollout approvals", Detail: "The Guildmaster's approvals of rollout plan digests, one decision per plan."},
+			{ID: stewardSetupTask, Title: "Setup plan approvals", Detail: "The Guildmaster's approvals of setup plan digests, such as a Director copy's takeover, one decision per plan."},
 			{ID: stewardGuildmasterTk, Title: "Messages from the Guildmaster", Detail: "The task the Guildmaster's messages to the Steward name."},
 			{ID: stewardIncidentsTask, Title: "Incident triage", Detail: "The Guildmaster's triage of collected incidents, one decision per incident: accept, defer or decline."},
 			{ID: stewardLessonsTask, Title: "Lesson triage", Detail: "The Guildmaster's triage of collected lessons, one decision per lesson: adopt or decline."},
@@ -272,18 +273,16 @@ func ensureStewardRecords(storePath string) error {
 }
 
 // stewardSessionStart is the Steward's steps at the start of every session: its reserved records, then startup.md's
-// in-flight items, each rollout approval the Guildmaster has not answered and each one approved, and each open
+// in-flight items, each rollout or setup approval the Guildmaster has not answered and each one approved, and each open
 // triage decision; with [steward] collect_every set, the session collects at its start and then on that schedule,
 // off the decision path, and its end waits for a running round.
 func (a *App) stewardSessionStart(p startPlan, copyDir, storePath, state string) (sessionStart, error) {
 	if err := ensureStewardRecords(storePath); err != nil {
 		return sessionStart{}, err
 	}
-	approvals, err := withStore(storePath, true, func(s *store.Store) ([]store.Decision, error) {
-		return s.Decisions(stewardRepository, stewardRolloutsTask)
-	})
+	approvals, err := withStore(storePath, true, stewardApprovalDecisions)
 	if err != nil {
-		return sessionStart{}, fmt.Errorf("rollout approvals: %w", err)
+		return sessionStart{}, fmt.Errorf("plan approvals: %w", err)
 	}
 	triage, err := triageDecisions(storePath)
 	if err != nil {
@@ -305,12 +304,31 @@ func (a *App) stewardSessionStart(p startPlan, copyDir, storePath, state string)
 		if d.Subject != nil {
 			plan = d.Subject.Digest
 		}
+		kind := "rollout"
+		if d.TaskID == stewardSetupTask {
+			kind = "setup"
+		}
 		switch {
 		case d.Open():
-			out.inFlight = append(out.inFlight, fmt.Sprintf("rollout approval %s: plan %s waits for the Guildmaster's answer; show them the plan", d.ID, plan))
+			out.inFlight = append(out.inFlight, fmt.Sprintf("%s approval %s: plan %s waits for the Guildmaster's answer; show them the plan", kind, d.ID, plan))
+		case d.Answered && d.Choice == stewardApprove && kind == "setup":
+			out.inFlight = append(out.inFlight, fmt.Sprintf("setup approval %s: the Guildmaster approved plan %s; apply it with guildhall steward takeover --apply --approve %s unless its step log shows it done", d.ID, plan, plan))
 		case d.Answered && d.Choice == stewardApprove:
 			out.inFlight = append(out.inFlight, fmt.Sprintf("rollout approval %s: the Guildmaster approved plan %s; apply it with --approve %s unless `guildhall steward status` shows it applied", d.ID, plan, plan))
 		}
+	}
+	return out, nil
+}
+
+// stewardApprovalDecisions are the Steward store's plan approval decisions: the rollouts', then the setup plans'.
+func stewardApprovalDecisions(s *store.Store) ([]store.Decision, error) {
+	var out []store.Decision
+	for _, task := range []string{stewardRolloutsTask, stewardSetupTask} {
+		ds, err := s.Decisions(stewardRepository, task)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ds...)
 	}
 	return out, nil
 }
@@ -321,19 +339,19 @@ func approvalDecisionID(d string) string {
 	return "rollout-" + hex[:min(12, len(hex))]
 }
 
-// stewardApproved reports whether the Steward store at storePath holds the Guildmaster's approval of plan digest d:
-// its approval decision answered "approve" and bound to d.
-func stewardApproved(storePath, d string) (bool, error) {
+// stewardDecisionApproved reports whether the Steward store at storePath holds the Guildmaster's approval of plan
+// digest d: decision id of the reserved task answered "approve" and bound to d.
+func stewardDecisionApproved(storePath, task, id, d string) (bool, error) {
 	if _, err := os.Stat(storePath); err != nil {
 		return false, fmt.Errorf("no Steward store at %s to hold the Guildmaster's approval: %w", storePath, err)
 	}
 	return withStore(storePath, true, func(s *store.Store) (bool, error) {
-		ds, err := s.Decisions(stewardRepository, stewardRolloutsTask)
+		ds, err := s.Decisions(stewardRepository, task)
 		if err != nil {
 			return false, err
 		}
 		for _, x := range ds {
-			if x.ID == approvalDecisionID(d) {
+			if x.ID == id {
 				return x.Answered && x.Choice == stewardApprove && x.Subject != nil && x.Subject.Digest == d, nil
 			}
 		}
@@ -519,7 +537,7 @@ func (a *App) stewardStatusCmd(args []string) int {
 			case !errors.Is(err, store.ErrNotFound):
 				return r, err
 			}
-			ds, err := s.Decisions(stewardRepository, stewardRolloutsTask)
+			ds, err := stewardApprovalDecisions(s)
 			r.decisions = ds
 			return r, err
 		})
@@ -645,6 +663,9 @@ func (a *App) stewardApprovalCmd(args []string) int {
 	storePath = filepath.Join(cp.dir, stewardStoreFile)
 	if _, err := os.Stat(storePath); errors.Is(err, fs.ErrNotExist) {
 		return a.fail(fmt.Errorf("steward approval request: %w", noStore(storePath)))
+	}
+	if steward.IsSetupPlan(*planDir) {
+		return a.setupApprovalRequest(cp.dir, storePath, *planDir)
 	}
 	plan, err := steward.ReadPlan(*planDir)
 	if err != nil {
