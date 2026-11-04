@@ -19,8 +19,9 @@ import (
 const artisanMessagesUsage = `usage, inside an attempt (GUILDHALL_ATTEMPT set):
   guildhall messages [list] [--after <sequence>] [--limit <n>]
   guildhall messages ack <message-id>
+  guildhall messages hook
 lists or acknowledges the steering messages to this attempt's own inbox, in the copy that runs it; --store, --copy,
-a recipient, read and send are refused`
+a recipient, read and send are refused; hook is the Claude Artisan's PostToolUse hook, which always exits 0`
 
 // steeringCommands are the commands that, run inside an attempt, first show its unacknowledged steering messages on
 // stderr (docs/messaging.md#steering-an-attempt): the commands an Artisan is granted.
@@ -30,6 +31,10 @@ var steeringCommands = map[string]bool{"ci": true, "result": true, "messages": t
 // one of steeringCommands, with GUILDHALL_ATTEMPT set, and not asking only for help.
 func (a *App) steers(cmd string, args []string) bool {
 	if !steeringCommands[cmd] || a.getenv(artisan.AttemptEnv) == "" {
+		return false
+	}
+	// The hook shows the messages to the model itself, on stdout.
+	if cmd == "messages" && len(args) > 0 && args[0] == steeringHookCommand {
 		return false
 	}
 	for _, arg := range args {
@@ -190,6 +195,59 @@ func (a *App) artisanMessages(env string, args []string) int {
 	}
 	if err := json.NewEncoder(a.Stdout).Encode(out); err != nil {
 		return 1
+	}
+	return 0
+}
+
+// steeringHookCommand is the messages subcommand the Claude Artisan's PostToolUse hook runs, `guildhall messages
+// hook` (claude.SteeringHookCommand), which shows the model the attempt's unacknowledged steering messages right
+// after each tool call.
+const steeringHookCommand = "hook"
+
+// steeringHook is `guildhall messages hook`: with GUILDHALL_ATTEMPT set and unacknowledged steering messages to the
+// attempt, it prints one Claude Code PostToolUse hook document on stdout whose additionalContext is each message in
+// its steeringFrame, so the model sees them after its next tool call without running a guildhall command. It reads
+// the store read-only and writes nothing. With no attempt, no message or any failure it prints nothing on stdout,
+// a failure being one warning line on stderr, and it always exits 0, so a hook that cannot read the store changes
+// nothing: delivery in command output and the check at intake stand without it. It reads no standard input.
+func (a *App) steeringHook(args []string) int {
+	if len(args) > 0 {
+		_, _ = fmt.Fprintf(a.Stderr, "guildhall: warning: messages hook takes no arguments; ignored %q\n", args)
+	}
+	env := a.getenv(artisan.AttemptEnv)
+	if env == "" {
+		return 0
+	}
+	key, err := artisan.ParseAttemptKey(env)
+	if err != nil {
+		_, _ = fmt.Fprintf(a.Stderr, "guildhall: warning: %s: %s\n", artisan.AttemptEnv, oneLine(stripControls(err.Error())))
+		return 0
+	}
+	msgs, more, err := a.attemptInbox(key, 0, store.MaxInboxLimit)
+	if err != nil {
+		_, _ = fmt.Fprintf(a.Stderr, "guildhall: warning: steering messages to attempt %s not read: %s\n", key, oneLine(stripControls(err.Error())))
+		return 0
+	}
+	if len(msgs) == 0 {
+		return 0
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Guildhall: %d unacknowledged steering message(s) to this attempt. Act on each, then acknowledge it with guildhall messages ack <id>; a succeeded result is refused until every one is acknowledged.\n", len(msgs))
+	for _, m := range msgs {
+		b.WriteString(steeringFrame(m))
+	}
+	if more {
+		fmt.Fprintf(&b, "More than %d are unacknowledged; acknowledge these, then run guildhall messages.\n", store.MaxInboxLimit)
+	}
+	type output struct {
+		HookEventName     string `json:"hookEventName"`
+		AdditionalContext string `json:"additionalContext"`
+	}
+	doc := struct {
+		HookSpecificOutput output `json:"hookSpecificOutput"`
+	}{output{HookEventName: "PostToolUse", AdditionalContext: b.String()}}
+	if err := json.NewEncoder(a.Stdout).Encode(doc); err != nil {
+		_, _ = fmt.Fprintf(a.Stderr, "guildhall: warning: messages hook: %v\n", err)
 	}
 	return 0
 }

@@ -407,8 +407,8 @@ func Granted(result string) ([]string, error) {
 }
 
 // settings reads the allow rules of the one --settings file in flags: an absolute path outside the added
-// directories, holding a permissions allow list (possibly empty) and optional skill-policy controls.
-// No --settings grants none.
+// directories, holding a permissions allow list (possibly empty), optional skill-policy controls and, optionally,
+// the Artisan's steering PostToolUse hook (claude.SteeringHookCommand) as its only hook. No --settings grants none.
 func settings(flags, added []string) ([]string, error) {
 	i := slices.Index(flags, "--settings")
 	if i < 0 {
@@ -438,6 +438,13 @@ func settings(flags, added []string) ([]string, error) {
 		Permissions          struct {
 			Allow []string `json:"allow"`
 		} `json:"permissions"`
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Type    string `json:"type"`
+				Command string `json:"command"`
+				Timeout int    `json:"timeout"`
+			} `json:"hooks"`
+		} `json:"hooks"`
 	}
 	dec := json.NewDecoder(strings.NewReader(string(data)))
 	dec.DisallowUnknownFields()
@@ -446,6 +453,12 @@ func settings(flags, added []string) ([]string, error) {
 	}
 	if s.Permissions.Allow == nil {
 		return nil, fmt.Errorf("--settings %s must declare an allow list, even when empty", path)
+	}
+	for event, matchers := range s.Hooks {
+		if event != "PostToolUse" || len(matchers) != 1 || len(matchers[0].Hooks) != 1 ||
+			matchers[0].Hooks[0].Type != "command" || matchers[0].Hooks[0].Command != claude.SteeringHookCommand {
+			return nil, fmt.Errorf("--settings %s: hook %s is not the steering hook %q", path, event, claude.SteeringHookCommand)
+		}
 	}
 	return s.Permissions.Allow, nil
 }

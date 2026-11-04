@@ -450,11 +450,12 @@ func TestRunReportsDenials(t *testing.T) {
 	}
 }
 
-// TestArtisanSettings: the settings file grants exactly the rules, in order, as Claude Code's permissions.allow and
-// nothing else.
+// TestArtisanSettings: the settings file grants exactly the rules, in order, as Claude Code's permissions.allow, and
+// registers the steering PostToolUse hook for every tool, and nothing else.
 func TestArtisanSettings(t *testing.T) {
 	got := string(claude.ArtisanSettings([]string{"Bash(go test:*)", "Bash(git commit:*)"}))
-	want := `{"permissions":{"allow":["Bash(go test:*)","Bash(git commit:*)"]}}` + "\n"
+	want := `{"permissions":{"allow":["Bash(go test:*)","Bash(git commit:*)"]},` +
+		`"hooks":{"PostToolUse":[{"hooks":[{"type":"command","command":"guildhall messages hook","timeout":10}]}]}}` + "\n"
 	if got != want {
 		t.Errorf("ArtisanSettings = %q, want %q", got, want)
 	}

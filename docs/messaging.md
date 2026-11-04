@@ -20,8 +20,8 @@ Supported today, on a local store file named on the command line:
 
 Not provided yet:
 
-- showing a running Artisan a message between its `guildhall` commands, such as with a hook after each tool call.
-  An Artisan that runs no `guildhall` command for a long stretch sees a message at its next one, or when its result is refused;
+- showing a running Artisan a message between its `guildhall` commands on a runtime with no hook: only Claude has the [after-tool-use hook](#steering-an-attempt).
+  An Artisan elsewhere that runs no `guildhall` command for a long stretch sees a message at its next one, or when its result is refused;
 - finding the store from a Director's runtime context: every Director command takes `--store <path>` or a copy;
 - messaging another Director, on this machine or another.
   Work still moves between Directors only by manual handoff (R1.15); [Director messaging](#director-messaging-designed-not-built) is designed, not built;
@@ -122,6 +122,8 @@ Inside an attempt, where `GUILDHALL_ATTEMPT` is set, only the Artisan forms exis
 
 They refuse `--store`, `--copy`, `--config`, a recipient, `read` and `send` with exit 2, so an Artisan reads and acknowledges only its own messages and sends none.
 
+`guildhall messages hook` is the Claude Artisan's [after-tool-use hook](#steering-an-attempt): it prints a Claude Code hook document only when the attempt has unacknowledged messages, and always exits 0, inside an attempt or not.
+
 A listed or read message is its envelope plus `sender`, `sequence`, its store-wide order, and `acknowledged`:
 
 | Field | Contract |
@@ -187,6 +189,12 @@ Delivery does not depend on the agent, a hook or a plugin; it rides on the `guil
   Every text line is prefixed `| `, so no text can close the frame, and terminal control characters other than tab and newline are stripped; the text is already bounded at 16 KiB.
   Standard output is untouched, so each command's own output contract holds byte for byte.
   A store the command cannot read within the copy's [`lock_wait`](configuration.md#settings), or no copy found that runs the attempt, prints one `guildhall: warning: steering messages to attempt <attempt> not read: <reason>` line instead, and the command runs as normal: the read never fails the command it precedes.
+- **Shown after each tool call, on Claude.**
+  The Claude Artisan's settings register a PostToolUse hook for every tool, `guildhall messages hook` (`claude.SteeringHookCommand`, 10-second timeout), so the model sees a message straight after its next tool call without running a `guildhall` command.
+  With unacknowledged messages it prints one Claude Code hook document, `{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"..."}}`, whose context is a line saying how many are unacknowledged and that the result waits on their ack, then each message in the frame above; with none it prints nothing.
+  It shows each message after every tool call until it is acknowledged.
+  It reads the store only, takes no standard input, and always exits 0: no attempt, a store it cannot read, or anything else wrong prints nothing on standard output, at most one `guildhall: warning:` line on standard error, so Claude Code adds and blocks nothing.
+  A missing or failing hook therefore changes nothing about correctness: command output and intake still deliver and enforce.
 - **Acknowledged by the Artisan.**
   The Artisan acts on a message and runs `guildhall messages ack <id>`.
   The Claude adapter's instruction says so, and grants `Bash(guildhall messages:*)`, which the [Artisan forms](#commands) confine to the attempt's own inbox ([adapters](adapters.md#artisan-permissions)).
@@ -195,6 +203,19 @@ Delivery does not depend on the agent, a hook or a plugin; it rides on the `guil
   The check is in intake's shared check half, so `guildhall result check`, `guildhall result submit` and intake give the same reason, and a result written directly, without `submit`, is refused too.
   `result submit` spends none of its resubmissions on this rejection, since acknowledging clears it.
   A failed result is not refused for unread messages, and a message sent after the result is written but before intake is refused like any other unread message: the attempt fails, and the Director sees why.
+
+The Director's [`guildhall-director-inbox`](../skills/guildhall-director-inbox/SKILL.md) skill says how to steer an attempt and that its result waits on the ack.
+
+### Guildhall-sent steering
+
+Guildhall itself steers an attempt through its outbox (`interp.GuildhallOutbox`), as sender `guildhall`, only with a type in the registry `store.ArtisanMessageTypes`; the outbox refuses any other type to an `artisan:` inbox and sends nothing.
+
+| Type | What it tells the Artisan |
+|---|---|
+| `nudge` | Finish the stage's work, such as writing or submitting the result, before the session ends. |
+
+The types are vocabulary only: Guildhall does not act on them, and the Artisan acknowledges each like any steering message.
+A type is added by the change that sends it; the Director's `messages send` may use any type.
 
 Steering covers stage attempts on the `claude` and `fake` runtimes; the fake's `ack` [directive](adapters.md#scenarios) acknowledges as a model would.
 Codex runs no stage step, so it has no steering, and a quality judge has no steering inbox.

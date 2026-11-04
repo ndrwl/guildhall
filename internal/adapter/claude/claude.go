@@ -241,8 +241,18 @@ func ArtisanSettingsPath(result string) string {
 	return filepath.Join(filepath.Dir(result), ArtisanSettingsFile)
 }
 
+// SteeringHookCommand is the Artisan's PostToolUse hook: `guildhall messages hook`, the `guildhall` on PATH as
+// for the guildhall grant, which shows the model the attempt's unacknowledged steering messages after each tool
+// call (docs/messaging.md#steering-an-attempt). It reads the store only and always exits 0, so a missing or
+// failing hook changes nothing: delivery in command output and the check at intake do not depend on it.
+const SteeringHookCommand = "guildhall messages hook"
+
+// SteeringHookTimeout is the seconds Claude Code gives SteeringHookCommand before it gives up on it.
+const SteeringHookTimeout = 10
+
 // ArtisanSettings is the Claude Code settings file granting rules: a permissions object whose allow list is
-// rules, in order, and nothing else, as JSON with a trailing newline.
+// rules, in order, and a PostToolUse hook running SteeringHookCommand after every tool, and nothing else, as JSON
+// with a trailing newline. A hook command is not a permission rule, so the hook grants the model nothing.
 func ArtisanSettings(rules []string) []byte {
 	if rules == nil {
 		rules = []string{}
@@ -250,9 +260,20 @@ func ArtisanSettings(rules []string) []byte {
 	type permissions struct {
 		Allow []string `json:"allow"`
 	}
+	type command struct {
+		Type    string `json:"type"`
+		Command string `json:"command"`
+		Timeout int    `json:"timeout"`
+	}
+	type matcher struct {
+		Hooks []command `json:"hooks"`
+	}
 	data, _ := json.Marshal(struct {
-		Permissions permissions `json:"permissions"`
-	}{permissions{Allow: rules}})
+		Permissions permissions          `json:"permissions"`
+		Hooks       map[string][]matcher `json:"hooks"`
+	}{permissions{Allow: rules}, map[string][]matcher{
+		"PostToolUse": {{[]command{{Type: "command", Command: SteeringHookCommand, Timeout: SteeringHookTimeout}}}},
+	}})
 	return append(data, '\n')
 }
 

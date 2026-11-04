@@ -37,6 +37,10 @@ an external sender is "steward": --from and --sender select external messages, w
 // messages runs a messages subcommand against an existing store and prints its result as one JSON document.
 // It exits 0 on success, 1 when the store refuses or fails and 2 on a usage error.
 func (a *App) messages(args []string) int {
+	// The Artisan's after-tool-use hook never fails, inside an attempt or not (docs/messaging.md#steering-an-attempt).
+	if len(args) > 0 && args[0] == steeringHookCommand {
+		return a.steeringHook(args[1:])
+	}
 	// Inside an attempt, only the attempt's own inbox is reachable (docs/messaging.md#steering-an-attempt).
 	if env := a.getenv(artisan.AttemptEnv); env != "" {
 		return a.artisanMessages(env, args)
