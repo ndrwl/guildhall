@@ -51,6 +51,7 @@ collect_every = "6h"
 `name` labels the Steward's Herdr workspace and tab and is required to start a session; `adapter`, `model`, `effort` and `role` choose the session's runtime and role prompt as `[director]` does for a Director, and `role` is a config-relative path that replaces the release's `roles/steward.md`.
 `collect_every` is optional: a duration of at least a minute, validated like `[backup] every`, after which the session runs a [scheduled collection](#scheduled-collection); unset, the default, nothing is collected on a schedule.
 `report_unreachable_after` is optional too: how long a copy must have been unreachable before a scheduled run, reaching it again, sends it an `unreachable-recovered` [Steward message](#steward-messages), a duration of at least a minute, one hour when unset.
+`report_director_after` is optional as well: the span of the [Director health](#director-health) checks, how long a Director must have taken no turn while messages waited, stayed recovering, or run a release behind its pin before a scheduled run reports it, a duration of at least a minute, one hour when unset.
 A config that only runs rollouts needs no `[steward]` table.
 The table has no `idle_after`, handoff or `wake_quiet` key: the Steward's session runs the defaults of those ([lifecycle](#lifecycle)).
 The table is an addition to schema version 1, so an older binary refuses it as an unknown key rather than guessing (R1.11).
@@ -296,8 +297,9 @@ The allow-list is exactly ([decision](decisions/steward-fixed-remote-commands.md
 - `lesson list --json --pending --copy <copy_dir>` and `incident list --json --pending --copy <copy_dir>`, which only read the copy's items not yet [collected](#collection);
 - `director collected --copy <copy_dir>`, which marks the items of the receipt collection copied to the copy as collected;
 - `messages receive --copy <copy_dir>`, which receives the [Steward message](#steward-messages) copied to the copy's drop file ([decision](decisions/steward-messages-directors.md));
+- `director status --json --copy <copy_dir>`, which only reads the copy's status feed, for the [Director health](#director-health) checks ([decision](decisions/steward-reads-director-status.md)) and an approved [takeover](#takeover);
 - `director reload --copy <copy_dir>`, reserved for [release upgrades](releases.md#guildhall-director-reload) and refused until that is built;
-- for an approved [takeover](#takeover) only ([decision](decisions/steward-setup-plans.md)): `director status --json --copy <copy_dir>`, which only reads; `director pause --copy <copy_dir>` and `director resume --copy <copy_dir>`; `backup now --copy <copy_dir>` and `store export --out <dir> --copy <copy_dir>`; and `director enrol --steward <label> --copy <copy_dir>`.
+- for an approved [takeover](#takeover) only ([decision](decisions/steward-setup-plans.md)): `director pause --copy <copy_dir>` and `director resume --copy <copy_dir>`; `backup now --copy <copy_dir>` and `store export --out <dir> --copy <copy_dir>`; and `director enrol --steward <label> --copy <copy_dir>`.
 
 A value other than the copy directory is held to the same rule: `--out` takes an absolute path in the restricted character set and `--steward` a lowercase id.
 Any other command, flag or argument is refused before `ssh` runs, and so is an alias that is not a plain roster alias.
@@ -353,7 +355,7 @@ The Steward tells an enrolled Director about issues it finds with a **Steward me
 A Steward message informs only: it is not dispatch, a task, an approval or a push of configuration, and the Director acts on nothing it says without the Guildmaster (R1.6, R1.7, R1.8, R1.15).
 The supervisor's scheduled run sends them as deterministic code, never the Steward's model, so they need `collect_every`; each run, after its collection round:
 
-1. finds the reports: `rollout-failed` for each enrolled copy whose newest rollout receipt under `rollouts/` is `failed`, `verify_failed` or `reload_failed`, and `unreachable-recovered` for each copy the round reached after it had been unreachable, by the round's own reads, for at least `[steward] report_unreachable_after` (one hour by default, at least a minute);
+1. finds the reports: `rollout-failed` for each enrolled copy whose newest rollout receipt under `rollouts/` is `failed`, `verify_failed` or `reload_failed`, `unreachable-recovered` for each copy the round reached after it had been unreachable, by the round's own reads, for at least `[steward] report_unreachable_after` (one hour by default, at least a minute), and the [Director health](#director-health) reports `director-stuck`, `director-unhealthy` and `release-behind`;
 2. records each report in the Steward store's outbox, `pending`, under its id `<kind>.<first 16 hex digits of the sha256 of its copy and issue>`, so one issue on one copy is one message however often a run finds it;
 3. delivers every pending entry, one at a time: it copies the envelope with `scp` to `state/steward/message.json` in the copy, then runs the fixed [remote command](#remote-commands) `messages receive --copy <copy_dir>`, and records the copy's answer, `delivered` with its receipt or `refused` with its reason.
 
@@ -362,6 +364,20 @@ A delivery that fails, such as an unreachable or sleeping machine or a `guildhal
 `guildhall messages outbox [--all] --copy <steward copy>` lists the entries not delivered, or every one.
 `state/steward/` is made by the copy's `director enrol`, `config reload` and pending lists, since `scp` makes no directory.
 A copy that is not in the roster, standalone or removed, gets no Steward message.
+
+### Director health
+
+Each scheduled run reads, after its collection round, every enrolled copy's status with the fixed read-only command `director status --json --copy <copy_dir>`, skipping a copy the round found unreachable ([decision](decisions/steward-reads-director-status.md)).
+The feed's `health` block gives the newest session's supervisor (`alive`, `gone`, `unverified`, or `none` with no session or a stopped one), the last turn signal its runtime's hooks recorded, the messages waiting for the Director, local and external, with the oldest one's arrival, and the release the session runs beside the copy's pin ([status](director.md#status)).
+With the span `[steward] report_director_after` (one hour by default, at least a minute), the run finds three conditions:
+
+- `director-stuck`: messages wait, and the Director has taken no turn for the span since the later of its last turn and the oldest waiting message's arrival; a stopped session, or none, with a message waiting that long is stuck too;
+- `director-unhealthy`: the session's supervisor is gone while the session is not stopped, reported at once, or the session has stayed `recovering` for the span since it started;
+- `release-behind`: the session runs a release older than the copy's pin, by semantic version order, and the Steward has found it so for the span.
+
+The Steward store keeps each condition per copy with the time it first found it and a mark naming what holds, such as the release and pin, and the report's id is made from both, so one condition is one message, however many runs find it, until a run sees it clear; a condition that clears and returns, or holds with a new mark, is a new message.
+A copy whose status cannot be read keeps its conditions as they were, and the failure goes to the supervisor's standard error, as does a copy whose `guildhall` predates the `health` block; a copy on a `guildhall` that knows Steward messages but not these kinds refuses them, which the outbox records as a final refusal.
+The `director-stuck` check compares the copy's times with the Steward's clock, so it relies on the machines' clocks agreeing; a runtime with no turn hooks records no last turn, so its Director counts as stuck once a message has waited the span unacknowledged.
 
 ## Takeover
 

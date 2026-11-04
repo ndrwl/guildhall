@@ -690,6 +690,54 @@ func (s *Store) DirectorUnread() (map[string]int, error) {
 	return counts, nil
 }
 
+// DirectorWaiting counts the messages DirectorUnread counts, the session inbox's and the external inbox's, and
+// returns when the oldest of them arrived: a local message's send receipt time, an external one's ReceivedAt. With
+// none waiting, since is zero. The Steward's status read compares it with the Director's last turn
+// (docs/steward.md#director-health).
+func (s *Store) DirectorWaiting() (count int, since time.Time, err error) {
+	older := func(t time.Time) {
+		if since.IsZero() || t.Before(since) {
+			since = t
+		}
+	}
+	err = s.view(func(tx *bolt.Tx) error {
+		if err := tx.Bucket(bucketRepos).ForEachBucket(func(repo []byte) error {
+			inbox := repoBucket(tx, string(repo), bucketInbox)
+			if inbox == nil {
+				return nil
+			}
+			return forSessionInbox(inbox, func(id []byte) error {
+				var r Receipt
+				if err := getJSON(tx.Bucket(bucketReceipts), []byte(sendMutationID(string(id))), &r); err != nil {
+					return fmt.Errorf("inbox message %q: receipt: %w", id, err)
+				}
+				count++
+				older(r.CommittedAt)
+				return nil
+			})
+		}); err != nil {
+			return err
+		}
+		inbox := directorBucket(tx, bucketExternalInbox)
+		if inbox == nil {
+			return nil
+		}
+		return inbox.ForEach(func(_, v []byte) error {
+			var m ExternalMessage
+			if err := getJSON(directorBucket(tx, bucketExternal), v, &m); err != nil {
+				return fmt.Errorf("external inbox message %q: %w", v, err)
+			}
+			count++
+			older(m.ReceivedAt)
+			return nil
+		})
+	})
+	if err != nil {
+		return 0, time.Time{}, fmt.Errorf("store: director waiting: %w", err)
+	}
+	return count, since, nil
+}
+
 // forSessionInbox calls fn with the message id of every entry of one repository's inbox bucket addressed to the
 // session's inbox, the Director's entries then the Steward's, each in sequence order.
 func forSessionInbox(inbox *bolt.Bucket, fn func(id []byte) error) error {

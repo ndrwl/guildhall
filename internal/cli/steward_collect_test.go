@@ -40,6 +40,8 @@ type collectSetup struct {
 	// pending lesson list with it, as an unreachable machine does.
 	receive      stewardtest.Handler
 	collectFails string
+	// status, when set, answers director status first, as a Handler does.
+	status stewardtest.Handler
 }
 
 func newCollectSetup(t *testing.T) *collectSetup {
@@ -100,6 +102,11 @@ func newCollectSetup(t *testing.T) *collectSetup {
 				return nil, true, fmt.Errorf("no message was copied")
 			}
 			writeFile(t, filepath.Join(cs.director, filepath.FromSlash(steward.MessageDropPath)), string(data))
+		}
+		if cs.status != nil && argv[1] == "director" && argv[2] == "status" {
+			if out, handled, err := cs.status(argv); handled {
+				return out, true, err
+			}
 		}
 		if cs.collectFails != "" && argv[1] == "lesson" {
 			return nil, true, fmt.Errorf("%s", cs.collectFails)

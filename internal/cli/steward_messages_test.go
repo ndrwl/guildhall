@@ -80,6 +80,8 @@ func TestScheduledStewardMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg.Steward.CollectEvery = "1h"
+	// The copy's messages arrive by the wall clock, not this run's; the Director health checks have their own test.
+	cfg.Steward.ReportDirectorAfter = "100000h"
 	w, err := app.stewardCollection(cfg, filepath.Join(cs.steward, stewardStoreFile))
 	if err != nil || w == nil {
 		t.Fatalf("schedule: %v %v", w, err)

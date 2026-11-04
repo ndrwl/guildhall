@@ -118,6 +118,11 @@ func RunRunnerContract(t *testing.T, newHarness func(t *testing.T) RunnerHarness
 				{steward.DefaultGuildhall, "director", "stop", "--copy", posixCopy},
 				{steward.DefaultGuildhall, "director", "status", "--copy", posixCopy},
 				{steward.DefaultGuildhall, "backup", "restore", "--copy", posixCopy},
+				// director status takes only --json and --copy: no store, state or config of its own choosing.
+				{steward.DefaultGuildhall, "director", "status", "--copy", posixCopy, "--json"},
+				{steward.DefaultGuildhall, "director", "status", "--json", "--store", "/tmp/x.store", "--copy", posixCopy},
+				{steward.DefaultGuildhall, "director", "status", "--json", "--copy", "relative/copy"},
+				{steward.DefaultGuildhall, "director", "status", "--json", "--copy", posixCopy, "extra"},
 			} {
 				if _, err := h.Runner().Run(context.Background(), Alpha, argv); !errors.Is(err, steward.ErrNotAllowed) {
 					t.Errorf("Run %q: error %v, want steward.ErrNotAllowed", argv, err)

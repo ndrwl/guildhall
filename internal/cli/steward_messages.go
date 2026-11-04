@@ -148,7 +148,19 @@ func (a *App) runStewardMessages(ctx context.Context, c *steward.Collector, cfg 
 			return []string{err.Error()}
 		}
 	}
-	reports, problems := stewardReports(c.Roster, filepath.Dir(storePath), storePath, round, span, a.now())
+	directorSpan := config.DefaultReportDirectorAfter
+	if cfg.Steward != nil {
+		var err error
+		if directorSpan, err = cfg.Steward.ReportDirectorAfterDuration(); err != nil {
+			return []string{err.Error()}
+		}
+	}
+	now := a.now()
+	reports, problems := stewardReports(c.Roster, filepath.Dir(storePath), storePath, round, span, now)
+	health, more := readDirectorHealth(ctx, c.Roster, c.Runner, round)
+	problems = append(problems, more...)
+	found, more := directorReports(health, storePath, directorSpan, now)
+	reports, problems = append(reports, found...), append(problems, more...)
 	problems = append(problems, queueReports(storePath, reports)...)
 	tmp, err := os.MkdirTemp("", "guildhall-steward-messages-")
 	if err != nil {

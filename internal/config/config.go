@@ -441,6 +441,26 @@ type Steward struct {
 	// reaches the copy again, sends it an unreachable-recovered Steward message, as a Go duration of at least a minute;
 	// empty means DefaultReportUnreachableAfter (docs/steward.md#steward-messages).
 	ReportUnreachableAfter string `toml:"report_unreachable_after" json:",omitempty"`
+	// ReportDirectorAfter is how long an enrolled Director must have taken no turn while messages waited for it, or
+	// have run a release behind its copy's pin, or stayed recovering, before the scheduled run sends it a
+	// director-stuck, release-behind or director-unhealthy Steward message, as a Go duration of at least a minute;
+	// empty means DefaultReportDirectorAfter (docs/steward.md#director-health).
+	ReportDirectorAfter string `toml:"report_director_after" json:",omitempty"`
+}
+
+// DefaultReportDirectorAfter is the [steward] report_director_after of a config that does not set it.
+const DefaultReportDirectorAfter = time.Hour
+
+// ReportDirectorAfterDuration is the table's report_director_after, DefaultReportDirectorAfter when unset.
+func (s Steward) ReportDirectorAfterDuration() (time.Duration, error) {
+	if s.ReportDirectorAfter == "" {
+		return DefaultReportDirectorAfter, nil
+	}
+	d, err := time.ParseDuration(s.ReportDirectorAfter)
+	if err != nil || d < time.Minute {
+		return 0, fmt.Errorf("steward: report_director_after %q must be a duration of at least a minute, such as \"1h\"", s.ReportDirectorAfter)
+	}
+	return d, nil
 }
 
 // DefaultReportUnreachableAfter is the [steward] report_unreachable_after of a config that does not set it.
@@ -918,6 +938,9 @@ func (c *Config) validate() []string {
 			add("%v", err)
 		}
 		if _, err := st.ReportUnreachableAfterDuration(); err != nil {
+			add("%v", err)
+		}
+		if _, err := st.ReportDirectorAfterDuration(); err != nil {
 			add("%v", err)
 		}
 	}
