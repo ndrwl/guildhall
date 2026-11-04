@@ -19,6 +19,8 @@ var listGroups = []struct {
 // listView is the task list's model, every value formatted for the templates.
 type listView struct {
 	Style template.CSS
+	// Scripts are the own scripts the page inlines.
+	Scripts []template.JS
 	// Count is the band's count line, such as "3 tasks wait for you · 5 are moving · 3 wait on something else".
 	Count string
 	// You says a task waits on the Guildmaster, so the count line is amber.
@@ -42,7 +44,7 @@ type listRow struct {
 }
 
 func (s *Server) listView(l TaskList) listView {
-	v := listView{Style: style, ReadAt: s.clock(l.ReadAt)}
+	v := listView{Style: style, Scripts: scripts, ReadAt: s.clock(l.ReadAt)}
 	multi := false
 	for _, t := range l.Tasks {
 		multi = multi || t.Repository != l.Tasks[0].Repository

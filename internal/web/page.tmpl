@@ -93,7 +93,7 @@ words box below (docs/web.md#confirm-and-say). */}}
 {{- if .Events}}<details class="fold raw"><summary>Raw events · {{len .Events}}</summary><pre>{{range $i, $e := .Events}}{{if $i}}
 {{end}}{{$e}}{{end}}</pre></details>{{end}}</li>{{end}}
 
-{{define "task"}}{{template "head" (printf "%s · %s" .T.ID .T.Title)}}<style>{{.Style}}</style></head>
+{{define "task"}}{{template "head" (printf "%s · %s" .T.ID .T.Title)}}<style>{{.Style}}</style>{{range .Scripts}}<script>{{.}}</script>{{end}}</head>
 <body>
 <header class="band">
 <div class="crumb"><a href="/">All tasks</a><span class="sep">/</span><span>{{.T.Repository}}</span><span class="sep">/</span><b>{{.T.ID}}</b><span class="sep">·</span><span>{{.T.State}}</span>{{range .Crumbs}}<span class="sep">·</span><span>{{.Label}} <a href="{{.Href}}">{{.Name}}</a></span>{{end}}</div>
@@ -132,7 +132,7 @@ words box below (docs/web.md#confirm-and-say). */}}
 </body></html>
 {{end}}
 
-{{define "reader"}}{{template "head" (printf "%s · %s" .Doc.Name .T.ID)}}<style>{{.Style}}</style></head>
+{{define "reader"}}{{template "head" (printf "%s · %s" .Doc.Name .T.ID)}}<style>{{.Style}}</style>{{range .Scripts}}<script>{{.}}</script>{{end}}</head>
 <body>
 <header class="band slim">
 <div class="rtop"><a class="backto" href="{{.Base}}">← Back to the task</a><div><p class="dname">{{.Doc.Name}}</p><div class="crumb">{{.T.Repository}} / {{.T.ID}} · {{.T.Title}}</div></div></div>
@@ -157,7 +157,7 @@ words box below (docs/web.md#confirm-and-say). */}}
 
 {{define "row"}}<li class="row{{if .Where.You}} you{{end}}"><a class="tid" href="{{.Href}}">{{.Name}}</a><div class="tb"><p class="tt">{{.Title}}</p>{{if .Where.Lead}}<p class="tw"><b>{{.Where.Lead}}</b>{{if .Where.Rest}} {{.Where.Rest}}{{end}}</p>{{end}}</div>{{if .Since}}<time>{{.Since}}</time>{{end}}</li>{{end}}
 
-{{define "list"}}{{template "head" "All tasks"}}<style>{{.Style}}</style></head>
+{{define "list"}}{{template "head" "All tasks"}}<style>{{.Style}}</style>{{range .Scripts}}<script>{{.}}</script>{{end}}</head>
 <body>
 <header class="band list">
 <div class="crumb"><b>All tasks</b></div>

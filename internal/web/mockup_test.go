@@ -88,7 +88,7 @@ func TestDesignMockupRefused(t *testing.T) {
 		s := New(Options{Source: &fakeSource{tasks: map[string]Task{"guildhall/d122": fixtureTask(sums)}}, Documents: dir, Location: time.UTC, Host: testHost})
 		ask := askOf(t, get(t, s, "/guildhall/d122").Body.String(), "design-5")
 		for _, bad := range []string{"<script", "javascript:"} {
-			if strings.Contains(ask, bad) {
+			if strings.Contains(withoutOwnScripts(ask), bad) {
 				t.Errorf("a hostile mock-up's ask holds %q", bad)
 			}
 		}

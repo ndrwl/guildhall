@@ -118,8 +118,9 @@ func TestAnsweringPage(t *testing.T) {
 	if n := strings.Count(body, "<form "); n != 7 {
 		t.Errorf("%d forms, want one per ask (6) and the Say box", n)
 	}
+	web.CheckOwnScripts(t, "the Guildmaster's page", w)
 	for _, bad := range []string{"<script", " disabled>"} {
-		if strings.Contains(body, bad) {
+		if strings.Contains(web.WithoutOwnScripts(body), bad) {
 			t.Errorf("the Guildmaster's page holds %q", bad)
 		}
 	}

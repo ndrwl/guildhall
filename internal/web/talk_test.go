@@ -102,8 +102,8 @@ func TestTalkOnThePage(t *testing.T) {
 	if q, talk, tiles := strings.Index(ask, `<p class="q">`), strings.Index(ask, `id="q1-talk"`), strings.Index(ask, `<p class="pick">Answer</p>`); q >= talk || talk >= tiles {
 		t.Errorf("the ask's order is question %d, talk %d, tiles %d", q, talk, tiles)
 	}
-	if strings.Contains(body, "<script") {
-		t.Error("the page holds a script")
+	if strings.Contains(withoutOwnScripts(body), "<script") {
+		t.Error("the page holds a script that is not an own one")
 	}
 }
 
@@ -158,7 +158,7 @@ func TestTalkIsSafeMarkdown(t *testing.T) {
 		task.Conversation = append(task.Conversation, Message{Number: 100 + i, Author: AuthorDirector, Tag: "grill-2", Stage: "grill", Kind: "say", Text: seed, At: *at("2026-11-03 21:43")})
 	}
 	body := get(t, talkServer(task), "/guildhall/d145").Body.String()
-	if bad := unsafeMarkup(body); bad != "" {
+	if bad := unsafeMarkup(withoutOwnScripts(body)); bad != "" {
 		t.Errorf("the page holds unsafe markup %s", bad)
 	}
 	for _, bad := range []string{"javascript:", "vbscript:", "file:", "//evil"} {

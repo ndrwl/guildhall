@@ -3,6 +3,7 @@ status: accepted
 date: 2026-10-31
 topic: director
 tasks: d101, d105, d122
+amended-by: own-scripts.md
 ---
 
 # The Guildmaster's task pages are served by the Director's session supervisor, on the tailnet only, from Clerk's readers
@@ -21,7 +22,7 @@ The optional `[web]` table names the address per copy ([configuration](../config
 `internal/web` never opens the store: a `Source` filled by `internal/cli` from Clerk's readers opens it per request with a bounded wait, reads, closes, and only then is the page rendered, so the page and Clerk agree and Clerk's output is unchanged.
 Its asks are the task's share of Clerk's Needs you split.
 Answer tiles say what each option does from one option-meanings table in `internal/web`, which a test keeps covering every option set the engine, the questions, grants and the Steward export.
-Pages carry no script and a CSP that allows no external request; HTML documents are shown only in a sandboxed frame.
+Pages carry a CSP that allows no external request, and only Guildhall's own scripts, pinned by hash ([own scripts](own-scripts.md), which replaces this record's first rule of no script at all); HTML documents are shown only in a sandboxed frame.
 In the first slice every ask was read-only.
 
 In the second slice the Guildmaster answers on the page ([Answering](../web.md#answering)):

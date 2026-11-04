@@ -4,8 +4,8 @@
 // The package renders and routes only. It never opens the store: a Source, which internal/cli fills from Clerk's
 // readers, gives it each task as a Task, a page model of plain values, and the package reads a document's bytes
 // from the copy's document directory only after checking them against the sha256 the Task records. Every page is
-// one HTML document with inline CSS, no script and no external request, served with a Content-Security-Policy
-// that allows neither.
+// one HTML document with inline CSS, only Guildhall's own scripts (embedded files under scripts/, pinned by hash)
+// and no external request, served with a Content-Security-Policy that allows no other script and no request.
 package web
 
 import (

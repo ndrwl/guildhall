@@ -105,7 +105,7 @@ func TestPlanSummary(t *testing.T) {
 		page := summaryPage(t, "# T\n\n## Summary\n\n- **Goal:** <script>alert(1)</script> [bad](javascript:alert(1)) <img src=x onerror=alert(1)>\n", approvalQuestion(""), false)
 		once(t, page, `<div class="plan md">`)
 		for _, bad := range []string{"<script", "javascript:", "<img"} {
-			if strings.Contains(page, bad) {
+			if strings.Contains(withoutOwnScripts(page), bad) {
 				t.Errorf("the summary holds %q", bad)
 			}
 		}
@@ -258,7 +258,7 @@ Recommended: the tailnet one.</p>
 	t.Run("hostile", func(t *testing.T) {
 		page := summaryPage(t, head+"**Q1. <b>Bold</b> title**\nBody with <script>alert(1)</script> and `code`.\nOptions: (a) **strong** <script>x</script>; (b) [bad](javascript:alert(1)) <img src=x onerror=alert(1)>.\nRecommended: (a). Because <script>y</script> `z`.\n", approvalQuestion(""), false)
 		for _, bad := range []string{"<script", "javascript:", "<img", "<b>Bold"} {
-			if strings.Contains(page, bad) {
+			if strings.Contains(withoutOwnScripts(page), bad) {
 				t.Errorf("the card holds %q", bad)
 			}
 		}

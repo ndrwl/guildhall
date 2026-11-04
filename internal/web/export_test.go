@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"net/http/httptest"
 	"os/exec"
 	"strconv"
 	"testing"
@@ -27,6 +28,15 @@ func AnsweringFixture(t *testing.T, id Identifier, guildmaster string, a Answere
 		Answerer: a})
 	s.token = FixtureToken
 	return s
+}
+
+// WithoutOwnScripts is body with exactly the own <script> elements removed, so any "<script" left is not one.
+func WithoutOwnScripts(body string) string { return withoutOwnScripts(body) }
+
+// CheckOwnScripts fails t unless every script on w's page is an own script, with no attributes, pinned in w's CSP.
+func CheckOwnScripts(t *testing.T, name string, w *httptest.ResponseRecorder) {
+	t.Helper()
+	checkOwnScripts(t, name, w)
 }
 
 // UpdateGolden reports whether the test run rewrites its golden files.

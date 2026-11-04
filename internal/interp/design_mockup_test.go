@@ -174,6 +174,18 @@ func TestDesignMockupFromTheGoldenPage(t *testing.T) {
 				`<iframe title="Desktop" style="width:1280px;height:900px" srcdoc="` + esc + `"></iframe>` +
 				`<iframe title="Phone" style="width:390px;height:900px" srcdoc="` + esc + `"></iframe></body></html>`)
 		}
+		// Strip exactly Guildhall's own script elements, so any other script that reached the golden still fails intake.
+		own, err := filepath.Glob(filepath.Join("..", "web", "scripts", "*.js"))
+		if err != nil || len(own) == 0 {
+			t.Fatalf("own scripts: %v %v", own, err)
+		}
+		for _, f := range own {
+			js, err := os.ReadFile(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			page = []byte(strings.ReplaceAll(string(page), "<script>"+string(js)+"</script>", ""))
+		}
 		edited := regexp.MustCompile(`href="https?://[^"]*"`).ReplaceAllString(string(page), `href="#"`)
 		t.Run(golden, func(t *testing.T) {
 			e := designedEnv(t, backends[1], surfaceBrief("web-page"), interptest.File{Path: "design.md", Data: designOne}, interptest.File{Path: "mockup.html", Data: frames(edited)})

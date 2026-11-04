@@ -132,8 +132,8 @@ func TestTaskPageFixture(t *testing.T) {
 		}
 	}
 	for _, bad := range []string{"<script", "<form", "<iframe", "<textarea", "Send words only", "Answering as"} {
-		if strings.Contains(body, bad) {
-			t.Errorf("task page holds %q; a page with no Guildmaster identity is read-only, and every page script-free", bad)
+		if strings.Contains(withoutOwnScripts(body), bad) {
+			t.Errorf("task page holds %q; a page with no Guildmaster identity is read-only, and carries no script but its own", bad)
 		}
 	}
 	if m := externalURL.FindAllString(body, -1); len(m) != 4 {
@@ -195,7 +195,7 @@ func TestTaskPageEscapes(t *testing.T) {
 	s := New(Options{Source: &fakeSource{tasks: map[string]Task{"guildhall/d122": task}}, Documents: dir, Location: time.UTC, Host: testHost})
 	body := get(t, s, "/guildhall/d122").Body.String()
 	for _, bad := range []string{"<script", "<img", "javascript:"} {
-		if strings.Contains(body, bad) {
+		if strings.Contains(withoutOwnScripts(body), bad) {
 			t.Errorf("page holds %q unescaped", bad)
 		}
 	}
@@ -288,7 +288,7 @@ func TestDocuments(t *testing.T) {
 		}
 	}
 	for _, bad := range []string{"<script", "javascript:", dir} {
-		if strings.Contains(body, bad) {
+		if strings.Contains(withoutOwnScripts(body), bad) {
 			t.Errorf("reader page holds %q", bad)
 		}
 	}
