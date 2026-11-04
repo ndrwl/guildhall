@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {urgency, smithy, raster, layout, linkTickets, routineEdge, routineBox, rule} from '../lib/presentation.mjs';
 import {assertS2} from './s2-contract.mjs';
-import {twoAsks, nothing, grill, linked, ticketed} from './layout-fixtures.mjs';
+import {twoAsks, nothing, grill, pageGrill, linked, ticketed} from './layout-fixtures.mjs';
 
 const base='http://host.tail.ts.net:4388';
 const one={url:base,repos:['guildhall']};
@@ -74,7 +74,12 @@ test('the reply layout splits into marker line, Needs you, What I did and the Ro
   asOf:'5812',
  });
  assert.deepEqual(layout(nothing),{marker:'🟢 Guildmaster, nothing needs you.',needs:'Nothing needs you.',did:undefined,routine:'d93 · merged · #228\n9 unchanged · /clerk:guild',asOf:'5813'});
- // A grill round sits in What I did's place, with no Routine box.
+ // A grill round on the task page is only its Needs you line and link, split as any reply.
+ assert.deepEqual(layout(pageGrill),{
+  marker:'🟡 Guildmaster, one thing needs you.',needs:'**Needs you**\n- d104 · grill round 2 · grill-1 · ticket:guildhall/d104#grill-1',
+  did:'**What I did**\nRead your round 1 answers; round 2 is on the page.',routine:undefined,asOf:undefined,
+ });
+ // With no task pages served, a grill round sits in What I did's place, with no Routine box.
  assert.deepEqual(layout(grill),{
   marker:'🟡 Guildmaster, one thing needs you.',needs:'**Needs you**\n- d104 · grill round 1 · grill-1',
   did:'Round 1 for d104, three questions.\n\n1. Should the export include hidden columns?\n   I recommend no.',routine:undefined,asOf:undefined,

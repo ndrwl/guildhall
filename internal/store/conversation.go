@@ -51,7 +51,8 @@ var ConversationKinds = []string{ConversationSay, ConversationRound, Conversatio
 //
 // A recommendation also names the Option of its decision the Director recommends and may carry Words, the
 // Guildmaster's words the page pre-fills its Your words box with. A confirmed entry names the Option it answered
-// with and Confirms, the number of the recommendation it confirmed. No other kind carries these.
+// with and Confirms, the number of the recommendation it confirmed. A round-answers entry names in Round the number
+// of the round entry it answers. No other kind carries these.
 type Saying struct {
 	Author   string `json:"author"`
 	Tag      string `json:"tag"`
@@ -60,6 +61,7 @@ type Saying struct {
 	Option   string `json:"option,omitempty"`
 	Words    string `json:"words,omitempty"`
 	Confirms int    `json:"confirms,omitempty"`
+	Round    int    `json:"round,omitempty"`
 }
 
 // ConversationEntry is one entry of a task's conversation. Entries are numbered per task from 1 and append-only:
@@ -90,6 +92,20 @@ func validateSaying(say Saying) error {
 	}
 	if err := validateText("conversation text", say.Text, MaxTextBytes); err != nil {
 		return err
+	}
+	switch {
+	case say.Kind == ConversationRound && say.Author != ConversationDirector:
+		return invalid("a round is the Director's, not %s's", say.Author)
+	case say.Kind == ConversationRoundAnswers && say.Author == ConversationDirector:
+		return invalid("a round's answers are the Guildmaster's")
+	case say.Kind == ConversationRoundAnswers && say.Round < 1:
+		return invalid("a round's answers name the round they answer")
+	case say.Kind != ConversationRoundAnswers && say.Round != 0:
+		return invalid("only a round's answers name a round")
+	case say.Kind == ConversationRoundAnswers && (say.Option != "" || say.Words != "" || say.Confirms != 0):
+		return invalid("a round's answers have no option, words or recommendation it confirms")
+	case say.Kind == ConversationRoundAnswers:
+		return nil
 	}
 	switch say.Kind {
 	case ConversationRecommendation:

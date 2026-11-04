@@ -57,7 +57,7 @@ Open `http://<address>/<repo>/<task>`, such as `http://andrew-lap-wsl.tail5da40a
 - **The band** names the list, the repository, task, state and related tasks, the title, one sentence on where the task stands, such as "**Waiting for you on 2 asks:** whether to go on after the slice 2 review, and approval of the plan for slice 2.", with the slice, pull request and CI after it in grey, and a stepper with one entry per step of the task's workflow: ✓ finished, ↩ sent back, ▸ running, ? waiting on you, and later steps hollow. A decision's mark comes from its answer's tone in the option table: a positive answer is ✓, a negative one ✗, and a carry-on or neutral answer, such as a merge hold or follow-ups none, shows ✓ with its word; ↩ marks an answer the table does not know for its kind, or an attempt sent back. A multi-PR task shows its current slice's steps.
   Under the sentence, a task whose workflow has a grill shows its [grill mode](tasks.md#grill-mode) as `task show` prints it, such as "grill: unattended (director): contracts already written" or "grill: live". An unattended grill's stepper entry is named "Unattended grill (Artisan)" and says finished, not a count of rounds.
 - **The rail**, on the left, keeps Status (where it stands, step and round, the last attempt, pull request, CI, slices and related tasks, and when the page was read), the Needs you index, the task in your words with what the grill decided, and the documents grouped by kind, newest first.
-- **Now** holds every open ask in full: its kind, id and when it opened, a readable headline such as "The plan for slice 2 is ready for your approval.", [the Director's explanation](#the-directors-explanation), for a plan approval the plan's summary from the spec (goal, size, slices, what changed since the grill and the open questions with their recommendations) or a link to the spec when it has none, what it is about with a link to that document, the open findings for a review loop exit, and one tile per option saying what it does, coloured green when it ends the ask well, red when it stops the work and blue when it carries on. Deferred asks follow, marked deferred. A grill the Director runs with you in its session is shown as such, not as an ask.
+- **Now** holds every open ask in full: its kind, id and when it opened, a readable headline such as "The plan for slice 2 is ready for your approval.", [the Director's explanation](#the-directors-explanation), for a plan approval the plan's summary from the spec (goal, size, slices, what changed since the grill and the open questions with their recommendations) or a link to the spec when it has none, what it is about with a link to that document, the open findings for a review loop exit, and one tile per option saying what it does, coloured green when it ends the ask well, red when it stops the work and blue when it carries on. Deferred asks follow, marked deferred. A grill the Director runs with you in its session is shown as such, not as an ask; its open round follows the asks as one form ([grill rounds](#grill-rounds)).
 - **The story**, newest first, shows each attempt, decision, slice merge and send-back as a sentence, such as "You approved the plan" or "The review sent the build back (round 1)", with the attempt's own summary, findings, your answers and the Director's feedback quoted, and a folded "Raw events" list of the records it was made from; the six newest show and the rest fold away.
 
 The page names records in words: the stepper says "plan approved" for `accept-2 approved`, Status says "Slice 2 review, attempt 2" for `review--s2-2`, and Documents says "Grill notes, round 3" for `grill-3-notes`.
@@ -157,6 +157,32 @@ It is refused as an answer is, with your words kept in the box, and also on a ta
 
 Every form on the page posts through one gate: the page must answer at all, the request must be from your login, from this page and carry its form token, each checked as [answering](#answering) describes.
 
+## Grill rounds
+
+A grill the Director runs with you puts each round on the page, under its attempt, with `guildhall grill round open --repo <id> --task <id> --attempt <attempt> --questions-file <path|->`.
+The round is the questions in the [`guildhall-grill`](../skills/guildhall-grill/SKILL.md) format, each a `**Q<n>. <title>**` line, its body and a last line `Recommended: <answer>`, numbered from Q1; the command refuses any other text, an attempt that is not a running Director stage, a closed task, and a new round while the attempt's last one is not sent, and running it again writes nothing new.
+A resumed or reopened grill is a new attempt, so its rounds open under that attempt.
+In chat the Director only lists the round in Needs you, with a link to `#<attempt>`, such as `#grill-2`.
+
+On Now, after the asks, the open round is one card, **Grill round <k>**, anchored at its attempt, and one form, posted to `POST /<repo>/<task>/round`:
+
+- each question shows its title, body and the Director's recommendation, a **Your words** box and two buttons, **Accept recommendation** and **Answer with my words**;
+- an answered question folds to one line, "✓ Accepted" or "✓ Your words, saved", with its gist and **Change**, which opens it again with its words;
+- a box holding words that are not an answer yet says "saved *hh:mm* · not an answer yet";
+- the bar at the bottom of the card, which sticks to the bottom of the window while the card is in view, has **Save, send later** and **Send round**, whose tile says "*n* still to answer".
+
+Every button saves every box first, as drafts: they are not answers, never go through the answer path and stay until the round is sent ([drafts](store.md#drafts)).
+So nothing typed is lost whichever button you press, or if you leave and come back.
+**Send round** can always be pressed: while a question has no answer it saves every box and then refuses, naming them, such as "Q9 and Q10 have no answer yet; your words are saved".
+Once every question is answered it records the round's answers on the conversation and a `grill-answered` message to the Director in one store transaction, and wakes it; pressing it twice sends once.
+The message names the round and the command that prints the answers, `guildhall grill round show --repo <id> --task <id> --attempt <attempt> [--round <k>]`, never your words.
+The sent round folds to one Director row, such as "Round 1 · 4 questions · sent 21:06 · 3 accepted, 1 your words", which opens to each question and its answer.
+
+The page never advances the task: the Director reads the answers, opens the next round or finishes the grill with `step finish` as before.
+The rail's Needs you counts the open round as an ask, with its progress, such as "Grill round 2 · 4 of 6".
+A round that was never sent shows as "⊘ … not sent"; once its task closes its saved drafts are dropped, and it says so.
+A round's buttons are refused as an answer is, with your words kept in the boxes, and also when the round was sent meanwhile, the Director opened a newer one or its attempt has finished.
+
 ## The reader page
 
 Every document link opens `http://<address>/<repo>/<task>/doc/<name>`: the document, rendered from Markdown with goldmark at its safe defaults ([decision](decisions/goldmark-for-documents.md)), with the open asks, answerable as on the task page, and Status beside it and a way back to the task.
@@ -167,7 +193,6 @@ A document is shown only when its file still matches the sha256 recorded for it;
 
 ## Limits
 
-- No grills on the page: a grill round is still answered in the Director's session.
 - A bar that shows a new reply without reloading comes later: reload to see the Director's reply.
 - HTTP only, inside the tailnet; no HTTPS.
 - The Steward serves no pages.

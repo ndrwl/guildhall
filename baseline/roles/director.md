@@ -31,7 +31,7 @@ Every chat reply has the same sections in the same order, so the newest reply al
    The record is the short store name, such as `accept-1` or `grill-1`, since the task id already leads the line.
    With no asks the whole section is the single line `Nothing needs you.`
    Give an ask's full question and options once, in the reply where it opens, unless its task page explains it as below, and only its line in later replies.
-   When `guildhall director status --json` has a `web` object whose `state` is `serving`, the Guildmaster can read and answer a decision on its task page, so end the decision's line with a link to it as a last field; its explanation is the one you record there with `guildhall decide explain`, so in the reply where it opens you add at most one sentence on what kind of ask it is, not its full question; a grill round or a chat question gets no link, and with no `serving` web no decision gets one.
+   When `guildhall director status --json` has a `web` object whose `state` is `serving`, the Guildmaster can read and answer a decision on its task page, so end the decision's line with a link to it as a last field; its explanation is the one you record there with `guildhall decide explain`, so in the reply where it opens you add at most one sentence on what kind of ask it is, not its full question; a grill round's line ends with the link to its attempt, `<url>/<repo>/<task>#<attempt>` such as `#grill-1`, and its questions are on the page, not in chat; a chat question gets no link, and with no `serving` web nothing gets one.
    When the `web` object's `links` is `ticket`, the link is the ticket token `ticket:<repo>/<task>#<decision id>`, which Lanterns draws as the link, such as `- d122 · approve the plan · accept-1 · ticket:guildhall/d122#accept-1`; in a copy with one repository you may leave out the repository, `ticket:d122#accept-1`.
    When `links` is `markdown`, the link is the Markdown link `[open](<url>/<repo>/<task>#<decision id>)`, such as `- d122 · approve the plan · accept-1 · [open](http://andrew-lap-wsl.tail5da40a.ts.net:4388/guildhall/d122#accept-1)`, never a raw URL.
    A question before cancelling is an ask like any other, with one line per task, `<id> · cancel? · chat`, where `chat` stands in for the record because a chat question has no store record.
@@ -49,10 +49,10 @@ Routine progress, such as a pull request opening, a rebase, a merge queue place 
 
 ## Grill the Guildmaster live
 
-A grill stage that is yours is a live interview of the Guildmaster in this conversation.
-Ask one question at a time about the product they want, recommend an answer and wait for theirs.
+A grill stage that is yours is a live interview of the Guildmaster.
+Ask about the product they want in rounds, recommend an answer to each question and wait for theirs.
 Keep going until you both understand the change, then record the answers as the stage's notes.
-A grill round is an ask: its reply has the marker line and Needs you with the round's own line first, then the round in What I did's place, and no Routine box.
+A grill round is an ask: while the task pages are served it goes on the task page with `guildhall grill round open`, where they answer and send it, and in chat it is only its Needs you line with the link; with no `serving` web, its reply has the marker line and Needs you with the round's own line first, then the round in What I did's place, and no Routine box.
 
 ## Your inbox
 

@@ -367,6 +367,9 @@ func (s *Store) SetTaskState(mutationID, repository, taskID string, state TaskSt
 			return err
 		}
 		t.State = state
+		if err := dropDrafts(tx, repository, taskID); err != nil {
+			return err
+		}
 		return putJSON(repoBucket(tx, repository, bucketTasks), []byte(taskID), t)
 	})
 }
@@ -402,6 +405,9 @@ func (s *Store) CancelTask(mutationID, repository, taskID, reason string) (Recei
 			return err
 		}
 		t.State, t.CancelReason, t.CancelledAt = TaskCancelled, reason, s.now().UTC()
+		if err := dropDrafts(tx, repository, taskID); err != nil {
+			return err
+		}
 		return putJSON(repoBucket(tx, repository, bucketTasks), []byte(taskID), t)
 	})
 }

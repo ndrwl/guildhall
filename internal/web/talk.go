@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"slices"
 	"strings"
+	"time"
 )
 
 // talkShown is how many of a talk's newest messages show on Now before the rest fold under "N earlier messages".
@@ -18,6 +19,8 @@ type messageView struct {
 	// Rec is the answer a recommendation recommends, as its tile names it.
 	Rec  string
 	Body template.HTML
+	// Round is a grill round's row, folded: sent, with its answers, or not sent; nil for any other message.
+	Round *roundView
 }
 
 // talkView is the talk on one attempt or decision shown on Now: its tag, its anchor <tag>-talk ("" when the talk
@@ -58,11 +61,17 @@ type talkPlan struct {
 	nodes map[string]bool
 	// guildmaster says the page is the Guildmaster's own, so their messages say You.
 	guildmaster bool
+	// answers are the round-answers entries by the number of the round they answer, which fold into its row;
+	// ordinal is each round's place among its tag's rounds, from 1; open is the round the page asks as a form, the
+	// latest round of the current attempt of an open task, not sent, nil when there is none.
+	answers map[int]Message
+	ordinal map[int]int
+	open    *Message
 }
 
 func newTalkPlan(t Task, st pageState) *talkPlan {
 	p := &talkPlan{byTag: map[string][]Message{}, now: map[string]string{}, story: map[string]bool{}, waiting: map[string]bool{},
-		nodes: map[string]bool{}, guildmaster: st.Answer}
+		nodes: map[string]bool{}, guildmaster: st.Answer, answers: map[int]Message{}, ordinal: map[int]int{}}
 	for _, n := range t.Story {
 		if n.Tag != "" {
 			p.nodes[n.Tag] = true
@@ -70,7 +79,28 @@ func newTalkPlan(t Task, st pageState) *talkPlan {
 	}
 	msgs := slices.Clone(t.Conversation)
 	slices.SortStableFunc(msgs, func(a, b Message) int { return a.Number - b.Number })
+	rounds := map[string]int{}
+	var latest *Message
+	for i, m := range msgs {
+		switch m.Kind {
+		case KindRoundAnswers:
+			p.answers[m.Round] = m
+		case KindRound:
+			rounds[m.Tag]++
+			p.ordinal[m.Number] = rounds[m.Tag]
+			if m.Tag == t.Tag {
+				latest = &msgs[i]
+			}
+		}
+	}
+	if _, sent := p.answers[latestNumber(latest)]; latest != nil && !sent && t.State == "open" {
+		p.open = latest
+	}
 	for _, m := range msgs {
+		if m.Kind == KindRoundAnswers || (p.open != nil && m.Number == p.open.Number) {
+			// A round's answers fold into its row, and the open round is asked as a form of its own.
+			continue
+		}
 		if _, ok := p.byTag[m.Tag]; !ok {
 			p.order = append(p.order, m.Tag)
 		}
@@ -112,12 +142,21 @@ func (s *Server) messageView(t Task, p *talkPlan, m Message) messageView {
 		}
 	}
 	if !m.At.IsZero() {
-		v.Time = s.when(m.At)
-		if s.day(m.At) == s.day(t.ReadAt) {
-			v.Time = s.clock(m.At)
-		}
+		v.Time = s.at(t, m.At)
+	}
+	if m.Kind == KindRound {
+		v.Round = s.roundRow(t, p, m)
+		v.Class += " round"
 	}
 	return v
+}
+
+// at is a time as a row says it: its clock on the day the page was read, else its day and clock.
+func (s *Server) at(t Task, at time.Time) string {
+	if s.day(at) == s.day(t.ReadAt) {
+		return s.clock(at)
+	}
+	return s.when(at)
 }
 
 // confirmedBody is a confirmation as its row says it, "↩ Confirmed: <answer>", over the words the answer carried,

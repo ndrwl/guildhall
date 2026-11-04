@@ -191,7 +191,10 @@ func (b webBuilder) task() web.Task {
 	t.Story = b.story(t.Documents)
 	for _, e := range b.h.Conversation {
 		t.Conversation = append(t.Conversation, web.Message{Number: e.Number, Author: e.Author, Tag: e.Tag, Stage: webTagStage(e.Tag),
-			Kind: e.Kind, Text: e.Text, At: e.At, Option: e.Option, Words: e.Words, Confirms: e.Confirms})
+			Kind: e.Kind, Text: e.Text, At: e.At, Option: e.Option, Words: e.Words, Confirms: e.Confirms, Round: e.Round})
+	}
+	for _, d := range b.h.Drafts {
+		t.Drafts = append(t.Drafts, web.Draft{Tag: d.Tag, Round: d.Round, Question: d.Question, Mark: d.Mark, Text: d.Text, At: d.At})
 	}
 	if n := len(b.tl.Attempts); n > 0 && v.State == store.TaskOpen {
 		at := b.tl.Attempts[n-1]

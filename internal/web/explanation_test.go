@@ -143,8 +143,8 @@ func TestReaderPageExplains(t *testing.T) {
 
 // TestOneAskBlock: an ask's headline, explanation, question cards, recommended mark and answer row each have one home
 // in page.tmpl, every ask is drawn through the one ask block, and the page has no ask markup outside it. The option
-// row is shared by the answers block and d153's Confirm tile under the ask's talk, the Director's talk
-// recommendation, which is not a second answer row.
+// row is shared by the answers block, d153's Confirm tile under the ask's talk, the Director's talk
+// recommendation, which is not a second answer row, and a grill round's question, which is not an ask.
 func TestOneAskBlock(t *testing.T) {
 	src, err := os.ReadFile("page.tmpl")
 	if err != nil {
@@ -158,7 +158,7 @@ func TestOneAskBlock(t *testing.T) {
 	}
 	for marker, home := range map[string]string{
 		`class="dx"`: "explanation", `class="oq"`: "questions", `class="ol"`: "questions",
-		`class="opts"`: "answers confirm", `class="badge">Recommended`: "answers questions", `template "answers"`: "ask", `template "explanation"`: "ask",
+		`class="opts"`: "answers confirm round", `class="badge">Recommended`: "answers questions", `template "answers"`: "ask", `template "explanation"`: "ask",
 	} {
 		var in []string
 		for name, body := range blocks {
@@ -168,7 +168,7 @@ func TestOneAskBlock(t *testing.T) {
 		}
 		slices.Sort(in)
 		// The Recommended badge is drawn once on a question's row and once on an answer tile; the option row once
-		// for the answer tiles and once for the Confirm tile.
+		// for the answer tiles, once for the Confirm tile and once for a grill round's question.
 		if want := strings.Fields(home); !slices.Equal(in, want) {
 			t.Errorf("%s is in blocks %v, want only %v", marker, in, want)
 		}

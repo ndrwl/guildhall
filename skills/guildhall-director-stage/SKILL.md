@@ -15,8 +15,10 @@ Guildhall records each as an attempt, prepares its brief and hands it to you wit
 2. Read the prompt.
    It is your brief: your role, the stage's guide, the skills the step lists and the stage's inputs, such as the task's title and earlier stages' documents.
 3. Run the stage as the brief and its skills say.
-   A grill uses `guildhall-grill` to interview the Guildmaster live, in rounds of numbered questions, and `guildhall-domain-model` to settle the words you agree on.
-   Each round is an ask in your role's reply layout: the marker line, Needs you with the round's own line first, then the round in What I did's place, and no Routine box.
+   A grill uses `guildhall-grill` to interview the Guildmaster, in rounds of numbered questions, and `guildhall-domain-model` to settle the words you agree on.
+   While the task pages are served, each round goes on the page with `guildhall grill round open --repo <repo> --task <task> --attempt <step-n> --questions-file -`, where the Guildmaster answers it as one form and sends it; the `grill-answered` message that follows names `guildhall grill round show`, which prints their answers.
+   In chat the round is only an ask in your role's reply layout: its line in Needs you, `<id> · grill round <k> · <attempt>`, ending with the link to the attempt on its page, such as `ticket:app/t-12#grill-1`, and the round itself is not written in chat.
+   With no task pages served, put the round in chat in What I did's place instead, with no Routine box.
 4. Draft each output in a file under your session directory, such as `notes/app-t-12-grill-1.md`, never in a temporary directory, so the draft survives while you work.
 5. When the stage's own skills say it is done, finish it with the command the message named, one `--output` per port and a one-line summary:
 
