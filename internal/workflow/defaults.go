@@ -9,7 +9,10 @@ import (
 // roleProfiles maps each step type that has a role profile to that profile's name.
 // Profiles keep role names, so Claude skill policy and quality judge profiles keyed by them are unchanged.
 // The rebase and design entries only name the profiles of the interpreter's synthetic rebaser and designer steps.
+// A grill run by an Artisan, as an unattended grill is (docs/tasks.md#grill-mode), runs read-only as research does,
+// under the researcher profile; the grill kind takes no profile setting.
 var roleProfiles = map[string]string{
+	"grill":    "researcher",
 	"research": "researcher",
 	"plan":     "planner",
 	"build":    "builder",
@@ -35,7 +38,8 @@ func EffectiveProfile(step Step) string {
 }
 
 // ApplyProfileDefaults returns a copy of def in which every step run by an Artisan, with no "profile" setting and a
-// research, plan, build or review type, names that type's role profile when declared reports it declared.
+// research, plan, build or review type, names that type's role profile when declared reports it declared. A grill,
+// whose kind takes no profile setting and which no task bound run by an Artisan, is left as it is.
 // Every other step is unchanged, an explicit profile always wins and def is not modified.
 // It is kept only to recognise the legacy digest a task bound while role profiles were written into the definition
 // (docs/decisions/role-profiles-outside-the-digest.md): apply it after ApplyOverrides and compare the result's digest.
@@ -46,7 +50,7 @@ func ApplyProfileDefaults(def *Definition, declared func(name string) bool) *Def
 	for i := range out.Steps {
 		step := &out.Steps[i]
 		name := RoleProfile(step.Type)
-		if _, set := step.Settings["profile"]; set || name == "" || step.Type == "rebase" || step.Type == "design" || step.Actor() != ArtisanActor || !declared(name) {
+		if _, set := step.Settings["profile"]; set || name == "" || step.Type == "rebase" || step.Type == "design" || step.Type == "grill" || step.Actor() != ArtisanActor || !declared(name) {
 			continue
 		}
 		raw, err := json.Marshal(name)

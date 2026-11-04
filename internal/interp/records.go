@@ -61,6 +61,9 @@ type Records interface {
 	// set|unset), never the engine. An advance reads them once, under the task lock, for the task's effective config
 	// (ApplyTaskOverrides).
 	TaskOverrides(repository, taskID string) ([]store.TaskOverride, error)
+	// GrillModes lists a task's grill-mode records by number; the Director records them (guildhall task new --grill,
+	// guildhall task grill), never the engine. An advance applies the latest to the bound definition (Engine.begin).
+	GrillModes(repository, taskID string) ([]store.GrillMode, error)
 	// TaskDependencies lists a task's dependency records by number; the Director records them (guildhall task
 	// depends add|remove), never the engine. The gate reads the task's effective dependencies from them
 	// (store.EffectiveDependencies).

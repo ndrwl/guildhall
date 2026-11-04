@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-10-22
 topic: director
+amended-by: grill-mode-per-task.md
 formerly: D29, 0029-grill-step-skills.md, D61, 0061-grill-live-interview.md
 ---
 

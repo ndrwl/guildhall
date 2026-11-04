@@ -126,6 +126,9 @@ type taskTimeline struct {
 	Links []timedLink `json:"links"`
 	// Overrides are the task's override records, sets and unsets, in the order they were recorded.
 	Overrides []timedTaskOverride `json:"overrides"`
+	// GrillModes are the task's grill-mode records, each with its mode, reason, who set it and when, in the order
+	// they were recorded; the latest is in effect, and a task with none is live (docs/tasks.md#grill-mode).
+	GrillModes []store.GrillMode `json:"grill_modes"`
 	// Dependencies are the task's dependency records, adds and removes with their reasons, in the order they were
 	// recorded; Task's depends_on is the list it was created with, which they change.
 	Dependencies []timedDependency `json:"dependencies"`
@@ -210,7 +213,7 @@ func span(rs []store.Receipt, startOp, endOp string) (start, end *time.Time, sec
 func timeline(h store.TaskHistory) taskTimeline {
 	byRecord := recordReceipts(h.Receipts)
 	out := taskTimeline{AsOf: label(h), Task: h.Task, Attempts: []timedAttempt{}, Decisions: []timedDecision{}, Findings: []timedFindings{},
-		Rulings: []timedRuling{}, FullReviews: []timedFullReview{}, Context: []timedContext{}, Links: []timedLink{}, Overrides: []timedTaskOverride{}, Dependencies: []timedDependency{}, Events: h.Receipts, OmittedKinds: map[string]string{}}
+		Rulings: []timedRuling{}, FullReviews: []timedFullReview{}, Context: []timedContext{}, Links: []timedLink{}, Overrides: []timedTaskOverride{}, GrillModes: append([]store.GrillMode{}, h.GrillModes...), Dependencies: []timedDependency{}, Events: h.Receipts, OmittedKinds: map[string]string{}}
 	for _, a := range h.Attempts {
 		t := timedAttempt{StageAttempt: a}
 		t.StartedAt, t.FinishedAt, t.DurationSeconds, t.seq = span(byRecord["attempt/"+a.Step+"/"+strconv.Itoa(a.Number)], "start-attempt", "finish-attempt")

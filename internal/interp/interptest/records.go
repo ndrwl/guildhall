@@ -37,8 +37,10 @@ type Records struct {
 	dependencies []store.TaskDependency
 	// taskOverrides are the tasks' override records; overrides their dependency overrides.
 	taskOverrides []store.TaskOverride
-	overrides     map[[2]string]store.DependencyOverride
-	grants        []store.TaskGrant
+	// grillModes are the tasks' grill-mode records.
+	grillModes []store.GrillMode
+	overrides  map[[2]string]store.DependencyOverride
+	grants     []store.TaskGrant
 	// priorities are the tasks' priorities SetTaskPriority sets, and queue the start queue's entries by
 	// repository, task and step.
 	priorities map[[2]string]store.Priority
@@ -490,6 +492,50 @@ func (r *Records) TaskOverrides(repository, taskID string) ([]store.TaskOverride
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return list(r, repository, taskID, r.taskOverrides, func(o store.TaskOverride) (string, string) { return o.Repository, o.TaskID })
+}
+
+// SetGrillMode records the task's next grill-mode record on an open task, as store.SetGrillMode does, without its
+// checks of the ids, the mode, the setter and the reason.
+func (r *Records) SetGrillMode(mutationID, repository, taskID string, mode workflow.GrillMode, reason, by string, prior int) (store.Receipt, error) {
+	req := struct {
+		Repository, TaskID, Reason, By string
+		Mode                           workflow.GrillMode
+		Prior                          int
+	}{repository, taskID, reason, by, mode, prior}
+	return r.mutate(mutationID, "set-grill-mode", req, func(rc *store.Receipt) error {
+		rc.Repository, rc.TaskID = repository, taskID
+		t, ok := r.tasks[[2]string{repository, taskID}]
+		switch {
+		case !ok:
+			return fmt.Errorf("task %s/%s: %w", repository, taskID, store.ErrNotFound)
+		case t.State != store.TaskOpen:
+			return fmt.Errorf("%w: task %s/%s is %s", store.ErrInvalid, repository, taskID, t.State)
+		}
+		var mine []store.GrillMode
+		for _, g := range r.grillModes {
+			if g.Repository == repository && g.TaskID == taskID {
+				mine = append(mine, g)
+			}
+		}
+		switch {
+		case len(mine) != prior:
+			return fmt.Errorf("%w: %d grill mode records, not %d", store.ErrExists, len(mine), prior)
+		case len(mine) > 0 && mine[len(mine)-1].Mode == mode:
+			return fmt.Errorf("%w: the grill is already %s", store.ErrInvalid, mode)
+		}
+		g := store.GrillMode{Repository: repository, TaskID: taskID, Number: len(mine) + 1, Mode: mode, Reason: reason, By: by}
+		rc.CommittedAt = r.now()
+		g.AddedAt, rc.Record = rc.CommittedAt, store.GrillModeRecord(g.Number)
+		r.grillModes = append(r.grillModes, g)
+		return nil
+	})
+}
+
+// GrillModes implements interp.Records.
+func (r *Records) GrillModes(repository, taskID string) ([]store.GrillMode, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return list(r, repository, taskID, r.grillModes, func(g store.GrillMode) (string, string) { return g.Repository, g.TaskID })
 }
 
 // Tasks implements interp.Records.
@@ -1109,6 +1155,9 @@ type RecordsHarness struct {
 	// AddTaskOverride records the Director's next override record on a task, as store.AddTaskOverride does; nil
 	// skips the override cases.
 	AddTaskOverride func(mutationID, repository, taskID string, op store.TaskOverrideOp, key, value string, prior int, text string) (store.Receipt, error)
+	// SetGrillMode records the Director's next grill-mode record on a task, as store.SetGrillMode does; nil skips the
+	// grill-mode cases.
+	SetGrillMode func(mutationID, repository, taskID string, mode workflow.GrillMode, reason, by string, prior int) (store.Receipt, error)
 	// AddTaskDependency records the Director's next dependency record on a task, as store.AddTaskDependency does; nil
 	// skips the dependency-change cases.
 	AddTaskDependency func(mutationID, repository, taskID string, op store.TaskDependencyOp, dep store.TaskRef, prior int, text string) (store.Receipt, error)
@@ -1134,7 +1183,7 @@ func NewRecordsHarness(*testing.T) RecordsHarness {
 	r, clock := NewRecords(), NewClock()
 	r.Now = clock.Now
 	return RecordsHarness{Records: r, CreateTask: r.CreateTask, AnswerDecision: r.AnswerDecision, RuleFinding: r.RuleFinding,
-		RequestFullReview: r.RequestFullReview, AddTaskContext: r.AddTaskContext, AddTaskLink: r.AddTaskLink, AddTaskOverride: r.AddTaskOverride, AddTaskDependency: r.AddTaskDependency, OverrideDependencies: r.OverrideDependencies,
+		RequestFullReview: r.RequestFullReview, AddTaskContext: r.AddTaskContext, AddTaskLink: r.AddTaskLink, AddTaskOverride: r.AddTaskOverride, SetGrillMode: r.SetGrillMode, AddTaskDependency: r.AddTaskDependency, OverrideDependencies: r.OverrideDependencies,
 		SetTaskPriority: r.SetTaskPriority, PauseDirector: r.PauseDirector, CancelTask: r.CancelTask, VoidDecision: r.VoidDecision, Clock: clock}
 }
 
@@ -1800,6 +1849,38 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 		}
 		if got, err := h.Records.TaskLinks("app", "t8"); err != nil || len(got) != 0 {
 			t.Errorf("TaskLinks of an unknown task = %+v, %v", got, err)
+		}
+	})
+
+	t.Run("lists grill-mode records in order and refuses one that is stale or repeats the mode", func(t *testing.T) {
+		h := setup(t)
+		if h.SetGrillMode == nil {
+			t.Skip("the harness records no grill modes")
+		}
+		if got, err := h.Records.GrillModes("app", "t7"); err != nil || len(got) != 0 {
+			t.Fatalf("GrillModes before any = %+v, %v", got, err)
+		}
+		_, err := h.SetGrillMode("grill-x", "app", "t8", workflow.GrillUnattended, "Delegated.", store.GrillModeByDirector, 0)
+		want(t, "SetGrillMode of an unknown task", err, store.ErrNotFound)
+		first, err := h.SetGrillMode("grill-1", "app", "t7", workflow.GrillUnattended, "Delegated.", store.GrillModeByDirector, 0)
+		if err != nil || first.Record != store.GrillModeRecord(1) {
+			t.Fatalf("SetGrillMode 1 = %+v, %v", first, err)
+		}
+		_, err = h.SetGrillMode("grill-y", "app", "t7", workflow.GrillUnattended, "Again.", store.GrillModeByDirector, 1)
+		want(t, "SetGrillMode repeating the mode", err, store.ErrInvalid)
+		_, err = h.SetGrillMode("grill-z", "app", "t7", workflow.GrillLive, "Grill me.", store.GrillModeByGuildmaster, 0)
+		want(t, "SetGrillMode with a stale prior count", err, store.ErrExists)
+		second, err := h.SetGrillMode("grill-2", "app", "t7", workflow.GrillLive, "Grill me.", store.GrillModeByGuildmaster, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := h.Records.GrillModes("app", "t7")
+		if err != nil || len(got) != 2 {
+			t.Fatalf("GrillModes = %+v, %v", got, err)
+		}
+		w := store.GrillMode{Repository: "app", TaskID: "t7", Number: 2, Mode: workflow.GrillLive, Reason: "Grill me.", By: store.GrillModeByGuildmaster, AddedAt: second.CommittedAt}
+		if got[0].Mode != workflow.GrillUnattended || store.CurrentGrillMode(got) != w {
+			t.Errorf("GrillModes = %+v, want unattended then %+v", got, w)
 		}
 	})
 

@@ -40,6 +40,8 @@ type RepositoryCounts struct {
 	TaskLinks    int
 	// TaskOverrides counts task override records, sets and unsets alike.
 	TaskOverrides int
+	// GrillModes counts task grill-mode records.
+	GrillModes int
 	// TaskDependencies counts task dependency records, adds and removes alike.
 	TaskDependencies int
 	Owners           int
@@ -132,7 +134,7 @@ func (s *Store) Doctor() (Report, error) {
 				string(bucketTasks): &counts.Tasks, string(bucketAttempts): &counts.Attempts, string(bucketDocuments): &counts.Documents,
 				string(bucketPanes): &counts.PaneBindings, string(bucketDecisions): &counts.Decisions, string(bucketRulings): &counts.Rulings,
 				string(bucketTaskContexts): &counts.TaskContexts, string(bucketConversation): &counts.Conversation, string(bucketTaskLinks): &counts.TaskLinks,
-				string(bucketTaskOverrides): &counts.TaskOverrides, string(bucketTaskDependencies): &counts.TaskDependencies,
+				string(bucketTaskOverrides): &counts.TaskOverrides, string(bucketGrillModes): &counts.GrillModes, string(bucketTaskDependencies): &counts.TaskDependencies,
 				string(bucketOwners): &counts.Owners, string(bucketMessages): &counts.Messages, string(bucketInbox): &counts.UnreadMessages,
 				string(bucketPruned): &counts.Pruned, string(bucketTaskReleases): &counts.TaskReleases,
 			} {
@@ -184,6 +186,8 @@ func decodeRecord(bucket string, k, v []byte) (any, error) {
 		rec = new(TaskRelease)
 	case string(bucketTaskOverrides):
 		rec = new(TaskOverride)
+	case string(bucketGrillModes):
+		rec = new(GrillMode)
 	case string(bucketTaskDependencies):
 		rec = new(TaskDependency)
 	case string(bucketOwners):

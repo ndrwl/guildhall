@@ -21,7 +21,7 @@ type Snapshot struct {
 }
 
 // TaskHistory is a task, its attempts, documents, decisions, rulings, full-review requests, context entries, link
-// records, override records, dependency records, dependency override and priority,
+// records, override records, grill-mode records, dependency records, dependency override and priority,
 // together with
 // the receipt of every mutation that touched it; ownership records are read separately.
 // Its contents are read in one transaction and describe exactly the store state AsOf names.
@@ -42,6 +42,8 @@ type TaskHistory struct {
 	Links []TaskLink
 	// Overrides are the task's override records, by number.
 	Overrides []TaskOverride
+	// GrillModes are the task's grill-mode records, by number (CurrentGrillMode).
+	GrillModes []GrillMode
 	// Dependencies are the task's dependency records, by number (EffectiveDependencies).
 	Dependencies []TaskDependency
 	// DependencyOverride is the task's dependency override, nil when it has none.
@@ -60,7 +62,7 @@ type TaskHistory struct {
 // TaskHistory reads one task's history without writing; it returns ErrNotFound for an unknown task.
 // It scans every receipt in the store, so its cost grows with the store's mutation count.
 func (s *Store) TaskHistory(repository, taskID string) (TaskHistory, error) {
-	h := TaskHistory{Attempts: []StageAttempt{}, Documents: []DocumentRef{}, Decisions: []Decision{}, Rulings: []Ruling{}, FullReviews: []FullReview{}, Contexts: []TaskContext{}, Conversation: []ConversationEntry{}, Links: []TaskLink{}, Overrides: []TaskOverride{}, Dependencies: []TaskDependency{}, Receipts: []Receipt{}}
+	h := TaskHistory{Attempts: []StageAttempt{}, Documents: []DocumentRef{}, Decisions: []Decision{}, Rulings: []Ruling{}, FullReviews: []FullReview{}, Contexts: []TaskContext{}, Conversation: []ConversationEntry{}, Links: []TaskLink{}, Overrides: []TaskOverride{}, GrillModes: []GrillMode{}, Dependencies: []TaskDependency{}, Receipts: []Receipt{}}
 	err := s.view(func(tx *bolt.Tx) error {
 		var err error
 		if h.Task, err = getTask(tx, repository, taskID); err != nil {
@@ -92,6 +94,9 @@ func (s *Store) TaskHistory(repository, taskID string) (TaskHistory, error) {
 			return err
 		}
 		if err := scan(repoBucket(tx, repository, bucketTaskOverrides), prefix, &h.Overrides); err != nil {
+			return err
+		}
+		if err := scan(repoBucket(tx, repository, bucketGrillModes), prefix, &h.GrillModes); err != nil {
 			return err
 		}
 		if err := scan(repoBucket(tx, repository, bucketTaskDependencies), prefix, &h.Dependencies); err != nil {

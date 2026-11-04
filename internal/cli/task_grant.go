@@ -161,6 +161,10 @@ func createTaskGrant(s *store.Store, dir string, cfg *config.Config, r config.Re
 	if err != nil {
 		return store.Receipt{}, fmt.Errorf("task %s/%s: %w; its steps cannot be checked", t.Repository, t.ID, err)
 	}
+	// An unattended grill runs as an Artisan, so it is granted like any other Artisan step.
+	if def, err = withGrillMode(s, t.Repository, t.ID, def); err != nil {
+		return store.Receipt{}, err
+	}
 	var steps []string
 	for _, step := range def.Steps {
 		if step.Actor() != workflow.ArtisanActor {

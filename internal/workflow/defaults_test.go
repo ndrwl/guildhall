@@ -102,7 +102,7 @@ func TestApplyProfileDefaultsSkipsAGuildmasterReview(t *testing.T) {
 }
 
 func TestRoleProfile(t *testing.T) {
-	for typ, want := range map[string]string{"research": "researcher", "plan": "planner", "build": "builder", "review": "reviewer", "rebase": "rebaser", "design": "designer", "refute": "", "document-review": "", "grill": ""} {
+	for typ, want := range map[string]string{"research": "researcher", "plan": "planner", "build": "builder", "review": "reviewer", "rebase": "rebaser", "design": "designer", "refute": "", "document-review": "", "grill": "researcher"} {
 		if got := RoleProfile(typ); got != want {
 			t.Errorf("RoleProfile(%q) = %q, want %q", typ, got, want)
 		}
