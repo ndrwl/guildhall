@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -291,7 +292,12 @@ type scheduledCollect struct {
 	cfg       *config.Config
 	storePath string
 	stderr    io.Writer
+	// busyRounds counts the rounds in a row that found the lock busy; any other round resets it.
+	busyRounds int
 }
+
+// lockBusyRounds is how many busy rounds in a row send the Steward's inbox a lock-busy message.
+const lockBusyRounds = 3
 
 // stewardCollection is the session's scheduled collection, nil when collect_every is unset, the default.
 func (a *App) stewardCollection(cfg *config.Config, storePath string) (*workspaceCloseWatch, error) {
@@ -306,12 +312,15 @@ func (a *App) stewardCollection(cfg *config.Config, storePath string) (*workspac
 	return &workspaceCloseWatch{every: every, round: sc.run}, nil
 }
 
-// run is one scheduled round. A busy lock skips it silently. A round that opened triage decisions sends the Steward's
-// inbox one triage-opened message per kind, tagged with the director sender, and wakes the session through the
-// usual wake; a round with nothing new sends nothing and wakes nothing.
+// run is one scheduled round. A busy lock skips it, and the third busy round in a row sends the Steward's inbox one
+// lock-busy message naming the lock's owner, tagged with the director sender, and wakes the session; a reload, which
+// starts the count again, sends no second one for the same owner. A round that opened triage decisions sends the
+// Steward's inbox one triage-opened message per kind, tagged with the director sender, and wakes the session through
+// the usual wake; a round with nothing new sends nothing and wakes nothing.
 func (sc *scheduledCollect) run() {
 	c, err := sc.a.stewardCollector(sc.cfg)
 	if err != nil {
+		sc.busyRounds = 0
 		sc.warn("%v", err)
 		return
 	}
@@ -333,7 +342,16 @@ func (sc *scheduledCollect) run() {
 			_, _ = fmt.Fprintf(sc.stderr, "guildhall: steward messages: %s\n", p)
 		}
 	}
-	if busy || round == nil {
+	if busy {
+		sc.busyRounds++
+		var be *steward.BusyError
+		if sc.busyRounds == lockBusyRounds && errors.As(err, &be) {
+			sc.notify(lockBusyMessage(be), "lock-busy")
+		}
+		return
+	}
+	sc.busyRounds = 0
+	if round == nil {
 		return
 	}
 	for _, cc := range round.Copies {
@@ -359,27 +377,47 @@ func (sc *scheduledCollect) run() {
 		if len(ids) == 0 {
 			continue
 		}
-		m := triageMessage(kind, ids)
-		sent, err := withStore(sc.storePath, false, func(s *store.Store) (bool, error) {
-			if _, err := s.Message(m.ID); err == nil {
-				return false, nil
-			} else if !errors.Is(err, store.ErrNotFound) {
-				return false, err
-			}
-			_, err := s.SendMessage(m)
-			return err == nil, err
-		})
-		if err != nil {
-			sc.warn("triage-opened: %v", err)
-			continue
-		}
-		if !sent {
-			continue
-		}
-		if _, err := sc.a.wake(sc.storePath, m.ID, store.SenderGuildhall); err != nil {
-			sc.warn("wake for %s: %v", m.ID, err)
-		}
+		sc.notify(triageMessage(kind, ids), "triage-opened")
 	}
+}
+
+// notify sends m to the Steward's inbox unless a message with its id is there already, and wakes the session when
+// it sent it; what fails is warned about under label.
+func (sc *scheduledCollect) notify(m store.Message, label string) {
+	sent, err := withStore(sc.storePath, false, func(s *store.Store) (bool, error) {
+		if _, err := s.Message(m.ID); err == nil {
+			return false, nil
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return false, err
+		}
+		_, err := s.SendMessage(m)
+		return err == nil, err
+	})
+	if err != nil {
+		sc.warn("%s: %v", label, err)
+		return
+	}
+	if !sent {
+		return
+	}
+	if _, err := sc.a.wake(sc.storePath, m.ID, store.SenderGuildhall); err != nil {
+		sc.warn("wake for %s: %v", m.ID, err)
+	}
+}
+
+// lockBusyMessage is the Steward inbox message reporting that scheduled rounds keep finding the lock held. Its id
+// is a digest of the lock's owner record, so each owner is reported once, across reloads too.
+func lockBusyMessage(be *steward.BusyError) store.Message {
+	record, _ := json.Marshal(be.Owner)
+	since := "an unknown time"
+	if !be.Owner.At.IsZero() {
+		since = be.Owner.At.UTC().Format(time.RFC3339)
+	}
+	text := fmt.Sprintf("Scheduled collection found %s held %d rounds in a row: held by %s since %s. Tell the Guildmaster; "+
+		"if its owner has stopped, they remove the lock by hand once they have confirmed it.", be.Path, lockBusyRounds, be.Owner, since)
+	return store.Message{ID: "lock-busy." + digest.Of(record).Hex()[:16],
+		Recipient: store.RecipientSteward, Repository: stewardRepository, TaskID: stewardRolloutsTask, Type: store.MessageLockBusy,
+		Text: truncateUTF8(text, store.MaxMessageTextBytes), Sender: store.SenderDirector}
 }
 
 // triageMessage is the Steward inbox message reporting the triage decisions ids of kind a scheduled round opened.

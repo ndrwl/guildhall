@@ -91,7 +91,7 @@ A wake line ending `; handoff due (<reason>)` is answered by the `guildhall-stew
 The Steward's inbox is the `steward` recipient of its store, and it takes messages from two senders ([senders](messaging.md#senders)):
 
 - the Guildmaster: `guildhall messages send steward <envelope>` run outside any Guildhall session or attempt, whose envelope names the reserved task `steward/guildmaster`;
-- `director`: the `triage-opened` report of the Steward's own [scheduled collection](#scheduled-collection), naming `steward/incidents` or `steward/lessons`, sent by its supervisor and never by `messages send`.
+- `director`: the `triage-opened` report of the Steward's own [scheduled collection](#scheduled-collection), naming `steward/incidents` or `steward/lessons`, and its `lock-busy` report, naming `steward/rollouts`, sent by its supervisor and never by `messages send`.
 
 `messages send` to it from a Director, another Director, an Artisan or the Steward's own session is refused, and so is a `director` message to a Steward store or a `steward` message to any other store.
 No Director reaches the inbox: the `director` tag says the report is about items Directors filed, which the Steward read itself.
@@ -265,6 +265,7 @@ The [managed-file checksum framing](configuration.md#config-file) makes combined
 This is integrity detection, not atomic publication: non-atomic scp may transiently refuse reads and does not prove uninterrupted config availability.
 The `.rollout.lock` file in the private config directory excludes concurrent applies and [collections](#collection) using that directory on this Steward.
 It does not protect against another host, another private directory or a manual managed-file writer; designate one Steward writer for each fleet and do not edit managed files during rollout.
+The lock holds its owner's record: the PID and OS start token of the process that took it, its command line and when it took it. A refusal names that owner, or an unknown owner since the file's modification time when the lock has no readable record, as an older binary's has.
 If a writer crashes, stop competing invocations and confirm that the owning process has exited before manually removing its stale lock.
 Never remove a lock held by another live writer; there is no automatic stale-lock deletion.
 Keep the plan directory private while applying.
@@ -346,6 +347,9 @@ The `guildhall-steward-triage` skill presents each decision.
 
 With `[steward] collect_every` set, the Steward session runs a round at its start and then every `collect_every`, as the supervisor's deterministic code off its decision path, the way a Director runs its daily prune.
 Rounds run one at a time, a round that finds the lock busy is skipped, and failures are reported on the supervisor's standard error.
+The third busy round in a row sends the Steward's inbox one `lock-busy` message, with the [`director` sender tag](#inbox), naming the lock's owner and since when it has held the lock, which wakes the session; any round that is not busy starts the count again.
+Its id is a digest of the owner record, so a reload, which also starts the count again, sends no second message for the same owner.
+It does not say the owner crashed, since a takeover apply can hold the lock for 30 minutes, and nothing removes the lock: recovery stays [manual](#publication-and-writer-containment).
 A round that opens triage decisions sends the Steward's inbox one `triage-opened` message per kind, with the [`director` sender tag](#inbox), which wakes the session; a round with nothing new sends nothing and wakes nothing.
 Unset, the default, nothing is collected on a schedule, and nothing polls or spends model tokens because an item is queued (R1.7).
 Each scheduled run then sends its [Steward messages](#steward-messages), even when the round found the lock busy.

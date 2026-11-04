@@ -302,6 +302,77 @@ func TestScheduledCollect(t *testing.T) {
 	}
 }
 
+// TestScheduledCollectLockBusy (red-first): three busy scheduled rounds in a row send the Steward's inbox one
+// lock-busy message naming the lock's owner and wake the session; two busy rounds and then a clean one send nothing,
+// and neither a fourth busy round nor a reload's new schedule sends a second one for the same owner.
+func TestScheduledCollectLockBusy(t *testing.T) {
+	cs := newCollectSetup(t)
+	app, _, _ := cs.app()
+	cfg, err := config.Load(filepath.Join(cs.steward, "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Steward.CollectEvery = "1h"
+	storePath := filepath.Join(cs.steward, stewardStoreFile)
+	schedule := func() func() {
+		w, err := app.stewardCollection(cfg, storePath)
+		if err != nil || w == nil {
+			t.Fatalf("collect_every 1h: %v, %v", w, err)
+		}
+		return w.round
+	}
+	lockBusy := func() []store.Message {
+		ms, err := withStore(storePath, true, func(s *store.Store) ([]store.Message, error) {
+			ms, _, err := s.Inbox(store.Recipient{Role: store.RecipientSteward}, 0, store.MaxInboxLimit)
+			return ms, err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var busy []store.Message
+		for _, m := range ms {
+			if m.Type == store.MessageLockBusy {
+				busy = append(busy, m)
+			}
+		}
+		return busy
+	}
+	lock := filepath.Join(cs.private, ".rollout.lock")
+	const owner = `{"pid":4242,"token":"boot:1","command":"guildhall steward takeover --apply","at":"2026-11-04T10:00:00Z"}`
+
+	round := schedule()
+	writeFile(t, lock, owner)
+	round()
+	round()
+	if err := os.Remove(lock); err != nil {
+		t.Fatal(err)
+	}
+	round()
+	writeFile(t, lock, owner)
+	round()
+	if ms := lockBusy(); len(ms) != 0 {
+		t.Fatalf("two busy rounds, a clean one and a busy one sent %+v", ms)
+	}
+	round()
+	round()
+	ms := lockBusy()
+	if len(ms) != 1 || ms[0].Sender != store.SenderDirector || ms[0].Recipient != store.RecipientSteward ||
+		!strings.Contains(ms[0].Text, "held by pid 4242 (guildhall steward takeover --apply) since 2026-11-04T10:00:00Z") {
+		t.Fatalf("three busy rounds sent %+v, want one lock-busy naming the owner", ms)
+	}
+	if _, err := withStore(storePath, true, func(s *store.Store) (store.Wake, error) { return s.WakeFor(ms[0].ID) }); err != nil {
+		t.Errorf("the lock-busy message woke nothing: %v", err)
+	}
+	round()
+	reloaded := schedule()
+	reloaded()
+	reloaded()
+	reloaded()
+	if ms := lockBusy(); len(ms) != 1 {
+		t.Errorf("a fourth busy round and a reload sent more: %+v", ms)
+	}
+}
+
 // TestDirectorCollected: director collected marks the receipt's items whose origin and digest are the copy's,
 // reports the others and leaves them pending, deletes the receipt, and reports a repeated item as already collected.
 func TestDirectorCollected(t *testing.T) {

@@ -395,8 +395,9 @@ type Step struct {
 // A copy that fails does not stop the others; the receipt, written to stageDir, records every outcome.
 //
 // Apply is the private config directory's single writer: after checking the machine set and before any transport
-// it creates .rollout.lock there exclusively, and removes it when it returns, whether it succeeded or failed.
-// While the lock exists Apply is refused with an error wrapping fs.ErrExist, and the lock is left as it is.
+// it creates .rollout.lock there exclusively with its owner record (LockOwner), and removes it when it returns,
+// whether it succeeded or failed. While the lock exists Apply is refused with an error wrapping a *BusyError, which
+// matches fs.ErrExist and ErrBusy and names the lock's owner, and the lock is left as it is.
 // A lock left by a writer that stopped without returning is not removed automatically;
 // an operator removes it once they have confirmed that writer has stopped.
 func (r *Rollout) Apply(ctx context.Context, stageDir, approve string, machines ...string) (*Receipt, error) {
@@ -409,15 +410,11 @@ func (r *Rollout) Apply(ctx context.Context, stageDir, approve string, machines 
 	if !slices.Equal(requested, planned) {
 		return nil, errors.New("requested machines differ from saved plan; use its exact machine set or create a new plan")
 	}
-	lock := filepath.Join(r.privateDir, ".rollout.lock")
-	f, err := os.OpenFile(lock, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	release, err := privateLock(r.privateDir, r.Now())
 	if err != nil {
-		return nil, fmt.Errorf("rollout writer lock %s: %w; confirm the writer has stopped before stale-lock recovery", lock, err)
+		return nil, fmt.Errorf("rollout writer %w; confirm the writer has stopped before stale-lock recovery", err)
 	}
-	defer func() { _ = os.Remove(lock) }()
-	if err := f.Close(); err != nil {
-		return nil, err
-	}
+	defer release()
 	if abs, err := filepath.Abs(stageDir); err != nil || abs != saved.StageDir {
 		return nil, fmt.Errorf("%w: the plan was written for %s", ErrPlanStale, saved.StageDir)
 	}
