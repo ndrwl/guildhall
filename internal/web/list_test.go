@@ -69,7 +69,7 @@ func TestTaskList(t *testing.T) {
 		}
 	}
 	for _, bad := range []string{"<form", "<script", "<button", "<textarea"} {
-		if strings.Contains(body, bad) {
+		if strings.Contains(withoutOwnScripts(body), bad) {
 			t.Errorf("task list holds %s", bad)
 		}
 	}
@@ -177,7 +177,7 @@ func TestTaskListEscapes(t *testing.T) {
 	s, _ := listServer(TaskList{Tasks: []Listed{{Repository: "app", ID: `"><script>x</script>`, Title: hostile, Group: GroupYou, Where: Where{Lead: hostile, Rest: hostile, You: true}}}})
 	body := get(t, s, "/").Body.String()
 	for _, bad := range []string{"<script", "<img"} {
-		if strings.Contains(body, bad) {
+		if strings.Contains(withoutOwnScripts(body), bad) {
 			t.Errorf("task list holds %q unescaped", bad)
 		}
 	}

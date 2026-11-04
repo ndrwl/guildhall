@@ -2,7 +2,7 @@
 
 A task list shows every task, grouped by who it waits on, and each task has a web page: what needs you, the task in your words, where it stands and its story, with every document one tap away.
 The pages are served privately on your tailnet while a Director session runs, or while you run `guildhall web`; there is no always-on service ([R1.29](requirements.md)).
-They work on a phone as well as a desktop, follow your system's light or dark setting, and run no script.
+They work on a phone as well as a desktop, follow your system's light or dark setting, and run only Guildhall's own scripts: small ones built into Guildhall and pinned by hash, never anything a document, Artisan or pull request supplies. Every page still works with scripts turned off.
 
 You can answer a task's open decisions on its page, or send the Director your words, from your own Tailscale login ([Answering](#answering)).
 The page records what you give and tells the Director; it never advances, sends back or starts a task.

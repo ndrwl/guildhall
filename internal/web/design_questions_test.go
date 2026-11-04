@@ -133,7 +133,7 @@ func TestDesignQuestions(t *testing.T) {
 			page := designPage(t, bad, designQuestion(""), false)
 			once(t, page, `<p class="ph oqh">Open questions <span class="n">1</span></p>`)
 			for _, b := range []string{"<script", "javascript:", "<img"} {
-				if strings.Contains(page, b) {
+				if strings.Contains(withoutOwnScripts(page), b) {
 					t.Errorf("%s: the questions hold %q", name, b)
 				}
 			}

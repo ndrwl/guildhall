@@ -106,7 +106,7 @@ func mockupInstructions(surface Surface, design string) string {
 			"Build it from the real task page: copy `internal/web/testdata/task.golden.html`, or `internal/web/testdata/task.answering.golden.html` when the change touches the Guildmaster's forms " +
 			"(the real page template and CSS rendered with a fixture, the CSS inlined), and edit its markup and sample data. " +
 			"Lay it out as the stage guide says: two `<iframe srcdoc>` frames, desktop 1280px wide and phone 390px wide, side by side and wrapping on a narrow screen, each holding the edited page. " +
-			"It must be UTF-8 with no `<script`, no `on…=` event attribute and no `http:`, `https:` or `//` URL in `src`, `href`, `url(` or `@import`: only inline styles and `data:` images, so point each external link the golden page has, such as a pull request link, at `#`. " +
+			"It must be UTF-8 with no `<script`, no `on…=` event attribute and no `http:`, `https:` or `//` URL in `src`, `href`, `url(` or `@import`: only inline styles and `data:` images, so remove the golden page's own `<script>` elements and point each external link it has, such as a pull request link, at `#`. " +
 			"Intake fails a result that lists no mock-up, another file, or a mock-up that breaks these rules.\n")
 		return b.String()
 	}

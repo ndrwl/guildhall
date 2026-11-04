@@ -127,7 +127,7 @@ func TestReportQuestions(t *testing.T) {
 		once(t, page, `<p class="ph oqh">Open questions <span class="n">1</span></p>`)
 		once(t, page, `<li class="rec"><span class="ot"><a href="">x</a>.</span>`)
 		for _, b := range []string{"<script", "javascript:", "<img"} {
-			if strings.Contains(page, b) {
+			if strings.Contains(withoutOwnScripts(page), b) {
 				t.Errorf("the questions hold %q", b)
 			}
 		}

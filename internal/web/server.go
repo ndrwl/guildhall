@@ -14,16 +14,12 @@ import (
 	"time"
 )
 
-// CSP is the Content-Security-Policy every page is served with: no script, no external request, styles only inline,
-// and frames, images and forms only from the page's own origin.
-const CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; frame-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'self'"
-
 // FrameCSP is the policy an HTML document is served with on its frame route, so it runs sandboxed with no script,
 // no forms and an opaque origin, and loads nothing from the network: styles only inline, images and fonts only as
 // data: URLs, and frames only its own srcdoc ones, such as a design mock-up's desktop and phone frames.
 const FrameCSP = "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; frame-src 'self' about:"
 
-//go:embed page.tmpl style.css
+//go:embed page.tmpl style.css scripts/*.js
 var assets embed.FS
 
 var pages = template.Must(template.New("page.tmpl").Funcs(funcs).ParseFS(assets, "page.tmpl"))

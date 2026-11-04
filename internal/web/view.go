@@ -22,6 +22,7 @@ var docKinds = []string{"Review", "Design", "Spec", "Research", "Grill", "Build"
 // taskView is the task page's model, every value formatted for the templates.
 type taskView struct {
 	Style    template.CSS
+	Scripts  []template.JS
 	T        Task
 	Base     string
 	Crumbs   []relatedView
@@ -226,7 +227,7 @@ func taskHref(repo, id string) string { return "/" + pathEscape(repo) + "/" + pa
 func docHref(repo, id, name string) string { return taskHref(repo, id) + "/doc/" + pathEscape(name) }
 
 func (s *Server) taskView(t Task, st pageState) taskView {
-	v := taskView{Style: style, T: t, Base: taskHref(t.Repository, t.ID), Steps: t.Steps, ReadAt: s.clock(t.ReadAt)}
+	v := taskView{Style: style, Scripts: scripts, T: t, Base: taskHref(t.Repository, t.ID), Steps: t.Steps, ReadAt: s.clock(t.ReadAt)}
 	for _, r := range t.Related {
 		v.Crumbs = append(v.Crumbs, relatedView{Label: r.Label, Name: relatedName(t.Repository, r), Href: taskHref(r.Repository, r.ID)})
 	}
