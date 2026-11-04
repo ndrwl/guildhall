@@ -1,0 +1,29 @@
+d190 (W1 of the d170 token usage audit): --disallowedTools removes the dropped tools' schemas from the context.
+Probe: TestLiveClaudeTools, two `claude --print "reply ok" --output-format stream-json --verbose --permission-mode acceptEdits`
+runs in an empty directory, the second with claude.DisallowedToolsArgs(). Pass criterion: the first call's total prompt
+(input + cache_creation + cache_read) at least 3,000 tokens smaller, every dropped tool absent from the init tools and
+every kept tool still present. Run on 2026-11-04 by the d190 build attempt:
+
+$ go test ./internal/adapter/claude -run TestLiveClaudeTools -v -count=1 -claude-live -claude-program /home/andrew/.local/bin/claude
+=== RUN   TestLiveClaudeTools
+    claude_test.go:867: claude --version: 2.1.318 (Claude Code)
+    claude_test.go:868: --disallowedTools Workflow,ScheduleWakeup,ReportFindings,ListAgents,SendMessage,CronCreate,CronDelete,CronList,RemoteTrigger,PushNotification,DesignSync,EnterWorktree,ExitWorktree
+    claude_test.go:873: before tools (25): Task,Bash,CronCreate,CronDelete,CronList,DesignSync,Edit,EnterWorktree,ExitWorktree,ListAgents,Monitor,NotebookEdit,PushNotification,Read,RemoteTrigger,ReportFindings,ScheduleWakeup,SendMessage,Skill,TaskStop,ToolSearch,WebFetch,WebSearch,Workflow,Write
+    claude_test.go:874: before first call: input 2, cache_creation 8499, cache_read 11382, prompt 19883
+    claude_test.go:873: after tools (12): Task,Bash,Edit,Monitor,NotebookEdit,Read,Skill,TaskStop,ToolSearch,WebFetch,WebSearch,Write
+    claude_test.go:874: after first call: input 2, cache_creation 14905, cache_read 0, prompt 14907
+    claude_test.go:877: prompt delta: 4976 tokens; cache_creation delta: -6406
+--- PASS: TestLiveClaudeTools (13.72s)
+PASS
+ok  	github.com/ndrwl/guildhall/internal/adapter/claude	13.823s
+
+Reading:
+- The 13 dropped tools are gone from the "after" init list; the 12 kept tools are all still there. So the flag drops
+  the tools from the session, not just their calls; the fallback to --tools (spec item 4) is not needed.
+- The first call's prompt is 4,976 tokens smaller (19,883 to 14,907), inside the spec's expected 4-8k.
+- Cache writes went up, not down, in this pair (-6,406): the "before" run read 11,382 tokens from a warm cache that
+  the changed tool set no longer matches, so the "after" run wrote its whole prompt afresh. This is why the total
+  prompt, not cache writes, is the pass criterion. In production every Artisan session starts with the same flag, so
+  the shorter prefix is the one that gets cached and reused.
+- The test binary's claude guard shadows `claude` on PATH, so the probe takes the real program's absolute path with
+  -claude-program.

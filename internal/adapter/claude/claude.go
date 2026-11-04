@@ -337,13 +337,32 @@ func Instruction(a Args) string {
 	}, "\n")
 }
 
+// DisallowedTools are the Claude Code tools every Artisan session starts without, passed with --disallowedTools so
+// their schemas leave the session's context: orchestration tools no stage asks an Artisan to use, about 5k prompt
+// tokens per attempt (docs/audits/token-usage-2026-11.md §7 W1; measured in docs/evidence), and EnterWorktree/ExitWorktree, which would let
+// an Artisan leave its assigned worktree. Agent, Skill, ToolSearch, WebSearch, WebFetch, Monitor, TaskStop and
+// NotebookEdit stay.
+var DisallowedTools = []string{
+	"Workflow", "ScheduleWakeup", "ReportFindings", "ListAgents",
+	"SendMessage", "CronCreate", "CronDelete", "CronList", "RemoteTrigger", "PushNotification", "DesignSync",
+	"EnterWorktree", "ExitWorktree",
+}
+
+// DisallowedToolsArgs are the two argv words that drop DisallowedTools: --disallowedTools and their names joined
+// by commas, one value, so the variadic flag cannot swallow the arguments after it.
+func DisallowedToolsArgs() []string {
+	return []string{"--disallowedTools", strings.Join(DisallowedTools, ",")}
+}
+
 // ClaudeArgs are the arguments after the program for attempt a: print mode
-// with Instruction as the prompt, OutputFormat, PermissionMode, a's model and
+// with Instruction as the prompt, OutputFormat, PermissionMode,
+// --disallowedTools with DisallowedTools, a's model and
 // effort as --model and --effort, each only when set, the settings file at
 // ArtisanSettingsPath on every attempt, and only the model directory
 // added for tool access.
 func ClaudeArgs(a Args) []string {
 	args := []string{"--print", Instruction(a), "--output-format", OutputFormat, "--verbose", "--permission-mode", PermissionMode}
+	args = append(args, DisallowedToolsArgs()...)
 	args = append(args, settingsArgs(a.Settings)...)
 	args = append(args, "--settings", ArtisanSettingsPath(a.ResultFile))
 	return append(args, "--add-dir", ModelDir(a.ResultFile))

@@ -1,10 +1,13 @@
 package claude_test
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -235,9 +238,27 @@ func TestClaudeArgs(t *testing.T) {
 	a := args(spec)
 	got := claude.ClaudeArgs(a)
 	model := filepath.Join(filepath.Dir(spec.ResultFile), artisan.ModelDir)
-	want := []string{"--print", claude.Instruction(a), "--output-format", claude.OutputFormat, "--verbose", "--permission-mode", claude.PermissionMode, "--settings", claude.ArtisanSettingsPath(spec.ResultFile), "--add-dir", model}
+	want := []string{"--print", claude.Instruction(a), "--output-format", claude.OutputFormat, "--verbose", "--permission-mode", claude.PermissionMode,
+		"--disallowedTools", strings.Join(claude.DisallowedTools, ","), "--settings", claude.ArtisanSettingsPath(spec.ResultFile), "--add-dir", model}
 	if !slices.Equal(got, want) {
 		t.Errorf("ClaudeArgs = %q, want %q", got, want)
+	}
+	a.Settings = adapter.Settings{Model: "opus", Effort: "high"}
+	got = claude.ClaudeArgs(a)
+	d, s := slices.Index(got, "--disallowedTools"), slices.Index(got, "--settings")
+	if d < 0 || s < 0 || d > slices.Index(got, "--model") || d > s || got[len(got)-2] != "--add-dir" {
+		t.Errorf("ClaudeArgs = %q; want --disallowedTools before --model and --settings, and --add-dir last", got)
+	}
+	dropped := strings.Split(got[d+1], ",")
+	for _, tool := range []string{"Workflow", "ScheduleWakeup", "ReportFindings", "ListAgents"} {
+		if !slices.Contains(dropped, tool) {
+			t.Errorf("--disallowedTools %q lacks %s", got[d+1], tool)
+		}
+	}
+	for _, tool := range keptTools {
+		if slices.Contains(dropped, tool) {
+			t.Errorf("--disallowedTools %q drops kept tool %s", got[d+1], tool)
+		}
 	}
 	if claude.PromptCopy(spec.ResultFile) != filepath.Join(model, "prompt.md") || claude.DraftFile(spec.ResultFile) != filepath.Join(model, artisan.ResultFile) ||
 		claude.SubmitFile(spec.ResultFile) != filepath.Join(model, artisan.DraftFile) {
@@ -755,5 +776,127 @@ func TestLiveClaudeBuildPermissions(t *testing.T) {
 	}
 	if strings.Contains(stderr.String(), "Claude was denied") {
 		t.Errorf("a tool use was denied. Wrapper output:\n%s", stderr.String())
+	}
+}
+
+// keptTools are the tools an Artisan keeps, which DisallowedTools must not name.
+var keptTools = []string{"Agent", "Task", "Skill", "ToolSearch", "WebSearch", "WebFetch", "Monitor", "TaskStop", "NotebookEdit"}
+
+// claudeLive opens TestLiveClaudeTools as LiveEnv does, for a runner whose grant allows `go test` but not an
+// environment assignment before it.
+var claudeLive = flag.Bool("claude-live", false, "run TestLiveClaudeTools, which makes two short model calls")
+
+// claudeProgram is the real Claude Code TestLiveClaudeTools runs. The test binary's claude guard
+// (testenv.InstallClaudeGuard) shadows every `claude` on PATH, so the probe needs the program's absolute path.
+var claudeProgram = flag.String("claude-program", "", "absolute path of the real claude for TestLiveClaudeTools")
+
+// toolsProbe is what one print-mode run reports: its init event's tools and its first assistant event's usage.
+type toolsProbe struct {
+	Tools                           []string
+	Input, CacheCreation, CacheRead int
+}
+
+func (p toolsProbe) prompt() int { return p.Input + p.CacheCreation + p.CacheRead }
+
+// probeTools runs `claude --print "reply ok"` in an empty directory with the Artisan's print-mode flags and extra,
+// and reads the init event's tools and the first assistant event's usage from its stream.
+func probeTools(t *testing.T, extra ...string) toolsProbe {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	argv := append([]string{"--print", "reply ok", "--output-format", claude.OutputFormat, "--verbose", "--permission-mode", claude.PermissionMode}, extra...)
+	cmd := exec.CommandContext(ctx, *claudeProgram, argv...)
+	cmd.Dir = t.TempDir()
+	cmd.Stderr = os.Stderr
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("claude %q: %v", argv, err)
+	}
+	var p toolsProbe
+	var inited, assisted bool
+	sc := bufio.NewScanner(bytes.NewReader(out))
+	sc.Buffer(nil, 64<<20)
+	for sc.Scan() {
+		var ev struct {
+			Type, Subtype string
+			Tools         []string
+			Message       struct {
+				Usage struct {
+					InputTokens              int `json:"input_tokens"`
+					CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+					CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+				}
+			}
+		}
+		if json.Unmarshal(sc.Bytes(), &ev) != nil {
+			continue
+		}
+		switch {
+		case ev.Type == "system" && ev.Subtype == "init" && !inited:
+			p.Tools, inited = ev.Tools, true
+		case ev.Type == "assistant" && !assisted:
+			u := ev.Message.Usage
+			p.Input, p.CacheCreation, p.CacheRead, assisted = u.InputTokens, u.CacheCreationInputTokens, u.CacheReadInputTokens, true
+		}
+	}
+	if !inited || !assisted {
+		t.Fatalf("claude %q stream lacks an init event (%t) or an assistant event (%t):\n%s", argv, inited, assisted, out)
+	}
+	return p
+}
+
+// TestLiveClaudeTools is the probe that DisallowedTools leave the context, not only that their calls are denied:
+// it runs a trivial print-mode prompt without and then with ClaudeArgs' --disallowedTools and passes only when
+// every dropped tool is missing from the second init event's tools, every kept tool present before is still there,
+// and the first call's prompt (input plus cache creation plus cache read tokens) is at least 3,000 tokens smaller.
+// Its log is the evidence in docs/evidence. Run it by hand with
+// GUILDHALL_CLAUDE_LIVE=1 go test ./internal/adapter/claude -run TestLiveClaudeTools -v -claude-program "$(command -v claude)"
+// or, where only `go test` is granted, with -claude-live in place of the variable.
+func TestLiveClaudeTools(t *testing.T) {
+	if os.Getenv(LiveEnv) != "1" && !*claudeLive {
+		t.Skipf("set %s=1 or -claude-live to run two real Claude Code calls", LiveEnv)
+	}
+	if !filepath.IsAbs(*claudeProgram) {
+		t.Fatalf("-claude-program %q; want the real claude's absolute path, since the test's guard shadows claude on PATH", *claudeProgram)
+	}
+	version, err := exec.Command(*claudeProgram, "--version").CombinedOutput()
+	if err != nil {
+		t.Fatalf("claude --version: %v\n%s", err, version)
+	}
+	before := probeTools(t)
+	after := probeTools(t, claude.DisallowedToolsArgs()...)
+	t.Logf("claude --version: %s", strings.TrimSpace(string(version)))
+	t.Logf("--disallowedTools %s", strings.Join(claude.DisallowedTools, ","))
+	for _, r := range []struct {
+		name string
+		p    toolsProbe
+	}{{"before", before}, {"after", after}} {
+		t.Logf("%s tools (%d): %s", r.name, len(r.p.Tools), strings.Join(r.p.Tools, ","))
+		t.Logf("%s first call: input %d, cache_creation %d, cache_read %d, prompt %d", r.name, r.p.Input, r.p.CacheCreation, r.p.CacheRead, r.p.prompt())
+	}
+	delta := before.prompt() - after.prompt()
+	t.Logf("prompt delta: %d tokens; cache_creation delta: %d", delta, before.CacheCreation-after.CacheCreation)
+	for _, tool := range claude.DisallowedTools {
+		if slices.Contains(after.Tools, tool) {
+			t.Errorf("after: %s is still in the init tools", tool)
+		}
+	}
+	for _, tool := range keptTools {
+		if slices.Contains(before.Tools, tool) && !slices.Contains(after.Tools, tool) {
+			t.Errorf("after: kept tool %s is missing from the init tools", tool)
+		}
+	}
+	// The core kept tools must be present outright, so a probe on an install without them cannot pass vacuously.
+	// Agent is reported as Task by some Claude Code versions, so either name counts.
+	for _, tool := range []string{"Skill", "ToolSearch", "WebSearch", "WebFetch", "Monitor", "TaskStop", "NotebookEdit"} {
+		if !slices.Contains(after.Tools, tool) {
+			t.Errorf("after: core kept tool %s is missing from the init tools", tool)
+		}
+	}
+	if !slices.Contains(after.Tools, "Agent") && !slices.Contains(after.Tools, "Task") {
+		t.Errorf("after: neither Agent nor Task is in the init tools")
+	}
+	if delta < 3000 {
+		t.Errorf("first-call prompt shrank by %d tokens; want at least 3000", delta)
 	}
 }
