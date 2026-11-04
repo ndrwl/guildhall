@@ -148,6 +148,20 @@ func TestAdoptedCopyComparesThePin(t *testing.T) {
 	if len(ran) != 2 || ran[0] != h.Binary("v1.0.0")+" version --json" || ran[1] != h.Binary("v1.0.0")+" director start --check --copy "+dir {
 		t.Fatalf("pre-flight ran %q", ran)
 	}
+	// With a command runner, the new binary's start --check runs with the sign-in probes skipped, so a reload spends
+	// no model call.
+	ran = nil
+	var env []string
+	app.RunEnv = func(_ context.Context, _ string, e []string, path string, args ...string) ([]byte, error) {
+		env = e
+		ran = append(ran, path+" "+strings.Join(args, " "))
+		return nil, nil
+	}
+	if d := app.decideReexec("director", other, dir, ""); !d.Move || len(ran) != 2 || ran[1] != h.Binary("v1.0.0")+" director start --check --copy "+dir ||
+		strings.Join(env, " ") != SigninCheckEnv+"="+SigninCheckSkip {
+		t.Fatalf("decision %+v, ran %q with env %q; want start --check run with %s=%s", d, ran, env, SigninCheckEnv, SigninCheckSkip)
+	}
+	app.RunEnv = nil
 	if d := app.decideReexec("director", pinned, dir, ""); d.Move || d.Refused != (store.ReloadRefusal{}) {
 		t.Fatalf("decision %+v, want none for the pinned binary itself", d)
 	}

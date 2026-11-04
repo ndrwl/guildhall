@@ -143,6 +143,7 @@ func (a *App) startSession(role *sessionRole, args []string) int {
 		return 1
 	}
 	if *check {
+		a.signinReport(p)
 		return 0
 	}
 	if *tab {
