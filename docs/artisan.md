@@ -490,7 +490,15 @@ It is Guildhall's own Go code (`internal/workbench`), separate from [Lanterns](l
   A pane with no thinking, such as a Codex pane, the log shown alone, or a model that does not think, looks as it did without it.
 - Assistant text has light Markdown, and no margin: `**bold**`, `` `code` ``, `#` headings, `-`, `*` and `1.` lists with a hanging indent, and fenced code blocks, dimmed, indented and never wrapped; the rest is word-wrapped to the pane's width.
   Every control character in agent text is removed before the Workbench adds its own colour codes, so model output cannot send escape sequences to the pane.
-- Each tool call is one line, `HH:MM:SS ▸ <Name> <subject>`, stamped when the wrapper received it, and each result one line, `HH:MM:SS   ✓ <Name> <size>`, or `✗ <Name> error <size>` in the error colour, matched to its call by id, so parallel calls are labelled correctly.
+- Tool calls are summarised, so thinking leads: a burst, the run of calls between two pieces of thinking or text, is one dimmed line, such as `14:02:11 ▸ edited 3 files, ran go test once · 1 error`, written when the burst ends and stamped with that time.
+  Calls are counted by kind, in the order each kind first came: `read N files` and `edited N files` (Edit, MultiEdit, Write and NotebookEdit) by distinct path, `searched N times` (Grep and Glob), `fetched N pages` (WebFetch), `started N agents` (Task and Agent), `ran <program> N times` for Bash, where the program is the command's first word, or its first two for `go`, `npm` and `cargo`, and `<Name> N times` for any other tool; counts read once, twice, then `3 times`.
+  `· N errors` ends the line when any of the burst's calls failed.
+  A burst still open 30 seconds after its first call writes what it has so far, ending `…`, stamped 30 seconds after that call, and carries on in a new line starting `…`; the stamp comes from the call, not the clock, so a replayed burst splits as the live one did.
+  A long summary wraps between its counts.
+  The end of the run, the banner and the log shown alone also end a burst; other lines do not.
+- Every failed call, including one the permission policy denied, has its own line as its result arrives, in the error colour and naming its call by id, so parallel calls are labelled correctly: `HH:MM:SS ✗ <Name> <subject> · error, <size>`.
+  A call too wide for the pane is cut at a word, then `…`, and the rest of the line wraps under it.
+  A successful result has no line; `launcher.log` still holds every call in full.
 - Every other `launcher.log` line, such as Claude's error output, `guildhall:` lines and advance output, is dimmed; a `Claude was denied` line and an error-like `guildhall:` line take the error colour.
 - After a minute with no new output reaching the pane, a dimmed `· quiet for 1m` line appears, and again at 2, 4 and 8 minutes and so on, doubling, so a long wait adds only a few lines.
   It is measured from live arrival in the bridge, never from event timestamps, so a resumed or recovered bridge replaying the files from the start shows no quiet lines; it goes to the pane only, so stall detection, which reads `launcher.log`'s modification time, is unchanged.
@@ -501,7 +509,7 @@ Events render in order.
 An event carrying `log` lines waits until exactly those lines come next from `launcher.log`, which are then shown as the event instead; an event without them, thinking, a tool result or the runtime's end, renders as soon as every earlier event has; a line no pending event claims is an other line.
 Because the wrapper writes each event before its lines, nothing is shown twice and nothing is lost.
 An event whose lines never arrive is shown as soon as a later event's lines arrive, so later events are not held behind it, or else at the end.
-With no event file, for another adapter or a wrapper older than the Workbench, or after the file's `truncated` event, the log is shown alone: a `tool:` line as a tool call with no timestamp or result, a `guildhall:` line as an other line, and the rest as text.
+With no event file, for another adapter or a wrapper older than the Workbench, or after the file's `truncated` event, the log is shown alone: a `tool:` line as a tool call, `▸ <Name> <subject>`, with no timestamp, result or summary, a `guildhall:` line as an other line, and the rest as text.
 
 Colour is used only when the pane is a terminal, `NO_COLOR` is unset or empty, `TERM` is not `dumb` and, on Windows, virtual terminal processing can be enabled; otherwise the same layout is shown with no escape codes.
 The width is the terminal's, else `COLUMNS`, else 80, and never less than 40.

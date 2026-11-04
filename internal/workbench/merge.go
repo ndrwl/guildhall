@@ -137,7 +137,8 @@ func NewSession(r *Renderer, logPath, dir string, now time.Time) *Session {
 }
 
 // Poll renders everything appended since the last poll, launcher.log first and then the event file, so every
-// wrapper line read has its event read too, and then a quiet line if one is due at now. It returns the
+// wrapper line read has its event read too, then the open burst's calls so far if it has been open BurstSplit at
+// now, and then a quiet line if one is due at now. It returns the
 // renderer's first output error.
 func (s *Session) Poll(now time.Time) error {
 	for {
@@ -153,6 +154,7 @@ func (s *Session) Poll(now time.Time) error {
 		}
 	}
 	s.readEvents(now)
+	s.r.Tick(now)
 	if d, ok := s.q.Due(now); ok {
 		s.r.Quiet(d)
 	}
@@ -175,7 +177,8 @@ func (s *Session) readEvents(now time.Time) {
 	}
 }
 
-// Finish renders what is left once the launcher has exited: a last line with no newline, and any pending event.
+// Finish renders what is left once the launcher has exited: a last line with no newline, any pending event and
+// the summary of a burst still open.
 // It closes the session's files whether or not rendering succeeds.
 func (s *Session) Finish(now time.Time) error {
 	defer s.Close()
@@ -186,6 +189,7 @@ func (s *Session) Finish(now time.Time) error {
 		s.m.Line(string(l), s.seen)
 	}
 	s.m.Flush()
+	s.r.endBurst(time.Time{})
 	return s.r.Err()
 }
 

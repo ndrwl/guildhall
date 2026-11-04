@@ -34,18 +34,29 @@ func scenario(r *Renderer) {
 		"10. tenth step of a numbered list that is long enough to wrap onto a second line\n\n"+
 		"```go\nfunc main() { fmt.Println(\"a code line that is far too long to fit the pane and is never wrapped by the Workbench\") }\n```\n"+
 		"Unclosed **markers and a stray ` stay as written.", nil), 0))
+	// A burst of calls, open past 30 s: its part so far is written at 14:03:40, and the rest when text ends it.
 	r.Event(stamped(ToolCall("toolu_1", "Read", "/work/spec.md", nil), time.Second))
 	r.Event(stamped(ToolCall("toolu_2", "Bash", "go test ./...", nil), 2*time.Second))
 	r.Event(stamped(ToolResult("toolu_2", true, 40, 3), 5*time.Second))
 	r.Event(stamped(ToolResult("toolu_1", false, 2300, 61), 6*time.Second))
 	r.Event(stamped(ToolResult("toolu_9", false, 0, 0), 7*time.Second))
-	r.Event(stamped(Text("Injected \x1b[31mred\x1b[0m and \x1b]0;title\x07 and \u009b2J text, and a verylongwordthatdoesnotfitonanylineatallbecauseitkeepsgoingandgoingandgoingpastthewidth.", nil), 8*time.Second))
+	for i, c := range []struct{ name, subject string }{
+		{"Edit", "/work/a.go"}, {"Edit", "/work/a.go"}, {"Write", "/work/b.go"}, {"Grep", ""}, {"Glob", ""},
+		{"WebFetch", ""}, {"Task", ""}, {"Skill", ""}, {"Bash", "git status"}, {"Bash", "git diff"}, {"Bash", "git log"},
+	} {
+		r.Event(stamped(ToolCall(fmt.Sprintf("toolu_c%d", i), c.name, c.subject, nil), time.Duration(8+i)*time.Second))
+	}
+	r.Event(stamped(ToolCall("toolu_3", "Bash", "go vet ./internal/workbench/... ./internal/launch/...", nil), 40*time.Second))
+	r.Event(stamped(ToolCall("toolu_4", "Bash", "rm -rf /", nil), 41*time.Second))
+	r.Event(stamped(ToolResult("toolu_4", true, 60, 1), 41*time.Second))
+	r.Event(stamped(ToolResult("toolu_3", true, 1234, 14), 45*time.Second))
+	r.Event(stamped(Text("Injected \x1b[31mred\x1b[0m and \x1b]0;title\x07 and \u009b2J text, and a verylongwordthatdoesnotfitonanylineatallbecauseitkeepsgoingandgoingandgoingpastthewidth.", nil), 50*time.Second))
 	r.Other("guildhall: claude-artisan: Claude was denied 1 tool use: Bash(rm -rf /)")
 	r.Other("guildhall: advance: build failed: exit status 1")
 	r.Other("guildhall: advance: step done")
 	r.Other("some Claude stderr \x1b[2J")
 	r.Quiet(2 * time.Minute)
-	r.Event(stamped(End(0), 9*time.Second))
+	r.Event(stamped(End(0), 60*time.Second))
 	r.Banner(&Result{Status: "succeeded", Summary: "Built the Workbench: a formatted Artisan stream in the pane, with tests for the renderer, the merge and the quiet line."})
 	r.Close()
 }
@@ -118,11 +129,15 @@ func checkRendered(t *testing.T, got string, width int, color bool) {
 		"escape.\n\n┃ Two pieces of thinking in a row stay",
 		"apart.\n· thinking not shown by the model\n",
 		"guildhall guildhall · d36 · build · 1",
-		"14:03:10 ▸ Read /work/spec.md",
-		"14:03:11 ▸ Bash go test ./...",
-		"14:03:14   ✗ Bash error 3 lines, 40 B",
-		"14:03:15   ✓ Read 61 lines, 2.2 KB",
-		"14:03:16   ✓ tool empty",
+		"14:03:14 ✗ Bash go test ./... · error, 3",
+		"14:03:40 ▸ read 1 file,",
+		"ran git 3 times",
+		"· 1 error …\n",
+		"14:03:50 ✗ Bash rm -rf / · error, 60 B\n",
+		"14:03:54 ✗ Bash go vet",
+		"lines, 1.2 KB\n",
+		"14:03:59 ▸ … ran go vet once,",
+		"ran rm once · 2 errors\n",
 		"· quiet for 2m",
 		"✓ succeeded",
 		"guildhall: advance: step done",
@@ -131,6 +146,10 @@ func checkRendered(t *testing.T, got string, width int, color bool) {
 			t.Errorf("output lacks %q", want)
 		}
 	}
+	// Calls and results no longer have lines of their own: the only ✓ is the banner's.
+	if strings.Contains(plainText, "▸ Read") || strings.Contains(plainText, "▸ Bash") || strings.Count(plainText, "✓") != 1 {
+		t.Error("output holds a per-call or per-result line")
+	}
 	for _, l := range strings.Split(plainText, "\n") {
 		if n := len([]rune(l)); n > width && !strings.Contains(l, "never wrapped") && !strings.HasPrefix(l, "guildhall: claude-artisan") && !strings.HasPrefix(l, "guildhall: advance: build") {
 			t.Errorf("line of %d runes is wider than %d: %q", n, width, l)
@@ -138,8 +157,8 @@ func checkRendered(t *testing.T, got string, width int, color bool) {
 	}
 }
 
-// TestRendererErrorColour: a failed result, a denial and an error-like guildhall: line use the error colour; a
-// plain other line is dimmed.
+// TestRendererErrorColour: a failed result, naming its call, a denial and an error-like guildhall: line use the
+// error colour; a plain other line and the burst summary are dimmed.
 func TestRendererErrorColour(t *testing.T) {
 	var out bytes.Buffer
 	r := NewRenderer(&out, Options{Width: 80, Color: true, Location: time.UTC})
@@ -148,8 +167,9 @@ func TestRendererErrorColour(t *testing.T) {
 	r.Other("guildhall: claude-artisan: Claude was denied 1 tool use: Bash")
 	r.Other("guildhall: launch: error: no pane")
 	r.Other("stderr chatter")
+	r.Event(stamped(Thinking("next"), time.Second))
 	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
-	for i, want := range []string{"\x1b[0;36m", "\x1b[0;31m✗ Bash error 5 B", "\x1b[0;31mguildhall: claude-artisan: Claude was denied", "\x1b[0;31mguildhall: launch: error", "\x1b[0;2mstderr chatter"} {
+	for i, want := range []string{"\x1b[0;31m14:03:09 ✗ Bash false · error, 5 B\x1b[0m", "\x1b[0;31mguildhall: claude-artisan: Claude was denied", "\x1b[0;31mguildhall: launch: error", "\x1b[0;2mstderr chatter", "\x1b[0;2m14:03:10 ▸ ran false once · 1 error\x1b[0m"} {
 		if !strings.Contains(lines[i], want) {
 			t.Errorf("line %d = %q, want it to hold %q", i, lines[i], visible(want))
 		}

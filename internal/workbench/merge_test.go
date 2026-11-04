@@ -59,16 +59,15 @@ func sampleAttempt() *attemptLog {
 
 // wantMerged is sampleAttempt rendered without colour at width 80.
 // Thinking, like a tool result, renders once every earlier event has, so it may come before a line no event claims.
+// The hidden thinking closes the burst of two calls, so the error that follows has only its own line.
 const wantMerged = "┃ First the spec.\n" +
 	"guildhall: claude-artisan: task grant g1 adds Bash(go test:*)\n" +
 	"Reading the spec.\n\nThen testing.\n" +
 	"┃ Now read and test.\n" +
 	"claude: warning: something on stderr\n" +
-	"14:03:09 ▸ Read spec.md\n" +
-	"14:03:09 ▸ Bash go test ./...\n" +
+	"14:03:09 ▸ read 1 file, ran go test once\n" +
 	"· thinking not shown by the model\n" +
-	"14:03:09   ✗ Bash error 12 B\n" +
-	"14:03:09   ✓ Read 10 lines, 300 B\n" +
+	"14:03:09 ✗ Bash go test ./... · error, 12 B\n" +
 	"Reading the spec.\n" +
 	"Done.\n" +
 	"14:03:09 · exited with status 0\n" +
@@ -129,11 +128,11 @@ func TestMergeEventsAhead(t *testing.T) {
 func TestMergeFlushesEventsWhoseLinesNeverCame(t *testing.T) {
 	got := render(func(r *Renderer) {
 		m := NewMerger(r)
-		m.Events(stamped(Text("lost", []string{"lost"}), 0), stamped(ToolResult("x", false, 1, 1), 0))
+		m.Events(stamped(Text("lost", []string{"lost"}), 0), stamped(ToolResult("x", true, 1, 1), 0))
 		m.Line("other", true)
 		m.Flush()
 	})
-	if want := "other\nlost\n14:03:09   ✓ tool 1 B\n"; got != want {
+	if want := "other\nlost\n14:03:09 ✗ tool · error, 1 B\n"; got != want {
 		t.Errorf("flushed =\n%q\nwant\n%q", got, want)
 	}
 }
@@ -145,7 +144,7 @@ func TestMergeResyncsPastAnEventWhoseLinesNeverCame(t *testing.T) {
 	got := render(func(r *Renderer) {
 		m := NewMerger(r)
 		m.Events(stamped(Text("lost", []string{"lost"}), 0),
-			stamped(ToolResult("x", false, 1, 1), 0),
+			stamped(ToolResult("x", true, 1, 1), 0),
 			stamped(Thinking("between"), 0),
 			stamped(ToolCall("t1", "Read", "a.go", []string{"tool: Read a.go"}), 0),
 			stamped(Thinking("after"), 0),
@@ -156,7 +155,7 @@ func TestMergeResyncsPastAnEventWhoseLinesNeverCame(t *testing.T) {
 		m.Line("lines", true)
 		m.Flush()
 	})
-	if want := "other\nlost\n14:03:09   ✓ tool 1 B\n┃ between\n14:03:09 ▸ Read a.go\n┃ after\ntwo\nlines\n"; got != want {
+	if want := "other\nlost\n14:03:09 ✗ tool · error, 1 B\n┃ between\n14:03:09 ▸ read 1 file\n┃ after\ntwo\nlines\n"; got != want {
 		t.Errorf("resynced =\n%q\nwant\n%q", got, want)
 	}
 }
@@ -172,7 +171,7 @@ func TestMergeTruncatedShowsTheRestPlain(t *testing.T) {
 		m.Line("more text", true)
 		m.Flush()
 	})
-	want := "14:03:09 ▸ Read x\n· the event file reached its 64 MiB cap; the rest of the attempt is shown plain\n▸ Bash ls\nmore text\n"
+	want := "14:03:09 ▸ read 1 file\n· the event file reached its 64 MiB cap; the rest of the attempt is shown plain\n▸ Bash ls\nmore text\n"
 	if got != want {
 		t.Errorf("truncated =\n%q\nwant\n%q", got, want)
 	}
@@ -281,9 +280,66 @@ func TestSessionTailsLiveAppends(t *testing.T) {
 	if err := s.Finish(at); err != nil {
 		t.Fatal(err)
 	}
-	want := "guildhall: starting\n14:03:09 ▸ Bash ls\n14:03:09   ✓ Bash 3 B\nno newline\n"
+	// The burst is still open at the finish, which writes its summary after the last line.
+	want := "guildhall: starting\nno newline\n14:03:09 ▸ ran ls once\n"
 	if out.String() != want {
 		t.Errorf("live =\n%q\nwant\n%q", out.String(), want)
+	}
+}
+
+// TestSessionBurstSplitReplays: a burst the live clock splits after 30 s is written the same when a resumed bridge
+// replays its events from the start, since the split is stamped from the burst's first call.
+func TestSessionBurstSplitReplays(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "launcher.log")
+	logf, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = logf.Close() }()
+	evf, err := os.OpenFile(filepath.Join(dir, File), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = evf.Close() }()
+	clock := at
+	w := NewWriter(evf)
+	w.Now = func() time.Time { return clock }
+	var live bytes.Buffer
+	s := NewSession(NewRenderer(&live, Options{Width: 80, Location: time.UTC}), logPath, dir, at)
+	defer s.Close()
+	poll := func(d time.Duration) {
+		t.Helper()
+		if err := s.Poll(at.Add(d)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w.Write(ToolCall("a", "Bash", "go test ./...", []string{"tool: Bash go test ./..."}))
+	_, _ = logf.WriteString("tool: Bash go test ./...\n")
+	poll(time.Second)
+	poll(29 * time.Second)
+	if live.Len() != 0 {
+		t.Fatalf("a burst open 29 s wrote %q", live.String())
+	}
+	poll(31 * time.Second)
+	clock = at.Add(40 * time.Second)
+	w.Write(ToolResult("a", false, 10, 1))
+	w.Write(Text("Tests pass.", []string{"Tests pass."}))
+	_, _ = logf.WriteString("Tests pass.\n")
+	if err := s.Finish(at.Add(41 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	want := "14:03:39 ▸ ran go test once …\nTests pass.\n"
+	if live.String() != want {
+		t.Errorf("live =\n%q\nwant\n%q", live.String(), want)
+	}
+	var replay bytes.Buffer
+	now := at.Add(6 * time.Hour)
+	if err := NewSession(NewRenderer(&replay, Options{Width: 80, Location: time.UTC}), logPath, dir, now).Finish(now); err != nil {
+		t.Fatal(err)
+	}
+	if replay.String() != want {
+		t.Errorf("replayed =\n%q\nwant\n%q", replay.String(), want)
 	}
 }
 
