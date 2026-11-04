@@ -133,19 +133,11 @@ func writeStepLog(planDir string, l *StepLog) error {
 
 // lock takes .rollout.lock in the private config, which a rollout and a collection take too, and returns its release.
 func (s *Setup) lock() (func(), error) {
-	lock := filepath.Join(s.Private.Dir, ".rollout.lock")
-	f, err := os.OpenFile(lock, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return nil, ErrBusy
-		}
-		return nil, fmt.Errorf("setup lock %s: %w", lock, err)
+	release, err := privateLock(s.Private.Dir, s.Now())
+	if err != nil && !errors.Is(err, ErrBusy) {
+		return nil, fmt.Errorf("setup %w", err)
 	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(lock)
-		return nil, err
-	}
-	return func() { _ = os.Remove(lock) }, nil
+	return release, err
 }
 
 // open reads the plan in planDir and checks that it is the one written there and that its planned files are intact.

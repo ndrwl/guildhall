@@ -54,10 +54,10 @@ const (
 func (r RecipientRole) SessionInbox() bool { return r == RecipientDirector || r == RecipientSteward }
 
 // StewardSenders are the senders the Steward's inbox takes: the Guildmaster, and SenderDirector, the tag of the
-// scheduled collection round's report of the items it collected from Director copies (docs/steward.md#inbox). No
-// Director, other Director or Artisan reaches the inbox itself: `messages send` to it is the Guildmaster's only, and
-// only the Steward's own supervisor sends with the director tag. Steward messages go the other way, from the Steward
-// to a Director's external inbox (ExternalMessage), and add no sender here.
+// scheduled collection's own reports: the items it collected from Director copies, and its rounds finding the lock
+// busy (docs/steward.md#inbox). No Director, other Director or Artisan reaches the inbox itself: `messages send` to it
+// is the Guildmaster's only, and only the Steward's own supervisor sends with the director tag. Steward messages go
+// the other way, from the Steward to a Director's external inbox (ExternalMessage), and add no sender here.
 var StewardSenders = []string{SenderGuildmaster, SenderDirector}
 
 // ArtisanSenders are the senders an Artisan's inbox takes: the Director steering its attempt, and Guildhall itself

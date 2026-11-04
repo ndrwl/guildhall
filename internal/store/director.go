@@ -619,6 +619,9 @@ const (
 	// MessageTriageOpened is a Steward's scheduled collection round's report, to the Steward's own inbox, that it
 	// collected new lessons or incidents and opened their triage decisions (docs/steward.md#collection).
 	MessageTriageOpened = "triage-opened"
+	// MessageLockBusy is a Steward's scheduled collection's report, to the Steward's own inbox, that three rounds in
+	// a row found the private config's .rollout.lock held, naming its owner (docs/steward.md#scheduled-collection).
+	MessageLockBusy = "lock-busy"
 )
 
 // MessageTypes is the registry of message types DirectorUnread and the wake line count by name, each with its
@@ -639,7 +642,7 @@ var MessageTypes = map[string]string{
 	MessageQuestion:        "local", MessageNote: "local",
 	MessageJudgeFailed: "quality", MessageJudgement: "quality", MessageJudgementRefused: "quality",
 	MessageHerdrLeftOpen: "supervisor", MessagePruneKept: "supervisor", MessageHoldReleased: "supervisor",
-	MessageTriageOpened:        "supervisor",
+	MessageTriageOpened: "supervisor", MessageLockBusy: "supervisor",
 	MessageDependencyCancelled: "cancel",
 	MessageDecisionAnswered:    "page",
 	MessageGrillAnswered:       "page",

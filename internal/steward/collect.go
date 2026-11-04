@@ -45,10 +45,6 @@ const (
 	MarkMissing = "missing"
 )
 
-// ErrBusy reports a collection round that found .rollout.lock held, by a rollout or another round, and changed
-// nothing.
-var ErrBusy = errors.New("busy: the private config's .rollout.lock is held by a rollout or another collection")
-
 // CollectReceipt is what the Steward copies to CollectReceiptPath on a Director copy before `director collected`:
 // each item it committed to the private config, by origin, id and content digest, and the commit that holds it.
 type CollectReceipt struct {
@@ -206,7 +202,8 @@ type pendingIncidents struct {
 // Collect runs one round on the Director copies of the named machines, every enrolled machine when none is named:
 //
 //  1. it reads each copy's pending lessons and incidents with the fixed read-only commands;
-//  2. it takes .rollout.lock in the private config, and stops with ErrBusy, changing nothing, when it is held;
+//  2. it takes .rollout.lock in the private config, and stops with a *BusyError (ErrBusy) naming its owner,
+//     changing nothing, when it is held;
 //  3. it writes each item not yet committed to lessons/<machine>/<origin>-<id>.md or
 //     incidents/<machine>/<origin>-<id>.json and commits only those files, one commit per machine, and writes each
 //     answer into its item's file in one more commit;
@@ -228,18 +225,14 @@ func (c *Collector) Collect(ctx context.Context, machines []string, answers []Tr
 		}
 	}
 
-	lock := filepath.Join(c.Private.Dir, ".rollout.lock")
-	f, err := os.OpenFile(lock, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	release, err := privateLock(c.Private.Dir, c.Now())
 	if err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return res, ErrBusy
+		if errors.Is(err, ErrBusy) {
+			return res, err
 		}
-		return res, fmt.Errorf("collection lock %s: %w", lock, err)
+		return res, fmt.Errorf("collection %w", err)
 	}
-	defer func() { _ = os.Remove(lock) }()
-	if err := f.Close(); err != nil {
-		return res, err
-	}
+	defer release()
 
 	head, err := c.Private.Head(ctx)
 	if err != nil {
