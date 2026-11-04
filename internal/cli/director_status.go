@@ -437,6 +437,19 @@ type statusDecision struct {
 	// Deferred says the Director deferred the decision until tasks merge and they have not, which is why it is not in
 	// needs_me; the held section says what it waits for.
 	Deferred bool `json:"deferred,omitempty"`
+	// Explanation is the Director's explanation of the decision (decide explain), nil when it has none.
+	Explanation *statusExplanation `json:"explanation,omitempty"`
+}
+
+// statusExplanation is a decision's explanation as the status feed carries it (docs/store.md#decision-explanations).
+type statusExplanation struct {
+	Text          string    `json:"text"`
+	SubjectDigest string    `json:"subject_digest"`
+	Recommend     string    `json:"recommend,omitempty"`
+	At            time.Time `json:"at"`
+	Revision      int       `json:"revision"`
+	// Current says the subject digest matches the decision's, so the explanation is about the decision as it stands.
+	Current bool `json:"current"`
 }
 
 type statusMessages struct {
@@ -969,6 +982,10 @@ func readDirectorStatusRecords(ctx context.Context, p storeRecords, stateDir, cf
 			deferrals[d.Repository+"/"+d.TaskID+"/"+d.Decision] = d
 		}
 	}
+	explanations := map[string]store.DecisionExplanation{}
+	for _, e := range v.Explanations {
+		explanations[e.Repository+"/"+e.TaskID+"/"+e.Decision] = e
+	}
 	for _, d := range v.OpenDecisions {
 		var opened *time.Time
 		if at, ok := openedAt[d.Repository+"/"+d.TaskID+"/"+d.ID]; ok {
@@ -976,6 +993,10 @@ func readDirectorStatusRecords(ctx context.Context, p storeRecords, stateDir, cf
 		}
 		sd := statusDecision{Repository: d.Repository, TaskID: d.TaskID, ID: d.ID, Kind: d.Kind, Subject: d.Subject,
 			Options: d.Options, Question: d.Question, OpenedAt: opened}
+		if e, ok := explanations[d.Repository+"/"+d.TaskID+"/"+d.ID]; ok {
+			sd.Explanation = &statusExplanation{Text: e.Text, SubjectDigest: e.SubjectDigest, Recommend: e.Recommend, At: e.At, Revision: e.Revision,
+				Current: e.Current(d)}
+		}
 		item := needsMeItem{Kind: decisionKind, Repository: d.Repository, TaskID: d.TaskID, Decision: d.ID, Reason: d.Question,
 			Command: fmt.Sprintf("guildhall decide show --repo %s --task %s --decision %s", d.Repository, d.TaskID, d.ID)}
 		// A deferred decision stays open but leaves needs_me until the tasks it waits for merge.

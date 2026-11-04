@@ -33,8 +33,10 @@ type RepositoryCounts struct {
 	Documents    int
 	PaneBindings int
 	Decisions    int
-	Rulings      int
-	TaskContexts int
+	// DecisionExplanations counts the Director's decision explanations (docs/store.md#decision-explanations).
+	DecisionExplanations int
+	Rulings              int
+	TaskContexts         int
 	// Conversation counts task conversation entries (docs/store.md#task-conversation).
 	Conversation int
 	TaskLinks    int
@@ -132,7 +134,7 @@ func (s *Store) Doctor() (Report, error) {
 			counts := RepositoryCounts{Repository: string(repo)}
 			for name, n := range map[string]*int{
 				string(bucketTasks): &counts.Tasks, string(bucketAttempts): &counts.Attempts, string(bucketDocuments): &counts.Documents,
-				string(bucketPanes): &counts.PaneBindings, string(bucketDecisions): &counts.Decisions, string(bucketRulings): &counts.Rulings,
+				string(bucketPanes): &counts.PaneBindings, string(bucketDecisions): &counts.Decisions, string(bucketDecisionExplanations): &counts.DecisionExplanations, string(bucketRulings): &counts.Rulings,
 				string(bucketTaskContexts): &counts.TaskContexts, string(bucketConversation): &counts.Conversation, string(bucketTaskLinks): &counts.TaskLinks,
 				string(bucketTaskOverrides): &counts.TaskOverrides, string(bucketGrillModes): &counts.GrillModes, string(bucketTaskDependencies): &counts.TaskDependencies,
 				string(bucketOwners): &counts.Owners, string(bucketMessages): &counts.Messages, string(bucketInbox): &counts.UnreadMessages,
@@ -174,6 +176,8 @@ func decodeRecord(bucket string, k, v []byte) (any, error) {
 		rec = new(DocumentRef)
 	case string(bucketPanes):
 		rec = new(PaneBinding)
+	case string(bucketDecisionExplanations):
+		rec = new(DecisionExplanation)
 	case string(bucketRulings):
 		rec = new(Ruling)
 	case string(bucketTaskContexts):

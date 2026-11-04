@@ -360,6 +360,10 @@ func (b webBuilder) asks(docs []web.Document) []web.Ask {
 				a.Recommended = hd.Recommended
 			}
 		}
+		a.Headline, a.Phrase = b.askHeadline(a), b.askPhrase(a)
+		if e := dec.Explanation; e != nil {
+			a.Explanation = &web.Explanation{Text: e.Text, Recommend: e.Recommend, At: e.At, Stale: !e.Current}
+		}
 		if s := dec.Subject; s != nil {
 			a.Subject = s.Digest
 			a.SubjectDocument = subjectDocument(docs, v, *s)

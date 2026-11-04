@@ -73,8 +73,9 @@ func TestTaskPageFixture(t *testing.T) {
 		`<li class="cur">2. Answer decisions on the task page · current`,
 		`<li>checks of PR #251 are pending</li>`, `Read from the store at 14:52 · reload for newer`,
 		// needs you: open asks only, the deferred merge is not in the index
-		`Needs you <span class="n you">2</span>`, `<a href="#review--s2-x2"><b>Loop exit</b> 3f9c2ab<span>#review--s2-x2</span></a>`,
-		`<a href="#grant-1"><b>Grant</b> approve, reject<span>#grant-1</span></a>`,
+		// each by the short phrase the where-it-stands line names it by
+		`Needs you <span class="n you">2</span>`, `<a href="#review--s2-x2"><b>Whether to go on after the slice 2 review</b><span>#review--s2-x2</span></a>`,
+		`<a href="#grant-1"><b>A grant for an attempt</b><span>#grant-1</span></a>`,
 		// the task in your words, and the newest grill's decisions
 		`“Perhaps its better if we move things like grills and decisions for me into a web interface”<cite>31 Oct 09:12 · task context · recorded by director</cite>`,
 		`<cite>31 Oct 09:12 · task context</cite>`,
@@ -93,10 +94,17 @@ func TestTaskPageFixture(t *testing.T) {
 		`<span class="st">waiting on you · 2 asks</span><time>since 4 Nov 14:20</time>`,
 		`? The Director runs grill with you in its session; answer it there.`,
 		`<div class="ask" id="review--s2-x2">`, `<span class="since">open since 4 Nov 14:20</span>`,
-		`<p class="q">Review round 2 still asks for changes. Continue, accept or reject?</p>`, `About <code>3f9c2ab</code>`,
-		`<summary>The rest of the question</summary>`, `<summary>The open findings · 1</summary>`, `<span class="sev">medium</span><span><b>F4</b>`,
+		// the readable headline, the Director's explanation under it, and the question's own first line folded
+		`<p class="q">The slice 2 review asks whether to go on.</p><div class="dx"><p class="dxh">From the Director · <time>4 Nov 14:22</time></p><div class="md"><p>The review still wants <strong>F4</strong> fixed`,
+		`<a href="/guildhall/d122/doc/review--s2-2-outcome">the outcome</a>`, `About <code>3f9c2ab</code>`,
+		`<summary>The rest of the question</summary><div><pre>Review round 2 still asks for changes. Continue, accept or reject?` + "\n\n" + `The review is review--s2-2-outcome.</pre>`,
+		`<summary>The open findings · 1</summary>`, `<span class="sev">medium</span><span><b>F4</b>`,
 		`<button class="opt carry" type="button" disabled><b>Continue</b><span>another round of the loop</span></button>`,
-		`<button class="opt pos" type="button" disabled><b>Accept</b>`, `<button class="opt neg" type="button" disabled><b>Reject</b>`,
+		// the Director recommends accept, so its tile carries d153's mark and comes first
+		`<div class="opts"><button class="opt pos rec" type="button" disabled><b>Accept <i class="badge">Recommended</i></b>`, `<button class="opt neg" type="button" disabled><b>Reject</b>`,
+		// a stale explanation is hidden, its recommendation with it; an ask with none says so
+		`<p class="q">An attempt asked for a grant.</p><div class="dx"><p class="dxn">` + "The Director&#39;s explanation was written for an earlier version of this ask, so it is not shown.",
+		`<div class="dx"><p class="dxn">The Director has not explained this ask yet.`,
 		`<div class="ask" id="grant-1">`, `<b>Approve</b><span>the grant takes effect for its attempt</span>`,
 		`<div class="ask def" id="deliver-1">`, `<span class="tag you">deferred</span>`,
 		// an option the table does not describe shows its word alone, neutral

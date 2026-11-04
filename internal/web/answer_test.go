@@ -105,7 +105,7 @@ func TestAnsweringPage(t *testing.T) {
 		`<form method="post" action="/guildhall/d122/answer"><input type="hidden" name="decision" value="review--s2-x2"><input type="hidden" name="subject" value="` + loopSubject + `"><input type="hidden" name="token" value="` + web.FixtureToken + `">`,
 		`<label class="yw" for="w-review--s2-x2">Your words <span>optional with an answer</span></label><textarea id="w-review--s2-x2" name="text" rows="3"></textarea>`,
 		`<button class="opt carry" type="submit" name="option" value="continue"><b>Continue</b><span>another round of the loop</span></button>`,
-		`<button class="opt pos" type="submit" name="option" value="accept">`, `<button class="opt neg" type="submit" name="option" value="reject">`,
+		`<button class="opt pos rec" type="submit" name="option" value="accept">`, `<button class="opt neg" type="submit" name="option" value="reject">`,
 		`<button class="opt" type="submit" name="send" value="words"><b>Send words only</b><span>answers nothing; your words reach the Director as a message</span></button>`,
 		`<p class="who">Answering as <b>gm@example.com</b> · your Tailscale login</p>`,
 		`<p class="who">Deferred: still yours, for later. Answering as <b>gm@example.com</b>`,

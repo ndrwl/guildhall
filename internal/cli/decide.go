@@ -24,6 +24,7 @@ const decideUsage = `usage:
   guildhall decide defer --store <path> --repo <id> --task <id> --decision <id> --until-merged <repo>/<task>... --reason <text>
   guildhall decide undefer --store <path> --repo <id> --task <id> --decision <id>
   guildhall decide open --store <path> --repo <id> --task <id> (--question <text> | --question-file <path|->) [--option <text>]... [--recommend <option>]
+  guildhall decide explain <repo>/<task> <decision> --store <path> --subject-digest <digest> (--text <md> | --file <path|->) [--recommend <option>]
 --copy <dir>, or the copy found from the current directory, may stand in for --store: the copy's director.store`
 
 // decide runs a decide subcommand against an existing store and prints its result as one JSON document
@@ -42,6 +43,9 @@ func (a *App) decide(args []string) int {
 	}
 	if sub == "open" {
 		return a.decideOpen(args[1:])
+	}
+	if sub == "explain" {
+		return a.decideExplain(args[1:])
 	}
 	flags := flag.NewFlagSet("decide "+sub, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -130,7 +134,7 @@ func (a *App) decide(args []string) int {
 	case "list":
 		out, err = openDecisions(s, *repo)
 	case "show":
-		out, err = findDecision(s, *repo, *task, *id)
+		out, err = showDecision(s, *repo, *task, *id)
 	case "answer":
 		if out, err = answerDecision(s, *repo, *task, *id, answer, "", ""); err == nil && *repo == admit.AlertRepository && *task == admit.AlertTask {
 			// An approved managed-mode alert authorizes its exact digest (docs/director-modes.md#guard-rails).
@@ -203,6 +207,28 @@ func answerDecisionSaying(s *store.Store, repo, task, id, answer, via, by string
 		return store.Receipt{}, fmt.Errorf("task %s/%s is cancelled (%s); its decisions are not answered", repo, task, t.CancelReason)
 	}
 	return s.AnswerDecisionSaying(mutationID("decision-answer", repo, task, id), repo, task, id, answer, via, by, say)
+}
+
+// shownDecision is what decide show prints: the decision, and the Director's explanation of it when there is one.
+type shownDecision struct {
+	store.Decision
+	Explanation *store.DecisionExplanation `json:"explanation,omitempty"`
+}
+
+// showDecision reads a decision and its explanation, if any (docs/decisions-cli.md#decide-explain).
+func showDecision(s *store.Store, repo, task, id string) (shownDecision, error) {
+	d, err := findDecision(s, repo, task, id)
+	if err != nil {
+		return shownDecision{}, err
+	}
+	out := shownDecision{Decision: d}
+	switch e, err := s.DecisionExplanation(repo, task, id); {
+	case err == nil:
+		out.Explanation = &e
+	case !errors.Is(err, store.ErrNotFound):
+		return shownDecision{}, err
+	}
+	return out, nil
 }
 
 func findDecision(s *store.Store, repo, task, id string) (store.Decision, error) {

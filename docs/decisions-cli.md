@@ -13,6 +13,7 @@ guildhall decide answer --store <path> --repo <id> --task <id> --decision <id> -
 guildhall decide defer --store <path> --repo <id> --task <id> --decision <id> --until-merged <repo>/<task>... --reason <text>
 guildhall decide undefer --store <path> --repo <id> --task <id> --decision <id>
 guildhall decide open --store <path> --repo <id> --task <id> (--question <text> | --question-file <path|->) [--option <text>]... [--recommend <option>]
+guildhall decide explain <repo>/<task> <decision> --store <path> --subject-digest <digest> (--text <md> | --file <path|->) [--recommend <option>]
 ```
 
 Every command needs an existing store and never creates one; `list` and `show` open it read-only.
@@ -22,9 +23,11 @@ Each prints one JSON document on standard output and exits 0, exits 1 when the a
   Each entry is a [decision record](store.md#records); optional fields are omitted when absent, including a question's subject and any empty options.
   An empty inbox prints `[]`.
 - `show` prints one decision, answered or not, including the answer, choice and note when non-empty, and, for an answer given on the [task page](web.md#answering), `answered_via` (`page`) and `answered_by` (the Tailscale login).
+  When the Director has explained it, an `explanation` object follows: the [explanation record](#decide-explain); a decision with none has no `explanation` field.
 - `answer` records the Guildmaster's words and prints the store receipt; it records no `answered_via` or `answered_by`. The task page answers through the same function under the same mutation id, so a decision is answered once whichever way.
 - `defer` and `undefer` are the Director's: see [deferring a decision](#deferring-a-decision).
 - `open` is the Director's: it opens a question decision on a task and prints it as `show` does; see [decide open](#decide-open).
+- `explain` is the Director's: it records its plain-English explanation of an open decision for the task page; see [decide explain](#decide-explain).
 
 ## Answers
 
@@ -83,6 +86,25 @@ guildhall decide open --repo guildhall --task d105 --question "Which grill first
 guildhall decide answer --repo guildhall --task d105 --decision q1 --answer-file - <<'ANSWER'
 neither, do c
 ANSWER
+```
+
+## decide explain
+
+`decide explain` is the Director's: it records, once, the plain-English explanation of an open decision that the Director would otherwise write in chat, what the ask is about, what each answer means and what it recommends, so the [task page](web.md#the-directors-explanation) shows it on the ask.
+The decision is named by `<repo>/<task>` and its id; the flags may come before or after them.
+The explanation is Markdown, `--text <md>` or `--file <path|->`, read with the same byte order mark, CRLF and UTF-16 rules as an [answer](#answers); exactly one is given, and blank text, invalid UTF-8 and more than 64 KiB are refused.
+
+- `--subject-digest` is the digest the Director read the decision against: its subject's digest, as `show` prints it under `subject`, or, for a decision with no subject, such as a question or a grant, `sha256:` and the hex sha256 of its question text. It is stored as given; the page shows the explanation only while it matches the decision, and otherwise says it was written for an earlier version.
+- `--recommend <option>` names the answer the Director recommends, which must be one of the decision's options; the page marks that answer's tile as recommended unless the ask already marks one itself.
+- An answered, void or unknown decision is refused with exit 1, as is a recommendation the decision does not offer, and nothing is written.
+
+It prints the explanation record as one JSON line, `{"repository":...,"task_id":...,"decision":...,"text":...,"subject_digest":...,"recommend":...,"at":...,"revision":<n>}`, `recommend` omitted when none was named, and stores it in the repository's `decision-explanations` bucket ([store](store.md#decision-explanations)); the decision itself is not changed.
+Explaining again replaces the record and makes its revision one higher; the mutation id carries the revision the command read, `decision-explain:<repo>:<task>:<decision>:<revision>`, so a retry replays, and repeating the stored explanation word for word, with the same digest and recommendation, prints it and writes nothing.
+
+```sh
+guildhall decide explain guildhall/d150 accept--s2-1 --subject-digest sha256:3f9c… --recommend approved --file - <<'TEXT'
+The plan builds the task list at `/`. **Approve** takes both recommendations.
+TEXT
 ```
 
 ## Deferring a decision

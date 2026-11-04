@@ -24,6 +24,7 @@
 {{- if .Form}}<form method="post" action="{{.Action}}"><input type="hidden" name="decision" value="{{.ID}}"><input type="hidden" name="subject" value="{{.Digest}}"><input type="hidden" name="token" value="{{.Token}}">{{end}}
 <div class="ah"><span class="kind">{{.KindName}}</span><a class="aid" href="#{{.ID}}">#{{.ID}}</a>{{if .Chip}}<a class="tg" href="{{.ChipHref}}">{{.Chip}}</a>{{end}}{{if .Deferred}}<span class="tag you">deferred</span>{{end}}{{if .Since}}<span class="since">{{.Since}}</span>{{end}}</div>
 <p class="q">{{.First}}</p>
+{{- template "explanation" .}}
 {{- if .Plan}}{{if .Summary}}<div class="plan md"><p class="ph">Summary</p>{{.Summary}}{{with .Questions}}{{template "questions" .}}{{end}}</div>{{else}}<p class="subj"><a href="{{.SubjectHref}}">No summary in this spec · read {{.SubjectName}}</a></p>{{with .Questions}}<div class="plan md">{{template "questions" .}}</div>{{end}}{{end}}{{else}}{{with .Questions}}<div class="plan md">{{template "questions" .}}</div>{{end}}{{end}}
 {{- if or .Subject .ReadLink .MockupHref}}<p class="subj">{{if .Subject}}About <code>{{.Subject}}</code>{{end}}{{if .ReadLink}}{{if .Subject}} · {{end}}<a href="{{.SubjectHref}}">read {{.SubjectName}}</a>{{end}}{{if .MockupHref}}{{if or .Subject .ReadLink}} · {{end}}<a href="{{.MockupHref}}" target="_blank" rel="noopener">{{.MockupLabel}}</a>{{end}}</p>{{end}}
 {{- if .Mockup}}<div class="plan md"><p class="ph">Mock-up</p>{{.Mockup}}</div>{{end}}
@@ -39,6 +40,10 @@
 <p class="who">{{if .Deferred}}Deferred: still yours, for later. {{end}}{{if .Form}}Answering as <b>{{.Login}}</b> · your Tailscale login{{else}}Only the Guildmaster's Tailscale login can answer here{{if .Login}}; you are {{.Login}}{{end}}. Answer in chat or with <code>guildhall decide answer</code>.{{end}}</p>
 {{- if .Form}}</form>{{end}}
 </div>{{end}}
+
+{{/* explanation: the Director's explanation of an ask, under its headline and above its summary, or the grey note
+saying there is none or it is for an earlier version; one block of its own, so talk on the ask can sit beneath it. */}}
+{{define "explanation"}}<div class="dx">{{if .Explained}}<p class="dxh">From the Director{{if .ExplainedAt}} · <time>{{.ExplainedAt}}</time>{{end}}</p><div class="md">{{.Explained}}</div>{{else}}<p class="dxn">{{.ExplainNote}}</p>{{end}}</div>{{end}}
 
 {{/* questions and answers: the one layout of an ask's question cards and its answer row (questions.go); every ask
 that shows questions or answers draws them through these two, so a change here changes them all. */}}
@@ -102,7 +107,7 @@ words box below (docs/web.md#confirm-and-say). */}}
 <section class="r-status"><h2>Status</h2>
 {{template "status" .}}
 </section>
-<section class="r-need"><h2>Needs you <span class="n{{if .Open}} you{{end}}">{{.Open}}</span></h2>{{if .Asks}}<ul class="nix">{{range .Asks}}{{if not .Deferred}}<li><a href="#{{.ID}}"><b>{{.KindName}}</b> {{if .SubjectName}}{{.SubjectName}}{{else if .Subject}}{{.Subject}}{{else}}{{range $i, $t := .Tiles}}{{if $i}}, {{end}}{{$t.Option}}{{end}}{{end}}<span>#{{.ID}}</span></a></li>{{end}}{{end}}</ul>{{end}}{{if not .Open}}<p class="empty">Nothing needs you on this task.</p>{{end}}</section>
+<section class="r-need"><h2>Needs you <span class="n{{if .Open}} you{{end}}">{{.Open}}</span></h2>{{if .Asks}}<ul class="nix">{{range .Asks}}{{if not .Deferred}}<li><a href="#{{.ID}}">{{if .Phrase}}<b>{{.Phrase}}</b>{{else}}<b>{{.KindName}}</b> {{if .SubjectName}}{{.SubjectName}}{{else if .Subject}}{{.Subject}}{{else}}{{range $i, $t := .Tiles}}{{if $i}}, {{end}}{{$t.Option}}{{end}}{{end}}{{end}}<span>#{{.ID}}</span></a></li>{{end}}{{end}}</ul>{{end}}{{if not .Open}}<p class="empty">Nothing needs you on this task.</p>{{end}}</section>
 <section class="r-task"><h2>The task · in your words</h2>
 {{range .Context}}<blockquote class="w">“{{.Text}}”<cite>{{.Cite}}</cite></blockquote>{{else}}<p class="empty">No words of yours are recorded on this task.</p>{{end}}
 {{with .Grill}}{{if .HTML}}<details class="fold"><summary>What the grill decided · {{.Count}} {{plural .Count "decision" "decisions"}}</summary><div class="grill md">{{.HTML}}</div><a class="flink" href="{{.Href}}">Read {{.Name}}</a></details>{{else}}<a class="flink" href="{{.Href}}">What the grill decided · read {{.Name}}</a>{{end}}{{end}}
