@@ -64,6 +64,10 @@ type Subject struct {
 	// launch path runs it, such as inside the Artisan launcher with its stop
 	// ladder; nil starts it as a direct child process (adapter.StartProcess).
 	Start func(t *testing.T, spec adapter.Spec, cmd adapter.Command) (Process, error)
+	// WritesResult is set for a runtime whose wrapper, not the model, writes the result file from the model's
+	// answer, as the Codex wrapper does: it never publishes a malformed or misidentified result, so for Malformed
+	// and WrongIdentity, a malformed answer and one for other work, it must publish nothing instead.
+	WritesResult bool
 }
 
 // Process is a started runtime as the suite drives it.
@@ -131,8 +135,12 @@ func RunConformance(t *testing.T, newSubject func(t *testing.T) Subject) {
 	for _, tc := range rejects {
 		t.Run("never completes on "+string(tc.b), func(t *testing.T) {
 			s := newSubject(t)
-			if _, err := launchAndWait(t, s, newSpec(t, s, tc.b), time.Minute); !errors.Is(err, tc.want) {
-				t.Errorf("WaitResult = %v, want %v", err, tc.want)
+			want := tc.want
+			if s.WritesResult {
+				want = adapter.ErrExitedWithoutResult
+			}
+			if _, err := launchAndWait(t, s, newSpec(t, s, tc.b), time.Minute); !errors.Is(err, want) {
+				t.Errorf("WaitResult = %v, want %v", err, want)
 			}
 		})
 	}

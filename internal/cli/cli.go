@@ -86,6 +86,7 @@ Commands:
                  list, kill and probe an attempt's processes: lab test tooling
   fake-artisan   run the deterministic fake Artisan for explicit no-model demos/tests
   claude-artisan run one attempt in Claude Code; artisan start --adapter claude runs it
+  codex-artisan  run one read-only quality judge attempt in Codex's read-only sandbox
   fake-director  run the test-only fake Director session
   task new|show|list|timeline|files|finding rule|review|priority|hold-merge --store <path> ...
                  create, list, show and inspect Director tasks and record rulings, full-review requests, priorities and merge holds
@@ -397,6 +398,8 @@ func (a *App) Run(args []string) int {
 		return a.fakeArtisan(rest)
 	case "claude-artisan":
 		return a.claudeArtisan(rest)
+	case "codex-artisan":
+		return a.codexArtisan(rest)
 	case "fake-director":
 		return a.fakeDirector(rest)
 	case "task":
