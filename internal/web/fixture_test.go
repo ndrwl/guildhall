@@ -115,11 +115,17 @@ func fixtureTalk(sums map[string]string) Task {
 		Asks: []Ask{
 			{ID: "review--s2-x2", Kind: "loop-exit", Question: "Review round 2 still asks for changes. Continue, accept or reject?\n\nThe review is review--s2-2-outcome.",
 				Options: []string{"continue", "accept", "reject"}, Subject: "3f9c2ab0c0ffee0000000000000000000000beef", OpenedAt: at("2026-11-04 14:20"),
-				Findings: []Finding{{ID: "F4", Rule: "medium", Summary: "a sha256 mismatch returns a 500 with the state path"}}},
+				Findings: []Finding{{ID: "F4", Rule: "medium", Summary: "a sha256 mismatch returns a 500 with the state path"}},
+				Headline: "The slice 2 review asks whether to go on.", Phrase: "whether to go on after the slice 2 review",
+				Explanation: &Explanation{Text: "The review still wants **F4** fixed: a bad digest shows the state path.\n\nI recommend *accept*; F4 is a follow-up. See [the outcome](/guildhall/d122/doc/review--s2-2-outcome).",
+					Recommend: "accept", At: *at("2026-11-04 14:22")}},
 			{ID: "grant-1", Kind: "grant", Question: "Grant network to build-3, so it can run the real tailscale whois contract test?",
-				Options: []string{"approve", "reject"}, OpenedAt: at("2026-11-04 14:31")},
+				Options: []string{"approve", "reject"}, OpenedAt: at("2026-11-04 14:31"),
+				Headline: "An attempt asked for a grant.", Phrase: "a grant for an attempt",
+				Explanation: &Explanation{Text: "Words for an earlier grant.", Recommend: "approve", At: *at("2026-11-04 14:30"), Stale: true}},
 			{ID: "accept--s2-1", Kind: "approval", Question: "Approval needed for guildhall/d122, step accept--s2 (guildmaster-approval version 1), attempt 1.\n\nInputs:\n- spec: tasks/guildhall/d122/plan-1/spec.md\n\nAnswer with one of: approved, changes_requested.",
-				Options: []string{"approved", "changes_requested"}, Subject: "sha256:" + sums["tasks/guildhall/d122/plan-1/spec.md"], SubjectDocument: "plan-1-spec", Deferred: true, OpenedAt: at("2026-11-04 14:33")},
+				Options: []string{"approved", "changes_requested"}, Subject: "sha256:" + sums["tasks/guildhall/d122/plan-1/spec.md"], SubjectDocument: "plan-1-spec", Deferred: true, OpenedAt: at("2026-11-04 14:33"),
+				Headline: "The plan for slice 2 is ready for your approval.", Phrase: "approval of the plan for slice 2"},
 			{ID: "deliver-1", Kind: "merge", Question: "Merge d122?", Options: []string{"merge", "hold", "later"}, Deferred: true, OpenedAt: at("2026-11-04 14:35")},
 			// Two design rounds' asks: one with an HTML mock-up, linked to its frame, and one with a Markdown mock-up
 			// of CLI output, shown inline.

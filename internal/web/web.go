@@ -247,6 +247,22 @@ type Ask struct {
 	Recommended string
 	// Stage is the step the decision belongs to, such as plan, for its tag chip; "" when its id names none.
 	Stage string
+	// Headline is the ask's readable first line, a fixed sentence by kind such as "The plan for slice 2 is ready
+	// for your approval.", shown in place of the question's own first line, which moves into the rest of the
+	// question; "" keeps the question's first line. Phrase is the same ask's short form, such as "approval of the
+	// plan", which the Needs you index and the where-it-stands line name it by.
+	Headline, Phrase string
+	// Explanation is the Director's explanation of the ask (decide explain), nil when it has none.
+	Explanation *Explanation
+}
+
+// Explanation is the Director's plain-English explanation of an ask: Markdown Text, rendered only through
+// RenderMarkdown; Recommend, the option it recommends, "" for none; when it was written; and Stale, which says it was
+// written against an earlier subject than the ask's, so the page hides it.
+type Explanation struct {
+	Text, Recommend string
+	At              time.Time
+	Stale           bool
 }
 
 // Finding is one review finding; Rule is its rule or severity label, and Fixed says a later round resolved it.

@@ -115,8 +115,10 @@ func (b webBuilder) attemptSentence(at timedAttempt, back string, findings bool)
 }
 
 // askWords is how the page says a decision of one kind, with {s} its subject, such as "the plan" or "the slice 2
-// review", and {S} the same capitalised: the story's sentence while it is open, the where-it-stands line's short
-// phrase, the sentence once answered with an option of each tone or in free text, and once void.
+// review", and {S} the same capitalised: the story's sentence while it is open, which is also the ask card's headline
+// (askHeadline), the short phrase the where-it-stands line and the Needs you index name it by, the sentence once
+// answered with an option of each tone or in free text, and once void. It is the page's one per-kind table of ask
+// words, beside the answer tiles' meanings (web.OptionMeaning).
 type askWords struct {
 	open, phrase string
 	tones        map[web.Tone]string
@@ -215,7 +217,15 @@ func fillAsk(tmpl, subject string) string {
 	return strings.NewReplacer("{S}", upperFirst(subject), "{s}", subject).Replace(tmpl)
 }
 
-// askPhrase is an open ask's short phrase for the where-it-stands line, from its kind and subject.
+// askHeadline is an open ask's headline on its card, the story's open sentence as a sentence, such as "The plan for
+// slice 2 is ready for your approval.", from its kind and subject.
+func (b webBuilder) askHeadline(a web.Ask) string {
+	k := store.DecisionKind(a.Kind)
+	return fillAsk(askWordsOf(k).open, b.askSubject(k, a.ID)) + "."
+}
+
+// askPhrase is an open ask's short phrase for the where-it-stands line and the Needs you index, from its kind and
+// subject.
 func (b webBuilder) askPhrase(a web.Ask) string {
 	k := store.DecisionKind(a.Kind)
 	return fillAsk(askWordsOf(k).phrase, b.askSubject(k, a.ID))

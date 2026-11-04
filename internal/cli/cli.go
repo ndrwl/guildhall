@@ -128,6 +128,8 @@ Commands:
                  open the Director's own question to the Guildmaster on a task, as a question decision
   decide defer|undefer --store <path> --repo <id> --task <id> --decision <id> [--until-merged <repo>/<task>... --reason <text>]
                  hold an open decision out of needs_me until the named tasks merge, or lift that hold
+  decide explain <repo>/<task> <decision> --store <path> --subject-digest <digest> (--text <md> | --file <path|->) [--recommend <option>]
+                 record the Director's plain-English explanation of an open decision, shown on its task page
   director status --json --store <path> --state <dir>
                  print the Director's status feed and what needs the Director or Guildmaster
   director start [runtime] [--tab] [--check] --copy <dir>

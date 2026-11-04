@@ -124,6 +124,39 @@ func TestWebSourceAsksFollowClerk(t *testing.T) {
 	}
 }
 
+// TestWebSourceExplanation: an ask carries its readable headline and short phrase, and the Director's explanation
+// from the status feed once decide explain records one, current while its digest matches the decision's subject and
+// stale once it does not.
+func TestWebSourceExplanation(t *testing.T) {
+	dir := clerkFixture(t)
+	src := webSourceFor(t, dir)
+	task, err := src.Task("app", "a-approve")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(task.Asks) != 1 || task.Asks[0].Headline != "The plan is ready for your approval." || task.Asks[0].Phrase != "approval of the plan" ||
+		task.Asks[0].Explanation != nil {
+		t.Fatalf("asks = %+v", task.Asks)
+	}
+	path := filepath.Join(dir, "director.store")
+	for _, c := range []struct {
+		digest string
+		stale  bool
+	}{{"sha256:" + strings.Repeat("a", 64), false}, {"sha256:" + strings.Repeat("f", 64), true}} {
+		if code, _, stderr := runDecide(t, "", "explain", "app/a-approve", "accept-plan", "--store", path, "--subject-digest", c.digest, "--text", "It plans **three** steps.",
+			"--recommend", "approve"); code != 0 {
+			t.Fatalf("explain: exit %d, %s", code, stderr)
+		}
+		if task, err = src.Task("app", "a-approve"); err != nil {
+			t.Fatal(err)
+		}
+		e := task.Asks[0].Explanation
+		if e == nil || e.Text != "It plans **three** steps." || e.Recommend != "approve" || e.At.IsZero() || e.Stale != c.stale {
+			t.Errorf("digest %s: explanation = %+v, want stale %v", c.digest, e, c.stale)
+		}
+	}
+}
+
 // TestWebSourceDesignMockup: a design round's approval, bound to a designer attempt's design, carries that attempt's
 // mock-up under its legacy name, designer-<k>-design-2; an approval bound to a designer attempt with no mock-up, or to another step's
 // document with a -2 output, carries none.

@@ -73,6 +73,14 @@ func TestWebWordsCoverEveryDecisionKind(t *testing.T) {
 		if got := b.askPhrase(web.Ask{ID: id, Kind: string(k)}); got == "" || strings.ContainsAny(got, "{}") {
 			t.Errorf("kind %q: phrase = %q", k, got)
 		}
+		// The ask card's headline is a whole sentence that names no record id.
+		if got := b.askHeadline(web.Ask{ID: id, Kind: string(k)}); !strings.HasSuffix(got, ".") || got != upperFirst(got) || strings.ContainsAny(got, "{}") ||
+			strings.Contains(got, id) {
+			t.Errorf("kind %q: headline = %q", k, got)
+		}
+	}
+	if got := b.askHeadline(web.Ask{ID: "accept--s2-1", Kind: string(store.DecisionApproval)}); got != "The plan for slice 2 is ready for your approval." {
+		t.Errorf("plan approval headline = %q", got)
 	}
 	for _, c := range []struct {
 		kind         store.DecisionKind

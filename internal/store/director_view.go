@@ -27,6 +27,9 @@ type DirectorView struct {
 	Parks []AttemptPark
 	// Deferrals are every decision's deferral record, deferred or undeferred, in repository, task and decision order.
 	Deferrals []DecisionDeferral
+	// Explanations are every decision's explanation record, in repository, task and decision order
+	// (docs/store.md#decision-explanations).
+	Explanations []DecisionExplanation
 	// FollowUps are the follow-ups not yet done, in id order.
 	FollowUps []FollowUp
 	// Grants are the task grants whose derived state is active, with their approval times, in repository, task and
@@ -53,7 +56,7 @@ type DirectorView struct {
 // DirectorView reads the Director's view of the whole store without writing.
 // Like TaskHistory it scans every receipt, so its cost grows with the store's mutation count.
 func (s *Store) DirectorView() (DirectorView, error) {
-	v := DirectorView{Tasks: []Task{}, Attempts: []StageAttempt{}, Owners: []Ownership{}, OpenDecisions: []Decision{}, Parks: []AttemptPark{}, Deferrals: []DecisionDeferral{}, Grants: []TaskGrantStatus{},
+	v := DirectorView{Tasks: []Task{}, Attempts: []StageAttempt{}, Owners: []Ownership{}, OpenDecisions: []Decision{}, Parks: []AttemptPark{}, Deferrals: []DecisionDeferral{}, Explanations: []DecisionExplanation{}, Grants: []TaskGrantStatus{},
 		Overrides: []TaskOverride{}, Unread: []Message{}, Receipts: []Receipt{}}
 	err := s.view(func(tx *bolt.Tx) error {
 		var repos []string
@@ -70,6 +73,7 @@ func (s *Store) DirectorView() (DirectorView, error) {
 				scan(repoBucket(tx, repo, bucketDecisions), nil, &decisions),
 				scan(repoBucket(tx, repo, bucketAttemptParks), nil, &v.Parks),
 				scan(repoBucket(tx, repo, bucketDecisionDeferrals), nil, &v.Deferrals),
+				scan(repoBucket(tx, repo, bucketDecisionExplanations), nil, &v.Explanations),
 			} {
 				if err != nil {
 					return err

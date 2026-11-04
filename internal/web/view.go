@@ -91,13 +91,20 @@ type sliceView struct {
 
 type askView struct {
 	ID, Kind, KindName, Since string
-	First, Rest               string
-	Subject, SubjectName      string
-	SubjectHref               string
-	Tiles                     []tileView
-	Deferred                  bool
-	Findings                  []Finding
-	FindingsSummary           string
+	// First is the ask's headline: its readable sentence when the Source gives one, the question's own first line
+	// then leading Rest, the rest of the question; otherwise that first line. Phrase is its short form.
+	First, Rest, Phrase string
+	// Explained is the Director's explanation, rendered by RenderMarkdown, and ExplainedAt when it was written;
+	// ExplainNote is the grey note shown instead when there is none or it was written for an earlier version.
+	Explained            template.HTML
+	ExplainedAt          string
+	ExplainNote          string
+	Subject, SubjectName string
+	SubjectHref          string
+	Tiles                []tileView
+	Deferred             bool
+	Findings             []Finding
+	FindingsSummary      string
 	// Plan says the ask is a plan approval about a spec document; Summary is that spec's Summary block rendered by
 	// goldmark, empty when it has none or its file cannot be shown, and the ask then links the spec instead.
 	Plan    bool
@@ -409,7 +416,8 @@ func safeURL(u string) string {
 func (s *Server) askView(t Task, a Ask) askView {
 	q := strings.TrimSpace(strings.ReplaceAll(a.Question, "\r\n", "\n"))
 	first, rest, _ := strings.Cut(q, "\n")
-	v := askView{ID: a.ID, Kind: a.Kind, KindName: KindName(a.Kind), First: first, Rest: strings.TrimSpace(rest), Deferred: a.Deferred, Findings: a.Findings}
+	v := askView{ID: a.ID, Kind: a.Kind, KindName: KindName(a.Kind), First: first, Rest: strings.TrimSpace(rest), Phrase: upperFirst(a.Phrase), Deferred: a.Deferred,
+		Findings: a.Findings}
 	if a.OpenedAt != nil {
 		v.Since = "open since " + s.when(*a.OpenedAt)
 	}
@@ -440,11 +448,65 @@ func (s *Server) askView(t Task, a Ask) askView {
 	if recommend {
 		v.Hint = recommendedHint
 	}
+	if e := a.Explanation; e != nil && !e.Stale {
+		v.Tiles = directorRecommends(v.Tiles, e.Recommend)
+	}
 	if n := len(a.Findings); n > 0 {
 		v.FindingsSummary = fmt.Sprintf("The open findings · %d", n)
 	}
+	// The headline is the readable sentence; the question's own first line is kept at the head of its rest, folded.
+	if a.Headline != "" {
+		v.Rest = strings.TrimSpace(v.First + "\n\n" + v.Rest)
+		v.First = a.Headline
+	}
+	s.explanation(a, &v)
 	v.Digest = a.Subject
 	return v
+}
+
+// explainedNone and explainedStale are an ask's explanation block when the Director has not explained it, and when
+// its explanation was written for an earlier version of the ask.
+// explainedRest and explainedAsk end the note, pointing at the rest of the question when the ask folds one.
+const (
+	explainedNone  = "The Director has not explained this ask yet."
+	explainedStale = "The Director's explanation was written for an earlier version of this ask, so it is not shown."
+	explainedRest  = " The full request is under the rest of the question; ask the Director in chat if you want its view first."
+	explainedAsk   = " Ask the Director in chat if you want its view first."
+)
+
+// explanation adds the Director's explanation of ask a to v, once v's rest of the question is final: its text through
+// RenderMarkdown, the only way it reaches the page, and when it was written; or the grey note saying there is none,
+// or that it was written for an earlier version and is hidden.
+func (s *Server) explanation(a Ask, v *askView) {
+	tail := explainedAsk
+	if v.Rest != "" {
+		tail = explainedRest
+	}
+	switch e := a.Explanation; {
+	case e == nil:
+		v.ExplainNote = explainedNone + tail
+	case e.Stale:
+		v.ExplainNote = explainedStale + tail
+	default:
+		v.Explained = RenderMarkdown([]byte(e.Text))
+		if !e.At.IsZero() {
+			v.ExplainedAt = s.when(e.At)
+		}
+	}
+}
+
+// directorRecommends marks option's tile as the recommended answer, d153's mark, moving it first, when the Director's
+// explanation recommends it and the ask marks none of its own: an ask that already recommends an answer, such as a
+// plan approval's Approved, keeps its mark and the Director's is ignored.
+func directorRecommends(tiles []tileView, option string) []tileView {
+	i := slices.IndexFunc(tiles, func(t tileView) bool { return t.Option == option })
+	if option == "" || i < 0 || slices.ContainsFunc(tiles, func(t tileView) bool { return t.Rec }) {
+		return tiles
+	}
+	out := slices.Clone(tiles)
+	rec := out[i]
+	rec.Rec = true
+	return append([]tileView{rec}, slices.Delete(out, i, i+1)...)
 }
 
 // ReadLink says the ask's subject line links its subject document: always when it has one, except on a plan approval
