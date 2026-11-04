@@ -14,6 +14,7 @@ import (
 	"github.com/ndrwl/guildhall/baseline"
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/adapter/claude/claudetest"
+	"github.com/ndrwl/guildhall/internal/adapter/codex/codextest"
 	"github.com/ndrwl/guildhall/internal/adapter/fake"
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
 	"github.com/ndrwl/guildhall/internal/herdr"
@@ -33,6 +34,7 @@ func TestMain(m *testing.M) {
 	store.SkipSyncForTests()
 	artisantest.MainIfWorker()
 	claudetest.RunIfStub()
+	codextest.RunIfStub()
 	runStewardSCPStub()
 	switch os.Getenv(roleEnv) {
 	case "guildhall":

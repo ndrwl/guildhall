@@ -197,7 +197,7 @@ func TestRelativeStorePaneLaunchAndResume(t *testing.T) {
 			var err error
 			if files {
 				k := artisan.AttemptKey{Repository: "app", TaskID: "t7", Step: "build", Attempt: 1}
-				h, err = p.LaunchFiles(context.Background(), k, spec.Adapter, spec.PromptFile, spec.WorkDir)
+				h, err = p.LaunchFiles(context.Background(), k, spec.Adapter, "", adapter.Settings{}, spec.PromptFile, spec.WorkDir)
 			} else {
 				h, err = p.Launch(context.Background(), spec)
 			}
