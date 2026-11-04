@@ -21,6 +21,10 @@ const (
 // SenderSteward is the wake sender type of a Steward message, which `messages receive` records.
 const SenderSteward = "steward"
 
+// SenderPeer is the wake sender type of a peer Director's message, which `messages receive --from` records; the
+// message's sender is the peer's name.
+const SenderPeer = "director"
+
 // DirectorEnvelope is the versioned wire form of one external message, such as a Steward message. It names no task
 // of the receiving store, which may have none for it.
 type DirectorEnvelope struct {
@@ -38,7 +42,7 @@ type DirectorEnvelope struct {
 	Subject string       `json:"subject"`
 	Text    string       `json:"text"`
 	About   *store.About `json:"about,omitempty"`
-	// InReplyTo is reserved for a Director's answer to a question, which is not built; it is refused when set.
+	// InReplyTo is an answer's question: the id of the question the answer's receiver sent. Only an answer has one.
 	InReplyTo string              `json:"in_reply_to,omitempty"`
 	Artifacts []store.ArtifactRef `json:"artifacts,omitempty"`
 }
@@ -63,8 +67,8 @@ func DecodeDirector(r io.Reader) (DirectorEnvelope, error) {
 }
 
 // ExternalMessage converts an envelope that sender sent to the receiving Director named to into the store record.
-// It refuses an unsupported schema, an envelope whose from is not sender's identity, one addressed to another
-// Director, and an in_reply_to; the store checks the rest.
+// It refuses an unsupported schema, an envelope whose from is not sender's identity and one addressed to another
+// Director; the store checks the rest, such as which types and which in_reply_to each sender may send.
 func ExternalMessage(sender, to string, e DirectorEnvelope) (store.ExternalMessage, error) {
 	switch {
 	case e.Schema != DirectorSchemaPrefix+strconv.Itoa(DirectorSchemaVersion):
@@ -73,11 +77,9 @@ func ExternalMessage(sender, to string, e DirectorEnvelope) (store.ExternalMessa
 		return store.ExternalMessage{}, invalid("message %q is from %q, but was received from %s", e.ID, e.From, sender)
 	case to != "" && e.To != to:
 		return store.ExternalMessage{}, invalid("message %q is addressed to %q, not this Director, %q", e.ID, e.To, to)
-	case e.InReplyTo != "":
-		return store.ExternalMessage{}, invalid("message %q: in_reply_to is for a Director's answer, which no sender may send yet", e.ID)
 	}
 	return store.ExternalMessage{Sender: sender, ID: e.ID, From: e.From, To: e.To, Type: e.Type, Kind: e.Kind, Subject: e.Subject,
-		Text: e.Text, About: e.About, Artifacts: e.Artifacts}, nil
+		Text: e.Text, About: e.About, InReplyTo: e.InReplyTo, Artifacts: e.Artifacts}, nil
 }
 
 // ExternalWakeStore is the store as WakeExternal reads and writes it.

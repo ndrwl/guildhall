@@ -403,6 +403,22 @@ A config without the table backs nothing up, makes no `backup.git` and has the s
 There is no managed form yet; each copy writes its own.
 Config decoding refuses unknown keys, so add `[backup]` only after installing a `guildhall` that knows it.
 
+### Peers
+
+Each optional `[[peer]]` entry names another Director this one exchanges [Director-to-Director messages](messaging.md#director-to-director-messages) with ([peers](messaging.md#peers)).
+Peers belong to a Director config; a Steward config with one is refused.
+They are machine scope and written by hand in the copy's own `config.toml` in both modes, since managed settings cannot carry a table.
+
+| Key | Meaning |
+|---|---|
+| `name` | The peer Director's name, its own config's `name`; required. A Director name that is not this Director's own, not repeated and not a [sender](messaging.md#senders) word such as `steward`, `guildmaster` or `director`. |
+| `machine` | The machine the peer runs on, 1 to 63 letters, digits, `.`, `_` and `-`; required. With `ssh_alias`, its Tailscale MagicDNS name. |
+| `ssh_alias` | The Host in this account's SSH config that reaches the peer's account, a plain alias as in the Steward's roster; omitted for a peer on this machine and account, which receives in process. |
+| `copy_dir` | The peer's copy directory on its machine, an absolute POSIX or `C:/...` path of letters, digits, `.`, `_`, `-` and `/`; required. |
+
+Like `[backup]`, peers are **outside the task-bound config digest**: adding, editing or removing one changes no config digest.
+`guildhall messages peer setup <peer>` prints the SSH key, alias and `authorized_keys` commands a peer with an `ssh_alias` needs ([setting up a peer](messaging.md#setting-up-a-peer)).
+
 ## Lanterns presentation preference
 
 The automatically installed [Lanterns plugin](lanterns.md) keeps its per-Director `/calm` preference in `<copy>/director/lanterns-calm`, not in `config.toml`.

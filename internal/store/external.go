@@ -13,6 +13,7 @@ import (
 	bolt "go.etcd.io/bbolt"
 
 	"github.com/ndrwl/guildhall/internal/digest"
+	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
 // External messages are messages from outside this copy's own processes, such as a Steward message
@@ -50,12 +51,44 @@ const (
 // to the copy (docs/messaging.md#steward-messages). It is recorded only by that command, never by `messages send`.
 const SenderSteward = "steward"
 
-// ExternalSenders are the senders an external message may have; anything else is refused. Director-to-Director
-// messages between machines add peers here in their own change.
-var ExternalSenders = []string{SenderSteward}
+// ValidateExternalSender refuses a sender that is neither SenderSteward nor a peer name. A peer is another Director,
+// named as the receiving copy's [[peer]] config lists it (docs/messaging.md#director-to-director-messages): a Director
+// name, a lowercase id, that is never one of the reserved sender words, so it cannot pass for the Steward, the
+// Guildmaster or a local sender. The receiving command checks a peer against its config; the store checks the form.
+func ValidateExternalSender(sender string) error {
+	if sender == SenderSteward {
+		return nil
+	}
+	if !workflow.ValidID(sender) || slices.Contains(reservedSenderNames, sender) {
+		return invalid("external sender %q must be %s or a peer Director's name, a lowercase id that is not one of %s",
+			sender, SenderSteward, strings.Join(reservedSenderNames, ", "))
+	}
+	return nil
+}
+
+// reservedSenderNames are the words no peer may be named: the message senders and the wake sender types.
+var reservedSenderNames = []string{SenderGuildhall, SenderArtisan, SenderDirector, SenderOtherDirector, SenderGuildmaster,
+	SenderSteward, SenderUnknown, "local", "page"}
+
+// ReservedSenderNames returns the names no peer may have.
+func ReservedSenderNames() []string { return slices.Clone(reservedSenderNames) }
 
 // MessageStewardReport is the type of a Steward message: a report of an issue the Steward found, with a kind.
 const MessageStewardReport = "steward-report"
+
+// The types of a Director message, one a peer sends (docs/messaging.md#message-types). Only an answer has in_reply_to.
+const (
+	// MessageHandoffOffer offers the receiver work, with a handoff bundle named in its artifacts.
+	MessageHandoffOffer = "handoff-offer"
+	// MessageDependencyNotice tells the receiver the sender's work depends on, or changes, something it uses.
+	MessageDependencyNotice = "dependency-notice"
+	// MessageAnswer replies to one question the receiver sent, named by in_reply_to. A peer's question is
+	// MessageQuestion, the local question type.
+	MessageAnswer = "answer"
+)
+
+// DirectorMessageTypes are the types a peer's message may have; further types are added by a decision.
+var DirectorMessageTypes = []string{MessageHandoffOffer, MessageDependencyNotice, MessageQuestion, MessageAnswer}
 
 // The kinds of a steward-report (docs/messaging.md#steward-messages).
 const (
@@ -110,10 +143,13 @@ type ExternalMessage struct {
 	To   string `json:"to"`
 	Type string `json:"type"`
 	// Kind is what a steward-report reports, one of ReportKinds; other types have none.
-	Kind      string        `json:"kind,omitempty"`
-	Subject   string        `json:"subject"`
-	Text      string        `json:"text"`
-	About     *About        `json:"about,omitempty"`
+	Kind    string `json:"kind,omitempty"`
+	Subject string `json:"subject"`
+	Text    string `json:"text"`
+	About   *About `json:"about,omitempty"`
+	// InReplyTo is an answer's question: the id of the question the receiver sent the answer's sender. Only an
+	// answer has one, and it must.
+	InReplyTo string        `json:"in_reply_to,omitempty"`
 	Artifacts []ArtifactRef `json:"artifacts,omitempty"`
 	// Sequence is set by the store to the receive receipt's sequence, and ReceivedAt to its time.
 	Sequence   uint64    `json:"sequence"`
@@ -131,8 +167,8 @@ func externalAckMutationID(sender, id string) string { return "dmessage-ack:" + 
 
 // ValidateExternalMessage checks a new external message's fields without reading the store.
 func ValidateExternalMessage(m ExternalMessage) error {
-	if !slices.Contains(ExternalSenders, m.Sender) {
-		return invalid("external sender %q must be one of %s", m.Sender, strings.Join(ExternalSenders, ", "))
+	if err := ValidateExternalSender(m.Sender); err != nil {
+		return err
 	}
 	if err := ValidateMessageID(m.ID); err != nil {
 		return err
@@ -142,19 +178,30 @@ func ValidateExternalMessage(m ExternalMessage) error {
 			return err
 		}
 	}
-	if m.Sender == SenderSteward && m.From != SenderSteward {
-		return invalid("a steward message is from %q, not %q", SenderSteward, m.From)
+	if m.From != m.Sender {
+		return invalid("a message from %s is from %q, not %q", m.Sender, m.Sender, m.From)
 	}
 	if err := validateIDs(m.Type); err != nil {
 		return err
 	}
 	switch {
+	case m.Sender == SenderSteward && m.Type != MessageStewardReport:
+		return invalid("a steward message is a %s, not %q", MessageStewardReport, m.Type)
+	case m.Sender != SenderSteward && !slices.Contains(DirectorMessageTypes, m.Type):
+		return invalid("a Director message's type must be one of %s, not %q", strings.Join(DirectorMessageTypes, ", "), m.Type)
 	case m.Type == MessageStewardReport && !slices.Contains(ReportKinds, m.Kind):
 		return invalid("a %s kind must be one of %s, not %q", MessageStewardReport, strings.Join(ReportKinds, ", "), m.Kind)
 	case m.Type != MessageStewardReport && m.Kind != "":
 		return invalid("only a %s has a kind", MessageStewardReport)
-	case m.Sender == SenderSteward && m.Type != MessageStewardReport:
-		return invalid("a steward message is a %s, not %q", MessageStewardReport, m.Type)
+	case m.Type == MessageAnswer && m.InReplyTo == "":
+		return invalid("an %s needs in_reply_to, the id of the question it answers", MessageAnswer)
+	case m.Type != MessageAnswer && m.InReplyTo != "":
+		return invalid("only an %s has in_reply_to", MessageAnswer)
+	}
+	if m.InReplyTo != "" {
+		if err := ValidateMessageID(m.InReplyTo); err != nil {
+			return err
+		}
 	}
 	if err := validateText("subject", m.Subject, MaxSubjectBytes); err != nil {
 		return err
@@ -290,8 +337,10 @@ func (s *Store) External(sender, id string) (ExternalMessage, error) {
 // ExternalInbox returns at most limit unacknowledged external messages, from sender or from every sender when it is
 // empty, with a sequence greater than after, in receive order, and whether more remain.
 func (s *Store) ExternalInbox(sender string, after uint64, limit int) ([]ExternalMessage, bool, error) {
-	if sender != "" && !slices.Contains(ExternalSenders, sender) {
-		return nil, false, invalid("external sender %q must be one of %s", sender, strings.Join(ExternalSenders, ", "))
+	if sender != "" {
+		if err := ValidateExternalSender(sender); err != nil {
+			return nil, false, err
+		}
 	}
 	if limit < 1 || limit > MaxInboxLimit {
 		return nil, false, invalid("inbox limit %d must be between 1 and %d", limit, MaxInboxLimit)
@@ -343,7 +392,7 @@ func externalUnread(tx *bolt.Tx, counts map[string]int) error {
 			t = "other"
 		}
 		sender := m.Sender
-		if !slices.Contains(ExternalSenders, sender) {
+		if ValidateExternalSender(sender) != nil {
 			sender = SenderUnknown
 		}
 		counts[UnreadFrom(t, sender)]++
@@ -360,8 +409,8 @@ func getExternal(tx *bolt.Tx, sender, id string) (ExternalMessage, error) {
 }
 
 func validateExternalRef(sender, id string) error {
-	if !slices.Contains(ExternalSenders, sender) {
-		return invalid("external sender %q must be one of %s", sender, strings.Join(ExternalSenders, ", "))
+	if err := ValidateExternalSender(sender); err != nil {
+		return err
 	}
 	return ValidateMessageID(id)
 }
@@ -394,8 +443,8 @@ func InboxAlertID(sender string, n int) string { return fmt.Sprintf("inbox-%s-%d
 
 // InboxStateOf returns sender's inbox state: open, with no closes, when it was never closed.
 func (s *Store) InboxStateOf(sender string) (InboxState, error) {
-	if !slices.Contains(ExternalSenders, sender) {
-		return InboxState{}, invalid("external sender %q must be one of %s", sender, strings.Join(ExternalSenders, ", "))
+	if err := ValidateExternalSender(sender); err != nil {
+		return InboxState{}, err
 	}
 	var st InboxState
 	err := s.view(func(tx *bolt.Tx) error {
@@ -420,8 +469,8 @@ func inboxState(tx *bolt.Tx, sender string) (InboxState, error) {
 // InboxAlertID(sender, n) the caller opened for it, with the mutation "inbox-close:<sender>:<n>". n must be one more
 // than the closes recorded and the inbox open; replaying the same close returns its original receipt.
 func (s *Store) CloseInbox(sender, reason string, n int) (Receipt, error) {
-	if !slices.Contains(ExternalSenders, sender) {
-		return Receipt{}, invalid("external sender %q must be one of %s", sender, strings.Join(ExternalSenders, ", "))
+	if err := ValidateExternalSender(sender); err != nil {
+		return Receipt{}, err
 	}
 	if err := validateText("close reason", reason, MaxSubjectBytes); err != nil {
 		return Receipt{}, err
@@ -455,8 +504,8 @@ func (s *Store) CloseInbox(sender, reason string, n int) (Receipt, error) {
 // ReopenInbox opens sender's inbox after its n-th close, with the mutation "inbox-open:<sender>:<n>". The caller
 // checks first that the Guildmaster answered that close's alert reopen. Replaying it returns its original receipt.
 func (s *Store) ReopenInbox(sender string, n int) (Receipt, error) {
-	if !slices.Contains(ExternalSenders, sender) {
-		return Receipt{}, invalid("external sender %q must be one of %s", sender, strings.Join(ExternalSenders, ", "))
+	if err := ValidateExternalSender(sender); err != nil {
+		return Receipt{}, err
 	}
 	req := struct {
 		Sender string `json:"sender"`
@@ -627,6 +676,25 @@ func (s *Store) Outbox(all bool) ([]OutboxEntry, error) {
 		return nil, fmt.Errorf("store: outbox: %w", err)
 	}
 	return out, nil
+}
+
+// OutboxEntryOf returns the outbox entry with the message id id, whatever its state.
+func (s *Store) OutboxEntryOf(id string) (OutboxEntry, error) {
+	if err := ValidateMessageID(id); err != nil {
+		return OutboxEntry{}, err
+	}
+	var e OutboxEntry
+	err := s.view(func(tx *bolt.Tx) error {
+		b := directorBucket(tx, bucketOutbox)
+		if b == nil || b.Get([]byte(id)) == nil {
+			return fmt.Errorf("%w: outbox entry %q", ErrNotFound, id)
+		}
+		return getJSON(b, []byte(id), &e)
+	})
+	if err != nil {
+		return OutboxEntry{}, fmt.Errorf("store: %w", err)
+	}
+	return e, nil
 }
 
 // CopyReach is when a Steward first found an enrolled copy unreachable, kept until it reaches the copy again.
