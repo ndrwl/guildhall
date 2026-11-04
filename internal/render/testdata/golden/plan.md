@@ -53,9 +53,86 @@ Format: a UTF-8 Markdown document. Minimal example:
 The requested work is recorded here.
 ```
 
+Strict sections: Guildhall parses these sections of `spec.md` itself, and `guildhall result submit` and intake refuse a result that breaks one with the error shown, so copy the valid shape exactly.
+
+**`## Summary`.** Write its parts as list items, Goal, Size, Slices, Changed since the grill and Open questions, in at most 4 KiB. Never write them as `##` headings: the next `##` heading ends the block, so a block that starts with one is empty and refused.
+
+Valid:
+
+```text
+## Summary
+
+- **Goal:** An Artisan fixes a rejected result in the same attempt.
+- **Size:** 2 slices, about 1,100 lines in 25 files.
+- **Slices:** (1) Result check command; (2) Prompts submit.
+- **Changed since the grill:** Nothing; the plan follows the grill's agreed change.
+- **Open questions:** None.
+```
+
+Invalid:
+
+```text
+## Summary
+
+## Goal
+
+An Artisan fixes a rejected result in the same attempt.
+```
+
+It gets: `spec has no summary: the spec has no ## Summary block, or it is empty or over 4096 bytes`
+
+**`## Slices`.** Write a numbered list `1.`, `2.`, … with no gaps, each entry starting with a bold title, then what that pull request delivers and its expected size, and no two titles alike. No text may come before entry 1, and an entry without a `**<title>**` is refused.
+
+Valid:
+
+```text
+## Slices
+
+1. **Result check command**: adds the check and submit commands; about 700 lines in 12 files.
+2. **Prompts submit**: the prompts tell the Artisan to submit; about 400 lines in 13 files.
+```
+
+Invalid:
+
+```text
+## Slices
+
+1. Result check command: adds the check and submit commands; about 700 lines in 12 files.
+2. **Prompts submit**: the prompts tell the Artisan to submit; about 400 lines in 13 files.
+```
+
+It gets: `spec slices refused: slice 1 (line 3) has no bold title: start it with **<title>**`
+
+**`## Open questions`.** Write exactly "None", or questions each starting on a line `**Qn. <title>**`, numbered from Q1 with no gaps, each with an `Options: (a) …; (b) ….` line and a `Recommended: (<letter>). <why>` line whose letter is one of its options. Nothing else may come before the first `**Q1.` line: no sentence, no `### Q1.` heading, no list marker such as `- **Q1.`, and no explanation after "None".
+
+Valid:
+
+```text
+## Open questions
+
+**Q1. Where does the Artisan write its draft?**
+A rejected draft must never be published.
+Options: (a) a draft file that only submit copies; (b) the result file itself.
+Recommended: (a). Only an accepted draft is then published.
+```
+
+Invalid:
+
+```text
+## Open questions
+
+One question is still open.
+
+**Q1. Where does the Artisan write its draft?**
+Options: (a) a draft file that only submit copies; (b) the result file itself.
+Recommended: (a). Only an accepted draft is then published.
+```
+
+It gets: `open questions malformed: ## Open questions line 3 is neither "None" nor a **Qn. title** question`
+
 ## Result template
 
-After writing the required files (or committing the code head), write this JSON shape to the result file your runtime names, once, as your last action. Keep schema, version, task_id and attempt_id unchanged. Use status `succeeded` only when the work and required outputs are complete; otherwise use `failed` and explain why in summary (failed results may use an empty outputs list).
+After writing the required files (or committing the code head), write this JSON shape to the draft file your runtime names and submit it with `guildhall result submit <draft file>`, which runs the checks Guildhall runs on your result when you finish. If it prints `rejected: <reason>`, fix what the reason names, in your files or the draft, and submit again; you are done when it prints `ok`, or when it says no resubmissions are left. If your runtime names a result file and no draft file, write this JSON shape to that result file instead, once, as your last action. Keep schema, version, task_id and attempt_id unchanged. Use status `succeeded` only when the work and required outputs are complete; otherwise use `failed` and explain why in summary (failed results may use an empty outputs list).
 
 ```json
 {

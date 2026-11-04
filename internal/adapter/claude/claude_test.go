@@ -238,8 +238,9 @@ func TestClaudeArgs(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("ClaudeArgs = %q, want %q", got, want)
 	}
-	if claude.PromptCopy(spec.ResultFile) != filepath.Join(model, "prompt.md") || claude.DraftFile(spec.ResultFile) != filepath.Join(model, artisan.ResultFile) {
-		t.Errorf("prompt copy %s and draft %s; want both in %s", claude.PromptCopy(spec.ResultFile), claude.DraftFile(spec.ResultFile), model)
+	if claude.PromptCopy(spec.ResultFile) != filepath.Join(model, "prompt.md") || claude.DraftFile(spec.ResultFile) != filepath.Join(model, artisan.ResultFile) ||
+		claude.SubmitFile(spec.ResultFile) != filepath.Join(model, artisan.DraftFile) {
+		t.Errorf("prompt copy %s, draft %s and submit file %s; want all in %s", claude.PromptCopy(spec.ResultFile), claude.DraftFile(spec.ResultFile), claude.SubmitFile(spec.ResultFile), model)
 	}
 	settings := claude.ArtisanSettingsPath(spec.ResultFile)
 	if settings != filepath.Join(filepath.Dir(spec.ResultFile), claude.ArtisanSettingsFile) {
@@ -248,7 +249,10 @@ func TestClaudeArgs(t *testing.T) {
 	in := claude.Instruction(a)
 	for _, s := range []string{
 		claudetest.PromptLine + claude.PromptCopy(spec.ResultFile) + "\n",
-		claudetest.DraftLine + claude.DraftFile(spec.ResultFile) + "\n",
+		claudetest.DraftLine + claude.SubmitFile(spec.ResultFile) + "\n",
+		"\n" + claudetest.SubmitLine + claude.SubmitFile(spec.ResultFile) + "\n",
+		"fix what the reason names", "and submit again; stop once it prints ok",
+		"Only if the command cannot run", "write the result to " + claude.DraftFile(spec.ResultFile) + " instead",
 		`"schema":"guildhall.artisan-result"`, `"version":1`, `"task_id":"task-1"`, `"attempt_id":"attempt-1"`,
 		`"succeeded"`, `"failed"`, "outputs", "Use the prompt's Result template, including its required outputs entries.",
 	} {

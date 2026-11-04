@@ -2,6 +2,7 @@ package spec
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 )
 
@@ -74,4 +75,13 @@ func Summary(data []byte) (string, bool) {
 		return "", false
 	}
 	return s, true
+}
+
+// CheckSummary refuses data with no usable `## Summary` block (Summary) with ErrNoSummary, saying what a usable one
+// is; it returns nil when the block reads.
+func CheckSummary(data []byte) error {
+	if _, ok := Summary(data); !ok {
+		return fmt.Errorf("%w: the spec has no %s block, or it is empty or over %d bytes", ErrNoSummary, SummaryHeading, SummaryMax)
+	}
+	return nil
 }

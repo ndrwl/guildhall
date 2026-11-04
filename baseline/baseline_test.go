@@ -17,6 +17,7 @@ import (
 	"testing/fstest"
 
 	"github.com/ndrwl/guildhall/baseline"
+	"github.com/ndrwl/guildhall/internal/spec"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
@@ -269,5 +270,22 @@ func TestInstallWritesTheReleaseByteForByte(t *testing.T) {
 	}
 	if err := baseline.Install(dir); !errors.Is(err, baseline.ErrNotEmpty) {
 		t.Errorf("second install: %v, want ErrNotEmpty", err)
+	}
+}
+
+// TestGuidesTeachTheStrictShapes: the plan and design guides quote the open-questions shapes Guildhall refuses
+// verbatim from internal/spec, whose parser tests run them, and tell the Artisan to submit with guildhall result
+// submit, so a malformed section is fixed in the same attempt.
+func TestGuidesTeachTheStrictShapes(t *testing.T) {
+	for _, p := range []string{"stages/plan.md", "stages/design.md"} {
+		data, err := fs.ReadFile(baseline.Release(), p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range []string{spec.QuestionsRefused, "Strict sections", "`guildhall result submit`", "submit again until it prints `ok`"} {
+			if !strings.Contains(string(data), s) {
+				t.Errorf("%s does not say %q", p, s)
+			}
+		}
 	}
 }

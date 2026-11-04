@@ -62,7 +62,7 @@ Commit on the task branch `guildhall/t7` in your working directory; Guildhall re
 
 ## Result template
 
-After writing the required files (or committing the code head), write this JSON shape to the result file your runtime names, once, as your last action. Keep schema, version, task_id and attempt_id unchanged. Use status `succeeded` only when the work and required outputs are complete; otherwise use `failed` and explain why in summary (failed results may use an empty outputs list).
+After writing the required files (or committing the code head), write this JSON shape to the draft file your runtime names and submit it with `guildhall result submit <draft file>`, which runs the checks Guildhall runs on your result when you finish. If it prints `rejected: <reason>`, fix what the reason names, in your files or the draft, and submit again; you are done when it prints `ok`, or when it says no resubmissions are left. If your runtime names a result file and no draft file, write this JSON shape to that result file instead, once, as your last action. Keep schema, version, task_id and attempt_id unchanged. Use status `succeeded` only when the work and required outputs are complete; otherwise use `failed` and explain why in summary (failed results may use an empty outputs list).
 
 ```json
 {

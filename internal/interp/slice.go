@@ -248,9 +248,8 @@ func (r *run) approvalShows(ref string) bool {
 // `## Open questions` section is neither "None" nor well-formed questions (spec.SpecQuestions). Each is a rejection
 // of the result, so the plan attempt fails, no spec is recorded and the planner is sent back.
 func checkSummary(data []byte) error {
-	if _, ok := spec.Summary(data); !ok {
-		return rejectOutput(fmt.Errorf("%w: the spec has no %s block, or it is empty or over %d bytes; the approval ask shows it, so write one",
-			spec.ErrNoSummary, spec.SummaryHeading, spec.SummaryMax))
+	if err := spec.CheckSummary(data); err != nil {
+		return rejectOutput(fmt.Errorf("%w; the approval ask shows it, so write one", err))
 	}
 	if _, err := spec.SpecQuestions(data); err != nil {
 		return rejectOutput(fmt.Errorf("%w; the approval ask copies each open question in full, so write \"None\" or **Qn. title** questions, each with Options: and Recommended: lines", err))

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ndrwl/guildhall/internal/spec"
 	"github.com/ndrwl/guildhall/skills"
 )
 
@@ -47,5 +48,26 @@ func TestSpecTemplateSummary(t *testing.T) {
 	// The plan check refuses a Recommended: line that does not start with an option letter, so the template says so.
 	if !ok || !strings.HasPrefix(questions, "**Q1. <question title>**\n<question body>\nOptions: (a) ") || !strings.Contains(questions, "; (b) ") || !strings.Contains(questions, "\nRecommended: (<letter>). ") {
 		t.Errorf("the template's ## Open questions is not a **Q1.** question with lettered Options: and a Recommended: (<letter>) line: %q", questions)
+	}
+}
+
+// TestSkillsTeachTheStrictShapes: the spec skill and its template quote the open-questions shapes Guildhall refuses,
+// and the spec skill the error a sentence before Q1 gets, verbatim from internal/spec, whose parser tests run them;
+// the spec and review skills both submit the result with guildhall result submit.
+func TestSkillsTeachTheStrictShapes(t *testing.T) {
+	for file, want := range map[string][]string{
+		"guildhall-spec/SKILL.md":    {spec.QuestionsRefused, spec.OpenQuestionsError, "`guildhall result submit <draft file>`", "submit again"},
+		"guildhall-spec/template.md": {spec.QuestionsRefused},
+		"guildhall-review/SKILL.md":  {"guildhall review check review-outcome.json", "guildhall result submit <draft file>", "submit again until it prints `ok`"},
+	} {
+		data, err := fs.ReadFile(skills.Release(), file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range want {
+			if !strings.Contains(string(data), s) {
+				t.Errorf("%s does not say %q", file, s)
+			}
+		}
 	}
 }
