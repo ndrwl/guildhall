@@ -18,6 +18,7 @@ Option-checked answers let the Guildmaster answer in words and the Director read
 The [command reference](../decisions-cli.md#answers) defines input normalization, so the same words record the same answer on Windows and elsewhere.
 Answer mutation ids use `:` because `/` is not a mutation id character; the command reference owns their encoding and length fallback.
 Recording an answer never advances a task; see the [interpreter events](../interpreter.md#events) for how recorded answers are processed.
+The binding covers the Director's recommendation too: each decision's one [recommendation record](../store.md#decision-recommendations) carries the subject digest it was made against, and one made against an earlier subject is stale and cannot be confirmed (H62 of d181).
 
 ## Consequences
 

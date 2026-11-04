@@ -35,8 +35,11 @@ type RepositoryCounts struct {
 	Decisions    int
 	// DecisionExplanations counts the Director's decision explanations (docs/store.md#decision-explanations).
 	DecisionExplanations int
-	Rulings              int
-	TaskContexts         int
+	// DecisionRecommendations counts the Director's recommendations, one per decision
+	// (docs/store.md#decision-recommendations).
+	DecisionRecommendations int
+	Rulings                 int
+	TaskContexts            int
 	// Conversation counts task conversation entries (docs/store.md#task-conversation).
 	Conversation int
 	// Drafts counts saved draft entries (docs/store.md#drafts).
@@ -142,7 +145,8 @@ func (s *Store) Doctor() (Report, error) {
 			for name, n := range map[string]*int{
 				string(bucketTasks): &counts.Tasks, string(bucketAttempts): &counts.Attempts, string(bucketDocuments): &counts.Documents,
 				string(bucketPanes): &counts.PaneBindings, string(bucketDecisions): &counts.Decisions, string(bucketDecisionExplanations): &counts.DecisionExplanations, string(bucketRulings): &counts.Rulings,
-				string(bucketTaskContexts): &counts.TaskContexts, string(bucketConversation): &counts.Conversation, string(bucketDrafts): &counts.Drafts, string(bucketTaskLinks): &counts.TaskLinks,
+				string(bucketDecisionRecommendations): &counts.DecisionRecommendations,
+				string(bucketTaskContexts):            &counts.TaskContexts, string(bucketConversation): &counts.Conversation, string(bucketDrafts): &counts.Drafts, string(bucketTaskLinks): &counts.TaskLinks,
 				string(bucketTaskOverrides): &counts.TaskOverrides, string(bucketGrillModes): &counts.GrillModes, string(bucketTaskDependencies): &counts.TaskDependencies,
 				string(bucketOwners): &counts.Owners, string(bucketMessages): &counts.Messages, string(bucketInbox): &counts.UnreadMessages,
 				string(bucketPruned): &counts.Pruned, string(bucketTaskReleases): &counts.TaskReleases,
@@ -185,6 +189,8 @@ func decodeRecord(bucket string, k, v []byte) (any, error) {
 		rec = new(PaneBinding)
 	case string(bucketDecisionExplanations):
 		rec = new(DecisionExplanation)
+	case string(bucketDecisionRecommendations):
+		rec = new(Recommendation)
 	case string(bucketRulings):
 		rec = new(Ruling)
 	case string(bucketTaskContexts):

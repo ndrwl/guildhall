@@ -34,6 +34,7 @@ Ids use the workflow id form: lowercase letters, digits and hyphens, starting wi
 | Attempt park | repository, task, step, attempt number | The Director's hold, with a non-blank reason, of an open task's step's latest failed or stopped attempt, never the judge step's; `parked`, and the `cycle`, the number of unparks so far. Unpark keeps the record, not parked, with the cycle one higher. Neither changes the attempt. A park held until tasks merge also has `until_merged`, the open tasks it names, none its own. See [`step park`](running.md#step-park-and-step-unpark). |
 | Decision deferral | repository, task, decision id | The Director's hold of an open decision until the open tasks it names in `until_merged` merge, with a non-blank reason, `deferred` and the `cycle`, the number of undefers so far; undefer keeps the record, not deferred, with the cycle one higher. Never changes the decision. See [deferring a decision](decisions-cli.md#deferring-a-decision). |
 | Decision explanation | repository, task, decision id | The Director's Markdown explanation of an open decision for its task page: `text`, the `subject_digest` it was written against, an optional `recommend`ed option, `at` and its `revision`; explaining again replaces it with the revision one higher. Never changes the decision. See [decision explanations](#decision-explanations). |
+| Decision recommendation | repository, task, decision id | The Director's one recommended answer to an open decision: `option`, optional `words`, the `subject_digest` it was made against, `at`, its `revision` and, from `task say`, the conversation entry `number`; each writer replaces it with the revision one higher. Never changes the decision. See [decision recommendations](#decision-recommendations). |
 | Task grant | repository, task, grant id | Extra `allowed_tools` rules for one task's attempts of one step of its workflow, or `all`, with a non-blank `reason` and `until`, `attempt` or `done`; ids `g1`, `g2`, … per task. Recorded with its decision `grant-<id>`, kind `grant`, in the same transaction; `revoked` (time and reason) set once; `bound` lists the attempts whose binding took it, in order. Its state, `pending`, `rejected`, `revoked`, `active` or `expired`, is derived from the decision, the task and the bound attempt, never written. At most one per task and step is pending or active. An attempt's binding document records the grant it took as `grant`, `{id, rules}`. See [task grants](tasks.md#task-grants) and [decision](decisions/task-grants.md). |
 | Task prune | repository, task | What [`guildhall prune`](running.md#pruning) last did with a `done` or `cancelled` task's files: `pruned_at`, `bytes_freed`, `worktree` (`removed`, `kept` or `not-a-worktree`, with the reason in `kept`), `complete` and `runs`, the prunes recorded so far. Written only after removal finishes, in the optional per-repository `pruned` bucket, and refused for a task that is neither `done` nor `cancelled`; a task already pruned completely is recorded again by a prune of its CI log cache; see [pruned tasks](#pruned-tasks). Documents are never pruned, so no document reference changes. |
 | Attempt ownership | repository, task, step, attempt number | Which launcher owns a running stage attempt: its process identity (PID and creation token), its [containment recovery description](#containment-record), its control endpoint and a state of `starting`, `running` or `released`; see [attempt ownership](#attempt-ownership). |
@@ -284,6 +285,7 @@ The bucket is created by the first entry, so it needs no schema bump, and the st
 The entry is not part of their request digest, since it is derived from the record, and a task that is not open, such as a done task answering a decision, records the decision or message with no entry.
 `Conversation` lists a task's entries by number, and `TaskHistory` carries them.
 `store doctor` counts and decodes every entry.
+A `recommendation` entry is appended by `SayRecommendation` with the decision's [recommendation record](#decision-recommendations), which names its number; the entry stays the talk row, and the record is what the page and Confirm read.
 
 ### Decision explanations
 
@@ -293,6 +295,24 @@ The decision record and its JSON do not change, so the store schema stays at ver
 
 `ExplainDecision` refuses, in its write transaction, an answered or void decision and a `recommend` the decision does not offer (`ErrInvalid`), an unknown decision (`ErrNotFound`) and a revision other than the stored one (`ErrExists`), so two Directors cannot both replace the same revision; the receipt's record is `decision-explain/<decision>`.
 `DecisionExplanation` reads one record, `TaskHistory` carries a task's and `DirectorView` every repository's, the [status feed](director.md#status) puts each open decision's on its `decisions` entry, and `store doctor` counts and decodes them.
+An explanation's `recommend` is also written, in the same transaction, as the decision's [recommendation](#decision-recommendations); an explanation without one leaves that record as it is.
+
+### Decision recommendations
+
+Each repository's `decision-recommendations` bucket holds the Director's one recommendation on each decision, keyed `<task>/<decision>`: the answer the task page marks Recommended and its Confirm names ([Confirm and Say](web.md#confirm-and-say)).
+A record holds `option`, one of the decision's options, `words`, at most 64 KiB, that pre-fill the page's Your words box, or absent, `subject_digest`, the digest the Director read (`SubjectDigestOf`, as an [explanation's](#decision-explanations)), `at`, its receipt's commit time, `revision`, the number of recommendations so far, and `number`, the [conversation](#task-conversation) entry number of the `task say` recommendation that wrote it, absent for the other writers.
+Three writers write it, each in its own transaction, so the record is written with what it comes from or not at all:
+
+- `OpenDecisionSaying`, for `decide open --recommend`, with the question it opens and against `SubjectDigestOf` of that question;
+- `ExplainDecision`, for `decide explain --recommend`, with the explanation and against its `subject_digest`;
+- `SayRecommendation`, for `task say --recommend --subject-digest`, with the `recommendation` conversation entry it appends, whose number it records; receipt record `conversation/<n>`.
+
+Each write replaces the record and makes its revision one higher: writes are serialised by the store's transactions, and the last committed one is the latest, with no revision refusal.
+In the writer's transaction the store refuses with `ErrInvalid` a decision that is answered or void, one that offers no options, an option it does not offer, a blank, spaced or oversized digest and words over 64 KiB, and every refusal writes nothing; `SayRecommendation` also refuses a tag that names no decision and a closed task.
+A digest other than the decision's is recorded, not refused: the recommendation is then stale (`Recommendation.Current(d)` is false), and the page shows it as stale and Confirm refuses it.
+A question opened before this record carries its recommendation in the decision's `recommended` field, which still decodes and which nothing writes now.
+The decision record and its JSON do not change, so the store schema stays at version 1, and the bucket is created by the first recommendation.
+`DecisionRecommendation` reads one record, `ErrNotFound` when there is none, `TaskHistory` carries a task's, and `store doctor` counts and decodes them.
 
 ### Drafts
 
@@ -398,7 +418,7 @@ Usage errors exit 2.
 
 ## `guildhall store doctor`
 
-`guildhall store doctor <path>` opens a store read-only, runs bbolt's page-level integrity check, decodes every record and prints the schema version, the receipt count, the workflow approval count, the count of [Director sessions](#director-sessions) and of [wakes](messaging.md#waking-the-director), a `queue:` line counting the copy's [lessons, incidents and incident observations](#lessons-and-incidents), and each repository's record counts, including decisions and how many have a [Director's explanation](#decision-explanations), rulings, task context entries, task link records, task override records, task dependency records, ownership records and how many of them are in `starting` with no containment (owners that cannot be proven exited once their launcher is gone; [limits](artisan.md#limits)), messages and how many are unread, and [pruned tasks](#pruned-tasks).
+`guildhall store doctor <path>` opens a store read-only, runs bbolt's page-level integrity check, decodes every record and prints the schema version, the receipt count, the workflow approval count, the count of [Director sessions](#director-sessions) and of [wakes](messaging.md#waking-the-director), a `queue:` line counting the copy's [lessons, incidents and incident observations](#lessons-and-incidents), and each repository's record counts, including decisions and how many have a [Director's explanation](#decision-explanations) and a [recommendation](#decision-recommendations), rulings, task context entries, task link records, task override records, task dependency records, ownership records and how many of them are in `starting` with no containment (owners that cannot be proven exited once their launcher is gone; [limits](artisan.md#limits)), messages and how many are unread, and [pruned tasks](#pruned-tasks).
 A record that does not decode, such as a damaged session, wake, enrolment or managed-revision event, is printed as a `problem:` line.
 It exits 0 when the store opened and showed no problems, and 1 when it is missing, locked by a writer, not a store, newer than this Guildhall or damaged.
 

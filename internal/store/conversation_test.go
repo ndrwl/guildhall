@@ -102,17 +102,17 @@ func TestMirroredConversation(t *testing.T) {
 	q := Decision{Repository: "app", TaskID: "t-1", ID: "q1", Kind: DecisionQuestion, Question: "Back off or stop?", Options: []string{"back-off", "stop"}}
 	asked := say(ConversationDirector, "q1", ConversationSay, q.Question)
 	bad := say(ConversationDirector, "q1", "shout", "x")
-	if _, err := s.OpenDecisionSaying("open-q1", q, &bad); !errors.Is(err, ErrInvalid) {
+	if _, err := s.OpenDecisionSaying("open-q1", q, &bad, nil); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("an invalid saying: err = %v, want ErrInvalid", err)
 	}
 	if all, err := s.Decisions("app", "t-1"); err != nil || len(all) != 0 {
 		t.Fatalf("an invalid saying wrote the decision: %+v", all)
 	}
-	open, err := s.OpenDecisionSaying("open-q1", q, &asked)
+	open, err := s.OpenDecisionSaying("open-q1", q, &asked, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if replay, err := s.OpenDecisionSaying("open-q1", q, &asked); err != nil || replay != open {
+	if replay, err := s.OpenDecisionSaying("open-q1", q, &asked, nil); err != nil || replay != open {
 		t.Fatalf("replay = %+v, %v", replay, err)
 	}
 	answered := say(ConversationGuildmasterChat, "q1", ConversationSay, "back-off")

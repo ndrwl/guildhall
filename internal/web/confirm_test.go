@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -34,6 +35,7 @@ func recommended(words string) Task {
 	t := talkTask()
 	t.Conversation = append(t.Conversation, Message{Number: 11, Author: AuthorDirector, Tag: "q1", Kind: KindRecommendation,
 		Text: "It costs one request a minute; I recommend **stop**.", Option: "stop", Words: words, At: *at("2026-11-03 21:42")})
+	t.Asks[0].Recommendation = &Recommendation{Option: "stop", Words: words, Number: 11, At: *at("2026-11-03 21:42")}
 	return t
 }
 
@@ -75,16 +77,32 @@ func TestConfirmTile(t *testing.T) {
 		t.Error("a read-only page offers Confirm")
 	}
 
-	// A recommendation of an answer the ask does not offer, or by anyone but the Director, offers no Confirm; the
-	// latest recommendation is the one offered.
+	// A recommendation of an answer the ask does not offer, a stale one and one not from task say offer no Confirm;
+	// the ask's one recommendation, the latest, is the one offered.
 	other := recommended("")
-	other.Conversation[len(other.Conversation)-1].Option = "pause"
+	other.Asks[0].Recommendation.Option = "pause"
 	if v := s.taskView(other, gmState); v.Asks[0].Confirm != nil {
 		t.Errorf("a recommendation of no option offers %+v", v.Asks[0].Confirm)
+	}
+	stale := recommended("")
+	stale.Asks[0].Recommendation.Stale = true
+	if v := s.taskView(stale, gmState); v.Asks[0].Confirm != nil || slices.ContainsFunc(v.Asks[0].Tiles, func(t tileView) bool { return t.Rec }) ||
+		v.Asks[0].StaleRecommendation != "The Director recommended Stop against an earlier version; it is stale." {
+		t.Errorf("a stale recommendation: Confirm %+v, tiles %+v, line %q", v.Asks[0].Confirm, v.Asks[0].Tiles, v.Asks[0].StaleRecommendation)
+	}
+	if body := get(t, answeringTalkServer(stale), "/guildhall/d145").Body.String(); !strings.Contains(body,
+		`<p class="recst">The Director recommended Stop against an earlier version; it is stale.</p>`) {
+		t.Errorf("the page lacks the stale line:\n%s", body)
+	}
+	explained := recommended("")
+	explained.Asks[0].Recommendation.Number = 0
+	if v := s.taskView(explained, gmState); v.Asks[0].Confirm != nil || !v.Asks[0].Tiles[0].Rec || v.Asks[0].Tiles[0].Option != "stop" {
+		t.Errorf("a recommendation not from task say: Confirm %+v, tiles %+v", v.Asks[0].Confirm, v.Asks[0].Tiles)
 	}
 	later := recommended("")
 	later.Conversation = append(later.Conversation, Message{Number: 12, Author: AuthorDirector, Tag: "q1", Kind: KindRecommendation, Text: "On reflection, back off.",
 		Option: "back-off", At: *at("2026-11-03 21:43")})
+	later.Asks[0].Recommendation = &Recommendation{Option: "back-off", Number: 12}
 	if c := s.taskView(later, gmState).Asks[0].Confirm; c == nil || c.Number != 12 || c.Option != "back-off" {
 		t.Errorf("the later recommendation is not offered: %+v", c)
 	}
@@ -116,7 +134,7 @@ func TestConfirmedRow(t *testing.T) {
 // TestRecommendedQuestion: a question the Director opened with a recommended option marks that tile, first.
 func TestRecommendedQuestion(t *testing.T) {
 	task := talkTask()
-	task.Asks[0].Recommended = "stop"
+	task.Asks[0].Recommendation = &Recommendation{Option: "stop"}
 	v := talkServer().taskView(task, pageState{})
 	tiles := v.Asks[0].Tiles
 	if len(tiles) != 2 || tiles[0].Option != "stop" || !tiles[0].Rec || tiles[1].Rec {

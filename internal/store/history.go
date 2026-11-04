@@ -35,8 +35,11 @@ type TaskHistory struct {
 	// Explanations are the Director's explanations of the task's decisions, by decision id
 	// (docs/store.md#decision-explanations).
 	Explanations []DecisionExplanation
-	Rulings      []Ruling
-	FullReviews  []FullReview
+	// Recommendations are the Director's recommendations, one per decision, by decision id
+	// (docs/store.md#decision-recommendations).
+	Recommendations []Recommendation
+	Rulings         []Ruling
+	FullReviews     []FullReview
 	// Contexts are the task's context entries, by number.
 	Contexts []TaskContext
 	// Conversation is the task's conversation entries, by number.
@@ -67,7 +70,7 @@ type TaskHistory struct {
 // TaskHistory reads one task's history without writing; it returns ErrNotFound for an unknown task.
 // It scans every receipt in the store, so its cost grows with the store's mutation count.
 func (s *Store) TaskHistory(repository, taskID string) (TaskHistory, error) {
-	h := TaskHistory{Attempts: []StageAttempt{}, Documents: []DocumentRef{}, Decisions: []Decision{}, Explanations: []DecisionExplanation{}, Rulings: []Ruling{}, FullReviews: []FullReview{}, Contexts: []TaskContext{}, Conversation: []ConversationEntry{}, Drafts: []DraftEntry{}, Links: []TaskLink{}, Overrides: []TaskOverride{}, GrillModes: []GrillMode{}, Dependencies: []TaskDependency{}, Receipts: []Receipt{}}
+	h := TaskHistory{Attempts: []StageAttempt{}, Documents: []DocumentRef{}, Decisions: []Decision{}, Explanations: []DecisionExplanation{}, Recommendations: []Recommendation{}, Rulings: []Ruling{}, FullReviews: []FullReview{}, Contexts: []TaskContext{}, Conversation: []ConversationEntry{}, Drafts: []DraftEntry{}, Links: []TaskLink{}, Overrides: []TaskOverride{}, GrillModes: []GrillMode{}, Dependencies: []TaskDependency{}, Receipts: []Receipt{}}
 	err := s.view(func(tx *bolt.Tx) error {
 		var err error
 		if h.Task, err = getTask(tx, repository, taskID); err != nil {
@@ -84,6 +87,9 @@ func (s *Store) TaskHistory(repository, taskID string) (TaskHistory, error) {
 			return err
 		}
 		if err := scan(repoBucket(tx, repository, bucketDecisionExplanations), prefix, &h.Explanations); err != nil {
+			return err
+		}
+		if err := scan(repoBucket(tx, repository, bucketDecisionRecommendations), prefix, &h.Recommendations); err != nil {
 			return err
 		}
 		if err := scan(repoBucket(tx, repository, bucketRulings), prefix, &h.Rulings); err != nil {

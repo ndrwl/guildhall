@@ -217,8 +217,9 @@ type Decision struct {
 	// was recorded. AnsweredBy is the Tailscale login that answered on the page, set only with AnsweredVia.
 	AnsweredVia string `json:"answered_via,omitempty"`
 	AnsweredBy  string `json:"answered_by,omitempty"`
-	// Recommended is the option the Director recommends on a question it opened (decide open --recommend), one of
-	// Options; empty for none and for every other kind.
+	// Recommended is the option the Director recommended on a question it opened before recommendations had their
+	// own record (Recommendation), one of Options; empty for none and for every other kind. It stays readable for
+	// old records, and nothing writes it now.
 	Recommended string `json:"recommended,omitempty"`
 }
 
@@ -563,13 +564,15 @@ func (s *Store) UnbindPane(mutationID, repository, taskID string) (Receipt, erro
 // options that are blank, multi-line, padded, duplicated, longer than MaxOptionBytes
 // or more than MaxDecisionOptions, and any answer fields; the decision id is unique within its task.
 func (s *Store) OpenDecision(mutationID string, d Decision) (Receipt, error) {
-	return s.OpenDecisionSaying(mutationID, d, nil)
+	return s.OpenDecisionSaying(mutationID, d, nil, nil)
 }
 
-// OpenDecisionSaying is OpenDecision that also appends say, when it is not nil, to the task's conversation in the
-// same transaction, so the decision and its entry are written together or not at all. say is not part of the
-// request digest: it is derived from the decision, so a retry replays as OpenDecision's would.
-func (s *Store) OpenDecisionSaying(mutationID string, d Decision, say *Saying) (Receipt, error) {
+// OpenDecisionSaying is OpenDecision that also appends say, when it is not nil, to the task's conversation, and
+// writes rec, when it is not nil, as the decision's recommendation record (Recommendation), in the same
+// transaction, so the decision, its entry and its recommendation are written together or not at all. say is not
+// part of the request digest: it is derived from the decision, so a retry replays as OpenDecision's would; rec's
+// option and digest are.
+func (s *Store) OpenDecisionSaying(mutationID string, d Decision, say *Saying, rec *Recommendation) (Receipt, error) {
 	if err := validateIDs(d.Repository, d.TaskID, d.ID); err != nil {
 		return Receipt{}, err
 	}
@@ -582,7 +585,24 @@ func (s *Store) OpenDecisionSaying(mutationID string, d Decision, say *Saying) (
 		}
 	}
 	repository, taskID, id := d.Repository, d.TaskID, d.ID
-	return s.mutate(mutationID, "open-decision", d, func(tx *bolt.Tx, r *Receipt) error {
+	// The request is the decision's JSON, with the recommendation's option and digest beside it when there is one.
+	type recommending struct {
+		Option        string `json:"option"`
+		SubjectDigest string `json:"subject_digest"`
+	}
+	req := struct {
+		Decision
+		Recommendation *recommending `json:"recommendation,omitempty"`
+	}{Decision: d}
+	if rec != nil {
+		r := *rec
+		r.Repository, r.TaskID, r.Decision = repository, taskID, id
+		if err := validateRecommendation(r); err != nil {
+			return Receipt{}, err
+		}
+		rec, req.Recommendation = &r, &recommending{r.Option, r.SubjectDigest}
+	}
+	return s.mutate(mutationID, "open-decision", req, func(tx *bolt.Tx, r *Receipt) error {
 		r.Repository, r.TaskID, r.Record = repository, taskID, "decision/"+id
 		if _, err := openTask(tx, repository, taskID); err != nil {
 			return err
@@ -598,7 +618,13 @@ func (s *Store) OpenDecisionSaying(mutationID string, d Decision, say *Saying) (
 		if err := putJSON(decisions, key, d); err != nil {
 			return err
 		}
-		return s.mirrorConversation(tx, r, repository, taskID, say)
+		if err := s.mirrorConversation(tx, r, repository, taskID, say); err != nil {
+			return err
+		}
+		if rec == nil {
+			return nil
+		}
+		return s.putRecommendation(tx, r, *rec)
 	})
 }
 

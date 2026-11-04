@@ -121,31 +121,37 @@ func webSendDirector(s *store.Store, env messaging.Envelope, say *store.Saying) 
 	return err
 }
 
-// webRecommendation is the Director's recommendation x.Confirm names, refused unless it is a recommendation on
-// x.Decision and still the latest one there: the page showed an older one if the Director has recommended since.
-func webRecommendation(s *store.Store, x web.Answer) (store.ConversationEntry, error) {
+// webRecommendation is the decision's recommendation record x.Confirm names, read with the answer: refused unless
+// x.Confirm is a Director recommendation entry on x.Decision (400), the record's own (409: the Director has
+// recommended since the page loaded) and current (409: it was made against an earlier version).
+func webRecommendation(s *store.Store, x web.Answer) (store.Recommendation, error) {
 	talk, err := s.Conversation(x.Repository, x.TaskID)
 	if err != nil {
-		return store.ConversationEntry{}, err
+		return store.Recommendation{}, err
 	}
-	var named, latest *store.ConversationEntry
-	for i := range talk {
-		e := &talk[i]
-		if e.Tag != x.Decision || e.Kind != store.ConversationRecommendation || e.Author != store.ConversationDirector {
-			continue
-		}
-		latest = e
-		if e.Number == x.Confirm {
-			named = e
-		}
+	if !slices.ContainsFunc(talk, func(e store.ConversationEntry) bool {
+		return e.Number == x.Confirm && e.Tag == x.Decision && e.Kind == store.ConversationRecommendation && e.Author == store.ConversationDirector
+	}) {
+		return store.Recommendation{}, web.Refuse(http.StatusBadRequest, "the Director made no such recommendation on #"+x.Decision)
 	}
+	again := web.Refuse(http.StatusConflict, "changed since you loaded the page: the Director has recommended again on #"+x.Decision+"; reload and read it")
+	rec, err := s.DecisionRecommendation(x.Repository, x.TaskID, x.Decision)
 	switch {
-	case named == nil:
-		return store.ConversationEntry{}, web.Refuse(http.StatusBadRequest, "the Director made no such recommendation on #"+x.Decision)
-	case latest != named:
-		return store.ConversationEntry{}, web.Refuse(http.StatusConflict, "changed since you loaded the page: the Director has recommended again on #"+x.Decision+"; reload and read it")
+	case errors.Is(err, store.ErrNotFound):
+		return store.Recommendation{}, again
+	case err != nil:
+		return store.Recommendation{}, err
+	case rec.Number != x.Confirm:
+		return store.Recommendation{}, again
 	}
-	return *named, nil
+	dec, err := findDecision(s, x.Repository, x.TaskID, x.Decision)
+	if err != nil {
+		return store.Recommendation{}, err
+	}
+	if !rec.Current(dec) {
+		return store.Recommendation{}, web.Refuse(http.StatusConflict, "the Director's recommendation on #"+x.Decision+" is stale; reload and read it")
+	}
+	return rec, nil
 }
 
 // webRecordAnswer records answer for x in s, refusing with the page's reasons: a decision void or bound to another

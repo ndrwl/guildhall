@@ -109,21 +109,44 @@ func openQuestion(s *store.Store, repo, task, question string, options []string,
 	}
 	next := 1
 	for _, d := range all {
-		if d.Kind == store.DecisionQuestion && d.Open() && d.Question == question && slices.Equal(d.Options, options) && d.Recommended == recommend {
-			return d, nil
+		if d.Kind == store.DecisionQuestion && d.Open() && d.Question == question && slices.Equal(d.Options, options) {
+			switch rec, err := questionRecommended(s, d); {
+			case err != nil:
+				return store.Decision{}, err
+			case rec == recommend:
+				return d, nil
+			}
 		}
 		if n, ok := questionNumber(d.ID); ok && n >= next {
 			next = n + 1
 		}
 	}
 	d := store.Decision{Repository: repo, TaskID: task, ID: questionPrefix + strconv.Itoa(next), Kind: store.DecisionQuestion,
-		Options: options, Question: question, Recommended: recommend}
-	// The question is the Director's words on the task page too, tagged with the new decision, written with it.
+		Options: options, Question: question}
+	// The question is the Director's words on the task page too, tagged with the new decision, and its recommendation
+	// the decision's one record, made against the question it opens; both are written with it.
 	say := store.Saying{Author: store.ConversationDirector, Tag: d.ID, Kind: store.ConversationSay, Text: question}
-	if _, err := s.OpenDecisionSaying(mutationID("decision-open", repo, task, d.ID), d, &say); err != nil {
+	var rec *store.Recommendation
+	if recommend != "" {
+		rec = &store.Recommendation{Option: recommend, SubjectDigest: store.SubjectDigestOf(d)}
+	}
+	if _, err := s.OpenDecisionSaying(mutationID("decision-open", repo, task, d.ID), d, &say, rec); err != nil {
 		return store.Decision{}, err
 	}
 	return findDecision(s, repo, task, d.ID)
+}
+
+// questionRecommended is the option the Director recommends on question d: its recommendation record's, or for a
+// question opened before the record, its own recommended field; "" for none.
+func questionRecommended(s *store.Store, d store.Decision) (string, error) {
+	r, err := s.DecisionRecommendation(d.Repository, d.TaskID, d.ID)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return d.Recommended, nil
+	case err != nil:
+		return "", err
+	}
+	return r.Option, nil
 }
 
 // questionNumber is n of a question decision id q<n>, n a positive decimal without leading zeros.

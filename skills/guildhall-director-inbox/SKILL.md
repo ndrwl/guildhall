@@ -98,13 +98,14 @@ The Guildmaster can also say something about the current stage from the page's S
 When their words on an open ask read as an answer, put your reading and the answer you recommend under the ask, so the page offers it as one Confirm, with their words pre-filled to edit:
 
 ```sh
-guildhall task say --repo app --task t-1 --tag accept-1 --recommend approved --text-file - <<'READING'
+guildhall task say --repo app --task t-1 --tag accept-1 --recommend approved --subject-digest sha256:3f9c… --text-file - <<'READING'
 You asked whether it covers Windows; it does, in slice 2, so I recommend **Approved**.
 READING
 ```
 
-`--recommend` takes one of the decision's options; `--words-file` sets the words the box is pre-filled with, which are otherwise their latest words on the ask.
-Nothing is answered until they click Confirm, or answer another way, and a newer recommendation replaces the older one.
+`--recommend` takes one of the decision's options; `--subject-digest` is the digest of what you read, as `decide explain` takes; `--words-file` sets the words the box is pre-filled with, which are otherwise their latest words on the ask.
+Nothing is answered until they click Confirm, or answer another way.
+Each decision has one recommendation, your latest from `task say`, `decide explain` or `decide open`; one made against an older digest shows as stale and cannot be confirmed.
 When you open a question of your own with `guildhall decide open`, `--recommend <option>` marks the option you recommend on its page.
 
 A wake gets a reply of its own only when something needs the Guildmaster, merges, fails or is stuck: `merged`, `decision`, a `question` whose answer is theirs, an `attempt-failed` that retrying will not help, `rebase-stuck`, `merge-refused`, `pr-blocked`, `merge-held`, failed checks and a new or changed `install` item.

@@ -17,22 +17,24 @@ import (
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
-const taskSayUsage = `usage: guildhall task say --store <path> --repo <id> --task <id> --tag <attempt|decision> --text-file <path|-> [--author director|guildmaster-chat] [--recommend <option> [--words-file <path|->]]
+const taskSayUsage = `usage: guildhall task say --store <path> --repo <id> --task <id> --tag <attempt|decision> --text-file <path|-> [--author director|guildmaster-chat] [--recommend <option> --subject-digest <digest> [--words-file <path|->]]
 --copy <dir>, or the copy found from the current directory, may stand in for --store: the copy's director.store
 Write on the task page's conversation, under the attempt (such as grill-2) or decision (such as accept-1) of the task
 that --tag names: the Director's own words, or with --author guildmaster-chat the Guildmaster's words in chat about
 the task, quoted. The text is Markdown; - reads it from standard input. It answers nothing and sends no message.
 With --recommend the text is the Director's reading of the Guildmaster's words on the open decision --tag names,
-and the option is its recommended answer, one of the decision's options: the page shows it under the ask with a
-Confirm that answers with that option in one click. --words-file pre-fills the ask's Your words box, which otherwise
-holds the Guildmaster's latest words on the ask.
+and the option is its recommended answer, one of the decision's options: it becomes the decision's one
+recommendation, and the page shows it under the ask with a Confirm that answers with that option in one click.
+--subject-digest is the digest of what the Director read, as decide explain takes; a recommendation made against
+an earlier digest is shown as stale and cannot be confirmed. --words-file pre-fills the ask's Your words box, which
+otherwise holds the Guildmaster's latest words on the ask.
 A closed task's conversation stays readable and takes nothing new. Running the same command again prints the
 original receipt and writes nothing.`
 
 // taskSay runs `guildhall task say`: it appends one entry to an open task's conversation (docs/web.md#the-conversation)
 // with the mutation "task-say:<repo>:<task>:<tag>:<author>:<sha256 of the text>", hashed as mutationID does, and
-// prints its receipt; with --recommend the entry is a recommendation and its mutation also names the option and the
-// sha256 of the words. It exits 0 on success, 1 when the store refuses or fails and 2 on a usage error.
+// prints its receipt; with --recommend the entry is a recommendation, written with the decision's recommendation
+// record, and its mutation also names the option, the sha256 of the words and the subject digest. It exits 0 on success, 1 when the store refuses or fails and 2 on a usage error.
 func (a *App) taskSay(args []string) int {
 	const name = "task say"
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
@@ -57,6 +59,7 @@ func (a *App) taskSay(args []string) int {
 	author := fl.String("author", store.ConversationDirector, "director, or guildmaster-chat for the Guildmaster's words in chat")
 	recommend := fl.String("recommend", "", "the option of the decision --tag names that the Director recommends")
 	wordsFile := fl.String("words-file", "", "the words the ask's Your words box is pre-filled with, or - for standard input")
+	subjectDigest := fl.String("subject-digest", "", "with --recommend, the digest of what the Director read")
 	if err := fl.Parse(args); err != nil {
 		return usage(err.Error())
 	}
@@ -81,6 +84,10 @@ func (a *App) taskSay(args []string) int {
 		return usage("--recommend is the Director's; it takes no --author")
 	case set["words-file"] && !set["recommend"]:
 		return usage("--words-file goes with --recommend")
+	case set["subject-digest"] && !set["recommend"]:
+		return usage("--subject-digest goes with --recommend")
+	case set["recommend"] && strings.TrimSpace(*subjectDigest) == "":
+		return usage("--recommend requires --subject-digest, the digest of what you read")
 	case set["words-file"] && *wordsFile == "":
 		return usage("--words-file needs a path, or - for standard input")
 	case *textFile == "-" && set["words-file"] && *wordsFile == "-":
@@ -114,13 +121,15 @@ func (a *App) taskSay(args []string) int {
 	if set["recommend"] {
 		say.Kind, say.Option, say.Words = store.ConversationRecommendation, *recommend, words
 		mutation = mutationID("task-say", *repo, *task, *tag, *author, digest.Of([]byte(text)).Hex(), "recommend", *recommend,
-			digest.Of([]byte(words)).Hex())
+			digest.Of([]byte(words)).Hex(), *subjectDigest)
 	}
 	rc, err := withStore(*path, false, func(s *store.Store) (store.Receipt, error) {
 		if set["recommend"] {
+			// checkRecommend words the refusals for the Director; the store enforces them again in its transaction.
 			if err := checkRecommend(s, *repo, *task, *tag, *recommend); err != nil {
 				return store.Receipt{}, err
 			}
+			return s.SayRecommendation(mutation, *repo, *task, say, *subjectDigest)
 		} else if err := checkTag(s, *repo, *task, *tag); err != nil {
 			return store.Receipt{}, err
 		}
