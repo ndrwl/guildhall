@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/secrets"
@@ -112,12 +113,13 @@ func (p *Process) Launch(ctx context.Context, spec interp.Spec) (interp.Handle, 
 	return p.launchFiles(ctx, at.Key, spec.Slices, spec.Adapter, as.PromptFile, as.WorkDir, as.Copy, as.Profile, as.Model, as.Effort)
 }
 
-// LaunchFiles is Launch for attempt k given as its adapter name, absolute prompt file and absolute working directory
-// rather than an interpreter spec, for an attempt the interpreter does not render, such as a delivered task's judge
-// (docs/contracts/quality.md); it refuses an adapter interp.CheckAdapter refuses, a relative path and an ended
+// LaunchFiles is Launch for attempt k given as its adapter name, profile, settings, absolute prompt file and absolute
+// working directory rather than an interpreter spec, for an attempt the interpreter does not render, such as a
+// delivered task's judge (docs/contracts/quality.md); the profile is passed as --profile and the settings as --model
+// and --effort, each only when set. It refuses an adapter interp.CheckAdapter refuses, a relative path and an ended
 // context, starting nothing, and is otherwise Launch.
-func (p *Process) LaunchFiles(ctx context.Context, k artisan.AttemptKey, adapterName, promptFile, workDir string) (interp.Handle, error) {
-	return p.launchFiles(ctx, k, 0, adapterName, promptFile, workDir, p.Copy, "", "", "")
+func (p *Process) LaunchFiles(ctx context.Context, k artisan.AttemptKey, adapterName, profile string, settings adapter.Settings, promptFile, workDir string) (interp.Handle, error) {
+	return p.launchFiles(ctx, k, 0, adapterName, promptFile, workDir, p.Copy, profile, settings.Model, settings.Effort)
 }
 
 func (p *Process) launchFiles(ctx context.Context, k artisan.AttemptKey, slices int, adapterName, promptFile, workDir, copyDir, profile, model, effort string) (interp.Handle, error) {

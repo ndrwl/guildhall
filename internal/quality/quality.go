@@ -208,9 +208,9 @@ func ParseJudgement(data []byte) (Judgement, error) {
 	return j, nil
 }
 
-// Launcher starts a judge attempt from its files; launch.Process implements it.
+// Launcher starts a judge attempt from its files under its adapter, profile and settings; launch.Process implements it.
 type Launcher interface {
-	LaunchFiles(ctx context.Context, k artisan.AttemptKey, adapterName, promptFile, workDir string) (interp.Handle, error)
+	LaunchFiles(ctx context.Context, k artisan.AttemptKey, adapterName, profile string, settings adapter.Settings, promptFile, workDir string) (interp.Handle, error)
 }
 
 // Judge starts and takes the judge attempts of delivered tasks.
@@ -524,7 +524,8 @@ func (j *Judge) launch(ctx context.Context, k artisan.AttemptKey, p prepared) (S
 	if err := os.MkdirAll(work, 0o755); err != nil {
 		return Started{}, err
 	}
-	h, err := j.Launcher.LaunchFiles(ctx, k, p.Judge.Adapter, filepath.Join(dir, promptDir, render.PromptFile), work)
+	profile, settings := j.runtime(p.Judge)
+	h, err := j.Launcher.LaunchFiles(ctx, k, p.Judge.Adapter, profile, settings, filepath.Join(dir, promptDir, render.PromptFile), work)
 	if err != nil {
 		return Started{}, fmt.Errorf("launch judge attempt %d: %w", k.Attempt, err)
 	}
@@ -536,6 +537,18 @@ func (j *Judge) launch(ctx context.Context, k artisan.AttemptKey, p prepared) (S
 		return Started{}, err
 	}
 	return Started{Attempt: k.Attempt, Review: p.Review, Judge: p.Judge}, nil
+}
+
+// runtime is what the judge's attempt runs under: its profile's model and effort, the effort falling back as a
+// workflow step's does (config.Config.EffectiveEffort), and the profile itself only for a codex judge, whose wrapper
+// refuses a profile granting any rule. A Claude judge is given no profile, so it still runs with no grant.
+func (j *Judge) runtime(c config.JudgeChoice) (string, adapter.Settings) {
+	p := j.Config.Profiles[c.Profile]
+	settings := adapter.Settings{Model: p.Model, Effort: j.Config.EffectiveEffort(p.Effort)}
+	if c.Adapter == adapter.CodexName {
+		return c.Profile, settings
+	}
+	return "", settings
 }
 
 // Taken is what Take found for a finished judge attempt.

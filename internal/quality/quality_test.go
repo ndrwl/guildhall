@@ -131,8 +131,9 @@ func TestParseAnswer(t *testing.T) {
 
 // launched is one call of the recording launcher.
 type launched struct {
-	Key                          artisan.AttemptKey
-	Adapter, PromptFile, WorkDir string
+	Key                                   artisan.AttemptKey
+	Adapter, Profile, PromptFile, WorkDir string
+	Settings                              adapter.Settings
 }
 
 // recorder is a Launcher that records each launch and fails the ones fail says to.
@@ -142,10 +143,10 @@ type recorder struct {
 	fail  func(n int) error
 }
 
-func (r *recorder) LaunchFiles(_ context.Context, k artisan.AttemptKey, adapterName, promptFile, workDir string) (interp.Handle, error) {
+func (r *recorder) LaunchFiles(_ context.Context, k artisan.AttemptKey, adapterName, profile string, settings adapter.Settings, promptFile, workDir string) (interp.Handle, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.calls = append(r.calls, launched{k, adapterName, promptFile, workDir})
+	r.calls = append(r.calls, launched{k, adapterName, profile, promptFile, workDir, settings})
 	if r.fail != nil {
 		if err := r.fail(len(r.calls)); err != nil {
 			return interp.Handle{}, err
@@ -399,6 +400,36 @@ func TestStartPassesOverAFailedProfile(t *testing.T) {
 	}
 	if _, err := e.judge.Start(context.Background(), "app", "t-1", 1); !errors.Is(err, config.ErrNoJudge) {
 		t.Errorf("every profile failed: err = %v, want ErrNoJudge", err)
+	}
+}
+
+// TestStartPassesTheJudgeProfilesSettings: a judge launches with its profile's model and effort, the effort falling
+// back to the config's default when the profile sets none; a codex judge is given its profile, and the Claude judge
+// it falls back to after a failure is given none, so it runs with no grant.
+func TestStartPassesTheJudgeProfilesSettings(t *testing.T) {
+	cfg := strings.Replace(judgeConfig, `"judge-fake, judge-claude"`, `"judge-codex, judge-claude"`, 1) +
+		"\n[profile.judge-codex]\nadapter = \"codex\"\nmodel = \"gpt-5.5\"\neffort = \"high\"\n"
+	cfg = strings.Replace(cfg, "[profile.judge-claude]\nadapter = \"claude\"\n", "[profile.judge-claude]\nadapter = \"claude\"\nmodel = \"claude-opus-5-5\"\n", 1)
+	e := newEnv(t, cfg)
+	if _, err := e.judge.Start(context.Background(), "app", "t-1", 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.s.FinishAttempt("fail", "app", "t-1", workflow.JudgeStep, 1, store.AttemptFailed); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.judge.Start(context.Background(), "app", "t-1", 1); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.l.calls) != 2 {
+		t.Fatalf("launches %+v, want two", e.l.calls)
+	}
+	for i, want := range []launched{
+		{Adapter: "codex", Profile: "judge-codex", Settings: adapter.Settings{Model: "gpt-5.5", Effort: "high"}},
+		{Adapter: "claude", Profile: "", Settings: adapter.Settings{Model: "claude-opus-5-5", Effort: config.DefaultEffort}},
+	} {
+		if c := e.l.calls[i]; c.Adapter != want.Adapter || c.Profile != want.Profile || c.Settings != want.Settings {
+			t.Errorf("launch %d = %+v, want adapter %s, profile %q, settings %+v", i+1, c, want.Adapter, want.Profile, want.Settings)
+		}
 	}
 }
 

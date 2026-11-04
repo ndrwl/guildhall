@@ -295,7 +295,7 @@ Names are lowercase identifiers, so three review stages can name `reviewer-opus`
 | `adapter` | Required: the runtime adapter, such as `claude`. |
 | `model`, `effort` | The attempt's [runtime settings](adapters.md#runtime-settings), which defines defaults, supported values and refusals. |
 | `role` | A role prompt replacing the release's Artisan role: a relative slash-separated path inside the config file's directory. |
-| `allowed_tools` | The tool permission rules this Director grants the profile's Artisan beyond its runtime's baseline, such as `["Bash(go test:*)", "Bash(git commit:*)"]`. Unset, a `claude` profile named `builder`, `designer`, `planner`, `rebaser`, `reviewer` or `researcher`, shipped or declared, gets its shipped default grant and one of another name gets nothing; a set list, even `[]`, replaces that default. A repository grant adds to either. Only the `claude` adapter grants them ([Artisan permissions](adapters.md#artisan-permissions), with the default table and the suggested Go repository grant). |
+| `allowed_tools` | The tool permission rules this Director grants the profile's Artisan beyond its runtime's baseline, such as `["Bash(go test:*)", "Bash(git commit:*)"]`. Unset, a `claude` profile named `builder`, `designer`, `planner`, `rebaser`, `reviewer` or `researcher`, shipped or declared, gets its shipped default grant and one of another name gets nothing; a set list, even `[]`, replaces that default. A repository grant adds to either. Only the `claude` adapter grants them ([Artisan permissions](adapters.md#artisan-permissions), with the default table and the suggested Go repository grant); a `codex` profile that sets it, even to `[]`, is refused, since Codex runs read-only and grants nothing. |
 | `inherit_env` | The names of this machine's [injected secrets](secrets.md#model-driven-processes-get-none) the profile's owned Artisans get, such as `["OPENAI_API_KEY"]`; every other injected name is withheld from them, and unset gives none. Each entry is an environment variable name, listed once, never a value. |
 
 A profile names no credential: `inherit_env` names secrets and holds none.
@@ -308,6 +308,18 @@ The rules belong to the Director whose copy's `config.toml` sets them, the copy 
 `config.CheckArtisanAdapters` additionally refuses an Artisan stage that resolves no profile, before task creation or advance mutates task records.
 It also refuses a `codex` profile on any workflow step, and as the `rebaser` or `designer` profile: Codex runs only in its read-only sandbox, so for now only the [quality judge](quality.md) runs on it ([runtimes](adapters.md#running-an-attempt)).
 A `codex` profile that sets `allowed_tools`, even `[]`, is refused when the config loads.
+A `codex` profile sets only `adapter`, `model`, `effort` and perhaps `role`, and is listed in `quality_judge_profiles`:
+
+```toml
+[local]
+quality_judge_profiles = "judge-codex, judge-opus"
+
+[profile.judge-codex]
+adapter = "codex"
+model = "gpt-5.5"
+effort = "high"
+```
+
 Director, Guildmaster and engine stages do not require an Artisan adapter.
 
 Profiles keep role names, and each step type with a role has a **role profile**:

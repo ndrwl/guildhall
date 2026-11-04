@@ -412,8 +412,25 @@ The skill writes one `self-review-<n>.json` document per task under the copy's `
 The judge requires a listed profile distinct from the builder's; an unset `quality_judge_profiles` or no eligible profile refuses the judge with `ErrNoJudge` and a reason.
 The builder's profile comes from the latest succeeded build's prompt manifest, ordered by finish receipts.
 The manifest does not record the adapter that executed the build, so the builder's family is unknown rather than inferred from today's profile settings; a judge of an unknown builder family is never counted as separate-family.
-A judge profile currently selects its adapter and role only; its model and effort are not passed to the runtime by the judge's `LaunchFiles` path.
-Ordinary workflow Artisan launches through `Process.Launch` do pass their profile's model and effort.
+A judge profile selects its adapter, role, model and effort: the judge launches with the profile's `model` and `effort`, the effort falling back to `default_effort` as a workflow step's does, so a cross-family judge runs on the model it was configured with.
+A `codex` judge is also given its profile, which its wrapper checks grants nothing; a `claude` judge is given no profile, so it still runs with no grant.
+A `codex` profile runs the judge in Codex's read-only sandbox ([runtimes](adapters.md#running-an-attempt)); list it first to have the judge come from another family than a Claude builder:
+
+```toml
+[local]
+quality_judge_profiles = "judge-codex, judge-opus"
+
+[profile.judge-codex]
+adapter = "codex"
+model = "gpt-5.5"
+effort = "high"
+
+[profile.judge-opus]
+adapter = "claude"
+model = "claude-opus-5-5"
+```
+
+A Codex judge that fails, runs out of quota or returns no valid answer publishes no result, so its attempt fails and the next `quality judge` for that self-review passes over its profile.
 The judge runs as the first eligible profile in `quality_judge_profiles` when the builder's family is unknown; otherwise it prefers another family while `quality_judge_separate_family` is `on`.
 A profile whose judge of the same self-review failed is passed over, so running it again after a judge ran out of quota falls back to the next; every choice records whether the family was separate and why not.
 For interrupted judges, unlaunched preparations and attempts awaiting intake, follow the recovery commands in [Director status](director.md#status).
