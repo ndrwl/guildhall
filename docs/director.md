@@ -43,6 +43,7 @@ The numbered session manifest owns a `claude-skill-policy.json` provenance recei
 Persist customizations in Guildhall configuration, not the regenerated workspace; tool permissions and engine-owned review/publish authority remain the boundary.
 
 A failed check is exit 1 with nothing recorded and nothing written in the copy, and `--check` exits 0 after the preflight, also recording nothing.
+After the preflight passes, `--check` also probes the [sign-in](signin.md#in-the-start-preflight) of each runtime the copy uses, `gh` among them, with a real call, report only: `signin <runtime>: warning: ...; run guildhall signin` for one not signed in, which never refuses the check.
 
 A start is refused with exit 1, naming `director: live` and recording nothing, while the newest session is not `stopped` and its supervisor's recorded identity names a live process, or cannot be shown gone.
 It is refused the same way while the newest session's [recorded runtime unit](#the-runtimes-record) is not proven empty, naming the processes that survive and `director stop`, which ends them.

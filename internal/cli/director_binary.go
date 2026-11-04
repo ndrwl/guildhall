@@ -157,7 +157,14 @@ func (a *App) decideReexec(command, own, copyDir, positional string) reexecDecis
 	if positional != "" {
 		args = append(args, positional)
 	}
-	if out, err := a.Output(ctx, bin.Path, args...); err != nil {
+	// The new binary's preflight skips the sign-in probes, so a reload spends no model call.
+	run := a.Output
+	if a.RunEnv != nil {
+		run = func(ctx context.Context, path string, args ...string) ([]byte, error) {
+			return a.RunEnv(ctx, "", []string{SigninCheckEnv + "=" + SigninCheckSkip}, path, args...)
+		}
+	}
+	if out, err := run(ctx, bin.Path, args...); err != nil {
 		return refuse(command+" start --check", err, out)
 	}
 	return reexecDecision{Binary: bin, Version: v.Version, Move: true, Pinned: pinned}

@@ -52,6 +52,9 @@ Commands:
                  print the Guildhall home, its installed releases with any damage and the copies pinning them,
                  its copies, and the selected copy's pin
   doctor         report the platform and the tools guildhall uses
+  signin [--check] [--copy <dir>] [claude|codex|gh]...
+                 check each runtime's sign-in on this machine, print the command and link for a missing one,
+                 wait, then verify it with a real call; --check reports only
   store init <path>
                  create and initialize an empty store file
   store doctor <path>
@@ -242,6 +245,10 @@ type App struct {
 	LookPath func(file string) (string, error)
 	// Output runs a command and returns its combined stdout and stderr.
 	Output func(ctx context.Context, path string, args ...string) ([]byte, error)
+	// RunEnv runs a command in dir, with env added to this process's environment, and returns its combined stdout
+	// and stderr, as guildhall signin's probes run each runtime and a reload preflights a new binary; nil means
+	// signin runs nothing and reports that, and the reload's preflight runs through Output without env.
+	RunEnv func(ctx context.Context, dir string, env []string, path string, args ...string) ([]byte, error)
 	// Executable returns the path of the running guildhall binary.
 	Executable func() (string, error)
 	// Exec replaces the process image with the program at argv0, run with argv and envv, as a session supervisor
@@ -337,6 +344,7 @@ func New() *App {
 		Output: func(ctx context.Context, path string, args ...string) ([]byte, error) {
 			return exec.CommandContext(ctx, path, args...).CombinedOutput()
 		},
+		RunEnv:     runEnv,
 		Executable: os.Executable,
 		Exec:       syscall.Exec,
 		Getenv:     os.Getenv,
@@ -380,6 +388,8 @@ func (a *App) Run(args []string) int {
 			return a.usageError("doctor takes no arguments")
 		}
 		out = a.doctor()
+	case "signin":
+		return a.signinCmd(rest)
 	case "spend":
 		return a.spend(rest)
 	case "prune":
