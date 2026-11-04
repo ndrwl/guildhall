@@ -15,8 +15,8 @@ const (
 // bom is the byte order mark a GitHub Actions log starts with.
 const bom = "\xef\xbb\xbf"
 
-// timestamp is the ISO timestamp GitHub Actions starts each log line with.
-var timestamp = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z ?`)
+// Timestamp is the ISO timestamp GitHub Actions starts each log line with.
+var Timestamp = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z ?`)
 
 // escape is an ANSI escape sequence, such as the colour codes a step's commands print: a control sequence
 // (ESC [ ... final byte), an operating system command (ESC ] ... BEL or ESC \), or a two-byte escape.
@@ -34,7 +34,7 @@ func Excerpt(text []byte) string {
 		if i == 0 {
 			l = strings.TrimPrefix(l, bom)
 		}
-		lines[i] = escape.ReplaceAllString(timestamp.ReplaceAllString(l, ""), "")
+		lines[i] = escape.ReplaceAllString(Timestamp.ReplaceAllString(l, ""), "")
 	}
 	run := func(l string) bool { return strings.HasPrefix(l, "##[group]Run ") }
 	start, end := 0, len(lines)
