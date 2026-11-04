@@ -111,6 +111,8 @@ Commands:
                  link another task's recorded document to a task, given to its later Artisan stages, unlink it and list the links
   task depends add|remove --store <path> --repo <id> --reason <text> <task> <repo>/<task>
                  add or remove a dependency of an open task after creation, with a reason
+  task grill --store <path> --config <director.toml> <repo>/<task> live|unattended --reason <text> [--by director|guildmaster]
+                 switch a feature task's grill between live and unattended before research starts, with a reason
   task override set|unset|list --store <path> --repo <id> ...
                  give a task its own value for a task-scoped setting, on the Guildmaster's word, remove it and list them
   task say --store <path> --repo <id> --task <id> --tag <attempt|decision> --text-file <path|-> [--author director|guildmaster-chat]

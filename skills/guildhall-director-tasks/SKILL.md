@@ -59,8 +59,41 @@ guildhall task new --repo app --title "CSV export drops the last row" --kind bug
 ```
 
 Pick the repository from what they said; when the copy has several and it is unclear, ask.
+
+### Grill mode
+
+A feature task's grill is live, you interviewing the Guildmaster in chat, or unattended, an Artisan running it with `guildhall-grill-unattended` and writing each open decision with the answer it proceeds on; its open questions reach the Guildmaster at plan approval.
+Choose at `task new` with `--grill live|unattended`, and always pass `--grill-reason` with one line saying why:
+
+- Unattended when the Guildmaster delegated ("you decide"), for a hallmark follow-up whose contracts are already written, or when their words already answer the product questions.
+- Live when the task changes what the Guildmaster sees or does, when the ask is open-ended, or when you are unsure.
+
+```sh
+guildhall task new --repo app --title "Cache the report index" --detail "H3 of app/t-20/hallmark-1-report." \
+  --grill unattended --grill-reason "Hallmark follow-up; H3's contract is already written." t-21
+guildhall task new --repo app --title "Let users pick export columns" \
+  --grill live --grill-reason "Changes the export dialog the Guildmaster uses." t-22
+```
+
+`--grill` is refused for a bug, which has no grill, and for a repository whose workflow already runs the grill by an Artisan; a refusal naming `--grill live` means the copy cannot run an unattended grill, so create the task live and say so.
+Honour the Guildmaster's "grill me on this" or "no grill", at `task new`, or later with `guildhall task grill`, until research starts, passing `--by guildmaster` when you act on their words:
+
+```sh
+guildhall task grill app/t-21 live --reason 'Guildmaster: "grill me on this"' --by guildmaster
+guildhall task start --repo app t-21
+```
+
+An unattended grill waits at the dependency gate with the rest of the task, and a design round needs a live grill, so switch to live before `task design`.
+When an unattended grill fails, read its summary with `guildhall task show`: a question that would change the task's goal or which repository it touches is the Guildmaster's, so switch to live and retry the grill, which hands it to you as a live stage:
+
+```sh
+guildhall task grill app/t-21 live --reason "The grill asked whether the cache belongs in app or in lib."
+guildhall step retry --repo app --task t-21 --step grill --attempt 1 --reason "Switched to a live grill for the repository question."
+```
+
 `guildhall task start` prints what the task waits for, such as `{"wait":"director-stage","step":"grill","attempt":1}`, which means the first stage is yours: run it with `guildhall-director-stage`.
 A bug task has no grill, so its first wait is a research attempt, such as `{"wait":"attempt","step":"research","attempt":1}`, and there is nothing for you to run.
+An unattended grill's first wait is an attempt too, such as `{"wait":"attempt","step":"grill","attempt":1}`.
 `{"wait":"queued","step":"plan","attempt":1,"position":2}` means `max_running_attempts` attempts are running, so the start waits in the start queue, highest priority first; the session supervisor starts it when a slot frees, so do not repeat `task start`, `step retry` or `step send-back` for it.
 `director status --json` lists what waits under `session.start_queue`, and your own stages never wait there.
 While the session is `recovering`, both commands are refused until `guildhall director ready`.
@@ -263,7 +296,7 @@ Record their answer with `guildhall decide answer`, then `guildhall task start -
 A designer that skips the mock-up its surface asks for, or changes the project, fails and waits for you like any failed designer.
 `approved` gives the design to plan, which runs again if it already ran, and the plan is asked for acceptance again; `changes_requested` reopens the grill, handed to you with their answer, your last notes and the design, and once it finishes you may ask for another round.
 A failed designer is retried with `guildhall step retry --step <step>`, naming the step the task's wait names (`designer`, or `round-designer` on a workflow that already has a `design` or `designer` step), within the same round; repeating `task design` with the same surface and brief is a safe replay only while its round is open, and once the round is answered it asks for the next round.
-It is refused, recording nothing, for a bug task ("bugs have no design round"), once build has started, while a round is open, while any attempt runs and until the grill has succeeded.
+It is refused, recording nothing, for a bug task ("bugs have no design round"), for a task whose grill is unattended, naming the `task grill` that switches it to live, once build has started, while a round is open, while any attempt runs and until the grill has succeeded.
 `task show` and `task timeline` print `design_rounds`, the rounds used.
 
 ## Rulings and full review

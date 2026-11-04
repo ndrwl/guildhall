@@ -273,6 +273,19 @@ func TestInstallWritesTheReleaseByteForByte(t *testing.T) {
 	}
 }
 
+// TestPlanCarriesUnattendedGrillQuestions: an unattended grill's questions reach the Guildmaster only through the
+// plan's open questions (docs/tasks.md#grill-mode), so the plan guide tells the Artisan to carry them forward.
+func TestPlanCarriesUnattendedGrillQuestions(t *testing.T) {
+	data, err := fs.ReadFile(baseline.Release(), "stages/plan.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "When the grill notes hold a `## Questions` list, the grill ran unattended and nobody answered it: carry every question there that your evidence does not settle into `## Open questions`, with the grill's recommendation as yours"
+	if !strings.Contains(string(data), want) {
+		t.Errorf("stages/plan.md does not say %q", want)
+	}
+}
+
 // TestGuidesTeachTheStrictShapes: the plan and design guides quote the open-questions shapes Guildhall refuses
 // verbatim from internal/spec, whose parser tests run them, and tell the Artisan to submit with guildhall result
 // submit, so a malformed section is fixed in the same attempt.
