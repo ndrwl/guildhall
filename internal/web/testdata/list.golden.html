@@ -200,6 +200,16 @@ button{font:inherit;color:inherit}
 .ol li.rec{background:var(--okbg);border-color:var(--ok);border-left:4px solid var(--ok);font-weight:600}
 .ol li.rec .lt{color:var(--ok)}
 .ol li.rec .why{font-weight:400}
+/* picks: a lettered card on the Guildmaster's form is a radio group; each label is a 44px tap target, a changed pick
+shows its "Your answer" line, and the ask's answer row then hides Approved and puts Changes requested forward */
+.ol.pk li{padding:0}
+.ol.pk label{display:flex;align-items:flex-start;gap:8px;flex:1;min-width:0;min-height:44px;box-sizing:border-box;padding:8px 10px;cursor:pointer}
+.ol.pk input{flex:none;width:18px;height:18px;margin:2px 0 0;accent-color:var(--ok)}
+.ol.pk .ya{display:none;margin-top:4px;font-size:13px;font-weight:650;color:var(--you)}
+.ol.pk input:checked~.ot .ya{display:block}
+.ol.pk li:has(input:checked:not([value=""])){background:var(--youbg);border-color:var(--youline);border-left:4px solid var(--youdot)}
+.ask:has(.pk input:checked:not([value=""])) .opt[value="approved"]{display:none}
+.ask:has(.pk input:checked:not([value=""])) .opt[value="changes_requested"]{grid-column:1/-1;background:var(--youbg);border-color:var(--youline);border-left:6px solid var(--youdot)}
 .oqs .cut{margin:0;color:var(--mut);font-size:13px}
 .badge{font:700 10.5px/1 system-ui,sans-serif;font-style:normal;text-transform:uppercase;letter-spacing:.06em;color:var(--on);background:var(--ok);padding:4px 7px;border-radius:5px;flex:none;align-self:center;white-space:nowrap}
 .opt.rec{grid-column:1/-1;background:var(--okbg);border-color:var(--ok);border-left-width:6px}

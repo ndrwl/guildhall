@@ -127,6 +127,9 @@ type askView struct {
 	// design's, or on a follow-ups ask its hallmark report's, shown in a box of their own; the same parse the question
 	// text's part comes from, or the line saying there are none; nil when the document has no readable section.
 	Questions *questionsView
+	// Recommend says the ask offers taking every recommendation of its lettered questions as its recommended answer,
+	// so on the Guildmaster's form its lettered cards are picks.
+	Recommend bool
 	// Hint is the words box's hint, which on an ask with a recommended answer says how to change an answer.
 	Hint string
 	// MockupHref links a design ask's mock-up as MockupLabel: an HTML mock-up's frame route, opened in a new tab, or
@@ -461,6 +464,7 @@ func (s *Server) askView(t Task, a Ask) askView {
 	// A plan or design approval whose questions carry recommendations offers taking them all as its recommended
 	// answer; a follow-ups ask's pick and none are about ids, not about its questions, and keep their tiles.
 	recommend := a.Kind == "approval" && v.Questions != nil && v.Questions.Lettered && slices.Contains(a.Options, "approved")
+	v.Recommend = recommend
 	v.Tiles = answerTiles(a.Kind, a.Options, recommend)
 	if a.Recommended != "" && !recommend {
 		markRecommended(v.Tiles, a.Recommended)
@@ -562,7 +566,7 @@ func (s *Server) planSummary(doc Document, v *askView) {
 			summary, v.Summary = text, RenderMarkdown([]byte(text))
 		}
 		if q, err := spec.ReadSpecQuestions(body); err == nil {
-			questions, v.Questions = q.PlanPart(), newQuestionsView(q)
+			questions, v.Questions = q.PlanPart(), newQuestionsView(q, v.ID)
 		}
 	}
 	v.Rest = stripSummary(v.Rest, summary, questions)
@@ -582,7 +586,7 @@ func (s *Server) designQuestions(doc Document, v *askView) {
 	if err != nil {
 		return
 	}
-	v.Questions = newQuestionsView(q)
+	v.Questions = newQuestionsView(q, v.ID)
 	v.Rest = stripSummary(v.Rest, "", q.Part())
 }
 
@@ -601,7 +605,7 @@ func (s *Server) reportQuestions(doc Document, v *askView) {
 	if err != nil {
 		return
 	}
-	v.Questions = newQuestionsView(q)
+	v.Questions = newQuestionsView(q, v.ID)
 	v.Rest = stripReportQuestions(v.Rest)
 }
 
@@ -714,8 +718,9 @@ func toNextPart(rest string) string {
 	return strings.TrimSpace(rest[end:])
 }
 
-// askState adds what the request brings to an ask: the form when it is from the Guildmaster's login, and the
-// refusal and words, or the sent note, of the ask st is about.
+// askState adds what the request brings to an ask: the form when it is from the Guildmaster's login, with picks on
+// the lettered cards of an ask that offers taking every recommendation, and the refusal, words and picks, or the sent
+// note, of the ask st is about.
 func (s *Server) askState(v *askView, base string, st pageState) {
 	v.Answering, v.Form, v.Login = s.answering(), st.Answer, st.Login
 	if v.Form {
@@ -723,6 +728,13 @@ func (s *Server) askState(v *askView, base string, st pageState) {
 	}
 	if v.ID == st.Decision {
 		v.Refused, v.Words, v.Sent = st.Refused, st.Words, st.Sent
+	}
+	if v.Form && v.Recommend && v.Questions != nil {
+		var picks map[int]string
+		if v.ID == st.Decision {
+			picks = st.Picks
+		}
+		v.Questions.withPicks(picks)
 	}
 }
 

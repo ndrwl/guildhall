@@ -24,6 +24,9 @@ type questionsView struct {
 	// Lettered says at least one card has lettered options with a recommended one, so the ask can offer "take
 	// every recommendation" as its recommended answer.
 	Lettered bool
+	// Ask is the id of the ask the cards belong to, which a pick's radio ids carry so they are unique on a page of
+	// several asks.
+	Ask string
 }
 
 // cardView is one question's card: its number and title, then its body and its option rows when it read cleanly
@@ -35,6 +38,9 @@ type cardView struct {
 	Rows     []rowView
 	Verbatim template.HTML
 	More     template.HTML
+	// Pick says the card's lettered rows are a radio group, pick-<N>, on the Guildmaster's form for an ask that
+	// offers taking every recommendation (withPicks).
+	Pick bool
 }
 
 // rowView is one option row: its mark, such as "(b)" or "Alternative", its text and, on the recommended row, the
@@ -44,24 +50,29 @@ type rowView struct {
 	Text template.HTML
 	Why  template.HTML
 	Rec  bool
+	// Letter is a lettered row's bare letter, such as "b"; "" on the rows of a question that has no letters.
+	// Checked says its radio is the card's pick.
+	Letter  string
+	Checked bool
 }
 
 // newQuestionsView lays out q, read by spec, as cards: the recommended option first and marked, letters as written.
 // Option text, bodies and reasons are Markdown rendered by goldmark at its safe defaults; a question that did not
-// read cleanly shows its lines word for word, as written, with no marker.
-func newQuestionsView(q spec.Questions) *questionsView {
+// read cleanly shows its lines word for word, as written, with no marker. ask is the id of the ask the cards belong
+// to.
+func newQuestionsView(q spec.Questions, ask string) *questionsView {
 	if q.None {
-		return &questionsView{None: true}
+		return &questionsView{None: true, Ask: ask}
 	}
 	kept := q.Fit(spec.QuestionsMax)
-	v := &questionsView{Count: len(q.Items), Cut: kept < len(q.Items)}
+	v := &questionsView{Count: len(q.Items), Cut: kept < len(q.Items), Ask: ask}
 	for _, it := range q.Items[:kept] {
 		c := cardView{N: it.N, Title: it.Title}
 		switch {
 		case it.Lettered():
 			v.Lettered = true
 			for i, o := range it.Pick() {
-				r := rowView{Mark: "(" + o.Letter + ")", Text: inlineMarkdown(o.Text)}
+				r := rowView{Mark: "(" + o.Letter + ")", Text: inlineMarkdown(o.Text), Letter: o.Letter}
 				if i == 0 {
 					r.Rec, r.Why = true, inlineMarkdown(it.Why)
 				}
@@ -85,6 +96,27 @@ func newQuestionsView(q spec.Questions) *questionsView {
 		v.Cards = append(v.Cards, c)
 	}
 	return v
+}
+
+// withPicks makes each lettered card a radio group, pick-<N>, its recommended row checked, as the Guildmaster's form
+// shows them on an ask that offers taking every recommendation; picks, the changed picks a refused answer sent, by
+// question number, check their rows instead. A pick naming no row of its card leaves the recommendation checked.
+func (v *questionsView) withPicks(picks map[int]string) {
+	for i := range v.Cards {
+		c := &v.Cards[i]
+		if len(c.Rows) == 0 || c.Rows[0].Letter == "" {
+			continue
+		}
+		c.Pick = true
+		want := picks[c.N]
+		if !slices.ContainsFunc(c.Rows, func(r rowView) bool { return r.Letter == want }) {
+			want = ""
+		}
+		for j := range c.Rows {
+			r := &c.Rows[j]
+			r.Checked = (want == "" && r.Rec) || (want != "" && r.Letter == want)
+		}
+	}
 }
 
 // inlineMarkdown renders a line of Markdown with goldmark at its safe defaults for use inside a row: the paragraph's
