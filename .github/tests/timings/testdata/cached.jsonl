@@ -1,0 +1,47 @@
+{"Time":"2026-11-04T14:38:17.859083581Z","Action":"start","Package":"probe/good"}
+{"Time":"2026-11-04T14:38:17.859300402Z","Action":"run","Package":"probe/good","Test":"TestG"}
+{"Time":"2026-11-04T14:38:17.859343642Z","Action":"output","Package":"probe/good","Test":"TestG","Output":"=== RUN   TestG\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:17.859425604Z","Action":"output","Package":"probe/good","Test":"TestG","Output":"    good_test.go:5: g\n"}
+{"Time":"2026-11-04T14:38:17.85943993Z","Action":"output","Package":"probe/good","Test":"TestG","Output":"--- PASS: TestG (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:17.859443427Z","Action":"pass","Package":"probe/good","Test":"TestG","Elapsed":0}
+{"Time":"2026-11-04T14:38:17.859450179Z","Action":"output","Package":"probe/good","Output":"PASS\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:17.859453185Z","Action":"output","Package":"probe/good","Output":"ok  \tprobe/good\t(cached)\n"}
+{"Time":"2026-11-04T14:38:17.859458405Z","Action":"pass","Package":"probe/good","Elapsed":0}
+{"Time":"2026-11-04T14:38:18.094020509Z","Action":"start","Package":"probe/ok"}
+{"Time":"2026-11-04T14:38:18.094326556Z","Action":"start","Package":"probe/empty"}
+{"Time":"2026-11-04T14:38:18.094353375Z","Action":"output","Package":"probe/empty","Output":"?   \tprobe/empty\t[no test files]\n"}
+{"Time":"2026-11-04T14:38:18.094406363Z","Action":"skip","Package":"probe/empty","Elapsed":0}
+{"Time":"2026-11-04T14:38:18.099525113Z","Action":"run","Package":"probe/ok","Test":"TestParent"}
+{"Time":"2026-11-04T14:38:18.099607806Z","Action":"output","Package":"probe/ok","Test":"TestParent","Output":"=== RUN   TestParent\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:18.099622583Z","Action":"run","Package":"probe/ok","Test":"TestParent/pass"}
+{"Time":"2026-11-04T14:38:18.099626531Z","Action":"output","Package":"probe/ok","Test":"TestParent/pass","Output":"=== RUN   TestParent/pass\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:18.099632011Z","Action":"output","Package":"probe/ok","Test":"TestParent/pass","Output":"    ok_test.go:6: passing sibling noise\n"}
+{"Time":"2026-11-04T14:38:18.099641498Z","Action":"output","Package":"probe/ok","Test":"TestParent/pass","Output":"--- PASS: TestParent/pass (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:18.099645927Z","Action":"pass","Package":"probe/ok","Test":"TestParent/pass","Elapsed":0}
+{"Time":"2026-11-04T14:38:18.09965332Z","Action":"run","Package":"probe/ok","Test":"TestParent/fail"}
+{"Time":"2026-11-04T14:38:18.099661505Z","Action":"output","Package":"probe/ok","Test":"TestParent/fail","Output":"=== RUN   TestParent/fail\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:18.099666845Z","Action":"output","Package":"probe/ok","Test":"TestParent/fail","Output":"    ok_test.go:7: failing detail\n"}
+{"Time":"2026-11-04T14:38:18.099670803Z","Action":"output","Package":"probe/ok","Test":"TestParent/fail","Output":"    ok_test.go:7: boom\n","OutputType":"error"}
+{"Time":"2026-11-04T14:38:18.09968005Z","Action":"output","Package":"probe/ok","Test":"TestParent/fail","Output":"--- FAIL: TestParent/fail (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:18.099684608Z","Action":"fail","Package":"probe/ok","Test":"TestParent/fail","Elapsed":0}
+{"Time":"2026-11-04T14:38:18.099688235Z","Action":"run","Package":"probe/ok","Test":"TestParent/pass2"}
+{"Time":"2026-11-04T14:38:18.099691641Z","Action":"output","Package":"probe/ok","Test":"TestParent/pass2","Output":"=== RUN   TestParent/pass2\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:18.099695799Z","Action":"output","Package":"probe/ok","Test":"TestParent/pass2","Output":"    ok_test.go:8: second sibling noise\n"}
+{"Time":"2026-11-04T14:38:18.099700928Z","Action":"output","Package":"probe/ok","Test":"TestParent/pass2","Output":"--- PASS: TestParent/pass2 (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:18.099705988Z","Action":"pass","Package":"probe/ok","Test":"TestParent/pass2","Elapsed":0}
+{"Time":"2026-11-04T14:38:18.099713582Z","Action":"output","Package":"probe/ok","Test":"TestParent","Output":"--- FAIL: TestParent (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:18.100369696Z","Action":"fail","Package":"probe/ok","Test":"TestParent","Elapsed":0}
+{"Time":"2026-11-04T14:38:18.100393139Z","Action":"run","Package":"probe/ok","Test":"TestQuiet"}
+{"Time":"2026-11-04T14:38:18.100402366Z","Action":"output","Package":"probe/ok","Test":"TestQuiet","Output":"=== RUN   TestQuiet\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:18.100408668Z","Action":"output","Package":"probe/ok","Test":"TestQuiet","Output":"    ok_test.go:11: quiet passing noise\n"}
+{"Time":"2026-11-04T14:38:18.100412946Z","Action":"output","Package":"probe/ok","Test":"TestQuiet","Output":"--- PASS: TestQuiet (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:18.100416001Z","Action":"pass","Package":"probe/ok","Test":"TestQuiet","Elapsed":0}
+{"Time":"2026-11-04T14:38:18.100418746Z","Action":"run","Package":"probe/ok","Test":"TestLogged"}
+{"Time":"2026-11-04T14:38:18.100422283Z","Action":"output","Package":"probe/ok","Test":"TestLogged","Output":"=== RUN   TestLogged\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:18.10042598Z","Action":"output","Package":"probe/ok","Test":"TestLogged","Output":"    ok_test.go:14: context before failure\n"}
+{"Time":"2026-11-04T14:38:18.100429877Z","Action":"output","Package":"probe/ok","Test":"TestLogged","Output":"    ok_test.go:15: want 1, got 2\n","OutputType":"error"}
+{"Time":"2026-11-04T14:38:18.100434906Z","Action":"output","Package":"probe/ok","Test":"TestLogged","Output":"--- FAIL: TestLogged (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:18.100439334Z","Action":"fail","Package":"probe/ok","Test":"TestLogged","Elapsed":0}
+{"Time":"2026-11-04T14:38:18.100442801Z","Action":"output","Package":"probe/ok","Output":"FAIL\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:18.100506148Z","Action":"output","Package":"probe/ok","Output":"FAIL\tprobe/ok\t0.006s\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:18.100521126Z","Action":"fail","Package":"probe/ok","Elapsed":0.007}

@@ -1,0 +1,12 @@
+{"Time":"2026-11-04T14:38:14.43739853Z","Action":"start","Package":"probe/good"}
+{"Time":"2026-11-04T14:38:14.445678745Z","Action":"start","Package":"probe/empty"}
+{"Time":"2026-11-04T14:38:14.445713178Z","Action":"output","Package":"probe/empty","Output":"?   \tprobe/empty\t[no test files]\n"}
+{"Time":"2026-11-04T14:38:14.445754264Z","Action":"skip","Package":"probe/empty","Elapsed":0}
+{"Time":"2026-11-04T14:38:14.44968134Z","Action":"run","Package":"probe/good","Test":"TestG"}
+{"Time":"2026-11-04T14:38:14.449765004Z","Action":"output","Package":"probe/good","Test":"TestG","Output":"=== RUN   TestG\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:14.449893722Z","Action":"output","Package":"probe/good","Test":"TestG","Output":"    good_test.go:5: g\n"}
+{"Time":"2026-11-04T14:38:14.449952551Z","Action":"output","Package":"probe/good","Test":"TestG","Output":"--- PASS: TestG (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:14.449982136Z","Action":"pass","Package":"probe/good","Test":"TestG","Elapsed":0}
+{"Time":"2026-11-04T14:38:14.450007363Z","Action":"output","Package":"probe/good","Output":"PASS\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:14.453868717Z","Action":"output","Package":"probe/good","Output":"ok  \tprobe/good\t0.008s\n"}
+{"Time":"2026-11-04T14:38:14.453917296Z","Action":"pass","Package":"probe/good","Elapsed":0.017}

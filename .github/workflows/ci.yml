@@ -72,6 +72,14 @@ jobs:
         run: go build ./...
       - name: Vet
         run: go vet ./...
+      # The summariser the two test steps pipe go test -json through
+      # (docs/decisions/ci-test-timings.md). ./... skips .github, so its own
+      # vet and tests run here; summarise.exe runs on every OS.
+      - name: Test timing summariser
+        run: |
+          go vet .github/tests/timings/*.go
+          go test -count=1 .github/tests/timings/*.go
+          go build -o "$RUNNER_TEMP/timings/summarise.exe" .github/tests/timings/*.go
       # Packages with no OS-specific files and no runtime.GOOS run on Linux
       # only; Windows and macOS test the rest
       # (docs/decisions/ci-neutral-packages-ubuntu-only.md).
@@ -82,12 +90,15 @@ jobs:
         env:
           GUILDHALL_CI_REQUIRE: ${{ matrix.require }}
         run: |
+          summarise() {
+            "$RUNNER_TEMP/timings/summarise.exe" -json-out "$RUNNER_TEMP/test-timings/test.json" -title "Test (${{ matrix.os }})"
+          }
           neutral=$(bash .github/neutral-packages.sh neutral)
           if [ "${{ matrix.os }}" = ubuntu-latest ]; then
             echo "neutral packages (run on ubuntu only):"
             echo "$neutral"
-            echo "go test -count=1 -timeout 20m ./..."
-            go test -count=1 -timeout 20m ./...
+            echo "go test -json -count=1 -timeout 20m ./..."
+            go test -json -count=1 -timeout 20m ./... | summarise
             exit 0
           fi
           tested=$(bash .github/neutral-packages.sh tested)
@@ -100,7 +111,7 @@ jobs:
           echo "tested here:"
           echo "$tested"
           # Import paths hold no spaces, so word splitting gives one each.
-          go test -count=1 -timeout 20m $tested
+          go test -json -count=1 -timeout 20m $tested | summarise
       # The Director suites again, each copy managed with the same effective
       # settings (docs/director-modes.md#testing-both-ways).
       # Ubuntu only: H3b of d178, a coverage-reducing choice the Guildmaster
@@ -110,7 +121,15 @@ jobs:
         env:
           GUILDHALL_CI_REQUIRE: ${{ matrix.require }}
           GUILDHALL_TEST_DIRECTOR_MODE: managed
-        run: go test -count=1 -timeout 20m ./internal/cli
+        run: go test -json -count=1 -timeout 20m ./internal/cli | "$RUNNER_TEMP/timings/summarise.exe" -json-out "$RUNNER_TEMP/test-timings/managed.json" -title "Test Director suites managed (${{ matrix.os }})"
+      - name: Upload test timings
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-timings-${{ matrix.os }}
+          path: ${{ runner.temp }}/test-timings/
+          if-no-files-found: warn
+          retention-days: 30
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         if: matrix.os == 'ubuntu-latest'
         with:

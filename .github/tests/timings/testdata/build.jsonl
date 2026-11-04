@@ -1,0 +1,15 @@
+{"ImportPath":"probe/bad [probe/bad.test]","Action":"build-output","Output":"# probe/bad [probe/bad.test]\n"}
+{"ImportPath":"probe/bad [probe/bad.test]","Action":"build-output","Output":"bad/bad.go:3:23: cannot use \"x\" (untyped string constant) as int value in return statement\n"}
+{"ImportPath":"probe/bad [probe/bad.test]","Action":"build-fail"}
+{"Time":"2026-11-04T14:38:17.141129976Z","Action":"start","Package":"probe/bad"}
+{"Time":"2026-11-04T14:38:17.141263032Z","Action":"output","Package":"probe/bad","Output":"FAIL\tprobe/bad [build failed]\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:17.141276076Z","Action":"fail","Package":"probe/bad","Elapsed":0,"FailedBuild":"probe/bad [probe/bad.test]"}
+{"Time":"2026-11-04T14:38:17.141427336Z","Action":"start","Package":"probe/good"}
+{"Time":"2026-11-04T14:38:17.141449827Z","Action":"run","Package":"probe/good","Test":"TestG"}
+{"Time":"2026-11-04T14:38:17.141454456Z","Action":"output","Package":"probe/good","Test":"TestG","Output":"=== RUN   TestG\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:17.141460296Z","Action":"output","Package":"probe/good","Test":"TestG","Output":"    good_test.go:5: g\n"}
+{"Time":"2026-11-04T14:38:17.141468231Z","Action":"output","Package":"probe/good","Test":"TestG","Output":"--- PASS: TestG (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:17.141471748Z","Action":"pass","Package":"probe/good","Test":"TestG","Elapsed":0}
+{"Time":"2026-11-04T14:38:17.141476256Z","Action":"output","Package":"probe/good","Output":"PASS\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:17.141480143Z","Action":"output","Package":"probe/good","Output":"ok  \tprobe/good\t(cached)\n"}
+{"Time":"2026-11-04T14:38:17.141484852Z","Action":"pass","Package":"probe/good","Elapsed":0}

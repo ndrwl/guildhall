@@ -132,6 +132,7 @@ Regenerate it with `go test ./internal/doccheck -run TestDecisionIndex -update`,
 - [CI tests platform-neutral packages on Linux only](decisions/ci-neutral-packages-ubuntu-only.md)
 - [CI runs the race detector as three parallel shard jobs, `race (1)`–`race (3)`](decisions/ci-race-shards.md)
 - [A CI runner's required tools turn their skips into failures](decisions/ci-required-skips.md)
+- [CI pipes its two `go test` steps through a timing summariser that keeps the plain log](decisions/ci-test-timings.md)
 - [Guildhall fetches failed CI job logs for Artisans, who get no `gh`](decisions/failed-job-logs.md)
 - [A requested check rerun still in progress is waited for, not counted as a failure](decisions/flaky-check-reruns-in-progress.md)
 - [The rebased merge-queue front re-runs a failed CI job once, as validate does](decisions/flaky-check-reruns-queue-front.md)
