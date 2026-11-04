@@ -3,6 +3,7 @@ package interp_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -111,6 +112,67 @@ func TestValidateRerunFlake(t *testing.T) {
 			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
 			if got := len(e.messages(t)); got != n {
 				t.Errorf("a replay sent %d new messages", got-n)
+			}
+		})
+	}
+}
+
+// TestValidateRerunFlakeConclusion: the rerun record keeps how the failed run finished, and the flake message says
+// it, so a cancelled job is not reported as a test failure whose test name went missing (d210); a record without a
+// conclusion, as the fake and older records have, gives the message as it was, byte for byte.
+func TestValidateRerunFlakeConclusion(t *testing.T) {
+	const noFail = "2026-10-29T10:00:00.0000000Z ##[group]Run go test ./...\n2026-10-29T10:00:01.0000000Z ok\n"
+	for _, c := range []struct {
+		name, conclusion, log string
+		logErr                error
+		tests                 string
+	}{
+		{name: "cancelled", conclusion: "cancelled", logErr: &forge.LogUnavailableError{Reason: "gh: HTTP 404", Expired: true},
+			tests: "conclusion: cancelled\npassing run: %s\ntests: none; the failed run was cancelled, not a test failure (gh: HTTP 404)\n"},
+		{name: "timed out", conclusion: "timed_out", log: noFail,
+			tests: "conclusion: timed_out\npassing run: %s\ntests: none; the failed run was timed_out, not a test failure\n"},
+		{name: "failure", conclusion: "failure", log: noFail,
+			tests: "conclusion: failure\npassing run: %s\ntests: no test name found in the log\n"},
+		{name: "cancelled with tests", conclusion: "cancelled", log: jobLog,
+			tests: "conclusion: cancelled\npassing run: %s\ntests: TestX\n"},
+		{name: "none", log: noFail, tests: "passing run: %s\ntests: no test name found in the log\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			e, f := newValidateEnv(t, backends[0])
+			e.eng.CILogLimit = 1 << 20
+			checks := flakyChecks()
+			checks[0].Conclusion = c.conclusion
+			f.SetChecks(repoRemote, head, checks...)
+			if c.logErr != nil {
+				f.SetLogError("123", c.logErr)
+			} else {
+				f.SetLog("123", c.log)
+			}
+			want(t, e.toValidate(t), waitChecks)
+			rec := e.pullRequestDoc(t, recordName(head, macos))
+			if got, ok := rec["conclusion"]; c.conclusion == "" && ok || c.conclusion != "" && got != c.conclusion {
+				t.Errorf("rerun record conclusion = %v (%v), want %q", got, ok, c.conclusion)
+			}
+			passed := settle(t, f, head, forge.CheckPassed)
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
+			flakes := withPrefix(e.messages(t), "app.t7.flake.validate."+head[:12]+".")
+			if len(flakes) != 1 {
+				t.Fatalf("flake messages = %v, want one", flakes)
+			}
+			wantText := "policy: rerun-and-file\n" +
+				`Check "test (macos-latest)" of head ` + head + " on pull request https://forge.invalid/1 failed and then passed on its one rerun (step validate, validate-1): a flake.\n" +
+				"platform: macos-latest\njob: 123\n"
+			tests := fmt.Sprintf(c.tests, passed[1].ID)
+			if c.conclusion != "" {
+				conclusion, rest, _ := strings.Cut(tests, "\n")
+				wantText += conclusion + "\n"
+				tests = rest
+			}
+			wantText += "failed run: CR_123 (https://ci.invalid/123)\n" + tests + "log: guildhall ci log app/t7 123"
+			for _, text := range flakes {
+				if text != wantText {
+					t.Errorf("flake message =\n%s\nwant\n%s", text, wantText)
+				}
 			}
 		})
 	}

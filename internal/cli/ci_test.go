@@ -189,6 +189,66 @@ func TestCILogRefusals(t *testing.T) {
 	}
 }
 
+// putDocument writes data as task t-1's document name at path under d's documents and records it.
+func putDocument(t *testing.T, d runDirector, name, path string, data []byte) {
+	t.Helper()
+	file := filepath.Join(d.state, "documents", filepath.FromSlash(path))
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, file, string(data))
+	s, err := store.Open(d.store, store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	if _, err := s.PutDocument("doc:t-1:"+name, store.DocumentRef{Repository: "app", TaskID: "t-1", Name: name, Path: path, SHA256: digest.Of(data).Hex()}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestCILogRerunRecord: the failed job of a rerun record, which no result's logs name, is served by job id, so the
+// log command of a flake message works (d210), whether the result naming the record passed or failed; a check name
+// still means the latest failed result's job first.
+func TestCILogRerunRecord(t *testing.T) {
+	dir, d, f := failedValidate(t)
+	const remote, head = "git@github.com:example/app.git", "0123456789abcdef0123456789abcdef01234567"
+	rerun := func(round int, verdict, job string) {
+		name := fmt.Sprintf("validate-rerun-%d", round)
+		rec, err := json.Marshal(map[string]any{"schema": "guildhall.check-rerun/1", "step": "validate", "head": head, "check": "ci",
+			"failed_run": "CR_" + job, "job": job, "conclusion": "cancelled", "tests": []string{}, "requested_at": "2026-11-04T10:00:00Z"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		putDocument(t, d, name, "tasks/app/t-1/"+name+"/rerun.json", rec)
+		result, err := json.Marshal(map[string]any{"schema": "guildhall.validation-result/1", "verdict": verdict, "remote": remote, "head": head,
+			"reruns": []map[string]any{{"check": "ci", "record": name, "failed_run": "CR_" + job}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		putDocument(t, d, fmt.Sprintf("validate-%d-result", round), fmt.Sprintf("tasks/app/t-1/validate-%d/result.json", round), result)
+		f.SetLog(job, "log of job "+job+"\n")
+	}
+	rerun(2, "passed", "456")
+	rerun(3, "failed", "789")
+	for _, job := range []string{"456", "789"} {
+		if code, out, stderr := ciRun(t, d, "", "--copy", dir, "app/t-1", job); code != 0 || out != "log of job "+job+"\n" {
+			t.Errorf("ci log %s = %d, %q, %s; want the rerun record's job log", job, code, out, stderr)
+		}
+	}
+	cached, err := os.ReadFile(filepath.Join(d.state, "app", "t-1", "ci-logs", "123.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code, out, stderr := ciRun(t, d, "", "--copy", dir, "app/t-1", "ci"); code != 0 || out != string(cached) {
+		t.Errorf("ci log ci = %d, %d bytes, %s; want the failed result's job 123", code, len(out), stderr)
+	}
+	code, _, stderr := ciRun(t, d, "", "--copy", dir, "app/t-1", "999")
+	if i, j, k := strings.Index(stderr, "123\tci"), strings.Index(stderr, "789\tci\t(validate-rerun-3)"), strings.Index(stderr, "456\tci\t(validate-rerun-2)"); code != 2 || i < 0 || j < i || k < j {
+		t.Errorf("ci log 999 = %d, %s; want the failed result's job, then the rerun records' jobs latest first", code, stderr)
+	}
+}
+
 // logCommits is a fake forge that records the commit of every log read.
 type logCommits struct {
 	*forgetest.Fake

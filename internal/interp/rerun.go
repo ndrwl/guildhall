@@ -40,6 +40,9 @@ type rerunDoc struct {
 	FailedRun string `json:"failed_run"`
 	Job       string `json:"job"`
 	URL       string `json:"url,omitempty"`
+	// Conclusion is how the failed run finished, as forge.Check.Conclusion gives it, such as failure or cancelled;
+	// empty when the forge gave none, as in records written before it was kept.
+	Conclusion string `json:"conclusion,omitempty"`
 	// Tests are the failing test names of the failed job's log, from its "--- FAIL: <Name>" lines only, so a test
 	// that was merely running when a go test timeout fired is never named here; Timeout is that timeout, when the
 	// log has one; LogUnavailable is why the log could not be read.
@@ -55,6 +58,16 @@ type rerunTimeout struct {
 	After   string   `json:"after"`
 	Package string   `json:"package,omitempty"`
 	Running []string `json:"running"`
+}
+
+// RerunRecordJob returns the check a rerun record re-ran and the GitHub Actions job of its failed run, whose log
+// guildhall ci log serves. A document that is not a rerun record is an error.
+func RerunRecordJob(data []byte) (check, job string, err error) {
+	var d rerunDoc
+	if json.Unmarshal(data, &d) != nil || d.Schema != rerunSchema {
+		return "", "", fmt.Errorf("not a %s record", rerunSchema)
+	}
+	return d.Check, d.Job, nil
 }
 
 // rerunOutcomeDoc records that the forge refused or failed the rerun of its record, and why; a rerun the forge
@@ -284,7 +297,7 @@ func (r *run) rerunFailed(s workflow.Step, repo config.Repository, pr *pullReque
 	dir := cilog.Dir(r.e.StateDir, r.task.Repository, r.task.ID)
 	accepted := false
 	for i, ch := range failing {
-		d := rerunDoc{Schema: rerunSchema, Step: s.ID, Head: h, Check: ch.Name, FailedRun: ch.ID, Job: ch.Job, URL: ch.URL, Tests: []string{}, RequestedAt: r.now().UTC()}
+		d := rerunDoc{Schema: rerunSchema, Step: s.ID, Head: h, Check: ch.Name, FailedRun: ch.ID, Job: ch.Job, URL: ch.URL, Conclusion: ch.Conclusion, Tests: []string{}, RequestedAt: r.now().UTC()}
 		switch {
 		case r.e.CILogLimit <= 0:
 			d.LogUnavailable = "log fetching is off"
@@ -372,6 +385,9 @@ func (r *run) notifyFlakes(s workflow.Step, id string, v validationDoc) error {
 			fmt.Fprintf(&b, "platform: %s\n", m[1])
 		}
 		fmt.Fprintf(&b, "job: %s\n", d.Job)
+		if d.Conclusion != "" {
+			fmt.Fprintf(&b, "conclusion: %s\n", d.Conclusion)
+		}
 		fmt.Fprintf(&b, "failed run: %s", d.FailedRun)
 		if d.URL != "" {
 			fmt.Fprintf(&b, " (%s)", d.URL)
@@ -386,7 +402,12 @@ func (r *run) notifyFlakes(s workflow.Step, id string, v validationDoc) error {
 		case d.Timeout != nil:
 			fmt.Fprintf(&b, "tests: none failed; %s\n", d.Timeout.text())
 		default:
-			b.WriteString("tests: no test name found in the log")
+			if d.Conclusion != "" && d.Conclusion != "failure" {
+				// A cancelled or timed-out job prints no failed test: no name is missing.
+				fmt.Fprintf(&b, "tests: none; the failed run was %s, not a test failure", d.Conclusion)
+			} else {
+				b.WriteString("tests: no test name found in the log")
+			}
 			if d.LogUnavailable != "" {
 				fmt.Fprintf(&b, " (%s)", d.LogUnavailable)
 			}

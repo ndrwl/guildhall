@@ -40,6 +40,7 @@ type Harness struct {
 	// Refuse makes the forge refuse every later merge with reason; nil skips the refusal case.
 	Refuse func(t *testing.T, reason string)
 	// SetChecks makes checks the checks the forge reports for a pushed head; nil skips the cases that need checks.
+	// Every completed check the cases give has its Conclusion, so a forge that reports one reports the same.
 	SetChecks func(t *testing.T, head string, checks []forge.Check)
 	// Text returns the title and body pull request number reads; nil skips the cases that read them.
 	Text func(t *testing.T, number int) (title, body string)
@@ -277,12 +278,12 @@ func RunForgeContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 		publish(t, h, h.Heads[0])
 		h.SetChecks(t, h.Heads[0], []forge.Check{
 			{Name: "test", State: forge.CheckPending, URL: "https://ci.invalid/test", ID: "run-3"},
-			{Name: "build", State: forge.CheckFailed, URL: "https://ci.invalid/build", ID: "run-1"},
-			{Name: "lint", State: forge.CheckPassed, ID: "run-2"},
+			{Name: "build", State: forge.CheckFailed, URL: "https://ci.invalid/build", ID: "run-1", Conclusion: "cancelled"},
+			{Name: "lint", State: forge.CheckPassed, ID: "run-2", Conclusion: "success"},
 		})
 		want := []forge.Check{
-			{Name: "build", State: forge.CheckFailed, URL: "https://ci.invalid/build", ID: "run-1"},
-			{Name: "lint", State: forge.CheckPassed, ID: "run-2"},
+			{Name: "build", State: forge.CheckFailed, URL: "https://ci.invalid/build", ID: "run-1", Conclusion: "cancelled"},
+			{Name: "lint", State: forge.CheckPassed, ID: "run-2", Conclusion: "success"},
 			{Name: "test", State: forge.CheckPending, URL: "https://ci.invalid/test", ID: "run-3"},
 		}
 		if got := checks(t, h, h.Heads[0]); !slices.Equal(got, want) {
@@ -296,10 +297,10 @@ func RunForgeContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 			t.Skip("this forge cannot be given checks")
 		}
 		publish(t, h, h.Heads[0])
-		h.SetChecks(t, h.Heads[0], []forge.Check{{Name: "ci", State: forge.CheckFailed, ID: "run-1"}})
+		h.SetChecks(t, h.Heads[0], []forge.Check{{Name: "ci", State: forge.CheckFailed, ID: "run-1", Conclusion: "failure"}})
 		checks(t, h, h.Heads[0])
-		h.SetChecks(t, h.Heads[0], []forge.Check{{Name: "ci", State: forge.CheckFailed, ID: "run-2"}})
-		if got := checks(t, h, h.Heads[0]); !slices.Equal(got, []forge.Check{{Name: "ci", State: forge.CheckFailed, ID: "run-2"}}) {
+		h.SetChecks(t, h.Heads[0], []forge.Check{{Name: "ci", State: forge.CheckFailed, ID: "run-2", Conclusion: "failure"}})
+		if got := checks(t, h, h.Heads[0]); !slices.Equal(got, []forge.Check{{Name: "ci", State: forge.CheckFailed, ID: "run-2", Conclusion: "failure"}}) {
 			t.Errorf("Checks after a re-run = %+v, want the new run", got)
 		}
 	})
@@ -310,13 +311,13 @@ func RunForgeContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 			t.Skip("this forge cannot be given checks")
 		}
 		publish(t, h, h.Heads[0])
-		h.SetChecks(t, h.Heads[0], []forge.Check{{Name: "ci", State: forge.CheckFailed}})
+		h.SetChecks(t, h.Heads[0], []forge.Check{{Name: "ci", State: forge.CheckFailed, Conclusion: "failure"}})
 		publish(t, h, h.Heads[1])
-		h.SetChecks(t, h.Heads[1], []forge.Check{{Name: "ci", State: forge.CheckPassed}})
-		if got := checks(t, h, h.Heads[0]); !slices.Equal(got, []forge.Check{{Name: "ci", State: forge.CheckFailed}}) {
+		h.SetChecks(t, h.Heads[1], []forge.Check{{Name: "ci", State: forge.CheckPassed, Conclusion: "success"}})
+		if got := checks(t, h, h.Heads[0]); !slices.Equal(got, []forge.Check{{Name: "ci", State: forge.CheckFailed, Conclusion: "failure"}}) {
 			t.Errorf("Checks of the earlier head = %+v, want its failure", got)
 		}
-		if got := checks(t, h, h.Heads[1]); !slices.Equal(got, []forge.Check{{Name: "ci", State: forge.CheckPassed}}) {
+		if got := checks(t, h, h.Heads[1]); !slices.Equal(got, []forge.Check{{Name: "ci", State: forge.CheckPassed, Conclusion: "success"}}) {
 			t.Errorf("Checks of the published head = %+v, want its pass", got)
 		}
 	})
@@ -343,8 +344,8 @@ func RunForgeContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 		return r
 	}
 	failedJob := []forge.Check{
-		{Name: "lint", State: forge.CheckPassed, ID: "run-2", Job: "102"},
-		{Name: "test (macos-latest)", State: forge.CheckFailed, URL: "https://ci.invalid/test", ID: "run-1", Job: "101"},
+		{Name: "lint", State: forge.CheckPassed, ID: "run-2", Job: "102", Conclusion: "success"},
+		{Name: "test (macos-latest)", State: forge.CheckFailed, URL: "https://ci.invalid/test", ID: "run-1", Job: "101", Conclusion: "failure"},
 	}
 
 	t.Run("re-runs a failed job as a pending new run of the check", func(t *testing.T) {

@@ -112,6 +112,9 @@ func newGitHub(t *testing.T) *gh {
 				case forge.CheckFailed:
 					node["conclusion"] = "FAILURE"
 				}
+				if c.Conclusion != "" {
+					node["conclusion"] = strings.ToUpper(c.Conclusion)
+				}
 				nodes = append(nodes, node)
 			}
 			g.setChecks(t, head, nodes)
@@ -386,6 +389,11 @@ func TestGitHubCheckStates(t *testing.T) {
 		"stale": forge.CheckFailed, "startup-failure": forge.CheckFailed,
 		"s-expected": forge.CheckPending, "s-pending": forge.CheckPending, "s-success": forge.CheckPassed, "s-failure": forge.CheckFailed, "s-error": forge.CheckFailed,
 	}
+	// A completed check run keeps its conclusion, lower-cased; a pending run and a commit status have none.
+	conclusions := map[string]string{
+		"success": "success", "neutral": "neutral", "skipped": "skipped", "failure": "failure", "cancelled": "cancelled",
+		"timed-out": "timed_out", "action-required": "action_required", "stale": "stale", "startup-failure": "startup_failure",
+	}
 	if len(got) != len(want) || !slices.IsSortedFunc(got, func(a, b forge.Check) int { return strings.Compare(a.Name, b.Name) }) {
 		t.Errorf("Checks = %+v, want %d checks sorted by name", got, len(want))
 	}
@@ -402,6 +410,9 @@ func TestGitHubCheckStates(t *testing.T) {
 		}
 		if strings.HasPrefix(c.Name, "s-") != (c.Job == "") {
 			t.Errorf("check %s has job %q; only a GitHub Actions check run has one", c.Name, c.Job)
+		}
+		if c.Conclusion != conclusions[c.Name] {
+			t.Errorf("check %s has conclusion %q, want %q", c.Name, c.Conclusion, conclusions[c.Name])
 		}
 		if strings.HasPrefix(c.Name, "s-") != (c.URL == "") || !strings.HasPrefix(c.Name, "s-") && c.URL != "https://ci.invalid/"+c.Name {
 			t.Errorf("check %s has URL %q", c.Name, c.URL)
@@ -427,6 +438,9 @@ func TestGitHubCheckStates(t *testing.T) {
 	}
 	if data, err := json.Marshal(got[0]); err != nil || strings.Contains(string(data), "job") || strings.Contains(string(data), "100") {
 		t.Errorf("check JSON = %s, %v; want no job", data, err)
+	}
+	if data, err := json.Marshal(got[0]); err != nil || got[0].Conclusion != "failure" || strings.Contains(string(data), "conclusion") || strings.Contains(string(data), "failure") {
+		t.Errorf("check JSON = %s, %v (conclusion %q); want the conclusion kept outside the JSON", data, err, got[0].Conclusion)
 	}
 
 	// A status GitHub adds later would be read wrongly, so an unknown state or kind fails the read.
