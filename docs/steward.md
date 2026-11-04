@@ -139,6 +139,7 @@ The Steward copy is self-contained, so moving it, such as from a laptop to a Lin
 A rollout only reaches machines and Director copies that are already in the roster.
 An existing Director copy is brought into the roster by a [takeover](#takeover), or by hand ([managing a Director copy](#managing-a-director-copy)).
 Creating the machine's Guildhall account, SSH setup, host-key trust, Claude and forge sign-in and administrator steps belong to the setup wizard (R1.43-R1.51), which is not implemented yet; its sign-in step is built as the standalone [`guildhall signin`](signin.md), which checks, guides and verifies each runtime's sign-in on the machine it runs on.
+The engine such a wizard and d128's provisioning run on, [`guildhall setup`](setup.md), is built: its doctor reports a machine's gaps against step files and its wizard walks a person through the human ones, but no Steward command runs it on a machine yet.
 A rollout never adds a machine, account, Director or repository to the roster, never creates a Director copy and never asks for or stores a credential.
 Each machine's other [secrets](secrets.md) are sops ciphertext encrypted to its own age key, from `guildhall secrets init`, and decrypted in memory by `director start` and `steward start`; until the Steward pushes them, a separate command from rollouts, they are written by hand on each machine.
 

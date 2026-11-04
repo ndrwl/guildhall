@@ -1,0 +1,63 @@
+# The Go toolchain, unpacked into ~/.local/go with no administrator rights, from the release archive the caller
+# names with its sha256 (such as a Steward plan's pin of https://go.dev/dl/go<version>.<os>-<arch>.tar.gz).
+schema = "guildhall.steps/1"
+name = "go"
+title = "The Go toolchain"
+
+[params]
+go_version = ""
+go_url = ""
+go_sha256 = ""
+
+[[step]]
+id = "go"
+title = "Install Go into ~/.local/go"
+tag = "fixable"
+os = ["linux", "darwin"]
+expect = "go${go_version}"
+creates = ["${home}/.local/go"]
+undo = "Remove ~/.local/go and its line in the setup manifest."
+
+[step.check]
+shell = "sh"
+script = '''
+if [ -x "$SETUP_HOME/.local/go/bin/go" ]; then
+  "$SETUP_HOME/.local/go/bin/go" version
+elif command -v go >/dev/null 2>&1; then
+  go version
+else
+  echo "go is not on PATH or in ~/.local/go/bin"
+  exit 1
+fi
+'''
+
+[step.fetch]
+url = "${go_url}"
+sha256 = "${go_sha256}"
+dest = "${home}/.local/go"
+unpack = "tar.gz"
+strip = 1
+
+[step.verify]
+shell = "sh"
+script = '"$SETUP_HOME/.local/go/bin/go" version'
+
+[[step]]
+id = "go-on-path"
+title = "Put Go on your PATH"
+tag = "human"
+os = ["linux", "darwin"]
+expect = "go${go_version}"
+check = ["go", "version"]
+instructions = '''
+Add Go's bin directory to PATH in your shell's startup file (~/.profile, ~/.bashrc or ~/.zshrc):
+
+    export PATH="$HOME/.local/go/bin:$HOME/go/bin:$PATH"
+
+Then open a new shell, or source the file, and run `go version` to see it.
+'''
+undo = "Remove the PATH line you added from your shell's startup file."
+
+[[step.prompt]]
+kind = "confirm"
+text = "Have you added the PATH line and started a shell that has it?"

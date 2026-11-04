@@ -302,6 +302,7 @@ Regenerate it with `go test ./internal/doccheck -run TestDecisionIndex -update`,
 - [Repository paths are absolute in the owner machine's form](decisions/repository-paths-are-absolute.md)
 - [Rollout plans, previews and receipts live in one plan directory](decisions/rollout-plans-previews-and-receipts.md)
 - [A machine's secrets are sops+age ciphertext encrypted to its own key, decrypted in memory at start](decisions/secrets-sops-age.md)
+- [Machine setup runs on one Go engine of declarative step files, ported from Firstmate's wizard and doctor scripts](decisions/setup-engine-from-firstmate.md)
 - [Steward collection adds three fixed commands and marks items through an scp receipt](decisions/steward-collection-commands.md)
 - [The Steward runs only a fixed allow-list of Guildhall commands over ssh](decisions/steward-fixed-remote-commands.md)
 - [The Steward reads each enrolled Director's status to report a stuck, unhealthy or out-of-date Director](decisions/steward-reads-director-status.md)

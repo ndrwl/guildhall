@@ -1,0 +1,70 @@
+Guildhall
+Copyright (c) 2026 Andrew Lee
+Licensed under the MIT License; see LICENSE.
+
+Guildhall includes work adapted from the following projects, each under the MIT License.
+
+------------------------------------------------------------------------------
+Firstmate
+
+internal/setup is a Go port of the behaviour of Firstmate's bin/fm-remote-doctor.sh
+(internal/setup/doctor.go) and bin/fm-install-herdr.sh (internal/setup/fetch.go,
+internal/setup/builtin/herdr.toml), as of ndrwl/firstmate commit
+2add138ffe92309787dbbedf375beb4f05704f7b, and of the wizard template Firstmate
+uses, bin/wizard-template.sh and bin/wizard-template.ps1 in ndrwl/dev-setup at
+commit 8a095ccfeff5563f776f743d088b44c5afc57747 (internal/setup/wizard.go,
+internal/setup/term.go). See docs/decisions/setup-engine-from-firstmate.md,
+which records the port and these revisions.
+
+MIT License
+
+Copyright (c) 2026 Andrew Lee
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+------------------------------------------------------------------------------
+mattpocock/skills (https://github.com/mattpocock/skills)
+
+Several release skills under skills/ are adapted from mattpocock/skills at
+commit 5beb35b040e3de97e54fa9e386d7e42d15c295c2; skills/CREDITS.md lists each
+skill and its upstream source. The dev-setup wizard template that
+internal/setup/wizard.go and internal/setup/term.go port was itself adapted
+from mattpocock/skills at commit 49dd158.
+
+MIT License
+
+Copyright (c) 2026 Matt Pocock
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

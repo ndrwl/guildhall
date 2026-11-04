@@ -149,6 +149,7 @@ The commands are the Director's tools; you can also call them yourself to script
 `guildhall help` lists them, and each links to its own page.
 
 - `guildhall version` and `guildhall doctor`: version, revision, latest merge, how far behind main, platform and which tools are installed.
+- `guildhall setup doctor`, `guildhall setup wizard` and `guildhall setup run`: check this machine against Guildhall's step files (Herdr, Go, Git and Claude Code, sign-in, WSL settings), close the fixable gaps and walk through the human ones as numbered steps; see [setup](docs/setup.md).
 - `guildhall signin`: check this machine's Claude Code, Codex and `gh` sign-ins with a real call, and print the command and link for a missing one; see [sign-in](docs/signin.md).
 - `guildhall secrets init`: create this machine's age key outside every copy and print its public key, for the secrets `director start` decrypts in memory; see [secrets](docs/secrets.md).
 - `guildhall task new|show|list|timeline|files|finding rule|review`: create and inspect tasks; see [tasks](docs/tasks.md).
