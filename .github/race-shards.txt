@@ -1,0 +1,69 @@
+# Which CI race job runs each package: race (1), race (2) or race (3).
+# One line per package of `go list ./...`: <shard> <import path>.
+# Every package must be in exactly one shard; `bash .github/race-shards.sh check`
+# enforces it in each race job. Rebalance by moving lines, never by adding
+# shards (docs/decisions/ci-race-shards.md). The timings behind this split are
+# in docs/evidence/ci-race-shards-2026-11-timings.md; the five slowest packages
+# (cli, launch, interp, cmd/guildhall, artisan) are kept apart.
+
+# Shard 1: internal/cli, the slowest package, with three mid-sized ones.
+1 github.com/ndrwl/guildhall/internal/cli
+1 github.com/ndrwl/guildhall/internal/forge
+1 github.com/ndrwl/guildhall/internal/git
+1 github.com/ndrwl/guildhall/internal/store
+
+# Shard 2: internal/launch and internal/artisan.
+2 github.com/ndrwl/guildhall/internal/adapter/claude
+2 github.com/ndrwl/guildhall/internal/artisan
+2 github.com/ndrwl/guildhall/internal/herdr
+2 github.com/ndrwl/guildhall/internal/launch
+2 github.com/ndrwl/guildhall/internal/release
+2 github.com/ndrwl/guildhall/internal/steward
+
+# Shard 3: internal/interp and cmd/guildhall, with the remaining small packages.
+3 github.com/ndrwl/guildhall/baseline
+3 github.com/ndrwl/guildhall/cmd/guildhall
+3 github.com/ndrwl/guildhall/cmd/guildhall-launcher
+3 github.com/ndrwl/guildhall/internal/adapter
+3 github.com/ndrwl/guildhall/internal/adapter/adaptertest
+3 github.com/ndrwl/guildhall/internal/adapter/claude/claudetest
+3 github.com/ndrwl/guildhall/internal/adapter/codex
+3 github.com/ndrwl/guildhall/internal/adapter/fake
+3 github.com/ndrwl/guildhall/internal/adapter/runtimes
+3 github.com/ndrwl/guildhall/internal/adapter/tabcontract
+3 github.com/ndrwl/guildhall/internal/admit
+3 github.com/ndrwl/guildhall/internal/artisan/artisantest
+3 github.com/ndrwl/guildhall/internal/atomicfile
+3 github.com/ndrwl/guildhall/internal/backup
+3 github.com/ndrwl/guildhall/internal/cilog
+3 github.com/ndrwl/guildhall/internal/clerk
+3 github.com/ndrwl/guildhall/internal/config
+3 github.com/ndrwl/guildhall/internal/copydir
+3 github.com/ndrwl/guildhall/internal/digest
+3 github.com/ndrwl/guildhall/internal/doccheck
+3 github.com/ndrwl/guildhall/internal/endpoint
+3 github.com/ndrwl/guildhall/internal/endpoint/endpointtest
+3 github.com/ndrwl/guildhall/internal/forge/forgetest
+3 github.com/ndrwl/guildhall/internal/git/gittest
+3 github.com/ndrwl/guildhall/internal/interp
+3 github.com/ndrwl/guildhall/internal/interp/interptest
+3 github.com/ndrwl/guildhall/internal/lanterns
+3 github.com/ndrwl/guildhall/internal/launch/launchtest
+3 github.com/ndrwl/guildhall/internal/launcher
+3 github.com/ndrwl/guildhall/internal/messaging
+3 github.com/ndrwl/guildhall/internal/messaging/messagingtest
+3 github.com/ndrwl/guildhall/internal/policies
+3 github.com/ndrwl/guildhall/internal/quality
+3 github.com/ndrwl/guildhall/internal/reconcile
+3 github.com/ndrwl/guildhall/internal/release/releasetest
+3 github.com/ndrwl/guildhall/internal/render
+3 github.com/ndrwl/guildhall/internal/session
+3 github.com/ndrwl/guildhall/internal/spec
+3 github.com/ndrwl/guildhall/internal/steward/stewardtest
+3 github.com/ndrwl/guildhall/internal/strictjson
+3 github.com/ndrwl/guildhall/internal/testenv
+3 github.com/ndrwl/guildhall/internal/web
+3 github.com/ndrwl/guildhall/internal/web/webtest
+3 github.com/ndrwl/guildhall/internal/workbench
+3 github.com/ndrwl/guildhall/internal/workflow
+3 github.com/ndrwl/guildhall/skills

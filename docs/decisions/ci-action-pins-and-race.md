@@ -4,6 +4,7 @@ date: 2026-10-31
 topic: ci
 tasks: d78, d84, d89, d93
 amends: ci-matrix-and-lint.md, release-policy-regression-test.md
+amended-by: ci-race-shards.md
 ---
 
 # CI pins actions by commit, runs a Linux race step and runs the release test
@@ -24,16 +25,19 @@ Hallmark d78 finding H11 found three gaps in CI: the [release policy test](relea
   The step's first run failed, and guildhall/d89 (`e0993c47`) fixed that failure.
   The step is now blocking: a race failure fails the `test (ubuntu-latest)` job and so blocks merges; main run 41154510329 at `2420a81e` confirmed it green, and so did guildhall/d93's own CI run.
   The step sits after the release test so a red race run cannot skip it.
+  [ci-race-shards](ci-race-shards.md) has since moved the race run out of the `test` job into the three parallel jobs `race (1)`–`race (3)`.
 - **The release test in CI.**
   The same Linux leg runs `.github/tests/test_release.py` on Python 3.12 from `actions/setup-python`, with PyYAML 6.0.1 installed by pip, which makes the release test's "Python 3" exact.
   3.12 is chosen because PyYAML 6.0.1 is understood to publish wheels up to CPython 3.12, which this change's first CI run checked.
-- All new steps sit in the existing `test` job, so they are part of the already-required `test (ubuntu-latest)` check without editing branch protection.
+- The release-test steps sit in the existing `test` job, so they are part of the already-required `test (ubuntu-latest)` check without editing branch protection.
+  The race step first sat there too; it is now its own `race` jobs ([ci-race-shards](ci-race-shards.md)), whose checks the Guildmaster adds to branch protection.
 
 ## Alternatives rejected
 
 - Race runs on every platform: `-race` needs cgo and a C compiler, which the Linux runner has, and one race-enabled run finds what the other legs would.
 - The runner's system Python: it is externally managed (PEP 668) and refuses `pip install`.
 - A new CI job: it would need a branch-protection change to be required.
+  This was later outweighed for the race run, whose 15.5 min made the ubuntu job CI's critical path; [ci-race-shards](ci-race-shards.md) takes the protection change.
 
 ## Consequences
 
