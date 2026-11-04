@@ -27,7 +27,7 @@ It sets only `FORCE_HYPERLINK=1` in a Director's environment ([Director start](d
 Without its exact value `1`, the function-hook module does nothing: no `/calm`, preference reads, [ticket links](#ticket-links), timers, redraws or frame changes.
 The marker instruction and native status line remain available.
 This integration is checked with Claude Code 2.1.310's zero-model-call `claude plugin test`; early-access API changes may require an adapter update.
-The automated cross-platform CI also runs the engine-independent presentation contracts with Node 24.
+CI also runs the engine-independent presentation contracts with Node 24 on Linux; they have no OS dependency.
 
 ## Reply lights and the status line
 
