@@ -34,6 +34,9 @@ type Kind string
 const (
 	// KindText is assistant text, already stripped of control characters.
 	KindText Kind = "text"
+	// KindThinking is the model's thinking, already stripped of control characters, or empty when the model did
+	// not show it. It carries no Log: the wrapper writes no stdout line for it, so launcher.log is unchanged.
+	KindThinking Kind = "thinking"
 	// KindToolCall is one tool call: its id, tool name and short subject.
 	KindToolCall Kind = "tool_call"
 	// KindToolResult is the result of the call with the same id: whether it is an error, and its size.
@@ -65,6 +68,9 @@ type Event struct {
 
 // Text is a KindText event for text, which the wrapper wrote to stdout as log.
 func Text(text string, log []string) Event { return Event{Kind: KindText, Text: text, Log: log} }
+
+// Thinking is a KindThinking event for text, which is empty when the model did not show its thinking.
+func Thinking(text string) Event { return Event{Kind: KindThinking, Text: text} }
 
 // ToolCall is a KindToolCall event, which the wrapper wrote to stdout as log.
 func ToolCall(id, name, subject string, log []string) Event {

@@ -24,6 +24,9 @@ func stamped(e Event, offset time.Duration) Event {
 // scenario renders one attempt's worth of every kind of line.
 func scenario(r *Renderer) {
 	r.Header("guildhall", "d36", "build", "1")
+	r.Event(stamped(Thinking("The spec asks for **thinking** first. I should read it, then run the tests across every package to see where the repository stands.\n\nA second paragraph \x1b[31mwith\x1b[0m an injected escape."), 0))
+	r.Event(stamped(Thinking("Two pieces of thinking in a row stay apart."), 0))
+	r.Event(stamped(Thinking(""), 0))
 	r.Event(stamped(Text("# Plan\n\nI will **read** the spec, then run `go test ./...` across every package in the repository to see where it stands before changing anything.\n\n"+
 		"- read `spec.md` and the notes beside it, which explain the merge rule and the quiet line in detail\n"+
 		"* run the tests\n"+
@@ -108,8 +111,12 @@ func checkRendered(t *testing.T, got string, width int, color bool) {
 	if color && !strings.HasSuffix(got, reset) {
 		t.Error("coloured output does not end with an SGR reset")
 	}
-	plainText := strings.NewReplacer("\x1b[0m", "", "\x1b[0;0m", "", "\x1b[0;1m", "", "\x1b[0;2m", "", "\x1b[0;33m", "", "\x1b[0;36m", "", "\x1b[0;31m", "", "\x1b[0;1;32m", "").Replace(got)
+	plainText := strings.NewReplacer("\x1b[0m", "", "\x1b[0;0m", "", "\x1b[0;1m", "", "\x1b[0;2m", "", "\x1b[0;33m", "", "\x1b[0;36m", "", "\x1b[0;31m", "", "\x1b[0;1;32m", "", "\x1b[0;3m", "", "\x1b[0;35m", "").Replace(got)
 	for _, want := range []string{
+		"┃ The spec asks for **thinking** first.",
+		"┃\n┃ A second paragraph [31mwith[0m an",
+		"escape.\n\n┃ Two pieces of thinking in a row stay",
+		"apart.\n· thinking not shown by the model\n",
 		"guildhall guildhall · d36 · build · 1",
 		"14:03:10 ▸ Read /work/spec.md",
 		"14:03:11 ▸ Bash go test ./...",
@@ -146,6 +153,36 @@ func TestRendererErrorColour(t *testing.T) {
 		if !strings.Contains(lines[i], want) {
 			t.Errorf("line %d = %q, want it to hold %q", i, lines[i], visible(want))
 		}
+	}
+}
+
+// TestThinking: shown thinking is italic behind a magenta margin on every wrapped line, with no Markdown; two
+// shown pieces in a row are kept apart by one blank line, and anything between them, or hidden thinking, ends the
+// run; empty or blank thinking is one dimmed line; without colour the margin alone marks it.
+func TestThinking(t *testing.T) {
+	var out bytes.Buffer
+	r := NewRenderer(&out, Options{Width: 40, Color: true, Location: time.UTC})
+	r.Event(stamped(Thinking("one **two** three four five six seven eight nine"), 0))
+	r.Event(stamped(Thinking("next"), 0))
+	r.Event(stamped(Thinking(" \n\t"), 0))
+	r.Event(stamped(Thinking("after hidden"), 0))
+	r.Event(stamped(Text("**done**", nil), 0))
+	want := "\x1b[0;35m┃ \x1b[0;3mone **two** three four five six seven\x1b[0m\n" +
+		"\x1b[0;35m┃ \x1b[0;3meight nine\x1b[0m\n" +
+		"\n" +
+		"\x1b[0;35m┃ \x1b[0;3mnext\x1b[0m\n" +
+		"\x1b[0;2m· thinking not shown by the model\x1b[0m\n" +
+		"\x1b[0;35m┃ \x1b[0;3mafter hidden\x1b[0m\n" +
+		"\x1b[0;1mdone\x1b[0m\n"
+	if out.String() != want {
+		t.Errorf("thinking =\n%s\nwant\n%s", visible(out.String()), visible(want))
+	}
+
+	out.Reset()
+	r = NewRenderer(&out, Options{Width: 40})
+	r.Thinking("a\n\nb")
+	if got := out.String(); got != "┃ a\n┃\n┃ b\n" {
+		t.Errorf("thinking without colour = %q", got)
 	}
 }
 

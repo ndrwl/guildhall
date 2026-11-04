@@ -1,5 +1,12 @@
 guildhall guildhall · d36 · build · 1
 ────────────────────────────────────────────────────────────────────────────────
+┃ The spec asks for **thinking** first. I should read it, then run the tests
+┃ across every package to see where the repository stands.
+┃
+┃ A second paragraph [31mwith[0m an injected escape.
+
+┃ Two pieces of thinking in a row stay apart.
+· thinking not shown by the model
 Plan
 
 I will read the spec, then run go test ./... across every package in the

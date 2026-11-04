@@ -175,13 +175,16 @@ claude --print <instruction> --output-format stream-json --verbose --permission-
 - For the [Workbench](artisan.md#workbench), the wrapper also appends adapter-neutral events to `workbench.jsonl` in the attempt directory, beside `claude-settings.json` and the result, never in the model directory; **its output is unchanged**, so `launcher.log`'s content, format and mtime-based stall detection are untouched.
   Each line is a JSON object with `schema` `guildhall.workbench-event`, `version` 1, `seq`, `time` (when the wrapper received the event, RFC 3339) and `kind`:
   - `text`: `text`, with terminal controls removed as on the output;
+  - `thinking`: from an `assistant` event's `thinking` block, its `thinking` as `text`, with terminal controls removed; a `redacted_thinking` block, or one whose thinking is empty or blank (signature only), gives a `thinking` event with no `text`, thinking the model did not show;
   - `tool_call`: the tool use's `id`, `name` and `subject`, cut as on the output;
   - `tool_result`: from a `user` event's `tool_result` block, the call's `id`, `error` (its `is_error`), and the `bytes` and `lines` of its content, a string or an array of blocks; stream-json carries no structured exit code, so none is parsed from the text;
   - `end`: once Claude exits, its `exit` status (-1 when it has none);
   - `truncated`: the last event of a file that reached its cap.
 
   `text` and `tool_call` events also carry `log`, the exact lines the wrapper writes to its output for them, and each event's line is written before those lines.
-  Thinking blocks and `system` events are still not shown.
+  A `thinking` event carries no `log`: the wrapper writes nothing to its output for thinking, so `launcher.log` and `artisan_pane_output = "plain"` never show it.
+  `system` events are still not shown.
+  A bridge older than an event kind ignores it, so an older bridge replaying a newer event file drops `thinking` events silently.
   Each event is bounded at 4 MiB and the file at 64 MiB; at the cap the wrapper writes one `truncated` event and stops, and an error writing the file is ignored, like one on the output, never breaking Claude's pipe or the attempt.
   Events are bounded individually at 4 MiB, so earlier transcript volume cannot crowd out final usage; malformed or oversized events are ignored and a missing final result event means unknown usage.
 
