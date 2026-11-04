@@ -55,6 +55,7 @@ Commands:
   signin [--check] [--copy <dir>] [claude|codex|gh]...
                  check each runtime's sign-in on this machine, print the command and link for a missing one,
                  wait, then verify it with a real call; --check reports only
+  secrets init   create this machine's age key outside every copy, owner-only, and print its public key
   store init <path>
                  create and initialize an empty store file
   store doctor <path>
@@ -397,6 +398,8 @@ func (a *App) Run(args []string) int {
 		out = a.doctor()
 	case "signin":
 		return a.signinCmd(rest)
+	case "secrets":
+		return a.secretsCmd(rest)
 	case "spend":
 		return a.spend(rest)
 	case "prune":

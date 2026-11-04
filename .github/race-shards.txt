@@ -58,6 +58,7 @@
 3 github.com/ndrwl/guildhall/internal/reconcile
 3 github.com/ndrwl/guildhall/internal/release/releasetest
 3 github.com/ndrwl/guildhall/internal/render
+3 github.com/ndrwl/guildhall/internal/secrets
 3 github.com/ndrwl/guildhall/internal/session
 3 github.com/ndrwl/guildhall/internal/spec
 3 github.com/ndrwl/guildhall/internal/steward/stewardtest

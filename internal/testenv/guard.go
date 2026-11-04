@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/ndrwl/guildhall/internal/secrets"
 )
 
 // guard is a program on PATH that a test must never reach for real: a model runtime whose run would make a model
@@ -71,12 +73,31 @@ func (g guard) fileName() string {
 	return g.program
 }
 
+// InstallSecretsGuard points secrets.DirEnv at a new empty directory, so no test, nor any process it starts, reads
+// the machine's real key or secrets file: a test that wants secrets sets the variable to its own directory. A
+// process that inherited the variable installs nothing and its remove does nothing. See docs/contracts/testenv.md.
+func InstallSecretsGuard() (remove func(), err error) {
+	if os.Getenv(secrets.DirEnv) != "" {
+		return func() {}, nil
+	}
+	dir, err := os.MkdirTemp("", "guildhall-secrets-guard-")
+	if err != nil {
+		return nil, fmt.Errorf("secrets guard: %w", err)
+	}
+	if err := os.Setenv(secrets.DirEnv, dir); err != nil {
+		_ = os.RemoveAll(dir)
+		return nil, err
+	}
+	return func() { _ = os.RemoveAll(dir) }, nil
+}
+
 // AttemptEnv is artisan.AttemptEnv, the attempt marker the launcher sets, which RunWithGuards clears; testenv imports
-// no Guildhall package, so it is repeated here and a cli test pins the two equal.
+// no Guildhall package that names it, so it is repeated here and a cli test pins the two equal.
 const AttemptEnv = "GUILDHALL_ATTEMPT"
 
-// RunWithGuards runs m with the claude and codex guards installed (InstallClaudeGuard, InstallCodexGuard), removes
-// them, and returns m's exit code, or 2 when a guard cannot be installed; TestMain passes the code to os.Exit.
+// RunWithGuards runs m with the claude and codex guards and the secrets guard installed (InstallClaudeGuard,
+// InstallCodexGuard, InstallSecretsGuard), removes them, and returns m's exit code, or 2 when a guard cannot be
+// installed; TestMain passes the code to os.Exit.
 func RunWithGuards(m *testing.M) int {
 	// An Artisan running the checks inside its attempt passes its attempt marker on; the tests run as outside any
 	// attempt, as on CI, so a guildhall they start never takes its Artisan forms, and those that need one set it.
@@ -84,7 +105,7 @@ func RunWithGuards(m *testing.M) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
-	for _, install := range []func() (func(), error){InstallClaudeGuard, InstallCodexGuard} {
+	for _, install := range []func() (func(), error){InstallClaudeGuard, InstallCodexGuard, InstallSecretsGuard} {
 		remove, err := install()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)

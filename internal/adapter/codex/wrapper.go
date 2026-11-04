@@ -26,6 +26,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter/claude"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/atomicfile"
+	"github.com/ndrwl/guildhall/internal/secrets"
 	"github.com/ndrwl/guildhall/internal/workbench"
 )
 
@@ -260,6 +261,10 @@ func Run(ctx context.Context, a Args, answers Answers, stdout, stderr io.Writer)
 	if err := (Adapter{}).CheckSettings(a.Settings); err != nil {
 		return err
 	}
+	// Values the Artisan inherited through its profile's inherit_env are redacted from its output, the Workbench
+	// event file, the answer and the result (docs/secrets.md#redaction).
+	red := secrets.FromEnv(os.Getenv)
+	stdout, stderr = red.Writer(stdout), red.Writer(stderr)
 	rules, err := claude.ProfileTools(a.Copy, a.Profile, a.Repository)
 	if err != nil {
 		return fmt.Errorf("codex adapter: profile: %w", err)
@@ -320,7 +325,7 @@ func Run(ctx context.Context, a Args, answers Answers, stdout, stderr io.Writer)
 	ctx, cancel := watchMarker(ctx, a)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path, ExecArgs(a, ans, workDir, schemaFile)...)
-	events, closeEvents := openEvents(a.ResultFile)
+	events, closeEvents := openEvents(a.ResultFile, red)
 	defer closeEvents()
 	// Codex's error output and the decoder's own lines share stderr, from two goroutines.
 	errOut := &lockedWriter{w: stderr}
@@ -343,7 +348,7 @@ func Run(ctx context.Context, a Args, answers Answers, stdout, stderr io.Writer)
 		usageErr = fmt.Errorf("codex adapter: usage: %w", err)
 	}
 	if s.final != nil {
-		_ = os.WriteFile(filepath.Join(filepath.Dir(a.ResultFile), FinalMessageFile), []byte(*s.final), 0o600)
+		_ = os.WriteFile(filepath.Join(filepath.Dir(a.ResultFile), FinalMessageFile), red.Bytes([]byte(*s.final)), 0o600)
 	}
 	if err := s.failure(); err != nil {
 		return errors.Join(err, usageErr)
@@ -352,6 +357,7 @@ func Run(ctx context.Context, a Args, answers Answers, stdout, stderr io.Writer)
 	if err != nil {
 		return errors.Join(err, usageErr)
 	}
+	r.Summary, doc = red.String(r.Summary), red.Bytes(doc)
 	if doc != nil {
 		if err := atomicfile.Write(filepath.Join(workDir, filepath.FromSlash(ans.File)), doc); err != nil {
 			return errors.Join(fmt.Errorf("codex adapter: answer: %w", err), usageErr)
@@ -555,13 +561,14 @@ func WorkbenchPath(result string) string {
 	return filepath.Join(filepath.Dir(result), workbench.File)
 }
 
-// openEvents opens the attempt's Workbench event file for append; one that cannot be opened writes no events.
-func openEvents(result string) (*workbench.Writer, func()) {
+// openEvents opens the attempt's Workbench event file for append, each line with red's values redacted; one that
+// cannot be opened writes no events.
+func openEvents(result string, red *secrets.Redactor) (*workbench.Writer, func()) {
 	f, err := os.OpenFile(WorkbenchPath(result), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil, func() {}
 	}
-	return workbench.NewWriter(f), func() { _ = f.Close() }
+	return workbench.NewWriter(red.Writer(f)), func() { _ = f.Close() }
 }
 
 // exitStatus is the exit status err reports for Codex's process: 0 for none, the process's status, or -1.

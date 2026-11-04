@@ -27,7 +27,8 @@ It writes the guard to a new temporary directory, removes from `PATH` every dire
 It records the directory in `GUILDHALL_TEST_CLAUDE_GUARD`; a child that inherits both installs nothing, and its `remove` does nothing.
 Removing those directories also hides any other tool beside a developer's `claude`, such as in `~/.local/bin`, from the guarded tests.
 `InstallCodexGuard()` does the same for `codex`: its guard writes `guildhall test: real codex invoked: <args>` (`CodexGuardMessage`) and exits 97 (`CodexGuardExit`), it records its directory in `GUILDHALL_TEST_CODEX_GUARD`, and a stub a test prepends later still wins, so no test reaches a real Codex CLI.
-`RunWithGuards(m)` installs both guards, runs `m`, removes them and returns the exit code, 2 when a guard cannot be installed.
+`InstallSecretsGuard()` sets `GUILDHALL_SECRETS_DIR` (`secrets.DirEnv`) to a new empty temporary directory, unless it is already set, so no test, nor any process it starts, reads the machine's real [key or secrets file](../secrets.md#where-they-live); a test that wants secrets sets the variable to its own directory.
+`RunWithGuards(m)` installs the three guards, runs `m`, removes them and returns the exit code, 2 when a guard cannot be installed.
 Every package whose tests start subprocesses calls it from `TestMain`: `cmd/guildhall`, `internal/cli`, `internal/launch`, `internal/adapter/claude` and `internal/interp`, so `go test ./...` on a developer's machine is guarded as well as CI.
 This closes the gap `interp.CheckAdapter` leaves in a built binary, where `testing.Testing()` is false.
 
