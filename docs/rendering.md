@@ -62,7 +62,11 @@ The interpreter supplies the attempt's recorded review revisions through `Stage.
 Standalone rendering without revisions shows explicitly illustrative values to replace, never a claim that zero hashes identify the real subject.
 A review must write the outcome file and list it in result `outputs`; a verdict in summary alone is insufficient.
 Code-head ports need no file: Guildhall records the final committed Git HEAD automatically, and the result uses `outputs: []`.
-Plan, design and hallmark document ports add a Strict sections block (`render.strictSections`): for each section Guildhall parses itself, the plan's `## Summary`, `## Slices` and `## Open questions`, the design's `## Open questions` and the hallmark report's `## Questions`, its rule, a valid and an invalid example and the exact error the invalid one gets, all from `internal/spec`'s examples (`spec.Example`), whose parser tests run them.
+A document port whose sections intake refuses adds a Strict sections block (`render.strictSections`): for each such section, its rule, a valid and an invalid example and the exact error the invalid one gets, all from `internal/spec`'s examples (`spec.Example`), whose parser tests run them.
+Which sections those are depends on the workflow, and `interp.StrictSections(def, step)` is their one owner: the interpreter passes its list in `Stage.Strict`, render prints exactly that list, and intake checks exactly that list.
+A plan always has `## Slices`, and also `## Summary` and `## Open questions` when a `guildmaster-approval` step of the workflow shows its spec; a bug workflow's plan has `## Slices` alone. A design has `## Open questions`.
+A render with no `Stage.Strict`, such as a `guildhall render` request without the optional `strict` field, prints no refused block.
+A hallmark report also shows its `## Questions` block, which Guildhall parses for the follow-ups ask but intake does not refuse; render keeps that block itself.
 The generated Result template carries the task and attempt identity and the matching file entries, and says to write the result to the draft file the runtime names and submit it with [`guildhall result submit`](contracts/cli.md), fixing and resubmitting it until it prints `ok` (`render.SubmitStep`); a runtime that names only a result file has it written there once, as the last action.
 Adapters name where to write that result and refer to this template instead of supplying an empty-output default.
 Director-actor prompts omit these generated sections and retain [command-based completion](running.md#step-finish).

@@ -1219,14 +1219,10 @@ func (r *run) checkOutputs(s workflow.Step, n int, outputs []adapter.Output) (*c
 	}
 	// A plan's spec is checked for the slice list Guildhall would deliver before it is recorded; one already recorded
 	// stands on replay.
+	// Its strict sections are exactly those StrictSections lists, which its prompt printed.
 	if s.Type == "plan" && port.Name == "spec" && !recorded {
-		if err := r.checkSlices(c.contents[0]); err != nil {
+		if err := r.checkStrict(s, c.contents[0]); err != nil {
 			return nil, err
-		}
-		if r.approvalShows(s.ID + "." + port.Name) {
-			if err := checkSummary(c.contents[0]); err != nil {
-				return nil, err
-			}
 		}
 	}
 	// A designer's mock-up is checked against its brief's surface, and its design for its open questions, before
@@ -1235,7 +1231,7 @@ func (r *run) checkOutputs(s workflow.Step, n int, outputs []adapter.Output) (*c
 		if err := r.checkMockup(s, n, outputs, c.contents); err != nil {
 			return nil, err
 		}
-		if err := checkDesignQuestions(c.contents[0]); err != nil {
+		if err := r.checkStrict(s, c.contents[0]); err != nil {
 			return nil, err
 		}
 	}
@@ -1442,7 +1438,7 @@ func (r *run) ask(s workflow.Step) (Next, error) {
 		return Next{}, err
 	}
 	k := r.nextRound(s.ID)
-	stage := render.Stage{Repository: r.task.Repository, Task: r.task.ID, Step: s, Attempt: k}
+	stage := render.Stage{Repository: r.task.Repository, Task: r.task.ID, Step: s, Attempt: k, Strict: StrictSections(r.base, s)}
 	if s.Type == "guildmaster-approval" {
 		stage.Summary, stage.NoSummary, stage.Questions = r.summary(inputs)
 	}

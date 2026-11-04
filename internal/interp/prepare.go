@@ -63,7 +63,7 @@ func (r *run) preparation(s workflow.Step, n int, inputs []render.Input, main *b
 	if err != nil {
 		return prepared{}, err
 	}
-	rendered, err := r.e.Prompter.Prompt(render.Stage{Repository: r.task.Repository, Task: r.task.ID, Title: r.task.Title, Detail: r.task.Detail, Step: s, Attempt: n, Dir: partial, Revisions: b.Revisions, ReviewBase: reviewBase, Retry: b.Retry.render(), Main: note, Branch: r.branch(), Slice: slice}, inputs)
+	rendered, err := r.e.Prompter.Prompt(render.Stage{Repository: r.task.Repository, Task: r.task.ID, Title: r.task.Title, Detail: r.task.Detail, Step: s, Attempt: n, Dir: partial, Revisions: b.Revisions, ReviewBase: reviewBase, Retry: b.Retry.render(), Main: note, Branch: r.branch(), Slice: slice, Strict: StrictSections(r.base, s)}, inputs)
 	if err != nil {
 		return prepared{}, err
 	}

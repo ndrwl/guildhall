@@ -96,6 +96,10 @@ type Stage struct {
 	// Empty leaves it out, as for a spec with no readable section. The caller reads the spec; other kinds and Prompt
 	// ignore it.
 	Questions string
+	// Strict is the strict sections intake refuses for this step's document, from interp.StrictSections, their one
+	// owner: Prompt prints exactly these in the refused Strict sections block, and none when it is empty. Question
+	// ignores it.
+	Strict []spec.Example `json:"strict,omitempty"`
 }
 
 // Slice is the slice of a multi-PR task an attempt is for: Current, from 1, indexes Entries, the accepted spec's whole
@@ -293,7 +297,7 @@ func Prompt(stage Stage, inputs []Input, baseline Baseline, roots []SkillRoot) (
 	if err != nil {
 		return Rendered{}, err
 	}
-	if err := r.write(&m, inputData, found, stage.Title, stage.Detail, stage.Step.Instructions(), role, guide, standards, stage.Step.Actor(), stage.Revisions, stage.ReviewBase, stage.Retry, stage.Main, stage.Branch, stage.Slice, surface, baseline); err != nil {
+	if err := r.write(&m, inputData, found, stage.Title, stage.Detail, stage.Step.Instructions(), role, guide, standards, stage.Step.Actor(), stage.Revisions, stage.ReviewBase, stage.Retry, stage.Main, stage.Branch, stage.Slice, stage.Strict, surface, baseline); err != nil {
 		_ = os.RemoveAll(r.PromptPath)
 		_ = os.RemoveAll(r.SkillsPath)
 		_ = os.RemoveAll(filepath.Join(stage.Dir, InputsDir))
@@ -306,7 +310,7 @@ func Prompt(stage Stage, inputs []Input, baseline Baseline, roots []SkillRoot) (
 	return r, nil
 }
 
-func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, title, detail, instructions, role, guide string, standards []string, actor workflow.Actor, revisions *workflow.Revisions, reviewBase string, retry *Retry, main *Main, branch string, slice *Slice, surface Surface, baseline Baseline) error {
+func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, title, detail, instructions, role, guide string, standards []string, actor workflow.Actor, revisions *workflow.Revisions, reviewBase string, retry *Retry, main *Main, branch string, slice *Slice, strict []spec.Example, surface Surface, baseline Baseline) error {
 	inputsPath := filepath.Join(filepath.Dir(r.PromptPath), InputsDir)
 	if err := os.Mkdir(inputsPath, 0o755); err != nil {
 		return fmt.Errorf("render: %w", err)
@@ -340,7 +344,7 @@ func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, tit
 	}
 	text := composePrompt(m, title, detail, instructions, role, guide, standards, reviewBase, retry, main, slice, surface, baseline.Policies, baseline.PolicyError)
 	if actor == workflow.ArtisanActor {
-		text += outputInstructions(m.Identity, revisions, branch, surface)
+		text += outputInstructions(m.Identity, revisions, branch, strict, surface)
 	}
 	prompt := []byte(text)
 	if err := os.WriteFile(r.PromptPath, prompt, 0o644); err != nil {

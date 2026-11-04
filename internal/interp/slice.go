@@ -227,36 +227,6 @@ func (r *run) checkSlices(data []byte) error {
 	return nil
 }
 
-// approvalShows reports whether a guildmaster-approval step of the task's workflow takes ref, "step.output", as an
-// input, so its ask shows that document's Summary and open questions. A bug workflow's plan has none.
-func (r *run) approvalShows(ref string) bool {
-	return slices.ContainsFunc(r.base.Steps, func(s workflow.Step) bool {
-		if s.Type != "guildmaster-approval" {
-			return false
-		}
-		for _, refs := range s.Inputs {
-			if slices.Contains(refs, ref) {
-				return true
-			}
-		}
-		return false
-	})
-}
-
-// checkSummary refuses a plan's spec that a Guildmaster approval will show but whose ask would not let the
-// Guildmaster answer from it: one with no usable `## Summary` block (missing, empty or over spec.SummaryMax), or whose
-// `## Open questions` section is neither "None" nor well-formed questions (spec.SpecQuestions). Each is a rejection
-// of the result, so the plan attempt fails, no spec is recorded and the planner is sent back.
-func checkSummary(data []byte) error {
-	if err := spec.CheckSummary(data); err != nil {
-		return rejectOutput(fmt.Errorf("%w; the approval ask shows it, so write one", err))
-	}
-	if _, err := spec.SpecQuestions(data); err != nil {
-		return rejectOutput(fmt.Errorf("%w; the approval ask copies each open question in full, so write \"None\" or **Qn. title** questions, each with Options: and Recommended: lines", err))
-	}
-	return nil
-}
-
 // sliceStarted reports whether the current slice has recorded an attempt yet.
 func (r *run) sliceStarted() bool {
 	return slices.ContainsFunc(r.attempts, func(a store.StageAttempt) bool {
