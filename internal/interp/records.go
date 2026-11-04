@@ -2,6 +2,7 @@ package interp
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/ndrwl/guildhall/internal/forge"
 	"github.com/ndrwl/guildhall/internal/messaging"
@@ -108,9 +109,16 @@ type Outbox interface {
 }
 
 // GuildhallOutbox is the Outbox that sends through a Mailbox as store.SenderGuildhall.
+// It refuses a message to an Artisan's inbox whose type is not in store.ArtisanMessageTypes, the registry of what
+// Guildhall itself steers an attempt with, sending nothing.
 type GuildhallOutbox struct{ Mailbox messaging.Mailbox }
 
 func (o GuildhallOutbox) Send(to store.Recipient, e messaging.Envelope) (store.Receipt, error) {
+	if to.Role == store.RecipientArtisan {
+		if _, ok := store.ArtisanMessageTypes[e.Type]; !ok {
+			return store.Receipt{}, fmt.Errorf("%w: interp: artisan message type %q is not in store.ArtisanMessageTypes", store.ErrInvalid, e.Type)
+		}
+	}
 	return o.Mailbox.Send(to, store.SenderGuildhall, e)
 }
 

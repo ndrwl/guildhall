@@ -65,6 +65,19 @@ var StewardSenders = []string{SenderGuildmaster, SenderDirector}
 // Director does.
 var ArtisanSenders = []string{SenderDirector, SenderGuildhall}
 
+// MessageNudge is Guildhall's reminder to a running attempt to finish its stage's work, such as writing or
+// submitting its result before the session ends.
+const MessageNudge = "nudge"
+
+// ArtisanMessageTypes is the registry of message types Guildhall itself sends to an Artisan's inbox, each with what
+// it tells the Artisan (docs/messaging.md#guildhall-sent-steering). The labels are vocabulary only: Guildhall does
+// not act on them, and an Artisan acknowledges each as any steering message. interp.GuildhallOutbox refuses an
+// artisan message of any other type; the Director's `messages send` may use any type. A type is added here by the
+// change that sends it.
+var ArtisanMessageTypes = map[string]string{
+	MessageNudge: "finish the stage's work, such as writing or submitting the result, before the session ends",
+}
+
 // Recipient names one inbox.
 // The Director has one inbox per store, so its other fields are empty.
 // There is no Artisan registry yet: an Artisan is identified by the running

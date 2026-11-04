@@ -166,6 +166,7 @@ claude --print <instruction> --output-format stream-json --verbose --permission-
 - `acceptEdits` lets Claude edit files in the working directory and the model directory; other tools that need permission depend on explicit or inherited grants, because a print-mode session has no one to ask ([Artisan permissions](#artisan-permissions)).
 - The wrapper always writes `claude-settings.json` beside the result, outside model-writable added directories, and passes it with `--settings`.
   It merges `permissions.allow` from the referenced copy/profile with the resolved [Claude skill policy](configuration.md#claude-skill-policies), including when the allow list is empty.
+  It also registers one PostToolUse hook for every tool, `guildhall messages hook` (`claude.SteeringHookCommand`), which shows the model the attempt's unacknowledged [steering messages](messaging.md#steering-an-attempt) after each tool call; it grants nothing, always exits 0, and correctness never depends on it.
   `syncClaudeAiSkills` is consequently supplied in flag scope, not just repository project settings.
   An owned `claude-skill-policy.json` receipt records the preset, effective controls, source key, provenance, overridability and normalized digest; neither file contains credentials.
   The wrapper probes `claude --version` before preparing the model directory and refuses versions older than 2.1.310 or unknown/prerelease version output; this probe makes no model call.
