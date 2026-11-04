@@ -1,6 +1,7 @@
 package forge_test
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
@@ -657,9 +658,19 @@ type ghState struct {
 	LogStatus map[string]int    `json:"log_status,omitempty"`
 	HangLogs  bool              `json:"hang_logs,omitempty"`
 	// RerunStatus is an HTTP error every job rerun answers with.
-	RerunStatus      int    `json:"rerun_status,omitempty"`
-	Mergeable        string `json:"mergeable"`
-	MergeStateStatus string `json:"merge_state_status"`
+	RerunStatus int `json:"rerun_status,omitempty"`
+	// Unlinked are each head's contexts GitHub links to no pull request, as a workflow_dispatch run's: the commit's
+	// rollup reports them, a pull request's does not.
+	Unlinked map[string][]map[string]any `json:"unlinked,omitempty"`
+	// LastCommit is the commit a pull request's commits(last: 1) lists, keyed by its number, when GitHub's date
+	// order puts another than its head last; unset, it is the head.
+	LastCommit map[string]string `json:"last_commit,omitempty"`
+	// ReopenChecks are the contexts the pull_request reopened run adds to the reopened pull request's head, and
+	// ReopenRefuse a reason every reopen fails with, leaving the pull request closed.
+	ReopenChecks     []map[string]any `json:"reopen_checks,omitempty"`
+	ReopenRefuse     string           `json:"reopen_refuse,omitempty"`
+	Mergeable        string           `json:"mergeable"`
+	MergeStateStatus string           `json:"merge_state_status"`
 }
 
 type ghPR struct {
@@ -673,8 +684,9 @@ type ghPR struct {
 	// Title and Body are what pr create and pr edit set.
 	Title string `json:"title"`
 	Body  string `json:"body"`
-	// CloseComment is the comment pr close posted.
+	// CloseComment is the comment pr close posted, and Reopens how many times pr reopen reopened it.
 	CloseComment string `json:"close_comment,omitempty"`
+	Reopens      int    `json:"reopens,omitempty"`
 	// MergeSubject and MergeBody are the --subject and --body pr merge was given.
 	MergeSubject string `json:"merge_subject,omitempty"`
 	MergeBody    string `json:"merge_body,omitempty"`
@@ -867,6 +879,32 @@ func runGH(s *ghState, bare string, args []string) int {
 		}
 		p.State, p.CloseComment = "CLOSED", flags["--comment"]
 		return 0
+	case "pr reopen":
+		p, code := number()
+		if p == nil {
+			return code
+		}
+		switch {
+		case s.SignedOut:
+			return fail(4, "To get started with GitHub CLI, please run:  gh auth login")
+		case p.State == "MERGED":
+			return fail(1, "X Pull request acme/widgets#%d can't be reopened because it was already merged", p.Number)
+		case p.State == "OPEN":
+			fmt.Fprintf(os.Stderr, "! Pull request acme/widgets#%d is already open\n", p.Number)
+			return 0
+		case s.ReopenRefuse != "":
+			return fail(1, "X Pull request acme/widgets#%d could not be reopened: %s", p.Number, s.ReopenRefuse)
+		}
+		p.State = "OPEN"
+		p.Reopens++
+		// GitHub's pull_request reopened event runs the pull request's workflows on its head, linked to it.
+		if head := remoteBranch(bare, p.Branch); len(s.ReopenChecks) > 0 {
+			if s.Checks == nil {
+				s.Checks = map[string][]map[string]any{}
+			}
+			s.Checks[head] = append(s.Checks[head], s.ReopenChecks...)
+		}
+		return 0
 	default: // pr merge
 		p, code := number()
 		if p == nil {
@@ -996,10 +1034,13 @@ func graphQL(s *ghState, bare string, args []string) int {
 		switch args[i] {
 		case "--hostname":
 			hostname = args[i+1]
-		case "-f":
+		case "-f", "-F":
 			k, v, ok := strings.Cut(args[i+1], "=")
 			if !ok {
-				return fail(2, "fake gh: -f %q is not key=value", args[i+1])
+				return fail(2, "fake gh: %s %q is not key=value", args[i], args[i+1])
+			}
+			if (args[i] == "-F") != (k == "number") {
+				return fail(2, "fake gh: %s %s: only the pull request number is a typed field", args[i], k)
 			}
 			fields[k] = v
 		default:
@@ -1007,7 +1048,13 @@ func graphQL(s *ghState, bare string, args []string) int {
 		}
 		i++
 	}
-	if len(fields) != 4 || !strings.Contains(fields["query"], "statusCheckRollup") || fields["oid"] == "" {
+	byPR := fields["number"] != ""
+	switch {
+	case len(fields) != 4 || !strings.Contains(fields["query"], "statusCheckRollup"):
+		return fail(2, "fake gh: unknown query %v", fields)
+	case byPR && !strings.Contains(fields["query"], "pullRequest(number: $number)"):
+		return fail(2, "fake gh: a number without a pull request query %v", fields)
+	case !byPR && fields["oid"] == "":
 		return fail(2, "fake gh: unknown query %v", fields)
 	}
 	if s.Offline {
@@ -1016,15 +1063,39 @@ func graphQL(s *ghState, bare string, args []string) int {
 	if hostname != "github.com" || fields["owner"] != "acme" || fields["name"] != "widgets" {
 		return fail(1, "fake gh: no repository %s/%s/%s", hostname, fields["owner"], fields["name"])
 	}
-	var object any
-	if exec.Command("git", "--git-dir", bare, "cat-file", "-e", fields["oid"]+"^{commit}").Run() == nil {
-		var rollup any
-		if nodes, ok := s.Checks[fields["oid"]]; ok {
-			rollup = map[string]any{"contexts": map[string]any{"pageInfo": map[string]any{"hasNextPage": s.MoreChecks}, "nodes": nodes}}
+	rollup := func(nodes []map[string]any, ok bool) any {
+		if !ok {
+			return nil
 		}
-		object = map[string]any{"__typename": "Commit", "statusCheckRollup": rollup}
+		return map[string]any{"contexts": map[string]any{"pageInfo": map[string]any{"hasNextPage": s.MoreChecks}, "nodes": nodes}}
 	}
-	data, err := json.Marshal(map[string]any{"data": map[string]any{"repository": map[string]any{"object": object}}})
+	repository := map[string]any{}
+	if byPR {
+		// A pull request's rollup of its head commit holds only the runs GitHub links to it.
+		var pr any
+		for _, p := range s.PRs {
+			if strconv.Itoa(p.Number) != fields["number"] {
+				continue
+			}
+			head := p.MergedHead
+			if p.State != "MERGED" {
+				head = remoteBranch(bare, p.Branch)
+			}
+			last := cmp.Or(s.LastCommit[fields["number"]], head)
+			nodes, ok := s.Checks[last]
+			pr = map[string]any{"headRefOid": head, "commits": map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"oid": last, "statusCheckRollup": rollup(nodes, ok)}}}}}
+		}
+		repository["pullRequest"] = pr
+	} else {
+		var object any
+		if exec.Command("git", "--git-dir", bare, "cat-file", "-e", fields["oid"]+"^{commit}").Run() == nil {
+			nodes, ok := s.Checks[fields["oid"]]
+			unlinked, more := s.Unlinked[fields["oid"]]
+			object = map[string]any{"__typename": "Commit", "statusCheckRollup": rollup(append(slices.Clone(nodes), unlinked...), ok || more)}
+		}
+		repository["object"] = object
+	}
+	data, err := json.Marshal(map[string]any{"data": map[string]any{"repository": repository}})
 	if err != nil {
 		return fail(1, "fake gh: %v", err)
 	}

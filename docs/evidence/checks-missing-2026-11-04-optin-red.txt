@@ -1,0 +1,16 @@
+# d176 build 3 red run: review 2's f1 regression test before the ci_retrigger opt-in (2026-11-04); the Advance log
+# lines are left out. With ci_retrigger unset or off, the head's pull request was still closed and reopened, so the
+# after-start message followed the checks-missing one.
+$ go test ./internal/interp/ -run TestValidateNoRetriggerWithoutOptIn
+--- FAIL: TestValidateNoRetriggerWithoutOptIn (0.30s)
+    --- FAIL: TestValidateNoRetriggerWithoutOptIn//double (0.06s)
+        cistart_test.go:280: sent ["app.t7.checks-missing.validate.0123456789ab" "app.t7.checks-missing.validate.0123456789ab.after-start"], want only app.t7.checks-missing.validate.0123456789ab
+    --- FAIL: TestValidateNoRetriggerWithoutOptIn//store (0.09s)
+        cistart_test.go:280: sent ["app.t7.checks-missing.validate.0123456789ab" "app.t7.checks-missing.validate.0123456789ab.after-start"], want only app.t7.checks-missing.validate.0123456789ab
+    --- FAIL: TestValidateNoRetriggerWithoutOptIn/off/double (0.06s)
+        cistart_test.go:280: sent ["app.t7.checks-missing.validate.0123456789ab" "app.t7.checks-missing.validate.0123456789ab.after-start"], want only app.t7.checks-missing.validate.0123456789ab
+    --- FAIL: TestValidateNoRetriggerWithoutOptIn/off/store (0.08s)
+        cistart_test.go:280: sent ["app.t7.checks-missing.validate.0123456789ab" "app.t7.checks-missing.validate.0123456789ab.after-start"], want only app.t7.checks-missing.validate.0123456789ab
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	0.423s
+FAIL

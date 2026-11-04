@@ -28,6 +28,7 @@ The existing commands cited are shorthand; invocation must retain the selected c
 - **Director needs:** pull-request state and current/base head, conflict/mergeability facts, check names and ages, the last successful read and whether checks are expected, plus a safe route to an Artisan rebase/fix and then renewed review, publication and validation.
 - **Small fix:** add a forge observation contract and a bounded no-progress notification that distinguishes absent checks, pending checks and an unmergeable pull request; then connect it to recorded send-back rather than repeatedly saying to advance.
 - **Safety:** do not equate no checks with success or automatically set `no_ci` to escape this wait.
+- **Done (absent checks, d176, 2026-11-04):** validate and the rebased merge-queue front now tell absent checks from pending ones with one shared helper; after `ci_start_grace` a head with no check sends one `checks-missing` message, re-triggers the pull request's CI once by closing and reopening it (a `workflow_dispatch` run is not linked to the pull request, so it would not do), counts only the pull request's own checks, and sends one more if the started run never appears ([absent checks](../interpreter.md#absent-checks)). Absent checks still never pass and `no_ci` is never set automatically. The conflicting-pull-request half was done earlier, by validate's rebase.
 
 ### A02 — Changes requested without a loop, or a successful step needs re-running
 

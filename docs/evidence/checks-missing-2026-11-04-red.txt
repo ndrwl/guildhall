@@ -1,0 +1,15 @@
+# checks-missing red run: the new d176 regression tests against 2f7d34f8's internal/interp, before the fix (2026-11-04); the Advance log lines are left out
+$ go test ./internal/interp/ -run 'ChecksMissing'
+--- FAIL: TestValidateChecksMissing (0.11s)
+    --- FAIL: TestValidateChecksMissing/double (0.04s)
+        checks_missing_test.go:46: 10 minutes with no checks sent [], want only app.t7.checks-missing.validate.0123456789ab
+    --- FAIL: TestValidateChecksMissing/store (0.07s)
+        checks_missing_test.go:46: 10 minutes with no checks sent [], want only app.t7.checks-missing.validate.0123456789ab
+--- FAIL: TestQueueFrontChecksMissing (0.11s)
+    --- FAIL: TestQueueFrontChecksMissing/double (0.04s)
+        checks_missing_test.go:87: 10 minutes with no checks sent [], want only app.t7.checks-missing.deliver.111111111111
+    --- FAIL: TestQueueFrontChecksMissing/store (0.07s)
+        checks_missing_test.go:87: 10 minutes with no checks sent [], want only app.t7.checks-missing.deliver.111111111111
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	0.319s
+FAIL

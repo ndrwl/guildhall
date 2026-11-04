@@ -226,6 +226,44 @@ const checksQuery = `query($owner: String!, $name: String!, $oid: GitObjectID!) 
   }
 }`
 
+// prChecksQuery reads the status check rollup a pull request reports for its head commit, as gh pr checks and the
+// pull request's required checks see it: a run GitHub does not link to the pull request, such as a workflow_dispatch
+// run on the same commit, is not in it.
+const prChecksQuery = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      headRefOid
+      commits(last: 1) {
+        nodes {
+          commit {
+            oid
+            statusCheckRollup {
+              contexts(first: 100) {
+                pageInfo { hasNextPage }
+                nodes {
+                  __typename
+                  ... on CheckRun { id databaseId name status conclusion detailsUrl checkSuite { app { slug } } }
+                  ... on StatusContext { id context state targetUrl }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}`
+
+// ghRollup is a statusCheckRollup as both queries read it.
+type ghRollup struct {
+	Contexts struct {
+		PageInfo struct {
+			HasNextPage bool `json:"hasNextPage"`
+		} `json:"pageInfo"`
+		Nodes []ghContext `json:"nodes"`
+	} `json:"contexts"`
+}
+
 // ghContext is one check run or commit status of a rollup.
 type ghContext struct {
 	Typename   string `json:"__typename"`
@@ -296,7 +334,9 @@ func deref(s *string) string {
 
 // Checks returns every check run and commit status github.com reports for c.Head, with its node id, sorted by
 // name, URL and then id, read in one GraphQL call bound to the commit, so a pull request that moved since cannot
-// answer for it.
+// answer for it. With c.PullRequest set, the call reads that pull request's rollup of its head commit instead, as
+// its required checks count them: a run GitHub does not link to the pull request, such as a workflow_dispatch run on
+// the same commit, is not reported, and a pull request no longer at c.Head reports no checks for it.
 // A head the remote does not hold is ErrUnknownHead; no checks is an empty list. More than one page of checks,
 // or a state this implementation does not know, is an error rather than a partial or guessed answer.
 func (g GitHub) Checks(ctx context.Context, c Commit) ([]Check, error) {
@@ -308,40 +348,80 @@ func (g GitHub) Checks(ctx context.Context, c Commit) ([]Check, error) {
 		return nil, err
 	}
 	parts := strings.Split(repo, "/")
-	var resp struct {
-		Data struct {
-			Repository *struct {
-				Object *struct {
-					Typename          string `json:"__typename"`
-					StatusCheckRollup *struct {
-						Contexts struct {
-							PageInfo struct {
-								HasNextPage bool `json:"hasNextPage"`
-							} `json:"pageInfo"`
-							Nodes []ghContext `json:"nodes"`
-						} `json:"contexts"`
-					} `json:"statusCheckRollup"`
-				} `json:"object"`
-			} `json:"repository"`
-		} `json:"data"`
+	var rollup *ghRollup
+	if c.PullRequest > 0 {
+		var resp struct {
+			Data struct {
+				Repository *struct {
+					PullRequest *struct {
+						HeadRefOID string `json:"headRefOid"`
+						Commits    struct {
+							Nodes []struct {
+								Commit struct {
+									OID               string    `json:"oid"`
+									StatusCheckRollup *ghRollup `json:"statusCheckRollup"`
+								} `json:"commit"`
+							} `json:"nodes"`
+						} `json:"commits"`
+					} `json:"pullRequest"`
+				} `json:"repository"`
+			} `json:"data"`
+		}
+		if err := g.ghJSON(ctx, c.Repository, &resp, "api", "graphql", "--hostname", parts[0],
+			"-f", "query="+prChecksQuery, "-f", "owner="+parts[1], "-f", "name="+parts[2], "-F", "number="+strconv.Itoa(c.PullRequest)); err != nil {
+			return nil, err
+		}
+		r := resp.Data.Repository
+		switch {
+		case r == nil:
+			return nil, fmt.Errorf("gh api graphql: no repository %s", repo)
+		case r.PullRequest == nil:
+			return nil, fmt.Errorf("gh api graphql: no pull request %d in %s", c.PullRequest, repo)
+		case r.PullRequest.HeadRefOID != c.Head:
+			// The pull request has left the head, so it reports no check of it.
+			return []Check{}, nil
+		case len(r.PullRequest.Commits.Nodes) != 1 || r.PullRequest.Commits.Nodes[0].Commit.OID != c.Head:
+			// GitHub orders a pull request's commits by date, so a rebased head with an older committer date can
+			// sort before another: its rollup is not this read's to give, and reporting none would wait for ever.
+			last := ""
+			if len(r.PullRequest.Commits.Nodes) > 0 {
+				last = r.PullRequest.Commits.Nodes[0].Commit.OID
+			}
+			return nil, fmt.Errorf("pull request %d in %s is at head %s but lists %q as its last commit, so its checks of the head cannot be read", c.PullRequest, repo, c.Head, last)
+		}
+		rollup = r.PullRequest.Commits.Nodes[0].Commit.StatusCheckRollup
+	} else {
+		var resp struct {
+			Data struct {
+				Repository *struct {
+					Object *struct {
+						Typename          string    `json:"__typename"`
+						StatusCheckRollup *ghRollup `json:"statusCheckRollup"`
+					} `json:"object"`
+				} `json:"repository"`
+			} `json:"data"`
+		}
+		if err := g.ghJSON(ctx, c.Repository, &resp, "api", "graphql", "--hostname", parts[0],
+			"-f", "query="+checksQuery, "-f", "owner="+parts[1], "-f", "name="+parts[2], "-f", "oid="+c.Head); err != nil {
+			return nil, err
+		}
+		r := resp.Data.Repository
+		switch {
+		case r == nil:
+			return nil, fmt.Errorf("gh api graphql: no repository %s", repo)
+		case r.Object == nil || r.Object.Typename != "Commit":
+			return nil, fmt.Errorf("%w: %s is not a commit of %s", ErrUnknownHead, c.Head, repo)
+		}
+		rollup = r.Object.StatusCheckRollup
 	}
-	if err := g.ghJSON(ctx, c.Repository, &resp, "api", "graphql", "--hostname", parts[0],
-		"-f", "query="+checksQuery, "-f", "owner="+parts[1], "-f", "name="+parts[2], "-f", "oid="+c.Head); err != nil {
-		return nil, err
-	}
-	r := resp.Data.Repository
 	switch {
-	case r == nil:
-		return nil, fmt.Errorf("gh api graphql: no repository %s", repo)
-	case r.Object == nil || r.Object.Typename != "Commit":
-		return nil, fmt.Errorf("%w: %s is not a commit of %s", ErrUnknownHead, c.Head, repo)
-	case r.Object.StatusCheckRollup == nil:
+	case rollup == nil:
 		return []Check{}, nil
-	case r.Object.StatusCheckRollup.Contexts.PageInfo.HasNextPage:
+	case rollup.Contexts.PageInfo.HasNextPage:
 		return nil, fmt.Errorf("%s reports more than 100 checks for %s; reading more than one page is not supported", repo, c.Head)
 	}
 	out := []Check{}
-	for _, n := range r.Object.StatusCheckRollup.Contexts.Nodes {
+	for _, n := range rollup.Contexts.Nodes {
 		check, err := n.check()
 		if err != nil {
 			return nil, fmt.Errorf("%s at %s: %w", repo, c.Head, err)

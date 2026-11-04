@@ -236,6 +236,12 @@ type Engine struct {
 	// reads that head's checks again; zero or negative reads them at every advance (docs/interpreter.md#validate).
 	// `task start` and `step done` set it from the config's checks_refresh.
 	ChecksRefresh time.Duration
+	// CIStartGrace is how long a waiting validate step or merge-queue front waits on a head its forge reports no
+	// check for, from the first read that saw none, before it reports the head's CI missing and re-triggers the pull
+	// request's CI by closing and reopening it (docs/interpreter.md#absent-checks). Zero is config.DefaultCIStartGrace, and a
+	// negative grace reports it at that first read. `task start` and `step done` set it from the config's
+	// ci_start_grace.
+	CIStartGrace time.Duration
 	// CILogLimit caps the bytes of each failed job log validate fetches into the CI log cache, keeping the log's
 	// tail; zero or negative fetches none (docs/interpreter.md#validate). `task start` and `step done` set it from
 	// the config's ci_log_limit.

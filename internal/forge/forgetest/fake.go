@@ -34,6 +34,14 @@ type Fake struct {
 	// reruns are the jobs RerunJob was called with, in order, and rerunErrs each job's rerun failure.
 	reruns    []string
 	rerunErrs map[string]error
+	// unlinked are checks each remote reports for a head but links to no pull request, as a workflow_dispatch run's.
+	unlinked map[string]map[string][]forge.Check
+	// starts are the StartCI calls, startChecks the checks a started run attaches, and startOutcome and startErr
+	// what ScriptStartCI makes every StartCI return.
+	starts       []StartCall
+	startChecks  []forge.Check
+	startOutcome forge.StartOutcome
+	startErr     error
 	// comments are the comments of the closes that closed a pull request.
 	comments []string
 	// subjects are the subjects Merge merged each pull request with, by remote and number.
@@ -170,7 +178,22 @@ func (f *Fake) SetChecks(remote, head string, checks ...forge.Check) {
 	f.checks[remote][head] = slices.Clone(checks)
 }
 
-// Checks implements forge.GitHub.Checks's contract: a head is held by the remote once a branch was set to it.
+// SetUnlinkedChecks makes checks the checks remote reports for head that no pull request reports, as GitHub's
+// workflow_dispatch runs on a pull request's head, replacing any it reported.
+func (f *Fake) SetUnlinkedChecks(remote, head string, checks ...forge.Check) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.unlinked == nil {
+		f.unlinked = map[string]map[string][]forge.Check{}
+	}
+	if f.unlinked[remote] == nil {
+		f.unlinked[remote] = map[string][]forge.Check{}
+	}
+	f.unlinked[remote][head] = slices.Clone(checks)
+}
+
+// Checks implements forge.GitHub.Checks's contract: a head is held by the remote once a branch was set to it. A
+// read bound to a pull request reports no unlinked checks, and none at all for a head the pull request is not at.
 func (f *Fake) Checks(ctx context.Context, c forge.Commit) ([]forge.Check, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -181,6 +204,13 @@ func (f *Fake) Checks(ctx context.Context, c forge.Commit) ([]forge.Check, error
 		return nil, fmt.Errorf("%w: %s is not on %s", forge.ErrUnknownHead, c.Head, c.Remote)
 	}
 	out := append([]forge.Check{}, f.checks[c.Remote][c.Head]...)
+	if c.PullRequest == 0 {
+		out = append(out, f.unlinked[c.Remote][c.Head]...)
+	} else if prs := f.prs[c.Remote]; c.PullRequest > len(prs) {
+		return nil, fmt.Errorf("fake forge: no pull request %d on %s", c.PullRequest, c.Remote)
+	} else if prs[c.PullRequest-1].Head != c.Head {
+		return []forge.Check{}, nil
+	}
 	slices.SortStableFunc(out, forge.CompareChecks)
 	return out, nil
 }
@@ -293,6 +323,77 @@ func (f *Fake) RerunJob(ctx context.Context, c forge.Commit, job string) error {
 	checks[i] = forge.Check{Name: checks[i].Name, State: forge.CheckPending, URL: checks[i].URL,
 		ID: fmt.Sprintf("%s-rerun-%d", checks[i].ID, n), Job: fmt.Sprintf("%s%d", job, n)}
 	return nil
+}
+
+// StartCall is one call of Fake.StartCI.
+type StartCall struct {
+	Remote  string
+	Number  int
+	Head    string
+	Comment string
+}
+
+// ScriptStartCI makes every later StartCI return outcome, or err when it is not nil, instead of what the remote's
+// state gives; an empty outcome and nil err stop scripting.
+func (f *Fake) ScriptStartCI(outcome forge.StartOutcome, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.startOutcome, f.startErr = outcome, err
+}
+
+// SetStartChecks makes a StartCI that returns Started attach checks to its head, as the started run's check runs; none
+// leaves the head with no checks, as a run that never appears.
+func (f *Fake) SetStartChecks(checks ...forge.Check) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.startChecks = slices.Clone(checks)
+}
+
+// StartCalls returns the StartCI calls, in order, failed calls included.
+func (f *Fake) StartCalls() []StartCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.starts)
+}
+
+// StartCI implements forge.GitHub.StartCI's contract: a pull request not open is ErrRefused; one not at the head is
+// HeadMoved; otherwise it is closed and reopened, still open at the same head, and the reopened run attaches the
+// checks SetStartChecks set to the head, linked to the pull request. ScriptStartCI overrides the outcome, a Started
+// one still attaching the checks.
+func (f *Fake) StartCI(ctx context.Context, r forge.Retrigger) (forge.StartOutcome, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.starts = append(f.starts, StartCall{Remote: r.Remote, Number: r.Number, Head: r.Head, Comment: r.Comment})
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+	if err := r.Validate(); err != nil {
+		return "", err
+	}
+	prs := f.prs[r.Remote]
+	if r.Number > len(prs) {
+		return "", fmt.Errorf("fake forge: no pull request %d on %s", r.Number, r.Remote)
+	}
+	pr := prs[r.Number-1]
+	outcome := f.startOutcome
+	switch {
+	case f.startErr != nil:
+		return "", f.startErr
+	case outcome != "":
+	case pr.State != forge.Open:
+		return "", fmt.Errorf("%w: pull request %s is %s", forge.ErrRefused, pr.URL, pr.State)
+	case pr.Head != r.Head:
+		outcome = forge.HeadMoved
+	default:
+		outcome = forge.Started
+	}
+	if outcome == forge.Started && len(f.startChecks) > 0 {
+		if f.checks[r.Remote] == nil {
+			f.checks[r.Remote] = map[string][]forge.Check{}
+		}
+		f.checks[r.Remote][r.Head] = slices.Clone(f.startChecks)
+	}
+	return outcome, nil
 }
 
 // Merge implements forge.GitHub.Merge's contract.

@@ -1,0 +1,21 @@
+# d176 build 2 red run: the dispatch-run regression tests with validate's and the queue front's checks read unbound
+# from the pull request (forge.Commit without PullRequest), as before this fix (2026-11-04); the Advance log lines are
+# left out. A workflow_dispatch run's checks on the head, which GitHub does not link to the pull request, then pass
+# validate at once and take the queue front to a merge, though PR #303 stayed BLOCKED with no check of its own.
+$ go test ./internal/interp/ -run 'TestValidateDispatchRunIsNotThePullRequestsCI|TestQueueFrontStartsCI'
+--- FAIL: TestValidateDispatchRunIsNotThePullRequestsCI (0.10s)
+    --- FAIL: TestValidateDispatchRunIsNotThePullRequestsCI/double (0.04s)
+        cistart_test.go:104: next = {Wait:decision Step:deliver Attempt:0 Decision:deliver-1 Position:0}, want {Wait:checks Step:validate Attempt:0 Decision: Position:0}
+    --- FAIL: TestValidateDispatchRunIsNotThePullRequestsCI/store (0.06s)
+        cistart_test.go:104: next = {Wait:decision Step:deliver Attempt:0 Decision:deliver-1 Position:0}, want {Wait:checks Step:validate Attempt:0 Decision: Position:0}
+--- FAIL: TestQueueFrontStartsCI (0.10s)
+    --- FAIL: TestQueueFrontStartsCI/double (0.04s)
+        cistart_test.go:315: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:deliver-1 Reason: Slice:0 BySlice:0 PullRequest:}) = interp: app/t7 step deliver: the forge refused the merge: pull request moved from 1111111111111111111111111111111111111111 to 0123456789abcdef0123456789abcdef01234567
+    --- FAIL: TestQueueFrontStartsCI/store (0.06s)
+        cistart_test.go:315: Advance({Kind:decision-answered Repository:app Task:t7 Step: Attempt:0 Decision:deliver-1 Reason: Slice:0 BySlice:0 PullRequest:}) = interp: app/t7 step deliver: the forge refused the merge: pull request moved from 1111111111111111111111111111111111111111 to 0123456789abcdef0123456789abcdef01234567
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/interp	0.302s
+FAIL
+# With the reads bound to the pull request, both pass:
+$ go test ./internal/interp/ -run 'TestValidateDispatchRunIsNotThePullRequestsCI|TestQueueFrontStartsCI'
+ok  	github.com/ndrwl/guildhall/internal/interp	0.333s
