@@ -181,13 +181,14 @@ claude --print <instruction> --output-format stream-json --verbose --permission-
   - `thinking`: from an `assistant` event's `thinking` block, its `thinking` as `text`, with terminal controls removed; a `redacted_thinking` block, or one whose thinking is empty or blank (signature only), gives a `thinking` event with no `text`, thinking the model did not show;
   - `tool_call`: the tool use's `id`, `name` and `subject`, cut as on the output;
   - `tool_result`: from a `user` event's `tool_result` block, the call's `id`, `error` (its `is_error`), and the `bytes` and `lines` of its content, a string or an array of blocks; stream-json carries no structured exit code, so none is parsed from the text;
+  - `usage`: the running token totals so far, `usage` with `input`, `output`, `cache_creation` and `cache_read`, from each `assistant` event's `message.usage`; Claude repeats a message's usage on each of its content blocks, so each message id counts once, at its latest usage, and an event is written only when the totals change; these are live estimates for the pane, and the [usage file](#usage-file) from the final result stays the record of what the attempt spent;
   - `end`: once Claude exits, its `exit` status (-1 when it has none);
   - `truncated`: the last event of a file that reached its cap.
 
   `text` and `tool_call` events also carry `log`, the exact lines the wrapper writes to its output for them, and each event's line is written before those lines.
-  A `thinking` event carries no `log`: the wrapper writes nothing to its output for thinking, so `launcher.log` and `artisan_pane_output = "plain"` never show it.
+  `thinking` and `usage` events carry no `log`: the wrapper writes nothing to its output for them, so `launcher.log` and `artisan_pane_output = "plain"` never show them.
   `system` events are still not shown.
-  A bridge older than an event kind ignores it, so an older bridge replaying a newer event file drops `thinking` events silently.
+  A bridge older than an event kind ignores it, so an older bridge replaying a newer event file drops `thinking` and `usage` events silently.
   Each event is bounded at 4 MiB and the file at 64 MiB; at the cap the wrapper writes one `truncated` event and stops, and an error writing the file is ignored, like one on the output, never breaking Claude's pipe or the attempt.
   Events are bounded individually at 4 MiB, so earlier transcript volume cannot crowd out final usage; malformed or oversized events are ignored and a missing final result event means unknown usage.
 

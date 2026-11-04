@@ -311,7 +311,8 @@ func (a *App) artisanStart(args []string) int {
 				return a.fail(err)
 			}
 			argv := append([]string{exe, "artisan", "start"}, bridgeArgs(args)...)
-			if err := launch.Present(launch.Bridge{Argv: argv, Env: secrets.Strip(os.Environ()), Attempt: at, CloseAfter: closeAfter, Output: paneOutput}, a.Stderr); err != nil {
+			b := withBar(launch.Bridge{Argv: argv, Env: secrets.Strip(os.Environ()), Attempt: at, CloseAfter: closeAfter, Output: paneOutput}, owned.copy.dir, prompt)
+			if err := launch.Present(b, a.Stderr); err != nil {
 				return a.fail(err)
 			}
 			return 0

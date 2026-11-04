@@ -41,6 +41,8 @@ const (
 	KindToolCall Kind = "tool_call"
 	// KindToolResult is the result of the call with the same id: whether it is an error, and its size.
 	KindToolResult Kind = "tool_result"
+	// KindUsage carries the runtime's token totals so far, in Usage. Like thinking it carries no Log.
+	KindUsage Kind = "usage"
 	// KindEnd is written once the runtime exits, with its exit status.
 	KindEnd Kind = "end"
 	// KindTruncated is the last event of a file that reached MaxFileBytes.
@@ -63,6 +65,7 @@ type Event struct {
 	Bytes   *int64    `json:"bytes,omitempty"`
 	Lines   *int      `json:"lines,omitempty"`
 	Exit    *int      `json:"exit,omitempty"`
+	Usage   *Tokens   `json:"usage,omitempty"`
 	Log     []string  `json:"log,omitempty"`
 }
 
@@ -81,6 +84,20 @@ func ToolCall(id, name, subject string, log []string) Event {
 func ToolResult(id string, isError bool, size int64, lines int) Event {
 	return Event{Kind: KindToolResult, ID: id, Error: &isError, Bytes: &size, Lines: &lines}
 }
+
+// Tokens are an attempt's running token totals by kind, as a KindUsage event carries them.
+type Tokens struct {
+	Input         int64 `json:"input"`
+	Output        int64 `json:"output"`
+	CacheCreation int64 `json:"cache_creation"`
+	CacheRead     int64 `json:"cache_read"`
+}
+
+// Total is every kind of token added up.
+func (t Tokens) Total() int64 { return t.Input + t.Output + t.CacheCreation + t.CacheRead }
+
+// Usage is a KindUsage event for the running totals t.
+func Usage(t Tokens) Event { return Event{Kind: KindUsage, Usage: &t} }
 
 // End is a KindEnd event for a runtime that exited with status exit.
 func End(exit int) Event { return Event{Kind: KindEnd, Exit: &exit} }

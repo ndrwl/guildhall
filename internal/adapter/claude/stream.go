@@ -28,6 +28,10 @@ type readableStream struct {
 	line      []byte
 	dropping  bool
 	sawResult atomic.Bool
+	// usage is each assistant message's latest usage by message id, and sent the totals last written, so a
+	// KindUsage event is written only when they change.
+	usage map[string]workbench.Tokens
+	sent  workbench.Tokens
 }
 
 func (s *readableStream) Write(p []byte) (int, error) {
@@ -67,6 +71,13 @@ func (s *readableStream) event(line []byte) {
 	var event struct {
 		Type    string `json:"type"`
 		Message struct {
+			ID    string `json:"id"`
+			Usage *struct {
+				InputTokens              int64 `json:"input_tokens"`
+				OutputTokens             int64 `json:"output_tokens"`
+				CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+				CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+			} `json:"usage"`
 			Content []struct {
 				Type     string `json:"type"`
 				Text     string `json:"text"`
@@ -122,7 +133,32 @@ func (s *readableStream) event(line []byte) {
 				s.events.Write(workbench.ToolResult(plainText(block.ToolUseID), block.IsError, size, lines))
 			}
 		}
+		if u := event.Message.Usage; u != nil && event.Type == "assistant" {
+			s.addUsage(event.Message.ID, workbench.Tokens{Input: u.InputTokens, Output: u.OutputTokens,
+				CacheCreation: u.CacheCreationInputTokens, CacheRead: u.CacheReadInputTokens})
+		}
 	}
+}
+
+// addUsage records an assistant message's usage and, when the running totals change, writes them as a KindUsage
+// event. Claude repeats a message's usage on each of its content blocks, so each message id counts once, at its
+// latest usage; a message with no id counts on its own.
+func (s *readableStream) addUsage(id string, t workbench.Tokens) {
+	if s.usage == nil {
+		s.usage = map[string]workbench.Tokens{}
+	}
+	if id == "" {
+		id = fmt.Sprintf("\x00%d", len(s.usage))
+	}
+	old := s.usage[id]
+	s.usage[id] = t
+	total := workbench.Tokens{Input: s.sent.Input - old.Input + t.Input, Output: s.sent.Output - old.Output + t.Output,
+		CacheCreation: s.sent.CacheCreation - old.CacheCreation + t.CacheCreation, CacheRead: s.sent.CacheRead - old.CacheRead + t.CacheRead}
+	if total == s.sent {
+		return
+	}
+	s.sent = total
+	s.events.Write(workbench.Usage(total))
 }
 
 // show writes e, carrying the lines of text as its log, to the event file, and then text as one line to out.

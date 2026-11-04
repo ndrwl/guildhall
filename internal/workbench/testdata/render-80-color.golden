@@ -1,4 +1,7 @@
-\e[0;1mguildhall guildhall · d36 · build · 1\e[0m
+\e[0;1mguildhall · d169 · Artisan Workbench shows the thought process and a status…\e[0m
+\e[0;2mbuild · slice 3 of 4 · attempt 1 · started 14:03:09 · 6m09s · 214k tok\e[0m
+\e[0;1mAsked: \e[0;0mmake the Artisan's thinking the main thing on its Workbench pane, and…\e[0m
+\e[0;36mhttp://andrew-lap-wsl.tail5da40a.ts.net:4388/guildhall/d169\e[0m
 \e[0;2m────────────────────────────────────────────────────────────────────────────────\e[0m
 \e[0;35m┃ \e[0;3mThe spec asks for **thinking** first. I should read it, then run the tests\e[0m
 \e[0;35m┃ \e[0;3macross every package to see where the repository stands.\e[0m
@@ -39,7 +42,8 @@ hewidth.
 \e[0;2m14:04:09 · exited with status 0\e[0m
 
 \e[0;2m────────────────────────────────────────────────────────────────────────────────\e[0m
-\e[0;1;32m✓ succeeded\e[0m
+\e[0;1;32m✓ succeeded\e[0;2m · 6m09s · $1.84 · 214k tokens\e[0m
   Built the Workbench: a formatted Artisan stream in the pane, with tests for
   the renderer, the merge and the quiet line.
+\e[0;36mhttp://andrew-lap-wsl.tail5da40a.ts.net:4388/guildhall/d169\e[0m
 \e[0m
