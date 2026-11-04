@@ -86,6 +86,13 @@ func RunRunnerContract(t *testing.T, newHarness func(t *testing.T) RunnerHarness
 				{"bin/guildhall", "config", "reload", "--copy", posixCopy},
 				{"/home/guild/bin/guildhall;id", "config", "reload", "--copy", posixCopy},
 				{`C:\Users\guild\guildhall.exe`, "config", "reload", "--copy", windowsCopy},
+				// messages receive takes only --copy: no sender, recipient, envelope or standard input.
+				{steward.DefaultGuildhall, "messages", "receive", "--copy"},
+				{steward.DefaultGuildhall, "messages", "receive", "--from", "steward", "--copy", posixCopy},
+				{steward.DefaultGuildhall, "messages", "receive", "--copy", posixCopy, "-"},
+				{steward.DefaultGuildhall, "messages", "receive", "-", "--copy", posixCopy},
+				{steward.DefaultGuildhall, "messages", "send", "--copy", posixCopy},
+				{steward.DefaultGuildhall, "messages", "receive", "--copy", posixCopy + "/state/steward/message.json;id"},
 			} {
 				if _, err := h.Runner().Run(context.Background(), Alpha, argv); !errors.Is(err, steward.ErrNotAllowed) {
 					t.Errorf("Run %q: error %v, want steward.ErrNotAllowed", argv, err)

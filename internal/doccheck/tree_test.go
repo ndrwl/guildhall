@@ -57,3 +57,39 @@ func TestDecisionIndex(t *testing.T) {
 func TestDecisionLinks(t *testing.T) {
 	fail(t, "links", checkLinks(repoRoot))
 }
+
+// reversedClaims are sentences the Steward message decision (docs/decisions/steward-messages-directors.md) reversed,
+// which no page or comment may still state. The decision library itself keeps its history.
+var reversedClaims = []string{"never messages a director", "steward never messages", "never tells the director by message"}
+
+// TestNoReversedClaims checks that no Markdown page outside the decision library, and no Go file, still says the
+// Steward never messages a Director.
+func TestNoReversedClaims(t *testing.T) {
+	var problems []string
+	for _, dir := range []string{"docs", "internal", "skills", "baseline", "cmd"} {
+		err := filepath.WalkDir(filepath.Join(repoRoot, dir), func(path string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			skip := filepath.Base(filepath.Dir(path)) == libDir || filepath.Base(path) == "tree_test.go"
+			if skip || !strings.HasSuffix(path, ".md") && !strings.HasSuffix(path, ".go") {
+				return nil
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			text := strings.ToLower(strings.Join(strings.Fields(string(data)), " "))
+			for _, claim := range reversedClaims {
+				if strings.Contains(text, claim) {
+					problems = append(problems, path+": says "+claim)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	fail(t, "reversed claims", problems)
+}

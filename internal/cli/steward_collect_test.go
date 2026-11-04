@@ -36,6 +36,10 @@ func collectGit(t *testing.T, dir string, args ...string) string {
 type collectSetup struct {
 	director, steward, private, remote string
 	fleet                              *stewardtest.Fleet
+	// receive, when set, answers messages receive first, as a Handler does; collectFails, when set, fails the copy's
+	// pending lesson list with it, as an unreachable machine does.
+	receive      stewardtest.Handler
+	collectFails string
 }
 
 func newCollectSetup(t *testing.T) *collectSetup {
@@ -84,6 +88,21 @@ func newCollectSetup(t *testing.T) *collectSetup {
 				return nil, true, fmt.Errorf("no receipt was copied")
 			}
 			writeFile(t, filepath.Join(cs.director, filepath.FromSlash(steward.CollectReceiptPath)), string(data))
+		}
+		if argv[1] == "messages" && argv[2] == "receive" {
+			if cs.receive != nil {
+				if out, handled, err := cs.receive(argv); handled {
+					return out, true, err
+				}
+			}
+			data, ok := cs.fleet.Read(steward.Remote{Alias: "guild-ws", Path: copyDir + "/" + steward.MessageDropPath})
+			if !ok {
+				return nil, true, fmt.Errorf("no message was copied")
+			}
+			writeFile(t, filepath.Join(cs.director, filepath.FromSlash(steward.MessageDropPath)), string(data))
+		}
+		if cs.collectFails != "" && argv[1] == "lesson" {
+			return nil, true, fmt.Errorf("%s", cs.collectFails)
 		}
 		app, stdout, stderr := newTestApp(nil, nil)
 		if code := app.Run(argv[1:]); code != 0 {

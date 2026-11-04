@@ -14,14 +14,15 @@ Supported today, on a local store file named on the command line:
 - listing a recipient's unacknowledged messages in bounded pages;
 - reading one message;
 - acknowledging a consumed message;
-- [waking the Director](#waking-the-director) when a message to it is stored.
+- [waking the Director](#waking-the-director) when a message to it is stored;
+- [Steward messages](#steward-messages): the Steward telling an enrolled Director about an issue it found, which the Director's external inbox receives from the `steward` sender.
 
 Not provided yet:
 
 - telling a running Artisan that a message arrived.
   A stored message is not proof that any agent has seen it;
 - finding the store from a Director's runtime context: every command takes `--store <path>`;
-- messaging another Director, another machine or anything over SSH or HTTP.
+- messaging another Director, on this machine or another.
   Work still moves between Directors only by manual handoff (R1.15); [Director messaging](#director-messaging-designed-not-built) is designed, not built;
 - authentication of the sender: anyone who can write the store file can send a message.
 
@@ -45,6 +46,7 @@ There are three recipient forms:
 `messages send` refuses `director` to a `steward.store` and `steward` to any other store, and refuses a `steward` message from any sender but `guildmaster`, so no Director, other Director or Artisan reaches the Steward, and the Steward session's own sends are `director` sends that `messages send` refuses.
 The store takes a `steward` message from `guildmaster` and `director` only (`store.StewardSenders`); the `director` tag is the Steward supervisor's own, for the `triage-opened` report of its [scheduled collection](steward.md#scheduled-collection) about items Directors filed.
 A message to `steward` is woken for as a message to `director` is, and both are the store's session inbox.
+None of this changes for [Steward messages](#steward-messages), which go the other way, from the Steward to a Director's external inbox.
 
 There is no Director or Artisan registry yet, so an Artisan is identified by the stage attempt it runs.
 The repository, task, step and attempt must already exist in the store; a message to an Artisan needs that attempt to be running, while a message to the Director may concern a finished attempt or only a task.
@@ -130,6 +132,7 @@ An envelope cannot declare its own sender: `sender` is not an envelope field, so
 | `director` | `GUILDHALL_SESSION` is set and [copy discovery](running.md#copies) from where `messages send` runs finds the copy whose store the message is sent to. A Director session runs inside its copy; `--copy` does not choose the sender's copy. A Steward session sending to its own `steward.store` is `director` too. In a Steward store it is also the tag of the scheduled collection's `triage-opened` report, which the Steward's supervisor sends in process. |
 | `other-director` | `GUILDHALL_SESSION` is set and copy discovery finds a different copy. |
 | `guildmaster` | Neither `GUILDHALL_SESSION` nor `GUILDHALL_ATTEMPT` is set, wherever it runs. |
+| `steward` | `messages receive` took in a [Steward message](#steward-messages). It is the sender of an external message only, never of `messages send`, whose sender comes from its environment, so no local process becomes the Steward by setting a variable. |
 | `unknown` | Anything else, such as `GUILDHALL_SESSION` where copy discovery finds no copy. A message stored with no sender also reads as `unknown`. |
 
 The copy's name is not stored.
@@ -189,7 +192,8 @@ guildhall: 3 unread (merged 1, note 1 from artisan, note 1 from guildmaster)
 
 The sender is Guildhall's own word from the fixed vocabulary, never text a sender chose; a note with no recorded sender reads `note <n> from unknown`.
 A line with no unread note is unchanged.
-Because a sender chooses its message's type, the line names only the types in `store.MessageTypes`, the one registry of the types Guildhall sends, each with its sender: those the engine and the launcher send (`advance-failed`, `attempt-failed`, `attempt-retried`, `branch-kept`, `budget-refused`, `changes-requested`, `checks-failed`, `checks-passed`, `checks-pending`, `flake`, `decision`, `dependency-held`, `director-stage`, `finished`, `loop-exit-rejected`, `merge-held`, `merge-refused`, `merged`, `slice-delivered`, `published`, `stall`, `worker-stalled`, `workspace-kept`, and the [merge queue](interpreter.md#the-merge-queue)'s `merge-queued`, `rebased`, `rebase-escalated`, `rebase-stuck` and `approval-carried`), those a [judge](quality.md) sends (`judge-failed`, `judgement`, `judgement-refused`), the session supervisor's `herdr-workspace-left-open`, `prune-workspace-kept` and `hold-released`, the Steward supervisor's `triage-opened`, [`task cancel`](tasks.md#task-cancel)'s `dependency-cancelled`, id `<repo>.<task>.dependency-cancelled.<cancelled repo>.<cancelled task>` for each open dependent, the [task page](web.md#answering)'s `decision-answered`, and the local `question` and `note`; every other type counts as `other`, and `DirectorUnread` counts by the same registry.
+Because a sender chooses its message's type, the line names only the types in `store.MessageTypes`, the one registry of the types Guildhall sends, each with its sender: those the engine and the launcher send (`advance-failed`, `attempt-failed`, `attempt-retried`, `branch-kept`, `budget-refused`, `changes-requested`, `checks-failed`, `checks-passed`, `checks-pending`, `flake`, `decision`, `dependency-held`, `director-stage`, `finished`, `loop-exit-rejected`, `merge-held`, `merge-refused`, `merged`, `slice-delivered`, `published`, `stall`, `worker-stalled`, `workspace-kept`, and the [merge queue](interpreter.md#the-merge-queue)'s `merge-queued`, `rebased`, `rebase-escalated`, `rebase-stuck` and `approval-carried`), those a [judge](quality.md) sends (`judge-failed`, `judgement`, `judgement-refused`), the session supervisor's `herdr-workspace-left-open`, `prune-workspace-kept` and `hold-released`, the Steward supervisor's `triage-opened`, [`task cancel`](tasks.md#task-cancel)'s `dependency-cancelled`, id `<repo>.<task>.dependency-cancelled.<cancelled repo>.<cancelled task>` for each open dependent, the [task page](web.md#answering)'s `decision-answered`, the Steward's [`steward-report`](#steward-messages), and the local `question` and `note`; every other type counts as `other`, and `DirectorUnread` counts by the same registry.
+An external message, such as a Steward message, is counted by type and sender like a note, `steward-report <n> from steward`, its type `other` unless the registry names it.
 The engine sends `dependency-held` while the [dependency gate](interpreter.md#the-dependency-gate) holds a task, once per state of its unmerged dependencies; it is not the between-Directors [`dependency-notice`](#message-types).
 It sends `branch-kept`, id `<repo>.<task>.branch-kept.<step>-<n>`, at most once per Artisan attempt, when the attempt's untouched task branch could not be fast-forwarded to the current main and the attempt runs on it as it is ([the working directory](interpreter.md#the-working-directory)); a branch with commits of its own sends nothing.
 It sends `flake`, id `<repo>.<task>.flake.<step>.<first 12 hex digits of the head>.<8 hex digits of the check name's digest>`, under [`flaky_checks`](configuration.md#repositories) `rerun-and-file`, once per check that failed and then passed on its one [rerun](interpreter.md#validate-reruns) on a head, before that head's `checks-passed`; its first line, `policy: rerun-and-file`, is the policy the Director's inbox skill acts on, and the rest is the evidence: check, platform, job, failed and passing runs, failing test names and the `guildhall ci log` command.
@@ -220,9 +224,9 @@ The pane is reached through the Herdr session it was recorded in, with `herdr` f
 
 The separate [resume wake](director.md#pause-and-resume) leaves each message's recorded wake unchanged.
 
-Every wake records its sender type: `guildhall` for the engine, `local` for `messages send` and `page` for the [task page](web.md#answering).
+Every wake records its sender type: `guildhall` for the engine, `local` for `messages send`, `page` for the [task page](web.md#answering) and `steward` for `messages receive`.
 The message's own [`sender`](#senders) is the finer field, telling the Guildmaster, a Director and an Artisan apart.
-Every sender type wakes on every message; the per-sender [wake policies](#waking-a-director) below are designed, not built.
+Every sender type wakes on every message, through the coalescing above; there is no wake budget ([decision](decisions/steward-messages-directors.md)).
 
 ## Surfacing a note
 
@@ -246,6 +250,85 @@ The note's sender also shows in `director status`'s message headers and in `mess
 The toast is used rather than the pane title, which belongs to the supervisor's wake notice, and rather than the Lanterns status line, which refreshes only after an assistant message, too late to show the note first.
 Routine engine messages are never surfaced.
 
+## Steward messages
+
+The Steward tells an enrolled Director about an issue it found with a **Steward message**, built from the [Director messaging](#director-messaging-designed-not-built) design ([decision](decisions/steward-messages-directors.md)).
+It informs only, under the [authority](#authority) rule: it is not a command, dispatch, a task, an approval or a push of configuration, and at most becomes a ticket that opens a Guildmaster decision; only the Guildmaster's `accept` creates a task.
+The Steward's supervisor sends it from its scheduled run, never its model ([Steward messages](steward.md#steward-messages)); no Director reaches the Steward in return.
+
+### External messages
+
+A Steward message is an **external message**: a new store record in the receiving Director's store, keyed by its sender and id outside any repository, so it names no task of the store.
+The local `guildhall.message/1` inbox and its commands are unchanged.
+Its envelope is `guildhall.director-message/1`, decoded with the local envelope's strict rules, a byte order mark and CRLF accepted and UTF-16 refused with a hint:
+
+```json
+{
+  "schema": "guildhall.director-message/1",
+  "id": "rollout-failed.3f9a0c1d2b4e5f60",
+  "from": "steward",
+  "to": "tools",
+  "type": "steward-report",
+  "kind": "rollout-failed",
+  "subject": "Rollout 1a2b3c4d5e6f to this copy ended reload_failed",
+  "text": "The Steward's newest rollout to this copy ... ended reload_failed: ..."
+}
+```
+
+| Field | Contract |
+|---|---|
+| `id` | Chosen by the sender, unique among its messages: the local id rules. |
+| `from` | `steward`; it must match the sender `messages receive` records. |
+| `to` | The receiving copy's Director name, its config's `name`. |
+| `type`, `kind` | `steward-report`, with the `kind` `rollout-failed` (the Steward's newest rollout to the copy failed) or `unreachable-recovered` (the copy was unreachable for a configured span and is reachable again). Only a `steward-report` has a `kind`. |
+| `subject` | The one-line header a summary shows: non-blank, no line break, at most 200 bytes. |
+| `text` | As in `guildhall.message/1`. |
+| `about`, `artifacts` | Optional, as designed; `in_reply_to` is refused until a Director's answer is built. |
+
+A listed or read external message is the record: the fields above with `sender`, `sequence`, `received_at` and `acknowledged`.
+Its sender is `steward`, set by `messages receive` and never by the envelope or by `messages send`.
+
+### messages receive
+
+`guildhall messages receive --copy <dir>` is the fixed remote command the Steward runs after copying one envelope with `scp` to `state/steward/message.json` in the copy; the Steward delivers one message at a time per copy.
+It reads the file, records the message from `steward`, deletes the file, and prints one JSON document, `guildhall.receive-result/1`:
+
+- `{"status": "delivered", "receipt": {...}}` once the message is stored. The receipt's mutation is `dmessage:steward:<id>`, resolved first: an identical message received before returns its original receipt, even when the inbox is now closed or full, and wakes nothing again.
+- `{"status": "refused", "reason": "..."}` for an invalid envelope, one addressed to another Director, one that reuses an id with other content (`conflict`), and, for a new message only, an inbox [closed](#closing-the-inbox-to-a-sender) to the Steward (`closed: ...`) or a [full mailbox](#a-full-mailbox) (`mailbox full: ...`). A refusal stores nothing and is final: the Steward records it and never retries.
+
+Both exit 0.
+It exits 1, keeping the file, when there is no file to read or the store or config fails, and the Steward retries it.
+A new message is stored first, then [surfaced](#surfacing-a-note) and woken for: one Herdr toast titled `guildhall: steward-report <kind> from steward`, its body the sanitised subject and `guildhall messages read --sender steward <id>`, then the usual wake, whose line counts it, `steward-report 1 from steward`, and carries no text.
+
+### Reading and acknowledging
+
+The Director reads external messages by their full identity, and never by a guessed sender:
+
+- `guildhall messages summary` prints the unread external messages counted by sender, each sender's inbox state and the headers (`sender`, `id`, `type`, `kind`, `subject`, `sequence`) of the newest 20 unread, newest last; never their text.
+- `guildhall messages list --from steward [--after <sequence>] [--limit <n>]` lists them in receive order, each with its recorded wake.
+- `guildhall messages read --sender steward <id>` prints one, acknowledged or not, without acknowledging it.
+- `guildhall messages ack --sender steward director <id>` acknowledges it with the mutation `dmessage-ack:steward:<id>`, once the Director has dealt with it.
+
+Without `--from` or `--sender`, `list`, `read` and `ack` keep their local meaning.
+The Director tells the Guildmaster what a Steward message says when it matters, and acts on none of it on its own ([inbox skill](../skills/guildhall-director-inbox/SKILL.md)).
+
+### Closing the inbox to a sender
+
+`guildhall messages inbox close --sender steward --reason <text>` closes the Director's inbox to that one sender: its new messages are refused `closed` until it reopens, and other senders are not affected.
+Closing opens an alert on the reserved task `messages/inbox-steward`, a `question` decision `inbox-steward-<n>` for the n-th close with the options `reopen` and `keep-closed`, which `decide list` and `needs_me` show and only the Guildmaster answers: `decide answer` refuses it inside any session.
+`guildhall messages inbox open --sender steward` is refused unless the Guildmaster answered the newest close's alert `reopen`.
+The repository id `messages` is reserved and refused for a real repository; task listings leave it out.
+
+### A full mailbox
+
+[`mailbox_max`](configuration.md#settings), 200 by default, caps the unacknowledged external messages; at the cap a new message is refused `mailbox full`, and one sent after the Director acknowledges some is taken.
+
+### The outbox
+
+A sender keeps each message in its own store's outbox: `pending` when recorded, then `delivered` with the receiver's receipt or `refused` with its reason, each final.
+A delivery that fails, such as an unreachable or sleeping machine, stays `pending` with its error, and the sender's session supervisor retries it on its schedule, deterministic and with no model call.
+`guildhall messages outbox [--all]` lists the entries not delivered, or every one; it is the Steward's in a Steward copy.
+
 ## Director messaging (designed, not built)
 
 Everything in this section is designed, not built, except the [local wake](#waking-the-director) and its wake record.
@@ -262,9 +345,9 @@ A Director's inbox has two external sender types:
 | `guildmaster` | The Guildmaster, by their own command | Always wakes |
 | `director` | Another Director, on this machine or another | Draws on the [wake budget](#waking-a-director) |
 
-The Steward never messages a Director.
-It changes a Director by command: it copies `managed.toml` as rollouts do today and may then run `guildhall config reload` on the copy (see [Standalone and managed Directors](director-modes.md#how-the-steward-acts)).
-The Director's binary records each managed-settings revision it applies as a store event, which the task timeline and the status feed show; nothing about it enters the inbox.
+The Steward is a third external sender, `steward`, and is built: it informs an enrolled Director of issues it finds with a [Steward message](#steward-messages), which draws on no wake budget.
+It changes a Director only by command: it copies `managed.toml` as rollouts do today and may then run `guildhall config reload` on the copy (see [Standalone and managed Directors](director-modes.md#how-the-steward-acts)).
+The Director's binary records each managed-settings revision it applies as a store event, which the task timeline and the status feed show; a revision itself never enters the inbox, though a failed rollout's report does.
 
 Messages from the Director's own Artisans keep the existing `artisan:` and `director` envelope and are unchanged: they are internal to one Director, never cross a machine and are not a sender type above.
 Waking the Director for an Artisan message is out of scope here.
@@ -338,6 +421,8 @@ Decoding follows the same strict rules as `guildhall.message/1`, including the 1
 A Guildmaster `note` uses the same schema with `from` set to `guildmaster`, no `about` and no `in_reply_to`.
 
 ### Waking a Director
+
+The wake budget and the `wake_director*` keys below are dropped ([decision](decisions/steward-messages-directors.md)): every external message wakes through the local wake's coalescing, as a [Steward message](#steward-messages) does, and flooding is handled by [closing the inbox to one sender](#closing-the-inbox-to-a-sender), which replaces the per-inbox close of the next section.
 
 A message is stored first and wakes second: storing never depends on waking, and a message that wakes nobody is still in the inbox.
 There is no service (R1.29): the `receive` command that stores a message decides then and there whether to wake, and records that decision.
@@ -502,8 +587,8 @@ The local record remains until collection has a durable receipt.
 Transport failure leaves the ticket pending locally, never silently discarded or described as collected.
 
 The Steward [collects](steward.md#collection) proposed maintenance tickets with `guildhall steward collect`, on request or on its optional `collect_every` schedule, over its existing SSH access to enrolled Director copies, as for [lessons](director-modes.md#lessons), and persists its maintenance queue in the private configuration repository as `incidents/<machine>/<origin>-<id>.json`.
-Directors need neither that repository nor a connection to the Steward, and a Director's inbox gains no sender type.
-A collection receipt is a command result, the file `director collected` reads, not a Steward message, acceptance of the proposed work or permission to act.
+Directors need neither that repository nor a connection to the Steward, and collection adds no sender to a Director's inbox.
+A collection receipt is a command result, the file `director collected` reads, not a [Steward message](#steward-messages), acceptance of the proposed work or permission to act.
 A standalone Director uses the identical local queue for its Guildmaster to triage and can have it collected later if a Steward is introduced.
 
 The Guildmaster may accept, defer or decline the proposed maintenance work, with the decision and evidence retained.

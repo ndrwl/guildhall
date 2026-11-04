@@ -47,6 +47,11 @@ const (
 // A real repository may not use it.
 const ManagedAlertRepository = "managed-mode"
 
+// MessagesRepository is the repository id reserved for a Director store's own messaging records: the tasks holding
+// the Guildmaster's decisions on a closed inbox (docs/messaging.md#closing-the-inbox-to-a-sender). A real repository
+// may not use it.
+const MessagesRepository = "messages"
+
 // MergeOptions are a repository's merge settings, [repository.merge] (docs/configuration.md#merge-requirements).
 type MergeOptions struct {
 	Requires MergeRequires `toml:"requires"`
@@ -310,6 +315,13 @@ const WakeMaxDelayKey = "wake_max_delay"
 // DefaultWakeMaxDelay is the wake delay bound of a config that does not set WakeMaxDelayKey.
 const DefaultWakeMaxDelay = 15 * time.Second
 
+// MailboxMaxKey is the setting that caps a Director's unacknowledged external messages, such as Steward messages:
+// at the cap, `messages receive` refuses a new one with "mailbox full" (docs/messaging.md#a-full-mailbox).
+const MailboxMaxKey = "mailbox_max"
+
+// DefaultMailboxMax is the mailbox cap of a config that does not set MailboxMaxKey.
+const DefaultMailboxMax = 200
+
 // ChecksRefreshKey is the setting that sets how long a waiting validate step waits between reads of the same
 // head's checks (docs/configuration.md#settings).
 const ChecksRefreshKey = "checks_refresh"
@@ -417,6 +429,25 @@ type Steward struct {
 	// CollectEvery is how often the Steward session collects lessons and incidents from the enrolled copies, as a Go
 	// duration of at least a minute; empty, the default, means never on a schedule (docs/steward.md#collection).
 	CollectEvery string `toml:"collect_every" json:",omitempty"`
+	// ReportUnreachableAfter is how long an enrolled copy must have been unreachable before the scheduled run, once it
+	// reaches the copy again, sends it an unreachable-recovered Steward message, as a Go duration of at least a minute;
+	// empty means DefaultReportUnreachableAfter (docs/steward.md#steward-messages).
+	ReportUnreachableAfter string `toml:"report_unreachable_after" json:",omitempty"`
+}
+
+// DefaultReportUnreachableAfter is the [steward] report_unreachable_after of a config that does not set it.
+const DefaultReportUnreachableAfter = time.Hour
+
+// ReportUnreachableAfterDuration is the table's report_unreachable_after, DefaultReportUnreachableAfter when unset.
+func (s Steward) ReportUnreachableAfterDuration() (time.Duration, error) {
+	if s.ReportUnreachableAfter == "" {
+		return DefaultReportUnreachableAfter, nil
+	}
+	d, err := time.ParseDuration(s.ReportUnreachableAfter)
+	if err != nil || d < time.Minute {
+		return 0, fmt.Errorf("steward: report_unreachable_after %q must be a duration of at least a minute, such as \"1h\"", s.ReportUnreachableAfter)
+	}
+	return d, nil
 }
 
 // CollectEveryDuration is the table's collect_every, and false when it is unset, so no round is scheduled.
@@ -828,6 +859,9 @@ func (c *Config) validate() []string {
 		if _, _, err := st.CollectEveryDuration(); err != nil {
 			add("%v", err)
 		}
+		if _, err := st.ReportUnreachableAfterDuration(); err != nil {
+			add("%v", err)
+		}
 	}
 	if w := c.Web; w != nil {
 		problems = append(problems, checkWeb(*w)...)
@@ -874,6 +908,8 @@ func (c *Config) validate() []string {
 			add("%s: invalid repository id %q", name, r.ID)
 		} else if r.ID == ManagedAlertRepository {
 			add("repository id %q is reserved for the Director store's managed-mode records; choose another id", r.ID)
+		} else if r.ID == MessagesRepository {
+			add("repository id %q is reserved for the Director store's messaging records; choose another id", r.ID)
 		} else {
 			name = fmt.Sprintf("repository %q", r.ID)
 		}
@@ -1063,6 +1099,24 @@ func (c *Config) WakeMaxDelay() (time.Duration, error) {
 		return DefaultWakeMaxDelay, nil
 	}
 	return parseWakeMaxDelay(v)
+}
+
+// MailboxMax returns the effective MailboxMaxKey setting: DefaultMailboxMax when it is not set. A value that is not a
+// whole number from 1 to 10000 is an error; Parse refuses one already.
+func (c *Config) MailboxMax() (int, error) {
+	v, ok := c.Setting(MailboxMaxKey)
+	if !ok {
+		return DefaultMailboxMax, nil
+	}
+	return parseMailboxMax(v)
+}
+
+func parseMailboxMax(v string) (int, error) {
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 || n > 10000 || strconv.Itoa(n) != v {
+		return 0, fmt.Errorf("%s %q must be a whole number from 1 to 10000, such as \"200\"", MailboxMaxKey, v)
+	}
+	return n, nil
 }
 
 func parseWakeMaxDelay(v string) (time.Duration, error) {

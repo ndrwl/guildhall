@@ -1,7 +1,7 @@
 # The Steward
 
 The Steward looks after the guild's Director copies across its machines: it owns the roster and rolls out managed settings to enrolled Director copies over SSH (R1.7, R1.8, R1.31).
-It runs as the **Steward session**, a long-running agent session the Guildhall binary starts and supervises the same way it supervises a Director, and only the Guildmaster talks to it.
+It runs as the **Steward session**, a long-running agent session the Guildhall binary starts and supervises the same way it supervises a Director, and only the Guildmaster talks to it: no Director reaches its inbox.
 This page describes the Steward session, what `guildhall steward rollout` and `guildhall steward collect` do today and what is planned.
 
 No Director feature requires a Steward.
@@ -12,7 +12,7 @@ A standalone copy, one with no `managed.toml` and no enrolment, starts and behav
 The Steward session is not a service or daemon (R1.29): it is an agent session in a Herdr tab, like a [Director session](director.md#start), that runs while the Guildmaster keeps it running.
 It only orchestrates.
 Every change it makes goes through a fixed `guildhall steward` command, and the Guildmaster approves every policy change and rollout digest ([approval in a Steward session](#approval-in-a-steward-session)).
-It never messages a Director, and no Director reaches it: it pushes only by rollout, and reads Directors' lessons and incidents only by [collection](#collection) (R1.6, R1.8; [messaging](messaging.md#recipients)).
+No Director reaches it: it pushes only by rollout, reads Directors' lessons and incidents only by [collection](#collection), and informs an enrolled Director of issues it finds only by a [Steward message](#steward-messages), sent by its supervisor and never by its model (R1.6, R1.8; [messaging](messaging.md#steward-messages)).
 
 ### The Steward copy
 
@@ -50,6 +50,7 @@ collect_every = "6h"
 `[steward]` is valid only in a Steward config, and `[director]` only in a Director's.
 `name` labels the Steward's Herdr workspace and tab and is required to start a session; `adapter`, `model`, `effort` and `role` choose the session's runtime and role prompt as `[director]` does for a Director, and `role` is a config-relative path that replaces the release's `roles/steward.md`.
 `collect_every` is optional: a duration of at least a minute, validated like `[backup] every`, after which the session runs a [scheduled collection](#scheduled-collection); unset, the default, nothing is collected on a schedule.
+`report_unreachable_after` is optional too: how long a copy must have been unreachable before a scheduled run, reaching it again, sends it an `unreachable-recovered` [Steward message](#steward-messages), a duration of at least a minute, one hour when unset.
 A config that only runs rollouts needs no `[steward]` table.
 The table has no `idle_after`, handoff or `wake_quiet` key: the Steward's session runs the defaults of those ([lifecycle](#lifecycle)).
 The table is an addition to schema version 1, so an older binary refuses it as an unknown key rather than guessing (R1.11).
@@ -93,7 +94,7 @@ The Steward's inbox is the `steward` recipient of its store, and it takes messag
 `messages send` to it from a Director, another Director, an Artisan or the Steward's own session is refused, and so is a `director` message to a Steward store or a `steward` message to any other store.
 No Director reaches the inbox: the `director` tag says the report is about items Directors filed, which the Steward read itself.
 A message wakes the Steward session as a Director's wakes a Director ([waking the Director](messaging.md#waking-the-director)).
-The sender list is the one place a later Steward-to-Director path would extend; none exists today.
+[Steward messages](#steward-messages) go the other way, from the Steward to a Director's external inbox, and add no sender to this list.
 
 ### Status
 
@@ -291,6 +292,7 @@ The allow-list is exactly ([decision](decisions/steward-fixed-remote-commands.md
 - `director mode --json --copy <copy_dir>`, which only reads the copy's mode and managed digest;
 - `lesson list --json --pending --copy <copy_dir>` and `incident list --json --pending --copy <copy_dir>`, which only read the copy's items not yet [collected](#collection);
 - `director collected --copy <copy_dir>`, which marks the items of the receipt collection copied to the copy as collected;
+- `messages receive --copy <copy_dir>`, which receives the [Steward message](#steward-messages) copied to the copy's drop file ([decision](decisions/steward-messages-directors.md));
 - `director reload --copy <copy_dir>`, reserved for [release upgrades](releases.md#guildhall-director-reload) and refused until that is built.
 
 Any other command, flag or argument is refused before `ssh` runs, and so is an alias that is not a plain roster alias.
@@ -328,7 +330,7 @@ Collection opens one decision per collected item on two reserved tasks of the St
 Each is an approval bound to the item's content digest, with the id `<kind>-<first 16 hex digits of the sha256 of the item's path>`, so an item has one decision however many rounds see it.
 Only the Guildmaster answers it, outside any session, with `guildhall decide answer --copy <dir> --repo steward --task incidents|lessons --decision <id> --answer-file -`; `decide answer` refuses it from inside one.
 The next round writes the answer into the item's file as `triage`, `triage_decision`, `triage_outcome` and `triage_note`.
-Triage authorises no work: an accepted incident is recorded as the Guildmaster's to create a task, and the Steward never acts on a Director; an adopted lesson is drafted by the Steward as an ordinary private-config change, which a later approved rollout ships (R1.32).
+Triage authorises no work: an accepted incident is recorded as the Guildmaster's to create a task, and the Steward does nothing to a Director for it; an adopted lesson is drafted by the Steward as an ordinary private-config change, which a later approved rollout ships (R1.32).
 The Director's own record stays `collected`.
 The `guildhall-steward-triage` skill presents each decision.
 
@@ -338,6 +340,23 @@ With `[steward] collect_every` set, the Steward session runs a round at its star
 Rounds run one at a time, a round that finds the lock busy is skipped, and failures are reported on the supervisor's standard error.
 A round that opens triage decisions sends the Steward's inbox one `triage-opened` message per kind, with the [`director` sender tag](#inbox), which wakes the session; a round with nothing new sends nothing and wakes nothing.
 Unset, the default, nothing is collected on a schedule, and nothing polls or spends model tokens because an item is queued (R1.7).
+Each scheduled run then sends its [Steward messages](#steward-messages), even when the round found the lock busy.
+
+## Steward messages
+
+The Steward tells an enrolled Director about issues it finds with a **Steward message**, a `steward-report` in the Director's external inbox ([messaging](messaging.md#steward-messages), [decision](decisions/steward-messages-directors.md)).
+A Steward message informs only: it is not dispatch, a task, an approval or a push of configuration, and the Director acts on nothing it says without the Guildmaster (R1.6, R1.7, R1.8, R1.15).
+The supervisor's scheduled run sends them as deterministic code, never the Steward's model, so they need `collect_every`; each run, after its collection round:
+
+1. finds the reports: `rollout-failed` for each enrolled copy whose newest rollout receipt under `rollouts/` is `failed`, `verify_failed` or `reload_failed`, and `unreachable-recovered` for each copy the round reached after it had been unreachable, by the round's own reads, for at least `[steward] report_unreachable_after` (one hour by default, at least a minute);
+2. records each report in the Steward store's outbox, `pending`, under its id `<kind>.<first 16 hex digits of the sha256 of its copy and issue>`, so one issue on one copy is one message however often a run finds it;
+3. delivers every pending entry, one at a time: it copies the envelope with `scp` to `state/steward/message.json` in the copy, then runs the fixed [remote command](#remote-commands) `messages receive --copy <copy_dir>`, and records the copy's answer, `delivered` with its receipt or `refused` with its reason.
+
+A refusal, such as an inbox the Director closed to the Steward or a full mailbox, is final and never retried.
+A delivery that fails, such as an unreachable or sleeping machine or a `guildhall` too old to know the command, stays `pending` with its error, and the next run retries it, so nothing is lost while a machine sleeps.
+`guildhall messages outbox [--all] --copy <steward copy>` lists the entries not delivered, or every one.
+`state/steward/` is made by the copy's `director enrol`, `config reload` and pending lists, since `scp` makes no directory.
+A copy that is not in the roster, standalone or removed, gets no Steward message.
 
 ## Managing a Director copy
 

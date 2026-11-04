@@ -177,3 +177,19 @@ func (p storeRecords) RecordHandoffDue(d store.HandoffDue) (store.Receipt, error
 }
 
 var _ messaging.WakeStore = storeRecords{}
+
+func (p storeRecords) ExternalWakeFor(sender, id string) (store.Wake, error) {
+	return withRecords(p, true, nil, func(s *store.Store) (store.Wake, error) { return s.ExternalWakeFor(sender, id) })
+}
+
+func (p storeRecords) External(sender, id string) (store.ExternalMessage, error) {
+	return withRecords(p, true, nil, func(s *store.Store) (store.ExternalMessage, error) { return s.External(sender, id) })
+}
+
+// wakeExternal runs messaging.WakeExternal for an external message just received, over the store file at path
+// opened for each record operation, so no lock is held while it wakes.
+func (a *App) wakeExternal(path, sender, id string) (store.Wake, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), wakeTimeout)
+	defer cancel()
+	return messaging.WakeExternal(ctx, storeRecords{path: path}, a.directorPane(), sender, id, sender)
+}

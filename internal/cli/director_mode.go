@@ -127,6 +127,10 @@ func (a *App) directorEnrol(args []string) int {
 	if steward == "" {
 		return a.usageError(name + ": --steward <label> is required")
 	}
+	// An enrolled copy holds the directory a Steward copies its messages into, since scp creates none.
+	if err := ensureReceiptDir(storePath); err != nil {
+		return a.fail(fmt.Errorf("%s: %w", name, err))
+	}
 	f, err := readCopyFiles(cfgPath)
 	if err != nil {
 		return a.fail(fmt.Errorf("%s: %w", name, err))

@@ -52,6 +52,8 @@ func TestCheckCommand(t *testing.T) {
 		steward.ReloadCommand("/home/guild/bin/guildhall", "/home/guild/directors/tools"),
 		steward.ReloadCommand("C:/Users/guild/bin/guildhall.exe", "C:/Users/guild/directors/games"),
 		steward.ModeCommand(steward.DefaultGuildhall, "/home/guild/directors/tools"),
+		steward.ReceiveCommand(steward.DefaultGuildhall, "/home/guild/directors/tools"),
+		steward.ReceiveCommand("C:/Users/guild/bin/guildhall.exe", "C:/Users/guild/directors/games"),
 	} {
 		if err := steward.CheckCommand(argv); err != nil {
 			t.Errorf("CheckCommand %q: %v", argv, err)

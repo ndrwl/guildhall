@@ -157,6 +157,9 @@ type Wake struct {
 	// Sequence is set by the store to the wake receipt's sequence.
 	Sequence  uint64 `json:"sequence"`
 	MessageID string `json:"message_id"`
+	// ExternalSender is the sender of an external message, whose identity is it and MessageID; empty for a message
+	// of the local inbox.
+	ExternalSender string `json:"external_sender,omitempty"`
 	// SenderType is a lowercase id naming who sent the message, the input a per-sender wake policy reads.
 	SenderType string       `json:"sender_type"`
 	Decision   WakeDecision `json:"decision"`
@@ -437,7 +440,23 @@ func (s *Store) RecordWake(w Wake) (Receipt, error) {
 	if err := validateWake(w); err != nil {
 		return Receipt{}, err
 	}
-	return s.mutate(wakeMutationID(w.MessageID), opRecordWake, w, func(tx *bolt.Tx, r *Receipt) error {
+	mutationID := wakeMutationID(w.MessageID)
+	if w.ExternalSender != "" {
+		mutationID = externalWakeMutationID(w.ExternalSender, w.MessageID)
+	}
+	return s.mutate(mutationID, opRecordWake, w, func(tx *bolt.Tx, r *Receipt) error {
+		if w.ExternalSender != "" {
+			if _, err := getExternal(tx, w.ExternalSender, w.MessageID); err != nil {
+				return err
+			}
+			r.Record = "wake/external/" + w.ExternalSender + "/" + w.MessageID
+			wakes, err := createDirectorBucket(tx, bucketWakes)
+			if err != nil {
+				return err
+			}
+			w.Sequence, w.Time = r.Sequence, s.now().UTC()
+			return putJSON(wakes, wakeKey(w.Sequence), w)
+		}
 		m, err := getMessage(tx, w.MessageID)
 		if err != nil {
 			return err
@@ -460,18 +479,37 @@ func (s *Store) WakeFor(messageID string) (Wake, error) {
 	if err := ValidateMessageID(messageID); err != nil {
 		return Wake{}, err
 	}
-	var w Wake
-	err := s.view(func(tx *bolt.Tx) error {
-		var r Receipt
-		if err := getJSON(tx.Bucket(bucketReceipts), []byte(wakeMutationID(messageID)), &r); err != nil || r.Operation != opRecordWake {
-			return ErrNotFound
-		}
-		return getJSON(directorBucket(tx, bucketWakes), wakeKey(r.Sequence), &w)
-	})
+	w, err := s.wakeByMutation(wakeMutationID(messageID))
 	if err != nil {
 		return Wake{}, fmt.Errorf("store: wake for message %q: %w", messageID, err)
 	}
 	return w, nil
+}
+
+func externalWakeMutationID(sender, id string) string { return "wake:dmessage:" + sender + ":" + id }
+
+// ExternalWakeFor returns the wake recorded for the external message sender sent with id, or ErrNotFound.
+func (s *Store) ExternalWakeFor(sender, id string) (Wake, error) {
+	if err := validateExternalRef(sender, id); err != nil {
+		return Wake{}, err
+	}
+	w, err := s.wakeByMutation(externalWakeMutationID(sender, id))
+	if err != nil {
+		return Wake{}, fmt.Errorf("store: wake for external message %s/%s: %w", sender, id, err)
+	}
+	return w, nil
+}
+
+func (s *Store) wakeByMutation(mutationID string) (Wake, error) {
+	var w Wake
+	err := s.view(func(tx *bolt.Tx) error {
+		var r Receipt
+		if err := getJSON(tx.Bucket(bucketReceipts), []byte(mutationID), &r); err != nil || r.Operation != opRecordWake {
+			return ErrNotFound
+		}
+		return getJSON(directorBucket(tx, bucketWakes), wakeKey(r.Sequence), &w)
+	})
+	return w, err
 }
 
 // Wakes returns at most limit (1 to MaxInboxLimit) wakes with a sequence greater than after, in sequence
@@ -578,7 +616,7 @@ const (
 // MessageTypes is the registry of message types DirectorUnread and the wake line count by name, each with its
 // sender: "engine" for an advance (internal/interp), "launcher" for an attempt's launcher, "quality" for a judge,
 // "supervisor" for a Director session's supervisor, "cancel" for `guildhall task cancel`, "page" for the task
-// page (docs/web.md) and "local" for the documented kinds of `messages send`. Every other type, which any sender may choose, counts as "other", so the
+// page (docs/web.md), "steward" for a Steward message (docs/messaging.md#steward-messages) and "local" for the documented kinds of `messages send`. Every other type, which any sender may choose, counts as "other", so the
 // wake line carries no sender-chosen text. A type is added here by the change that sends it, never by a sender.
 var MessageTypes = map[string]string{
 	MessageAdvanceFailed: "launcher", MessageAttemptFailed: "engine", MessageAttemptRetried: "engine",
@@ -596,6 +634,7 @@ var MessageTypes = map[string]string{
 	MessageTriageOpened:        "supervisor",
 	MessageDependencyCancelled: "cancel",
 	MessageDecisionAnswered:    "page",
+	MessageStewardReport:       "steward",
 }
 
 // UnreadFrom is DirectorUnread's key for unread messages of type t from sender: "<t> from <sender>".
@@ -603,14 +642,16 @@ func UnreadFrom(t, sender string) string { return t + " from " + sender }
 
 // DirectorUnread counts the Director's unacknowledged messages by message type, keyed only by the types in
 // MessageTypes and "other", which counts every other type. Notes are counted by sender instead, keyed
-// UnreadFrom(MessageNote, sender) with the sender from MessageSenders, so no key carries free text.
+// UnreadFrom(MessageNote, sender) with the sender from MessageSenders, and so are external messages, such as a
+// Steward message, keyed UnreadFrom(type, sender) with the type in MessageTypes or "other" and the sender from
+// ExternalSenders, so no key carries free text.
 // Its cost grows with the number of unread messages and repositories, not with the store.
 // The session's inbox is the Director's or, in a Steward store, the Steward's (RecipientRole.SessionInbox); both
 // are counted, since a store has only one session.
 func (s *Store) DirectorUnread() (map[string]int, error) {
 	counts := map[string]int{}
 	err := s.view(func(tx *bolt.Tx) error {
-		return tx.Bucket(bucketRepos).ForEachBucket(func(repo []byte) error {
+		if err := tx.Bucket(bucketRepos).ForEachBucket(func(repo []byte) error {
 			inbox := repoBucket(tx, string(repo), bucketInbox)
 			if inbox == nil {
 				return nil
@@ -629,7 +670,10 @@ func (s *Store) DirectorUnread() (map[string]int, error) {
 				}
 				return nil
 			})
-		})
+		}); err != nil {
+			return err
+		}
+		return externalUnread(tx, counts)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("store: director unread: %w", err)
@@ -729,6 +773,9 @@ func validateWake(w Wake) error {
 	}
 	if err := validateIDs(w.SenderType); err != nil {
 		return err
+	}
+	if w.ExternalSender != "" && !slices.Contains(ExternalSenders, w.ExternalSender) {
+		return invalid("external sender %q must be one of %s", w.ExternalSender, strings.Join(ExternalSenders, ", "))
 	}
 	switch {
 	case w.Sequence != 0 || !w.Time.IsZero():
