@@ -70,7 +70,7 @@ An ask's headline is its story sentence, and the Needs you index and the where-i
 Under each ask's headline, above its summary and questions, the Director's own explanation, what the ask is about, what each answer means and what it recommends, shows as "From the Director · <time>".
 The Director writes it once, with [`decide explain`](decisions-cli.md#decide-explain), when the ask opens, so its chat message can be one Needs you line and a link.
 It is Markdown rendered as documents are: raw HTML is dropped and unsafe links are blanked, while ordinary links are kept.
-When the explanation names a recommended answer, that answer's tile is marked **Recommended** and comes first, the same mark a plan approval's Approved carries; an ask that marks its own recommended answer keeps its mark, and the Director's is ignored.
+When the explanation names a recommended answer, it becomes the ask's one [recommendation](#confirm-and-say), and that answer's tile is marked **Recommended** and comes first, the same mark a plan approval's Approved carries; an ask that marks its own recommended answer keeps its mark, and the Director's is ignored.
 An ask the Director has not explained says so in grey, pointing at the rest of the question for the full request; an explanation written for an earlier version of the ask, whose subject has since changed, is not shown, and the note says why.
 
 Only your open decisions are asks, as in Clerk's `/guild`: an answered decision the Director has not yet continued, a void decision and Guildhall's own install notice are not.
@@ -150,7 +150,7 @@ A done or cancelled task's conversation stays readable and takes nothing new; No
 ## Confirm and Say
 
 When you send words only on an ask, the Director replies under it on the page.
-When your words read as an answer, its reply is a **recommendation**: its reading of your words and the answer it recommends, written with `guildhall task say --tag <decision> --recommend <option> --text-file -`, one of the ask's options.
+When your words read as an answer, its reply is a **recommendation**: its reading of your words and the answer it recommends, written with `guildhall task say --tag <decision> --recommend <option> --subject-digest <digest> --text-file -`, one of the ask's options, against the digest of what it read.
 Its row's head says "recommends <answer>", with an amber bar while the ask is open.
 
 Under the ask's talk an amber box, **Recommended by the Director**, holds one tile, **Confirm: <answer>**, and the **Your words** box below it is filled with your words on the ask, or with the words the Director gave with `--words-file`, for you to edit.
@@ -161,7 +161,9 @@ So an ask with a recommendation reads, in order: the question, its summary and o
 - The ordinary tiles stay, so you can still answer differently.
 - Nothing is answered until you tap. A newer recommendation replaces the Confirm on the page, and confirming one the Director has since replaced is refused: reload and read the new one.
 
-A question the Director opens with `guildhall decide open --recommend <option>` marks that option's tile **Recommended**.
+Each ask has one recommendation, the Director's latest, whether it came from `task say --recommend`, from its explanation (`decide explain --recommend`) or from a question it opened with `guildhall decide open --recommend <option>` ([store](store.md#decision-recommendations)).
+That one recommendation marks its option's tile **Recommended**, so the badge and Confirm always name the same answer; only a recommendation from `task say` has a Confirm, so when a later explanation replaces one, the badge moves and Confirm goes.
+A recommendation made against an earlier version of the ask than the one it is now about is stale: it marks no tile and has no Confirm, and the ask says "The Director recommended <answer> against an earlier version; it is stale."; confirming it is refused with "the Director's recommendation on #<id> is stale; reload and read it", and nothing is written.
 
 At the end of the current stage's talk, on an open task, your page has a **Say to the Director about <attempt>** box, even when nothing is asked.
 **Send to the Director** answers nothing: it records your words under that attempt and sends them to the Director as a note, naming the task and attempt and shown to you in a toast as words only are, and the Director replies in the same talk.

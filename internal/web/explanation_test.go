@@ -68,6 +68,7 @@ func TestExplanationIsSafeMarkdown(t *testing.T) {
 func TestExplanationNotes(t *testing.T) {
 	page := explainedPage(t, "/guildhall/d122", withAsk("review--s2-x2", func(a *Ask) {
 		a.Explanation = &Explanation{Text: "STALE WORDS", Recommend: "accept", At: time.Date(2026, 11, 4, 14, 0, 0, 0, time.UTC), Stale: true}
+		a.Recommendation = &Recommendation{Option: "accept", At: time.Date(2026, 11, 4, 14, 0, 0, 0, time.UTC), Stale: true}
 	}))
 	ask := askCard(t, page, "review--s2-x2")
 	if strings.Contains(page, "STALE WORDS") || strings.Contains(ask, "From the Director") {
@@ -79,7 +80,7 @@ func TestExplanationNotes(t *testing.T) {
 	if strings.Contains(ask, " rec\"") {
 		t.Errorf("a stale explanation's recommendation marks a tile:\n%s", ask)
 	}
-	page = explainedPage(t, "/guildhall/d122", withAsk("review--s2-x2", func(a *Ask) { a.Explanation = nil }))
+	page = explainedPage(t, "/guildhall/d122", withAsk("review--s2-x2", func(a *Ask) { a.Explanation, a.Recommendation = nil, nil }))
 	ask = askCard(t, page, "review--s2-x2")
 	if !strings.Contains(ask, `<p class="q">The slice 2 review asks whether to go on.</p><div class="dx"><p class="dxn">The Director has not explained this ask yet. `+
 		`The full request is under the rest of the question; ask the Director in chat if you want its view first.</p></div>`) {
@@ -98,7 +99,7 @@ func TestExplanationNotes(t *testing.T) {
 // ask d153 marks nothing on; on a plan approval whose questions carry recommendations, d153's Approved keeps the mark
 // and the Director's is ignored; an option the ask does not offer marks nothing.
 func TestDirectorRecommendation(t *testing.T) {
-	page := explainedPage(t, "/guildhall/d122", withAsk("grant-1", func(a *Ask) { a.Explanation.Stale, a.Explanation.Recommend = false, "reject" }))
+	page := explainedPage(t, "/guildhall/d122", withAsk("grant-1", func(a *Ask) { a.Recommendation = &Recommendation{Option: "reject"} }))
 	grant := askCard(t, page, "grant-1")
 	if !strings.Contains(grant, `<div class="opts"><button class="opt neg rec" type="button" disabled><b>Reject <i class="badge">Recommended</i></b>`) ||
 		strings.Count(grant, `class="badge">Recommended`) != 1 {
@@ -106,15 +107,48 @@ func TestDirectorRecommendation(t *testing.T) {
 	}
 	page = explainedPage(t, "/guildhall/d122", withAsk("accept--s2-1", func(a *Ask) {
 		a.Explanation = &Explanation{Text: "Send it back.", Recommend: "changes_requested"}
+		a.Recommendation = &Recommendation{Option: "changes_requested"}
 	}))
 	plan := askCard(t, page, "accept--s2-1")
 	if !strings.Contains(plan, `<button class="opt pos rec" type="button" disabled><b>Approved <i class="badge">Recommended</i></b>`) ||
 		strings.Contains(plan, `carry rec`) {
 		t.Errorf("the plan approval's own mark does not win:\n%s", plan)
 	}
-	page = explainedPage(t, "/guildhall/d122", withAsk("grant-1", func(a *Ask) { a.Explanation.Stale, a.Explanation.Recommend = false, "maybe" }))
+	page = explainedPage(t, "/guildhall/d122", withAsk("grant-1", func(a *Ask) { a.Recommendation = &Recommendation{Option: "maybe"} }))
 	if grant := askCard(t, page, "grant-1"); strings.Contains(grant, `class="badge">Recommended`) {
 		t.Errorf("an option the ask does not offer is marked:\n%s", grant)
+	}
+}
+
+// TestOneRecommendation: an explanation and a say that disagree show one recommended tile, the ask's one
+// recommendation, the latest, and Confirm offers the same option; when a later explanation replaces the say's
+// recommendation the badge moves and Confirm disappears.
+func TestOneRecommendation(t *testing.T) {
+	task := recommended("")
+	task.Asks[0].Explanation = &Explanation{Text: "Back off: it costs nothing.", Recommend: "back-off"}
+	s := answeringTalkServer()
+	v := s.taskView(task, gmState)
+	marked := func(v taskView) []string {
+		var out []string
+		for _, t := range v.Asks[0].Tiles {
+			if t.Rec {
+				out = append(out, t.Option)
+			}
+		}
+		return out
+	}
+	if got := marked(v); len(got) != 1 || got[0] != "stop" || v.Asks[0].Confirm == nil || v.Asks[0].Confirm.Option != "stop" {
+		t.Errorf("marked %v, Confirm %+v; want stop and Confirm: Stop", got, v.Asks[0].Confirm)
+	}
+	task.Asks[0].Recommendation = &Recommendation{Option: "back-off"}
+	v = s.taskView(task, gmState)
+	if got := marked(v); len(got) != 1 || got[0] != "back-off" || v.Asks[0].Confirm != nil {
+		t.Errorf("after the explanation: marked %v, Confirm %+v; want back-off and no Confirm", got, v.Asks[0].Confirm)
+	}
+	// The ranking is gone: an explanation's recommend, with no recommendation, marks nothing.
+	task.Asks[0].Recommendation = nil
+	if got := marked(s.taskView(task, gmState)); len(got) != 0 {
+		t.Errorf("an explanation's recommend alone marked %v", got)
 	}
 }
 

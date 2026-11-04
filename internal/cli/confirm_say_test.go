@@ -42,7 +42,7 @@ func gmPage(h http.Handler, task string) string {
 func TestTaskSayRecommend(t *testing.T) {
 	dir := clerkFixture(t)
 	path := filepath.Join(dir, "director.store")
-	args := []string{"--store", path, "--repo", "app", "--task", "a-approve", "--tag", "accept-plan", "--text-file", "-", "--recommend", "approve"}
+	args := []string{"--store", path, "--repo", "app", "--task", "a-approve", "--tag", "accept-plan", "--text-file", "-", "--recommend", "approve", "--subject-digest", planSubject}
 	code, out, errOut := runTaskSay(t, "Windows is covered, so **approve**.", args...)
 	if code != 0 {
 		t.Fatalf("task say --recommend = %d %s", code, errOut)
@@ -63,18 +63,26 @@ func TestTaskSayRecommend(t *testing.T) {
 	if len(got) != 2 || got[0].Saying != want[0] || got[1].Saying != want[1] {
 		t.Fatalf("conversation = %+v", got)
 	}
+	if r := pageRecommendation(t, path, "a-approve", "accept-plan"); r.Option != "approve" || r.Number != 2 || r.Words != "approve, Windows is covered\n" ||
+		r.SubjectDigest != planSubject || r.Revision != 2 {
+		t.Fatalf("recommendation = %+v", r)
+	}
 
+	digest := []string{"--subject-digest", planSubject}
 	for name, c := range map[string]struct {
 		args []string
 		code int
 		says string
 	}{
-		"not an option":       {[]string{"--tag", "accept-plan", "--recommend", "merge"}, 1, `"merge" is not one of decision accept-plan's options`},
-		"an attempt":          {[]string{"--tag", "plan-1", "--recommend", "approve"}, 1, `has no decision "plan-1"`},
-		"chat author":         {[]string{"--tag", "accept-plan", "--recommend", "approve", "--author", "guildmaster-chat"}, 2, "--recommend is the Director's"},
+		"not an option":       {append([]string{"--tag", "accept-plan", "--recommend", "merge"}, digest...), 1, `"merge" is not one of decision accept-plan's options`},
+		"an attempt":          {append([]string{"--tag", "plan-1", "--recommend", "approve"}, digest...), 1, `has no decision "plan-1"`},
+		"chat author":         {append([]string{"--tag", "accept-plan", "--recommend", "approve", "--author", "guildmaster-chat"}, digest...), 2, "--recommend is the Director's"},
 		"words alone":         {[]string{"--tag", "accept-plan", "--words-file", words}, 2, "--words-file goes with --recommend"},
-		"blank recommend":     {[]string{"--tag", "accept-plan", "--recommend", " "}, 2, "--recommend needs the option"},
-		"both standard input": {[]string{"--tag", "accept-plan", "--recommend", "approve", "--words-file", "-"}, 2, "cannot both read standard input"},
+		"blank recommend":     {append([]string{"--tag", "accept-plan", "--recommend", " "}, digest...), 2, "--recommend needs the option"},
+		"both standard input": {append([]string{"--tag", "accept-plan", "--recommend", "approve", "--words-file", "-"}, digest...), 2, "cannot both read standard input"},
+		"no digest":           {[]string{"--tag", "accept-plan", "--recommend", "approve"}, 2, "--recommend requires --subject-digest"},
+		"digest alone":        {append([]string{"--tag", "accept-plan"}, digest...), 2, "--subject-digest goes with --recommend"},
+		"spaced digest":       {[]string{"--tag", "accept-plan", "--recommend", "approve", "--subject-digest", "sha256: a"}, 1, "must have no spaces"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			code, _, errOut := runTaskSay(t, "Words.", append([]string{"--store", path, "--repo", "app", "--task", "a-approve", "--text-file", "-"}, c.args...)...)
@@ -86,6 +94,19 @@ func TestTaskSayRecommend(t *testing.T) {
 	if n := len(conversation(t, path, "app", "a-approve")); n != 2 {
 		t.Errorf("refusals wrote: %d entries", n)
 	}
+	if r := pageRecommendation(t, path, "a-approve", "accept-plan"); r.Revision != 2 {
+		t.Errorf("refusals wrote the recommendation: %+v", r)
+	}
+}
+
+// pageRecommendation is the recommendation record of decision id of app/task.
+func pageRecommendation(t *testing.T, path, task, id string) store.Recommendation {
+	t.Helper()
+	r, err := withStore(path, true, func(s *store.Store) (store.Recommendation, error) { return s.DecisionRecommendation("app", task, id) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
 }
 
 // TestConfirmOnThePage: Confirm answers the decision with the recommendation's option and the box's words through
@@ -95,7 +116,7 @@ func TestConfirmOnThePage(t *testing.T) {
 	h, path, _ := pageFixture(t)
 	say := func(text string) {
 		t.Helper()
-		if code, _, errOut := runTaskSay(t, text, "--store", path, "--repo", "app", "--task", "a-approve", "--tag", "accept-plan", "--text-file", "-", "--recommend", "approve"); code != 0 {
+		if code, _, errOut := runTaskSay(t, text, "--store", path, "--repo", "app", "--task", "a-approve", "--tag", "accept-plan", "--text-file", "-", "--recommend", "approve", "--subject-digest", planSubject); code != 0 {
 			t.Fatalf("task say --recommend = %d %s", code, errOut)
 		}
 	}
@@ -200,8 +221,9 @@ func TestSayOnThePage(t *testing.T) {
 	}
 }
 
-// TestDecideOpenRecommend: decide open --recommend stores the recommended option on the question, which the page
-// marks; an option not offered is a usage error.
+// TestDecideOpenRecommend: decide open --recommend writes the question's recommendation record, made against the
+// question, which the page marks, and leaves the decision's old recommended field unset; a reopen with the same
+// recommendation returns the question; an option not offered is a usage error.
 func TestDecideOpenRecommend(t *testing.T) {
 	path := decideStorePath(t)
 	code, out, errOut := runDecide(t, "", "open", "--store", path, "--repo", "app", "--task", "t1", "--question", "Back off or stop?", "--option", "back-off", "--option", "stop", "--recommend", "stop")
@@ -209,8 +231,14 @@ func TestDecideOpenRecommend(t *testing.T) {
 		t.Fatalf("open = %d %s", code, errOut)
 	}
 	d := decodeJSON[store.Decision](t, out)
-	if d.ID != "q1" || d.Recommended != "stop" {
+	if d.ID != "q1" || d.Recommended != "" {
 		t.Fatalf("decision = %+v", d)
+	}
+	r, err := withStore(path, true, func(s *store.Store) (store.Recommendation, error) {
+		return s.DecisionRecommendation("app", "t1", "q1")
+	})
+	if err != nil || r.Option != "stop" || r.Number != 0 || !r.Current(d) {
+		t.Fatalf("recommendation = %+v, %v", r, err)
 	}
 	if code, again, _ := runDecide(t, "", "open", "--store", path, "--repo", "app", "--task", "t1", "--question", "Back off or stop?", "--option", "back-off", "--option", "stop", "--recommend", "stop"); code != 0 ||
 		decodeJSON[store.Decision](t, again).ID != "q1" {
@@ -235,11 +263,112 @@ func TestWebSourceRecommended(t *testing.T) {
 	}
 	for _, a := range task.Asks {
 		if a.ID == "q1" {
-			if a.Recommended != "drop" {
-				t.Errorf("q1's recommended = %q, want drop", a.Recommended)
+			if r := a.Recommendation; r == nil || r.Option != "drop" || r.Stale || r.Number != 0 {
+				t.Errorf("q1's recommendation = %+v, want drop, current, with no Confirm", r)
 			}
 			return
 		}
 	}
 	t.Errorf("no ask q1 in %+v", task.Asks)
+}
+
+// TestWebSourceOldRecommended: a question opened before recommendation records, with recommended on the decision,
+// still gives its ask that recommendation, with no Confirm.
+func TestWebSourceOldRecommended(t *testing.T) {
+	dir := clerkFixture(t)
+	if _, err := withStore(filepath.Join(dir, "director.store"), false, func(s *store.Store) (store.Receipt, error) {
+		return s.OpenDecision("old-q7", store.Decision{Repository: "app", TaskID: "a-approve", ID: "q7", Kind: store.DecisionQuestion, Question: "Keep it?",
+			Options: []string{"keep", "drop"}, Recommended: "keep"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	task, err := webSourceFor(t, dir).Task("app", "a-approve")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range task.Asks {
+		if a.ID == "q7" {
+			if r := a.Recommendation; r == nil || r.Option != "keep" || r.Stale || r.Number != 0 {
+				t.Errorf("q7's recommendation = %+v, want keep", r)
+			}
+			return
+		}
+	}
+	t.Errorf("no ask q7 in %+v", task.Asks)
+}
+
+// staleDigest is a digest the accept-plan ask is not about: what a Director read before the plan changed.
+var staleDigest = "sha256:" + strings.Repeat("f", 64)
+
+// TestStaleRecommendationIsNotConfirmed (red-first): a conversation recommendation made before a re-bind, against
+// an older digest, is shown as stale, with no Confirm tile and no badge, and confirming it is refused with nothing
+// written.
+func TestStaleRecommendationIsNotConfirmed(t *testing.T) {
+	h, path, _ := pageFixture(t)
+	if code, _, errOut := runTaskSay(t, "I recommend **approve**.", "--store", path, "--repo", "app", "--task", "a-approve", "--tag", "accept-plan", "--text-file", "-",
+		"--recommend", "approve", "--subject-digest", staleDigest); code != 0 {
+		t.Fatalf("task say --recommend = %d %s", code, errOut)
+	}
+	task, err := webSourceFor(t, filepath.Dir(path)).Task("app", "a-approve")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := task.Asks[0].Recommendation; r == nil || !r.Stale || r.Option != "approve" || r.Number != 1 {
+		t.Errorf("the source's recommendation = %+v, want a stale approve", r)
+	}
+	body := gmPage(h, "a-approve")
+	switch {
+	case !strings.Contains(body, "The Director recommended Approve against an earlier version; it is stale."):
+		t.Errorf("the page does not show the stale line:\n%s", body)
+	case strings.Contains(body, `name="confirm"`):
+		t.Errorf("the page offers Confirm for a stale recommendation:\n%s", body)
+	case strings.Contains(body, `<i class="badge">Recommended</i>`):
+		t.Errorf("the page marks a tile for a stale recommendation:\n%s", body)
+	}
+	confirm := url.Values{"decision": {"accept-plan"}, "subject": {planSubject}, "confirm": {"1"}, "text": {"Ship it."}}
+	if w := postRoute(t, h, "a-approve", "answer", confirm); w.Code != http.StatusConflict ||
+		!strings.Contains(w.Body.String(), "the Director&#39;s recommendation on #accept-plan is stale; reload and read it") {
+		t.Errorf("confirming a stale recommendation: %d\n%s", w.Code, w.Body)
+	}
+	if d := pageDecision(t, path, "a-approve", "accept-plan"); !d.Open() {
+		t.Errorf("a stale confirmation answered: %+v", d)
+	}
+	if got := conversation(t, path, "app", "a-approve"); len(got) != 1 {
+		t.Errorf("a stale confirmation wrote: %+v", got)
+	}
+}
+
+// TestOneRecommendedTile (red-first): an explanation and a say that disagree show one recommended tile, the latest,
+// and Confirm offers the same option; an explanation recommending the other again moves the badge back and leaves
+// no Confirm.
+func TestOneRecommendedTile(t *testing.T) {
+	h, path, _ := pageFixture(t)
+	explain := func(text string) {
+		t.Helper()
+		if code, _, errOut := runDecide(t, "", "explain", "app/a-approve", "accept-plan", "--store", path, "--subject-digest", planSubject, "--text", text,
+			"--recommend", "approve"); code != 0 {
+			t.Fatalf("explain = %d %s", code, errOut)
+		}
+	}
+	explain("The plan **builds** it.")
+	if code, _, errOut := runTaskSay(t, "You said no, so **reject**.", "--store", path, "--repo", "app", "--task", "a-approve", "--tag", "accept-plan", "--text-file", "-",
+		"--recommend", "reject", "--subject-digest", planSubject); code != 0 {
+		t.Fatalf("task say --recommend = %d %s", code, errOut)
+	}
+	body := gmPage(h, "a-approve")
+	if n := strings.Count(body, `<i class="badge">Recommended</i>`); n != 1 || !strings.Contains(body, `value="reject"><b>Reject <i class="badge">Recommended</i>`) {
+		t.Errorf("want one badge, on Reject; %d badges:\n%s", n, body)
+	}
+	if !strings.Contains(body, `name="confirm" value="1"><b>Confirm: Reject</b>`) || strings.Contains(body, "Confirm: Approve") {
+		t.Errorf("Confirm does not offer Reject:\n%s", body)
+	}
+
+	explain("On reflection the plan **builds** it.")
+	body = gmPage(h, "a-approve")
+	if n := strings.Count(body, `<i class="badge">Recommended</i>`); n != 1 || !strings.Contains(body, `value="approve"><b>Approve <i class="badge">Recommended</i>`) {
+		t.Errorf("want one badge, on Approve; %d badges:\n%s", n, body)
+	}
+	if strings.Contains(body, `name="confirm"`) {
+		t.Errorf("Confirm is offered for an explanation's recommendation:\n%s", body)
+	}
 }

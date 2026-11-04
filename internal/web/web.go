@@ -271,8 +271,9 @@ type Ask struct {
 	// part, designer-<k>-mockup, or for a mock-up recorded before that part, its legacy name designer-<k>-design-2;
 	// "" for any other ask and for a design with no mock-up.
 	Mockup string
-	// Recommended is the option the Director recommends on a question it opened, which its tile marks; "" for none.
-	Recommended string
+	// Recommendation is the Director's one recommendation on the ask, which marks its tile and, from task say, is
+	// its Confirm; nil for none.
+	Recommendation *Recommendation
 	// Stage is the step the decision belongs to, such as plan, for its tag chip; "" when its id names none.
 	Stage string
 	// Headline is the ask's readable first line, a fixed sentence by kind such as "The plan for slice 2 is ready
@@ -285,12 +286,25 @@ type Ask struct {
 }
 
 // Explanation is the Director's plain-English explanation of an ask: Markdown Text, rendered only through
-// RenderMarkdown; Recommend, the option it recommends, "" for none; when it was written; and Stale, which says it was
+// RenderMarkdown; Recommend, the option it recommends, "" for none, which marks no tile itself (the ask's one
+// Recommendation does); when it was written; and Stale, which says it was
 // written against an earlier subject than the ask's, so the page hides it.
 type Explanation struct {
 	Text, Recommend string
 	At              time.Time
 	Stale           bool
+}
+
+// Recommendation is the Director's one recommended answer to an ask (docs/store.md#decision-recommendations):
+// Option, one of the ask's options when the page marks it; Words, which pre-fill the Your words box; Number, the
+// conversation entry of the task say recommendation that made it, which Confirm names, 0 for one made otherwise;
+// when it was made; and Stale, which says it was made against an earlier subject than the ask's, so the page marks
+// no tile and offers no Confirm, and says so.
+type Recommendation struct {
+	Option, Words string
+	Number        int
+	At            time.Time
+	Stale         bool
 }
 
 // Finding is one review finding; Rule is its rule or severity label, and Fixed says a later round resolved it.

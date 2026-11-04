@@ -195,26 +195,20 @@ func (s *Server) askTalk(t Task, p *talkPlan, a Ask, v *askView) {
 	confirm(p.byTag[a.ID], a, v)
 }
 
-// confirm offers the Director's latest recommendation on ask a as its Confirm tile, when it recommends one of the
-// ask's answers, and pre-fills the words box with the recommendation's words, or else the Guildmaster's latest
-// words on the ask before it.
+// confirm offers ask a's one recommendation as its Confirm tile, when it is current, made by task say (its entry
+// Number) and one of the ask's answers, and pre-fills the words box with its words, or else the Guildmaster's latest
+// words on the ask before that entry.
 func confirm(msgs []Message, a Ask, v *askView) {
-	rec := -1
-	for i, m := range msgs {
-		if m.Author == AuthorDirector && m.Kind == KindRecommendation {
-			rec = i
-		}
-	}
-	if rec < 0 || !slices.Contains(a.Options, msgs[rec].Option) {
+	r := a.Recommendation
+	if r == nil || r.Stale || r.Number == 0 || !slices.Contains(a.Options, r.Option) {
 		return
 	}
-	m := msgs[rec]
-	meaning, _ := OptionMeaning(a.Kind, m.Option)
-	v.Confirm = &confirmView{Number: m.Number, Option: m.Option, Word: OptionWord(m.Option), Tone: meaning.Tone, Form: v.Form, Decision: a.ID}
-	v.Prefill = m.Words
-	for i := rec - 1; i >= 0 && v.Prefill == ""; i-- {
-		if msgs[i].Author != AuthorDirector && msgs[i].Kind == "say" {
-			v.Prefill = msgs[i].Text
+	meaning, _ := OptionMeaning(a.Kind, r.Option)
+	v.Confirm = &confirmView{Number: r.Number, Option: r.Option, Word: OptionWord(r.Option), Tone: meaning.Tone, Form: v.Form, Decision: a.ID}
+	v.Prefill = r.Words
+	for i := len(msgs) - 1; i >= 0 && v.Prefill == ""; i-- {
+		if m := msgs[i]; m.Number < r.Number && m.Author != AuthorDirector && m.Kind == "say" {
+			v.Prefill = m.Text
 		}
 	}
 }

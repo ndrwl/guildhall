@@ -358,12 +358,7 @@ func (b webBuilder) asks(docs []web.Document) []web.Ask {
 		}
 		a := web.Ask{ID: dec.ID, Kind: string(dec.Kind), Question: dec.Question, Options: dec.Options, OpenedAt: dec.OpenedAt, Deferred: dec.Deferred,
 			Stage: webTagStage(dec.ID)}
-		// The recommended option is the store's own record, not the status feed's, whose JSON stays as it was.
-		for _, hd := range b.h.Decisions {
-			if hd.ID == dec.ID {
-				a.Recommended = hd.Recommended
-			}
-		}
+		a.Recommendation = b.recommendation(dec)
 		a.Headline, a.Phrase = b.askHeadline(a), b.askPhrase(a)
 		if e := dec.Explanation; e != nil {
 			a.Explanation = &web.Explanation{Text: e.Text, Recommend: e.Recommend, At: e.At, Stale: !e.Current}
@@ -385,6 +380,33 @@ func (b webBuilder) asks(docs []web.Document) []web.Ask {
 		}
 	}
 	return append(open, deferred...)
+}
+
+// recommendation is the Director's one recommendation on dec, read from the store's own record: stale once its digest
+// is not the decision's. A decision with no record, opened before records were kept, falls back to its question's
+// recommended field, then to its current explanation's recommendation, neither with a Confirm; nil for none.
+func (b webBuilder) recommendation(dec statusDecision) *web.Recommendation {
+	var hd *store.Decision
+	for i := range b.h.Decisions {
+		if b.h.Decisions[i].ID == dec.ID {
+			hd = &b.h.Decisions[i]
+		}
+	}
+	if hd == nil {
+		return nil
+	}
+	for _, r := range b.h.Recommendations {
+		if r.Decision == dec.ID {
+			return &web.Recommendation{Option: r.Option, Words: r.Words, Number: r.Number, At: r.At, Stale: !r.Current(*hd)}
+		}
+	}
+	if hd.Recommended != "" {
+		return &web.Recommendation{Option: hd.Recommended}
+	}
+	if e := dec.Explanation; e != nil && e.Current && e.Recommend != "" {
+		return &web.Recommendation{Option: e.Recommend, At: e.At}
+	}
+	return nil
 }
 
 // subjectDocument names the task's own document whose sha256 is a document subject's digest, "" when none is.

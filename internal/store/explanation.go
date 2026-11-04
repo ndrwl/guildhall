@@ -58,7 +58,9 @@ func (e DecisionExplanation) Current(d Decision) bool {
 // explanation record's revision the caller read, 0 when there was none; the new record's is one more. In the same
 // transaction it refuses with ErrInvalid blank, oversized or non-UTF-8 text, a blank or oversized digest, an
 // answered or void decision and a recommend that is not one of the decision's options; an unknown decision is
-// ErrNotFound and a stored revision other than revision is ErrExists. The record's time is the mutation's.
+// ErrNotFound and a stored revision other than revision is ErrExists. The record's time is the mutation's. A
+// recommend that is not "" also replaces the decision's recommendation record (Recommendation), written against
+// subjectDigest in the same transaction; with "" the record is left as it is.
 func (s *Store) ExplainDecision(mutationID, repository, taskID, id, text, subjectDigest, recommend string, revision int) (Receipt, error) {
 	if err := validateIDs(repository, taskID, id); err != nil {
 		return Receipt{}, err
@@ -107,7 +109,14 @@ func (s *Store) ExplainDecision(mutationID, repository, taskID, id, text, subjec
 		}
 		rc.CommittedAt = s.now().UTC()
 		e.At = rc.CommittedAt
-		return putJSON(b, recordKey(taskID, id), e)
+		if err := putJSON(b, recordKey(taskID, id), e); err != nil {
+			return err
+		}
+		if recommend == "" {
+			return nil
+		}
+		// The recommendation is the decision's one record, written with the explanation.
+		return s.putRecommendation(tx, rc, Recommendation{Repository: repository, TaskID: taskID, Decision: id, Option: recommend, SubjectDigest: subjectDigest})
 	})
 }
 

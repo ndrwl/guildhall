@@ -105,7 +105,7 @@ func TestTaskPageFixture(t *testing.T) {
 		// a stale explanation is hidden, its recommendation with it; an ask with none says so
 		`<p class="q">An attempt asked for a grant.</p><div class="dx"><p class="dxn">` + "The Director&#39;s explanation was written for an earlier version of this ask, so it is not shown.",
 		`<div class="dx"><p class="dxn">The Director has not explained this ask yet.`,
-		`<div class="ask" id="grant-1">`, `<b>Approve</b><span>the grant takes effect for its attempt</span>`,
+		`<div class="ask" id="grant-1">`, `<b>Approve <i class="badge">Recommended</i></b><span>the grant takes effect for its attempt</span>`,
 		`<div class="ask def" id="deliver-1">`, `<span class="tag you">deferred</span>`,
 		// an option the table does not describe shows its word alone, neutral
 		`<button class="opt" type="button" disabled><b>Later</b></button>`,

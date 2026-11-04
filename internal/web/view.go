@@ -116,9 +116,11 @@ type askView struct {
 	Subject, SubjectName string
 	SubjectHref          string
 	Tiles                []tileView
-	Deferred             bool
-	Findings             []Finding
-	FindingsSummary      string
+	// StaleRecommendation is the line saying the Director's recommendation is stale, "" when it is not.
+	StaleRecommendation string
+	Deferred            bool
+	Findings            []Finding
+	FindingsSummary     string
 	// Plan says the ask is a plan approval about a spec document; Summary is that spec's Summary block rendered by
 	// goldmark, empty when it has none or its file cannot be shown, and the ask then links the spec instead.
 	Plan    bool
@@ -179,7 +181,7 @@ type sayView struct {
 type tileView struct {
 	Option, Word, Text string
 	Tone               Tone
-	// Rec marks the recommended answer, which spans the row with a Recommended badge.
+	// Rec marks the recommended answer, which spans the row with the Recommended badge.
 	Rec bool
 }
 
@@ -466,15 +468,15 @@ func (s *Server) askView(t Task, a Ask) askView {
 	recommend := a.Kind == "approval" && v.Questions != nil && v.Questions.Lettered && slices.Contains(a.Options, "approved")
 	v.Recommend = recommend
 	v.Tiles = answerTiles(a.Kind, a.Options, recommend)
-	if a.Recommended != "" && !recommend {
-		markRecommended(v.Tiles, a.Recommended)
+	// The Director's one recommendation marks its tile when current; a stale one marks none and says so.
+	if r := a.Recommendation; r != nil && r.Stale {
+		v.StaleRecommendation = fmt.Sprintf(staleRecommendation, OptionWord(r.Option))
+	} else if r != nil && !recommend {
+		markRecommended(v.Tiles, r.Option)
 	}
 	v.Hint = wordsHint
 	if recommend {
 		v.Hint = recommendedHint
-	}
-	if e := a.Explanation; e != nil && !e.Stale {
-		v.Tiles = directorRecommends(v.Tiles, e.Recommend)
 	}
 	if n := len(a.Findings); n > 0 {
 		v.FindingsSummary = fmt.Sprintf("The open findings · %d", n)
@@ -499,6 +501,10 @@ const (
 	explainedAsk   = " Ask the Director in chat if you want its view first."
 )
 
+// staleRecommendation is the line an ask shows for the Director's recommendation made against an earlier version,
+// naming its answer.
+const staleRecommendation = "The Director recommended %s against an earlier version; it is stale."
+
 // explanation adds the Director's explanation of ask a to v, once v's rest of the question is final: its text through
 // RenderMarkdown, the only way it reaches the page, and when it was written; or the grey note saying there is none,
 // or that it was written for an earlier version and is hidden.
@@ -518,20 +524,6 @@ func (s *Server) explanation(a Ask, v *askView) {
 			v.ExplainedAt = s.when(e.At)
 		}
 	}
-}
-
-// directorRecommends marks option's tile as the recommended answer, d153's mark, moving it first, when the Director's
-// explanation recommends it and the ask marks none of its own: an ask that already recommends an answer, such as a
-// plan approval's Approved, keeps its mark and the Director's is ignored.
-func directorRecommends(tiles []tileView, option string) []tileView {
-	i := slices.IndexFunc(tiles, func(t tileView) bool { return t.Option == option })
-	if option == "" || i < 0 || slices.ContainsFunc(tiles, func(t tileView) bool { return t.Rec }) {
-		return tiles
-	}
-	out := slices.Clone(tiles)
-	rec := out[i]
-	rec.Rec = true
-	return append([]tileView{rec}, slices.Delete(out, i, i+1)...)
 }
 
 // ReadLink says the ask's subject line links its subject document: always when it has one, except on a plan approval

@@ -31,6 +31,7 @@
 {{- if .Rest}}<details class="ctx"><summary>The rest of the question</summary><div><pre>{{.Rest}}</pre></div></details>{{end}}
 {{- if .Findings}}<details class="ctx"><summary>{{.FindingsSummary}}</summary><div><ul class="find">{{range .Findings}}<li>{{if .Rule}}<span class="sev">{{.Rule}}</span>{{end}}<span><b>{{.ID}}</b> {{.Summary}}</span></li>{{end}}</ul></div></details>{{end}}
 {{- if .Talk}}<div class="talk" id="{{.TalkID}}"><p class="pick">Talk on #{{.ID}}</p>{{range .Talk}}{{template "msg" .}}{{end}}{{with .Confirm}}{{template "confirm" .}}{{end}}</div>{{else}}{{with .Confirm}}{{template "confirm" .}}{{end}}{{end}}
+{{- if .StaleRecommendation}}<p class="recst">{{.StaleRecommendation}}</p>{{end}}
 {{- if .Refused}}<p class="state bad"><b>Refused · nothing written:</b> {{.Refused}}.</p>{{end}}
 {{- if .Sent}}<p class="state ok"><b>Words only sent:</b> your words reached the Director as a message; nothing is answered.</p>{{end}}
 {{- if .Form}}<label class="yw" for="w-{{.ID}}">Your words <span>{{.Hint}}</span></label><textarea id="w-{{.ID}}" name="text" rows="3">{{if or .Words .Refused}}{{.Words}}{{else}}{{.Prefill}}{{end}}</textarea>
