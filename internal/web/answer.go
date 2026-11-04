@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 // Answer is one answer, or words only, given on a task page: the decision it is about, the subject digest the page
@@ -42,12 +43,41 @@ type Answer struct {
 // Say is Send for words about the attempt a.Tag rather than a decision, from the Say box: it records them on the
 // task's conversation under a.Tag and sends them as a note, refusing on a closed task.
 //
+// Round saves every box of the grill round p names as the Guildmaster's drafts, then does what its button asks:
+// marks a question accepted, answered with its words or open again, or, for Send round, records the round's answers
+// on the task's conversation with a grill-answered message to the Director and wakes it. It refuses unless the round
+// is the latest of its attempt on an open task and not sent; Send round with a question unanswered saves the boxes
+// and then refuses, naming them; a retry of a round already sent replays and returns nil.
+//
 // A refusal is a *Refusal, with the reason the page shows; a store held by a writer is ErrBusy; anything else is
 // shown as a failure with no detail.
 type Answerer interface {
 	Answer(a Answer) error
 	Send(a Answer) (string, error)
 	Say(a Answer) (string, error)
+	Round(p RoundPost) error
+}
+
+// The buttons of a round's form: Save, send later and Send round for the whole round, and Accept recommendation,
+// Answer with my words and Change for one question.
+const (
+	RoundSave   = "save"
+	RoundSend   = "send"
+	RoundAccept = "accept"
+	RoundWords  = "words"
+	RoundChange = "change"
+)
+
+// RoundPost is one press of a button of a grill round's form: the round, by its tag and conversation entry number,
+// the button (a Round constant) and for a question's button its number, the words of every box the form showed, by
+// question number, and the Tailscale login that pressed it.
+type RoundPost struct {
+	Repository, TaskID, Tag string
+	Round                   int
+	Act                     string
+	Question                int
+	Boxes                   map[int]string
+	Login                   string
 }
 
 // Refusal is an Answerer's refusal: nothing was written, Status is the HTTP status the page is shown again with and
@@ -147,6 +177,10 @@ type pageState struct {
 	// SayRefused is why words from the Say box were not sent, SayWords the words it kept, and Said the id of the
 	// note it just sent.
 	SayRefused, SayWords, Said string
+	// RoundRefused is why the last press of a round's button was refused, and RoundBoxes the words its boxes held,
+	// shown again in place of the saved drafts.
+	RoundRefused string
+	RoundBoxes   map[int]string
 }
 
 // readForm reads a POST's form, bounded by maxFormBytes, and reports whether it could; when it could not, it has
@@ -295,4 +329,74 @@ func (s *Server) say(w http.ResponseWriter, r *http.Request, repo, id string) {
 	}
 	target := taskHref(repo, id) + "?" + url.Values{"said": {sent}}.Encode()
 	http.Redirect(w, r, target+"#"+url.PathEscape(talkID(a.Tag)), http.StatusSeeOther)
+}
+
+// round handles POST /<repo>/<task>/round, a button of a grill round's form: it passes the gate, then gives the
+// Answerer the round, the button and every box's words, and redirects to the round, or after Send round to its
+// talk; a refusal shows the page again with its reason on the round and the boxes' words kept.
+func (s *Server) round(w http.ResponseWriter, r *http.Request, repo, id string) {
+	if !s.readForm(w, r) {
+		return
+	}
+	p := RoundPost{Repository: repo, TaskID: id, Tag: r.PostForm.Get("tag"), Boxes: map[int]string{}}
+	for n := 1; n <= MaxRoundQuestions; n++ {
+		if words, ok := r.PostForm["text-"+strconv.Itoa(n)]; ok && len(words) > 0 {
+			p.Boxes[n] = words[0]
+		}
+	}
+	who, status, reason := s.gate(r)
+	st := pageState{identity: who, Token: s.token, RoundBoxes: p.Boxes}
+	again := func(status int, reason string) {
+		st.RoundRefused = reason
+		t, ok := s.read(w, repo, id)
+		if !ok {
+			return
+		}
+		s.render(w, status, "task", s.taskView(t, st))
+	}
+	if reason != "" {
+		again(status, reason)
+		return
+	}
+	act, q, ok := roundAct(r.PostForm.Get("act"))
+	n, err := strconv.Atoi(r.PostForm.Get("round"))
+	switch {
+	case p.Tag == "":
+		again(http.StatusBadRequest, "the round names no attempt")
+		return
+	case err != nil || n < 1:
+		again(http.StatusBadRequest, "the form names no round")
+		return
+	case !ok:
+		again(http.StatusBadRequest, "the form names no button of the round")
+		return
+	}
+	p.Round, p.Act, p.Question, p.Login = n, act, q, who.Login
+	if s.failed(s.o.Answerer.Round(p), "round "+repo+"/"+id+" "+p.Tag, again) {
+		return
+	}
+	target := taskHref(repo, id)
+	switch {
+	case act == RoundSend:
+		target += "#" + url.PathEscape(talkID(p.Tag))
+	case q > 0:
+		target += "#" + url.PathEscape(roundQuestionID(p.Tag, q))
+	default:
+		target += "#" + url.PathEscape(p.Tag)
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+// roundAct reads a round button's value: save or send, or accept-<n>, words-<n> or change-<n> for question n.
+func roundAct(v string) (act string, question int, ok bool) {
+	switch v {
+	case RoundSave, RoundSend:
+		return v, 0, true
+	}
+	act, num, found := strings.Cut(v, "-")
+	n, err := strconv.Atoi(num)
+	if !found || err != nil || n < 1 || n > MaxRoundQuestions || (act != RoundAccept && act != RoundWords && act != RoundChange) {
+		return "", 0, false
+	}
+	return act, n, true
 }

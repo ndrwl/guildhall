@@ -1,6 +1,6 @@
 ---
 name: guildhall-grill
-description: Use as the Director in a grill stage to interview the Guildmaster live, in rounds of numbered questions, until you share an understanding of the product, then record it as the stage's notes.
+description: Use as the Director in a grill stage to interview the Guildmaster, in rounds of numbered questions they answer on the task page, until you share an understanding of the product, then record it as the stage's notes.
 ---
 
 Adapted from `grilling` in mattpocock/skills (MIT, commit 5beb35b); see CREDITS.md.
@@ -8,7 +8,7 @@ Adapted from `grilling` in mattpocock/skills (MIT, commit 5beb35b); see CREDITS.
 # Grill
 
 A grill stage makes sure the Artisans build the product the Guildmaster wants.
-You are the Director, and you interview the Guildmaster live in your conversation with them until you reach a shared understanding of the task's product requirements.
+You are the Director, and you interview the Guildmaster, in rounds they answer on the task page, until you reach a shared understanding of the task's product requirements.
 The decisions are the Guildmaster's: put each one to them and wait for their answer.
 Use `guildhall-domain-model` alongside this skill, so the words you agree on are as settled as the decisions.
 
@@ -41,6 +41,33 @@ Recommended: <your answer>.
 Recommended: <your answer>.
 ```
 
+Each question is a `**Q<n>. <title>**` line, its body, which may be empty, and a last line `Recommended: <your answer>`, numbered from Q1 with nothing before it.
+
+## Rounds on the task page
+
+While the task pages are served, every round goes on the page, under the grill's running attempt:
+
+```sh
+guildhall grill round open --repo app --task t-12 --attempt grill-1 --questions-file - < notes/app-t-12-grill-1-round-1.md
+```
+
+The page asks the round as one form: for each question the Guildmaster accepts your recommendation or answers in their own words, can save and come back, and sends the whole round once every question has an answer.
+In chat, the round is only its Needs you line, `t-12 · grill round 1 · grill-1`, ending with the link to the attempt on its page, such as `ticket:app/t-12#grill-1`; never write the round's questions in chat too.
+A new round opens only once the Guildmaster has sent the one before it.
+
+Sending the round wakes you with a `grill-answered` message, which names the command that prints the answers:
+
+```sh
+guildhall grill round show --repo app --task t-12 --attempt grill-1
+```
+
+Each answer is `Accepted: <your recommendation>`, sometimes with words after it, or `Your words:` and their words.
+Read them as answers given in the interview, recompute the frontier, and open the next round or, when the frontier is empty, finish.
+The page never finishes the stage: you still do, as Finishing says.
+Anything they tell you in the stage's talk or in chat counts as well; reply on the page with `guildhall task say` under the attempt.
+
+With no task pages served, ask each round in chat as before and wait for their answers there.
+
 ## Finishing
 
 The interview is done when the frontier is empty: every branch of the tree visited and nothing silently assumed.
@@ -71,3 +98,4 @@ The notes are complete when every decision of the tree appears under Decisions w
 
 When the Guildmaster's changes_requested sends the task back to the grill, from a loop or a design round, the stage's inputs include `feedback`, their request; `previous`, your last notes; and `reviewed`, the document they asked changes to, such as the design.
 Start from them rather than starting over: keep every decision in `previous` that still stands, put the request to the Guildmaster in rounds as before, and record the full notes again, the new decisions with the ones that stand.
+A resumed or reopened grill is a new attempt, such as `grill-2`, so its rounds open under that attempt, numbered from round 1 again.

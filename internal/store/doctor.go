@@ -39,7 +39,9 @@ type RepositoryCounts struct {
 	TaskContexts         int
 	// Conversation counts task conversation entries (docs/store.md#task-conversation).
 	Conversation int
-	TaskLinks    int
+	// Drafts counts saved draft entries (docs/store.md#drafts).
+	Drafts    int
+	TaskLinks int
 	// TaskOverrides counts task override records, sets and unsets alike.
 	TaskOverrides int
 	// GrillModes counts task grill-mode records.
@@ -139,7 +141,7 @@ func (s *Store) Doctor() (Report, error) {
 			for name, n := range map[string]*int{
 				string(bucketTasks): &counts.Tasks, string(bucketAttempts): &counts.Attempts, string(bucketDocuments): &counts.Documents,
 				string(bucketPanes): &counts.PaneBindings, string(bucketDecisions): &counts.Decisions, string(bucketDecisionExplanations): &counts.DecisionExplanations, string(bucketRulings): &counts.Rulings,
-				string(bucketTaskContexts): &counts.TaskContexts, string(bucketConversation): &counts.Conversation, string(bucketTaskLinks): &counts.TaskLinks,
+				string(bucketTaskContexts): &counts.TaskContexts, string(bucketConversation): &counts.Conversation, string(bucketDrafts): &counts.Drafts, string(bucketTaskLinks): &counts.TaskLinks,
 				string(bucketTaskOverrides): &counts.TaskOverrides, string(bucketGrillModes): &counts.GrillModes, string(bucketTaskDependencies): &counts.TaskDependencies,
 				string(bucketOwners): &counts.Owners, string(bucketMessages): &counts.Messages, string(bucketInbox): &counts.UnreadMessages,
 				string(bucketPruned): &counts.Pruned, string(bucketTaskReleases): &counts.TaskReleases,
@@ -188,6 +190,8 @@ func decodeRecord(bucket string, k, v []byte) (any, error) {
 		rec = new(TaskContext)
 	case string(bucketConversation):
 		rec = new(ConversationEntry)
+	case string(bucketDrafts):
+		rec = new(DraftEntry)
 	case string(bucketTaskLinks):
 		rec = new(TaskLink)
 	case string(bucketTaskReleases):

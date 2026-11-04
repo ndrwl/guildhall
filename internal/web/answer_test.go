@@ -24,7 +24,16 @@ const (
 // fakeAnswerer records what the page gives it, refusing with err when set.
 type fakeAnswerer struct {
 	answers, sent, said []web.Answer
+	rounds              []web.RoundPost
 	err                 error
+}
+
+func (f *fakeAnswerer) Round(p web.RoundPost) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.rounds = append(f.rounds, p)
+	return nil
 }
 
 func (f *fakeAnswerer) Say(a web.Answer) (string, error) {

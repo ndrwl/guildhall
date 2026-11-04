@@ -49,6 +49,19 @@ type taskView struct {
 	Talks []talkView
 	// Closed is what Now says on a closed task that has talk, "" otherwise.
 	Closed string
+	// Round is the current attempt's open grill round, asked as one form after the asks; nil when none is open.
+	Round *roundView
+}
+
+// joinBoxes is a refused round's words, each box's under its question's number, for the Not saved box.
+func joinBoxes(boxes map[int]string) string {
+	var parts []string
+	for n := 1; n <= MaxRoundQuestions; n++ {
+		if w := strings.TrimSpace(boxes[n]); w != "" {
+			parts = append(parts, "Q"+strconv.Itoa(n)+": "+w)
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 type relatedView struct {
@@ -249,6 +262,13 @@ func (s *Server) taskView(t Task, st pageState) taskView {
 			}
 		}
 		v.Asks = append(v.Asks, av)
+	}
+	if v.Round = s.openRound(t, talk, v.Base, st); v.Round != nil {
+		// An open round waits on the Guildmaster as an ask does.
+		v.Open++
+	} else if st.RoundRefused != "" {
+		// The round is gone, such as one sent meanwhile: its refusal and words show at the top of Now.
+		v.Gone = &askView{KindName: "Not saved", First: "Your round was not saved", Refused: st.RoundRefused, Words: joinBoxes(st.RoundBoxes)}
 	}
 	if since != nil {
 		v.Since = "since " + s.when(*since)
@@ -902,4 +922,5 @@ func (s *Server) nodeView(t Task, n Node) nodeView {
 // funcs are the templates' helpers.
 var funcs = template.FuncMap{
 	"plural": plural,
+	"lower":  strings.ToLower,
 }

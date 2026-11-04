@@ -18,6 +18,13 @@ export const grill=[
  'Round 1 for d104, three questions.','','1. Should the export include hidden columns?','   I recommend no.',
 ].join('\n');
 
+// A grill round on the task page (d145): only its Needs you line, ending with the link to its attempt, and What I did.
+export const pageGrill=[
+ '🟡 Guildmaster, one thing needs you.','',
+ '**Needs you**','- d104 · grill round 2 · grill-1 · ticket:guildhall/d104#grill-1','',
+ '**What I did**','Read your round 1 answers; round 2 is on the page.',
+].join('\n');
+
 // A decision whose Needs you line and full question end with a Markdown link to its task page (d146).
 export const linked=[
  '🟡 Guildmaster, one thing needs you.','',

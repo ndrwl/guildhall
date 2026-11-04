@@ -612,6 +612,10 @@ const (
 	// MessageDecisionAnswered tells the Director the Guildmaster answered a decision on the task page
 	// (docs/web.md#answering); it names the decision, never their words, which the Director reads with decide show.
 	MessageDecisionAnswered = "decision-answered"
+	// MessageGrillAnswered tells the Director the Guildmaster sent a grill round's answers from the task page
+	// (docs/web.md#grill-rounds); it names the round, never their words, which the Director reads with grill round
+	// show.
+	MessageGrillAnswered = "grill-answered"
 	// MessageTriageOpened is a Steward's scheduled collection round's report, to the Steward's own inbox, that it
 	// collected new lessons or incidents and opened their triage decisions (docs/steward.md#collection).
 	MessageTriageOpened = "triage-opened"
@@ -638,6 +642,7 @@ var MessageTypes = map[string]string{
 	MessageTriageOpened:        "supervisor",
 	MessageDependencyCancelled: "cancel",
 	MessageDecisionAnswered:    "page",
+	MessageGrillAnswered:       "page",
 	MessageStewardReport:       "steward",
 }
 

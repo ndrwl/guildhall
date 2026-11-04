@@ -122,9 +122,28 @@ type Task struct {
 	// Grill is the task's grill mode as task show prints it, such as "grill: unattended (director): <reason>" or
 	// "grill: live", shown in the band under where it stands (docs/tasks.md#grill-mode); "" for a task whose
 	// workflow has no grill.
-	Grill  string
+	Grill string
+	// Drafts are the Guildmaster's latest saved draft of each question of a round not sent yet; none on a closed
+	// task, whose drafts were dropped.
+	Drafts []Draft
 	ReadAt time.Time
 }
+
+// Draft is the Guildmaster's latest saved draft of one question of a grill round: the round's tag and conversation
+// entry number, the question's number from 1, its mark (DraftAccept, DraftWords or "" for words that are not an
+// answer yet), the words in its box and when it was saved.
+type Draft struct {
+	Tag             string
+	Round, Question int
+	Mark, Text      string
+	At              time.Time
+}
+
+// The marks of a Draft.
+const (
+	DraftAccept = "accept"
+	DraftWords  = "words"
+)
 
 // Where is a where-it-stands sentence: Lead, shown in bold, says who or what the task waits on, such as "Waiting for
 // you on 2 asks:", and Rest what for; You says it waits on the Guildmaster.
@@ -145,13 +164,17 @@ const (
 const (
 	KindRecommendation = "recommendation"
 	KindConfirmed      = "confirmed"
+	// KindRound is a grill round the Director put on the page (ParseRound's text), which the page shows as one form,
+	// and KindRoundAnswers the Guildmaster's answers to it (RoundAnswersText's), folded into the round's row.
+	KindRound        = "round"
+	KindRoundAnswers = "round-answers"
 )
 
 // Message is one entry of the task's conversation: its number, who wrote it (an Author constant), the attempt or
 // decision it is about (its tag) and that tag's step (Stage, "" when the tag names none), its kind, its Markdown
 // text and when it was recorded. A recommendation's Option is the answer it recommends and Words the Guildmaster's
 // words the ask's Your words box is pre-filled with; a confirmation's Option is the answer it gave and Confirms the
-// number of the recommendation it confirmed.
+// number of the recommendation it confirmed. A round's answers name in Round the number of the round they answer.
 type Message struct {
 	Number           int
 	Author           string
@@ -160,6 +183,7 @@ type Message struct {
 	At               time.Time
 	Option, Words    string
 	Confirms         int
+	Round            int
 }
 
 // Related is a task this task names, with how it is related, such as "depends on" or "fixes".

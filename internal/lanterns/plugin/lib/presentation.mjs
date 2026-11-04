@@ -4,7 +4,8 @@ export function urgency(text) {
 }
 
 // layout splits a Director reply in the fixed layout into its sections:
-// the marker line, Needs you, the middle section (What I did, or a grill round in its place) and the Routine box.
+// the marker line, Needs you, the middle section (What I did, or, with no task pages served, a grill round in its
+// place) and the Routine box. A grill round on the task page is only a Needs you line with its link.
 // It returns undefined for any text that is not exactly the layout, so the caller keeps today's single frame.
 export function layout(text) {
   const lines=String(text??'').replace(/\r\n/g,'\n').trim().split('\n');
