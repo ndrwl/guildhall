@@ -163,6 +163,7 @@ Its messages section is the [mailbox summary](messaging.md#waking-a-director).
 Every Director suite that loads config runs twice, through one shared helper: once on a standalone copy and once on a managed copy whose `managed.toml` produces the same effective settings.
 Both runs must give the same results; mode-specific behaviour, such as the mode table, enrol and leave, is tested separately.
 CI makes no model calls and uses no SSH: the Steward's commands are replaced by the test binary acting as the program, as rollout tests replace `scp` today.
+For speed, CI runs the managed pass on Linux only (H3b of d178), so managed-copy paths, file rewrites and CRLF handling are not proven on Windows or macOS in CI; run it locally there with `GUILDHALL_TEST_DIRECTOR_MODE=managed go test ./internal/cli`.
 
 ## Commands and store records
 
