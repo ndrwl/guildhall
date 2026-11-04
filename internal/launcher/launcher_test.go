@@ -18,7 +18,9 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/copydir"
+	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/release"
+	"github.com/ndrwl/guildhall/internal/store"
 )
 
 // roleEnv makes this test binary run as the launcher; a copy of it installed as a release under releases/ runs as
@@ -224,6 +226,18 @@ func TestLauncherRefusesAnUnusablePin(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(managed, "managed.toml"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// An enrolled copy whose managed.toml is missing is managed to the launcher too, though it has no managed.toml.
+	enrolled := f.copyDir("enrolled", "")
+	s, err := store.Open(filepath.Join(enrolled, "director.store"), store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.RecordEnrolment(store.Enrolment{Event: store.Enrolled, Steward: "hq", Digest: string(digest.Of([]byte("schema_version = 1\n")))}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(f.home.Binary("v1.0.0"), []byte("not the binary"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -231,6 +245,7 @@ func TestLauncherRefusesAnUnusablePin(t *testing.T) {
 		name, dir string
 		want      []string
 	}{
+		{"absent, enrolled without managed.toml", enrolled, []string{"guildhall config reload --copy " + enrolled, "managed.toml is missing"}},
 		{"missing", missing, []string{"v3.0.0", f.home.Binary("v3.0.0"), "guildhall release install v3.0.0", "never falls back"}},
 		{"damaged", damaged, []string{"v1.0.0", "damaged", f.home.ReleaseDir("v1.0.0"), "guildhall release install v1.0.0"}},
 		{"absent", absent, []string{release.PinPath(absent), "guildhall release use"}},
@@ -247,6 +262,9 @@ func TestLauncherRefusesAnUnusablePin(t *testing.T) {
 					if !strings.Contains(r.stderr, w) {
 						t.Fatalf("%v: stderr %q does not name %q", args, r.stderr, w)
 					}
+				}
+				if tc.dir == enrolled && strings.Contains(r.stderr, "guildhall release use") {
+					t.Fatalf("%v: stderr %q names release use for a managed copy", args, r.stderr)
 				}
 			}
 		})

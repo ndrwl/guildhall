@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/ndrwl/guildhall/internal/admit"
@@ -33,6 +34,24 @@ var (
 	appliedConfig     = admit.Applied
 	admitDirectorMode = admit.Admit
 )
+
+// managedRefusal is why a command that acts only on a standalone copy refuses the copy in dir, with what saying how
+// a managed copy's state changes instead: "" when the boundary's verdict (admit.Managed) is standalone. A copy the
+// mode table refuses is managed, with the boundary's reason appended; a copy whose verdict cannot be read is
+// refused too.
+func managedRefusal(dir, what string) string {
+	managed, err := admit.Managed(dir)
+	var refused refusalError
+	switch {
+	case errors.As(err, &refused):
+		return fmt.Sprintf("copy %s is managed: %s; %s", dir, what, refused.Text)
+	case err != nil:
+		return fmt.Sprintf("copy %s may be managed, as whether it is cannot be read (%v); if it is managed, %s", dir, err, what)
+	case managed:
+		return fmt.Sprintf("copy %s is managed: %s", dir, what)
+	}
+	return ""
+}
 
 // admitDirector is the boundary's refusing form, returning only the effective config.
 func admitDirector(cfgPath string) (*config.Config, error) {

@@ -128,8 +128,9 @@ func ensureAlertTask(s *store.Store) error {
 	return err
 }
 
-// previousDigest is the digest the copy applied before d: the newest one this enrolment authorized, unless it is d.
-func previousDigest(v store.ManagedView, d string) string {
+// PreviousDigest is the digest the copy with managed facts v applied before d: the newest one this enrolment
+// authorized, unless it is d.
+func PreviousDigest(v store.ManagedView, d string) string {
 	previous := ""
 	for _, r := range v.Revisions {
 		if r.Source.Authorizes() {
@@ -158,7 +159,7 @@ func ApplyAnswer(s *store.Store, d store.Decision) error {
 		return nil
 	}
 	_, _, err = s.RecordManagedRevision(store.ManagedRevision{Source: store.SourceGuildmasterApproved, Digest: d.Subject.Digest,
-		Previous: previousDigest(v, d.Subject.Digest), Decision: d.ID})
+		Previous: PreviousDigest(v, d.Subject.Digest), Decision: d.ID})
 	return err
 }
 
@@ -225,7 +226,7 @@ func record(s *store.Store, cfgPath string, a Admission) (store.ManagedView, []s
 		}
 		opened = true
 	}
-	if _, _, err := s.RecordManagedRevision(store.ManagedRevision{Source: store.SourceObservedUntrusted, Digest: d, Previous: previousDigest(v, d)}); err != nil {
+	if _, _, err := s.RecordManagedRevision(store.ManagedRevision{Source: store.SourceObservedUntrusted, Digest: d, Previous: PreviousDigest(v, d)}); err != nil {
 		return v, ds, err
 	}
 	if opened {

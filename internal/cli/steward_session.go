@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/admit"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
@@ -75,19 +76,27 @@ func init() {
 }
 
 // admitStewardConfig loads a Steward copy's config for a Steward session: a steward-mode config whose [steward]
-// table names the session. A Steward copy is never managed, so a managed.toml beside it is refused.
+// table names the session. A Steward copy is never managed, so a copy the boundary finds managed (admit.Managed),
+// such as one with a managed.toml beside it, is refused, and so is an inline [managed] table, even an empty one.
 func admitStewardConfig(copyDir, cfgPath string) (*config.Config, error) {
-	if _, err := os.Stat(filepath.Join(copyDir, "managed.toml")); err == nil {
+	if managed, _ := admit.Managed(copyDir); managed {
 		return nil, errors.New("managed.toml: a Steward copy is never managed; remove it")
 	}
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		return nil, err
 	}
+	local, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return nil, err
+	}
+	inline, err := config.InlineManaged(local)
 	switch {
+	case err != nil:
+		return nil, err
 	case cfg.Mode != config.ModeSteward:
 		return nil, fmt.Errorf("%s is a %s config, not the steward's", cfgPath, cfg.Mode)
-	case len(cfg.Managed) > 0:
+	case inline:
 		return nil, errors.New("inline [managed] settings: a Steward copy is never managed")
 	case cfg.Steward == nil || cfg.Steward.Name == "":
 		return nil, fmt.Errorf("%s has no [steward] name, which labels the Steward's Herdr workspace; set it", cfgPath)

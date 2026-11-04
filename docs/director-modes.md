@@ -59,6 +59,7 @@ The mode is a store fact, not a config key: the newest enrolment event in the Di
 Every Director command uses one shared configuration-admission boundary: reject legacy inline settings, load and validate the files, check the mode, then check revision trust before applying settings.
 Pure parsing APIs stay unchanged.
 A refusal names the state and the command that fixes it.
+The boundary (`internal/admit`) alone decides whether a copy is managed and whether its config has inline `[managed]`: a command that must refuse a managed copy, such as `release use`, `release rollback`, the launcher's fix text or a Steward session, asks it (`admit.Managed`), which counts every row but standalone as managed, so an enrolled copy missing its `managed.toml` is managed too; no caller checks for `managed.toml` itself.
 
 Guildhall is pre-release: an inline `[managed]` section in `config.toml` is refused in every mode, whether or not a sibling managed file exists, with guidance to move it to `managed.toml` using the checksum-bearing format.
 Migration then requires explicit enrolment and revision authorization; there is no unrecorded compatibility mode.

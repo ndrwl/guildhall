@@ -44,7 +44,7 @@ func (a *App) configReload(args []string) int {
 		return fail("%w", err)
 	}
 	adm := judge(f, v)
-	switch inline, err := config.InlineManaged(f.Local); {
+	switch inline, err := adm.Inline(); {
 	case err != nil:
 		return fail("%w", err)
 	case inline:
@@ -61,17 +61,8 @@ func (a *App) configReload(args []string) int {
 	if cfg.Mode != config.ModeDirector {
 		return fail("%s is a %s config, not a director's", cfgPath, cfg.Mode)
 	}
-	// The previous digest is the one applied before: the newest this enrolment authorized, unless it is this one.
 	// A replay returns the event already recorded, with the previous digest it named.
-	previous := ""
-	for _, r := range v.Revisions {
-		if r.Source.Authorizes() {
-			previous = r.Digest
-		}
-	}
-	if previous == adm.ManagedDigest {
-		previous = ""
-	}
+	previous := admit.PreviousDigest(v, adm.ManagedDigest)
 	got, err := withStoreClock(storePath, false, a.Now, func(s *store.Store) (store.ManagedRevision, error) {
 		r, _, err := s.RecordManagedRevision(store.ManagedRevision{Source: store.SourceReload, Digest: adm.ManagedDigest, Previous: previous})
 		if err != nil {

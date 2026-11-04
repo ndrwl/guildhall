@@ -223,7 +223,7 @@ func statusModeOf(cfgPath, storePath string, v store.ManagedView, alerts []store
 	f, err := readCopyFiles(cfgPath)
 	if err != nil {
 		f = copyFiles{CfgPath: cfgPath}
-		if b, err := os.ReadFile(filepath.Join(f.Dir(), managedFile)); err == nil {
+		if b, err := admit.ReadManaged(f.Dir()); err == nil {
 			f.Managed = b
 		}
 	}
