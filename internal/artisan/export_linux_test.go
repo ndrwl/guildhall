@@ -22,3 +22,9 @@ func NewCgroupUnit(name string) (u Unit, reason string, ok bool, err error) {
 
 // NewSubreaperUnit is the fallback backend, whatever this host supports.
 func NewSubreaperUnit(_ string) (Unit, error) { return newSubreaperUnit("forced by test") }
+
+// NewSessionGroupUnit is the session unit as on a host with no delegated
+// cgroup v2, whatever this host supports.
+func NewSessionGroupUnit(name string) (Unit, error) {
+	return sessionUnit(name, cgroupDetection{reason: "forced by test"})
+}

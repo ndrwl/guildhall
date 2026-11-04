@@ -77,8 +77,15 @@ func TestKill(t *testing.T) {
 }
 
 func TestSweepKillsARecordedUnitFromOutside(t *testing.T) {
+	sweepsFromOutside(t, artisan.NewUnit)
+}
+
+// sweepsFromOutside checks that Contained lists, and Sweep kills, the live
+// tree of a unit from newUnit through its containment record alone.
+func sweepsFromOutside(t *testing.T, newUnit func(string) (artisan.Unit, error)) {
+	t.Helper()
 	sentinel, _ := startedProcess(t)
-	u, err := artisan.NewUnit("sweep-" + rand.Text()[:8])
+	u, err := newUnit("sweep-" + rand.Text()[:8])
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -31,7 +31,8 @@ It also found that a `task start` or `step retry` refused by the hold before its
 
 ## Consequences
 
-The unit's limits are the Artisan's: on a process-group backend a descendant that calls `setsid` leaves it, and on the subreaper backend an orphaned launcher stays a zombie until the supervisor exits.
+The unit's limits are the Artisan's: on a process-group backend a descendant that calls `setsid` leaves it.
+On Linux without a delegated cgroup the unit is a plain process group, not the Artisan's subreaper fallback, so the supervisor is not a child subreaper: an orphaned launcher, or the `ssh` of a failed `git fetch`, goes to the system and is reaped there rather than kept as a zombie of the supervisor (d180).
 On Windows the unit keeps the runtime in the supervisor's console process group so Ctrl+C reaches it, and its interrupt rung is refused.
 Where a launcher cannot leave the unit, it starts in it and ends with the session.
 

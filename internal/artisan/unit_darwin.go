@@ -34,6 +34,9 @@ func newUnit(string) (Unit, error) {
 	return u, nil
 }
 
+// newSessionUnit is newUnit: a worker whose stdin is the caller's terminal already becomes its foreground group.
+func newSessionUnit(name string) (Unit, error) { return newUnit(name) }
+
 func signalDarwinGroup(pid int, sig unix.Signal) error {
 	err := unix.Kill(pid, sig)
 	// Darwin reports EPERM for a group containing only zombies. They are

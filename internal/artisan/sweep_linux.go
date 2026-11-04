@@ -32,7 +32,7 @@ func sweep(c Containment, worker Identity) ([]Identity, error) {
 	switch c.Kind {
 	case KindCgroup:
 		return sweepCgroup(c.Name)
-	case KindSubreaper:
+	case KindSubreaper, KindGroup:
 		return sweepMembers(c, worker)
 	}
 	return nil, fmt.Errorf("containment %q on Linux: %w", c.Kind, errors.ErrUnsupported)

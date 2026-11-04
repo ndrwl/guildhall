@@ -31,5 +31,6 @@ Detection reads the host's own files, so the reason it records says which check 
 ## Consequences
 
 Under the fallback a `setsid` escape stays reported, not contained: the subreaper makes an orphaned escape a child of the launcher, where `Escapes` reports it, but `Kill` does not reach it.
+The Director session unit's fallback drops the subreaper and is a plain process group, recorded as `pgroup` (d180): the session supervisor starts many children of its own and waits only on those, so as a subreaper it kept every adopted orphan, such as the `ssh` of a failed `git fetch`, as a zombie until it exited (111 on one WSL2 supervisor), and nothing in production needs it, since `director stop` finds the unit by its process group.
 The `RecordContainment` helper provides the [attempt-directory record](../artisan.md#recording-the-containment) for later launcher integration; creating a unit does not persist it automatically.
 How the store keeps the unit is [containment persistence](containment-persistence.md).
