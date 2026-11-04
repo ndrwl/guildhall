@@ -47,6 +47,8 @@ id = "cli"
 path = '/srv/src/cli'
 remote = "git@github.com:example/cli.git"
 owner_machine = "workstation"
+# This repository's task ids are c1, c2, ...: 1 to 3 lowercase letters, which no other repository may share.
+task_prefix = "c"
 # No workflow key: feature tasks run the shipped default and bug tasks the shipped bug workflow.
 # No [repository.merge.requires] section: every requirement is on, so the Guildmaster answers every merge.
 # A failed GitHub Actions check is re-run once on the same head before the task goes back to build, and a check that
@@ -93,6 +95,8 @@ id = "docs-site"
 path = '/srv/src/docs-site'
 remote = "https://github.com/example/docs-site.git"
 owner_machine = "workstation"
+# task_prefix = "c" here would be refused: cli already uses it.
+task_prefix = "ds"
 
 # This repository has the Guildmaster review every change instead of an Artisan.
 [repository.workflow_overrides.review]

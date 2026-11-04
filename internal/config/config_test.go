@@ -193,6 +193,66 @@ workflow`, `one owner machine`},
 	}
 }
 
+// TestTaskPrefix: a repository's task_prefix of 1 to 3 lowercase letters loads; a malformed or empty one, or one two
+// repositories share, is refused naming both; and a config without one loads with no prefix and the same digest it
+// had before the key existed.
+func TestTaskPrefix(t *testing.T) {
+	base := director(t)
+	const toolAt, siteAt = "owner_machine = \"workstation\"\n\n", "owner_machine = \"workstation\"\nworkflow"
+	with := func(tool, site string) string {
+		data := base
+		if tool != "" {
+			data = strings.Replace(data, toolAt, "owner_machine = \"workstation\"\ntask_prefix = "+tool+"\n\n", 1)
+		}
+		if site != "" {
+			data = strings.Replace(data, siteAt, "owner_machine = \"workstation\"\ntask_prefix = "+site+"\nworkflow", 1)
+		}
+		if data == base {
+			t.Fatal("fixture does not contain the owner_machine lines")
+		}
+		return data
+	}
+
+	cfg, err := Parse([]byte(with(`"d"`, `"gh"`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, want := range []string{"d", "gh"} {
+		if got, ok := cfg.Repositories[i].TaskIDPrefix(); got != want || !ok {
+			t.Errorf("repository %d prefix = %q, %v; want %q", i, got, ok, want)
+		}
+	}
+	if b, err := json.Marshal(cfg.Repositories[0]); err != nil || !strings.Contains(string(b), `"TaskPrefix":"d"`) {
+		t.Fatalf("encoded %s, %v", b, err)
+	}
+
+	for _, bad := range []string{`"D"`, `"abcd"`, `"d1"`, `""`, `"d-"`} {
+		_, err := Parse([]byte(with(bad, "")))
+		if want := "repository \"tool\": task_prefix " + bad + " must be 1 to 3 lowercase letters"; err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("prefix %s: error %v does not mention %q", bad, err, want)
+		}
+	}
+	_, err = Parse([]byte(with(`"d"`, `"d"`)))
+	if want := `duplicate task_prefix "d": repositories "tool" and "site" both use it`; err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("shared prefix: error %v does not mention %q", err, want)
+	}
+
+	plain, err := Parse([]byte(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := plain.Repositories[0].TaskIDPrefix(); ok || got != "" {
+		t.Errorf("unset prefix = %q, %v", got, ok)
+	}
+	b, err := json.Marshal(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), `"TaskPrefix"`) {
+		t.Fatalf("a config without task_prefix encodes it: %s", b)
+	}
+}
+
 // TestTaskKindWorkflow: a feature runs the repository's workflow setting, and a bug or hallmark its [repository.kinds]
 // workflow, or the shipped workflow named for its kind; an unknown kind has none. A config without a kinds table
 // encodes no Kinds field, so its digest is unchanged.

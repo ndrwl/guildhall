@@ -591,6 +591,11 @@ type Repository struct {
 	Path         string `toml:"path"`
 	Remote       string `toml:"remote"`
 	OwnerMachine string `toml:"owner_machine"`
+	// TaskPrefix is the 1 to 3 lowercase letters every task id of this repository that task new assigns starts with,
+	// such as "d" for d42 (docs/configuration.md#repositories). It is an identity key, never overridable per task, and
+	// unique across a copy's repositories. Read it through TaskIDPrefix. It is nil when the config does not set it,
+	// and omitted from JSON then, so the config digest of a config without it is unchanged.
+	TaskPrefix *string `toml:"task_prefix" json:",omitempty"`
 	// Merge holds what deliver requires before it merges; a missing section requires everything.
 	Merge MergeOptions `toml:"merge"`
 	// Workflow names the Director's workflow definition this repository runs for a feature task.
@@ -616,6 +621,20 @@ type Repository struct {
 	// profile's effective grant for this repository's tasks only (docs/adapters.md#artisan-permissions).
 	// It is omitted from JSON when unset, so the config digest of a config without it is unchanged.
 	Profiles map[string]RepositoryProfile `toml:"profiles" json:",omitempty"`
+}
+
+// taskPrefixPattern is the form of a repository's task_prefix: 1 to 3 lowercase letters.
+var taskPrefixPattern = regexp.MustCompile(`^[a-z]{1,3}$`)
+
+// ValidTaskPrefix reports whether p has the form of a task_prefix, 1 to 3 lowercase letters.
+func ValidTaskPrefix(p string) bool { return taskPrefixPattern.MatchString(p) }
+
+// TaskIDPrefix is the repository's task_prefix, and false when the config does not set one.
+func (r Repository) TaskIDPrefix() (string, bool) {
+	if r.TaskPrefix == nil {
+		return "", false
+	}
+	return *r.TaskPrefix, true
 }
 
 // FlakyChecks is a repository's flaky-check policy, flaky_checks.
@@ -935,6 +954,7 @@ func (c *Config) validate() []string {
 	}
 
 	seenID, seenPath := map[string]bool{}, map[string]bool{}
+	prefixOwner := map[string]string{}
 	var machines []string
 	for i, r := range c.Repositories {
 		name := fmt.Sprintf("repository %d", i+1)
@@ -951,6 +971,15 @@ func (c *Config) validate() []string {
 			add("duplicate repository id %q", r.ID)
 		}
 		seenID[r.ID] = true
+		if p, set := r.TaskIDPrefix(); set {
+			if other, dup := prefixOwner[p]; !ValidTaskPrefix(p) {
+				add("%s: task_prefix %q must be 1 to 3 lowercase letters", name, p)
+			} else if dup {
+				add("duplicate task_prefix %q: repositories %q and %q both use it", p, other, r.ID)
+			} else {
+				prefixOwner[p] = r.ID
+			}
+		}
 		if !ownerAbsolute(r.Path) {
 			add("%s: path must be absolute", name)
 		} else if clean := ownerPathKey(r.Path); seenPath[clean] {
