@@ -16,7 +16,7 @@ const RebaseReportFile = "rebase.json"
 // outputInstructions is part of the generated agent-facing protocol. It lives
 // outside baseline prose so even an old copy's overridden guide gets the current
 // port formats and the same result template in every runtime.
-func outputInstructions(id Identity, revisions *workflow.Revisions, branch string, surface Surface) string {
+func outputInstructions(id Identity, revisions *workflow.Revisions, branch string, strict []spec.Example, surface Surface) string {
 	if branch == "" {
 		branch = "guildhall/" + id.Task
 	}
@@ -79,7 +79,7 @@ func outputInstructions(id Identity, revisions *workflow.Revisions, branch strin
 			fmt.Fprintf(&b, "\nExample requesting changes, with previous findings f0, f1 and f2:\n\n```json\n%s\n```\n", data)
 		} else {
 			b.WriteString("Format: a UTF-8 Markdown document. Minimal example:\n\n```text\n# Notes\n\nThe requested work is recorded here.\n```\n")
-			b.WriteString(strictSections(id.Kind, filename))
+			b.WriteString(strictSections(id.Kind, filename, strict))
 		}
 		if mockup := MockupFile(surface); id.Kind == designKind && mockup != "" {
 			outputs = append(outputs, adapter.Output{Path: mockup})
@@ -103,32 +103,26 @@ const SubmitStep = "After writing the required files (or committing the code hea
 	"If it prints `rejected: <reason>`, fix what the reason names, in your files or the draft, and submit again; you are done when it prints `ok`, or when it says no resubmissions are left. " +
 	"If your runtime names a result file and no draft file, write this JSON shape to that result file instead, once, as your last action."
 
-// strictKinds are the strict sections each kind's document port has, which Guildhall parses itself, and whether
-// intake refuses a result that breaks one; a hallmark report's questions are only read for the follow-ups ask.
-var strictKinds = map[string]struct {
-	examples []spec.Example
-	refused  bool
-}{
-	"plan":     {[]spec.Example{spec.SummaryExample, spec.SlicesExample, spec.OpenQuestionsExample}, true},
-	designKind: {[]spec.Example{spec.OpenQuestionsExample}, true},
-	"hallmark": {[]spec.Example{spec.ReportQuestionsExample}, false},
+// strictKinds are the strict sections a kind's document port has that Guildhall parses itself but intake does not
+// refuse: a hallmark report's questions are only read for the follow-ups ask. Which sections intake refuses is not
+// here: interp.StrictSections owns that list, and Stage.Strict carries it.
+var strictKinds = map[string][]spec.Example{
+	"hallmark": {spec.ReportQuestionsExample},
 }
 
-// strictSections is the Strict sections block of kind's document port, written as file: for each strict section its
-// rule, a valid and an invalid example and the error the invalid one gets, all from internal/spec's examples, which
-// the parser tests run. It is empty for a kind with none.
-func strictSections(kind, file string) string {
-	k, ok := strictKinds[kind]
-	if !ok {
-		return ""
-	}
+// strictSections is the Strict sections block of kind's document port, written as file: refused, the sections intake
+// refuses (Stage.Strict), exactly as given, or else kind's parsed-only sections (strictKinds); for each its rule, a
+// valid and an invalid example and the error the invalid one gets, all from internal/spec's examples, which the
+// parser tests run. It is empty when there are none.
+func strictSections(kind, file string, refused []spec.Example) string {
 	var b strings.Builder
-	if k.refused {
+	examples := refused
+	if len(refused) > 0 {
 		fmt.Fprintf(&b, "\nStrict sections: Guildhall parses these sections of `%s` itself, and `guildhall result submit` and intake refuse a result that breaks one with the error shown, so copy the valid shape exactly.\n", file)
-	} else {
+	} else if examples = strictKinds[kind]; len(examples) > 0 {
 		fmt.Fprintf(&b, "\nStrict sections: Guildhall parses these sections of `%s` itself for the ask it shows the Guildmaster, and leaves out a section that breaks one, with the error shown, so copy the valid shape exactly.\n", file)
 	}
-	for _, ex := range k.examples {
+	for _, ex := range examples {
 		fmt.Fprintf(&b, "\n**`%s`.** %s\n\nValid:\n\n```text\n%s\n```\n\nInvalid:\n\n```text\n%s\n```\n\nIt gets: `%s`\n", ex.Heading, ex.Rule, ex.Valid, ex.Invalid, ex.Error)
 	}
 	return b.String()

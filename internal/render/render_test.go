@@ -112,6 +112,10 @@ func TestPromptGoldenPerKind(t *testing.T) {
 		t.Run(c.kind, func(t *testing.T) {
 			stage := attempt(t, c.step)
 			stage.Retry = c.retry
+			if c.kind == "plan" {
+				// The default workflow's plan, which a Guildmaster approval shows (interp.StrictSections).
+				stage.Strict = []gspec.Example{gspec.SummaryExample, gspec.SlicesExample, gspec.OpenQuestionsExample}
+			}
 			r, err := Prompt(stage, c.inputs, c.baseline, roots())
 			if err != nil {
 				t.Fatal(err)
