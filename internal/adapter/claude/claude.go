@@ -106,6 +106,10 @@ type Adapter struct {
 // Capabilities reports the Claude adapter's optional capabilities: none.
 func (Adapter) Capabilities() adapter.Capabilities { return adapter.Capabilities{} }
 
+// Steerable reports that the Claude runtime can be steered: its prompt tells the Artisan about steering and its
+// grants let it run `guildhall messages` and `guildhall messages ack`.
+func (Adapter) Steerable() bool { return true }
+
 // CheckSettings honours a model Claude Code's --model can take as given, one word that does not start with "-",
 // and an effort among Efforts; it refuses anything else with an error wrapping adapter.ErrUnsupportedSetting.
 // It does not check that the model exists: Claude Code resolves aliases and names itself, and a session on a model

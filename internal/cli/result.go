@@ -266,7 +266,7 @@ func (a *App) checkResult(ctx context.Context, storePath, cfgPath, state string,
 		Workflow: func(rev workflow.Revision) (*workflow.Definition, error) {
 			return boundWorkflow(filepath.Join(cfgDir, "workflows"), cfg, r, rev)
 		},
-		DocumentDir: filepath.Join(state, "documents"), StateDir: state, Workspaces: ws,
+		DocumentDir: filepath.Join(state, "documents"), StateDir: state, Workspaces: ws, Steerable: runtimeSteerable,
 	}
 	return e.CheckResult(ctx, key, data)
 }

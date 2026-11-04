@@ -411,6 +411,16 @@ func runtimeSettings(name string, s adapter.Settings) error {
 	return rt.CheckSettings(s)
 }
 
+// runtimeSteerable is interp.Engine.Steerable over package runtimes: whether the named runtime can be steered. A
+// name that is not a runtime, such as interp's mock agent, is treated as steerable, as it always was.
+func runtimeSteerable(name string) bool {
+	rt, err := runtimes.Lookup(name, "")
+	if err != nil {
+		return true
+	}
+	return rt.Steerable()
+}
+
 // preflightLine prints one preflight check's line.
 func (a *App) preflightLine(name, format string, args ...any) {
 	_, _ = fmt.Fprintf(a.Stdout, "%s: %s\n", name, fmt.Sprintf(format, args...))

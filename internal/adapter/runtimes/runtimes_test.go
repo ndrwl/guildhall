@@ -40,6 +40,26 @@ func TestLookupConstructsEachRuntime(t *testing.T) {
 	}
 }
 
+// TestEachRuntimeDeclaresSteerable: claude and fake can be steered; codex, which runs read-only and is never told
+// about steering, cannot.
+func TestEachRuntimeDeclaresSteerable(t *testing.T) {
+	want := map[string]bool{adapter.ClaudeName: true, adapter.FakeName: true, adapter.CodexName: false}
+	for _, name := range runtimes.Names() {
+		r, err := runtimes.Lookup(name, "/bin/guildhall")
+		if err != nil {
+			t.Fatal(err)
+		}
+		w, ok := want[name]
+		if !ok {
+			t.Errorf("runtime %q has no expected Steerable; add it here", name)
+			continue
+		}
+		if got := r.Steerable(); got != w {
+			t.Errorf("%s Steerable() = %v, want %v", name, got, w)
+		}
+	}
+}
+
 func TestLookupRefusesAnUnknownName(t *testing.T) {
 	for _, name := range []string{"", "gemini", "mock", "Fake", "Codex"} {
 		r, err := runtimes.Lookup(name, "/bin/guildhall")

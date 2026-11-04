@@ -235,6 +235,54 @@ func TestLateSteeringDoesNotFailAGoodResult(t *testing.T) {
 	}
 }
 
+// TestCheckResultSkipsMessagesOfAnUnsteerableAttempt: an attempt whose adapter Engine.Steerable reports cannot be
+// steered has its succeeded result accepted, by CheckResult and by intake, while a steering message to it is
+// unacknowledged; an attempt whose adapter can be steered is still refused. The hook is asked the attempt's adapter.
+func TestCheckResultSkipsMessagesOfAnUnsteerableAttempt(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			for _, steerable := range []bool{false, true} {
+				t.Run(map[bool]string{false: "unsteerable", true: "steerable"}[steerable], func(t *testing.T) {
+					e, _, _ := newSliceEnv(t, b, true, sliceScript(t, summarisedSpec)...)
+					var asked []string
+					e.eng.Steerable = func(name string) bool {
+						asked = append(asked, name)
+						return steerable
+					}
+					e.advance(t, interp.Event{Kind: interp.TaskCreated})
+					// The message is sent before the result is published, so it would count against a steerable attempt.
+					e.h.Clock.Set(steerTime)
+					steer(t, e, "steer-1")
+					publishedAt(t, e, steerTime.Add(time.Minute))
+					want := ""
+					if steerable {
+						want = "unacknowledged steering message to this attempt: steer-1; read each with guildhall messages, acknowledge it with guildhall messages ack <id>, then submit again"
+					}
+					key := artisan.AttemptKey{Repository: "app", TaskID: "t7", Step: "plan", Attempt: 1}
+					data, err := os.ReadFile(planResult(e))
+					if err != nil {
+						t.Fatal(err)
+					}
+					var rejection *interp.Rejection
+					if err := e.eng.CheckResult(context.Background(), key, data); errors.As(err, &rejection) {
+						if rejection.Reason != want {
+							t.Fatalf("CheckResult = %+v, want reason %q", rejection, want)
+						}
+					} else if err != nil || want != "" {
+						t.Fatalf("CheckResult = %v, want reason %q", err, want)
+					}
+					if len(asked) == 0 || asked[0] != interp.MockAdapter {
+						t.Fatalf("Steerable was asked %q, want the attempt's adapter %q", asked, interp.MockAdapter)
+					}
+					said := checkBefore(t, e, "plan", 1)
+					e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1})
+					said.agrees(t, e, "plan", 1)
+				})
+			}
+		})
+	}
+}
+
 // TestSteeringAtOrBeforeTheResultRefuses: a message sent at the result's publication time counts against it, as does
 // one whose send time is a little after a coarse publication time, and any message while no result is published, as
 // when `guildhall result submit` checks a draft.

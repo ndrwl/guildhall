@@ -220,8 +220,10 @@ Guildhall itself steers an attempt through its outbox (`interp.GuildhallOutbox`)
 The types are vocabulary only: Guildhall does not act on them, and the Artisan acknowledges each like any steering message.
 A type is added by the change that sends it; the Director's `messages send` may use any type.
 
-Steering covers stage attempts on the `claude` and `fake` runtimes; the fake's `ack` [directive](adapters.md#scenarios) acknowledges as a model would.
-Codex runs no stage step, so it has no steering, and a quality judge has no steering inbox.
+Steering is a runtime capability, `runtimes.Runtime.Steerable` ([adapters](adapters.md#running-an-attempt)): it covers stage attempts whose runtime is steerable, `claude` and `fake`; the fake's `ack` [directive](adapters.md#scenarios) acknowledges as a model would.
+`messages send` to an attempt on any other runtime, today `codex`, is refused with `attempt <n> of <step> runs on the codex runtime, which cannot be steered; nothing was sent` and records nothing, and intake does not check that attempt's inbox.
+Both resolve the attempt's runtime the same way, from its step's effective profile in the task's bound workflow and that profile's `adapter` in the current config, not from a record made at launch, so a hand edit of the profile's `adapter` between launch and intake changes the answer.
+Codex runs no stage step yet, and a quality judge has no steering inbox.
 
 ## Waking the Director
 

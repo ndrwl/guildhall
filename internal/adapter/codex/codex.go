@@ -43,6 +43,10 @@ type Adapter struct {
 // Capabilities reports the Codex adapter's optional capabilities: none.
 func (Adapter) Capabilities() adapter.Capabilities { return adapter.Capabilities{} }
 
+// Steerable reports that the Codex runtime cannot be steered: the wrapper runs read-only, publishes the result
+// itself and never tells the Artisan about steering, so it cannot run `guildhall messages ack`.
+func (Adapter) Steerable() bool { return false }
+
 // CheckSettings honours a model that is one word not starting with "-", which the wrapper passes to codex's -m, and
 // an effort among Efforts; it refuses anything else with an error wrapping adapter.ErrUnsupportedSetting. It does
 // not check that the model exists.

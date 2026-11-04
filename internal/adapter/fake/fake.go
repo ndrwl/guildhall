@@ -54,6 +54,10 @@ type Adapter struct {
 // Capabilities reports the fake adapter's optional capabilities: none.
 func (Adapter) Capabilities() adapter.Capabilities { return adapter.Capabilities{} }
 
+// Steerable reports that the fake runtime can be steered: its ack directive acknowledges messages as a model
+// would (docs/messaging.md).
+func (Adapter) Steerable() bool { return true }
+
 // CheckSettings honours every model and effort: the fake runs no model, and records the settings it was given
 // (SettingsFile) so tests can see what reached the runtime.
 func (Adapter) CheckSettings(adapter.Settings) error { return nil }
