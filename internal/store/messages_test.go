@@ -3,9 +3,11 @@ package store
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // messagingStore returns a store holding task app/t-1 with a running build attempt 1.
@@ -66,7 +68,10 @@ func TestSendMessageCommitsMessageAndReceipt(t *testing.T) {
 		t.Fatalf("Message after restart: %v", err)
 	}
 	want := toDirector("q-1")
-	want.Sequence = r.Sequence
+	want.Sequence, want.SentAt = r.Sequence, r.CommittedAt
+	if !got.SentAt.Equal(testTime) {
+		t.Fatalf("sent at %v, want the receipt's commit time %v", got.SentAt, testTime)
+	}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("message = %+v, want %+v", got, want)
 	}
@@ -106,6 +111,7 @@ func TestSendMessageValidates(t *testing.T) {
 		},
 		"preset sequence":     func(m *Message) { m.Sequence = 7 },
 		"preset acknowledged": func(m *Message) { m.Acknowledged = true },
+		"preset send time":    func(m *Message) { m.SentAt = testTime },
 	} {
 		m := toDirector("q-1")
 		mod(&m)
@@ -194,6 +200,37 @@ func TestSendMessageReplayAndConflict(t *testing.T) {
 	}
 	if m, _ := s.Message("n-1"); m.Text != toArtisan("n-1").Text {
 		t.Fatalf("conflict changed message: %+v", m)
+	}
+}
+
+// TestSendMessageKeepsTheFirstSendTime: a message's send time is its send receipt's commit time, and a replayed
+// send at a later time keeps the first.
+func TestSendMessageKeepsTheFirstSendTime(t *testing.T) {
+	now := testTime
+	s, err := Open(filepath.Join(t.TempDir(), "guildhall.store"), Options{LockTimeout: 30 * time.Second, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	mustCreate(t, s, "m-task", sampleTask("app", "t-1"))
+	if _, err := s.StartAttempt("m-attempt", "app", "t-1", "build"); err != nil {
+		t.Fatal(err)
+	}
+	first := mustSend(t, s, toArtisan("n-1"))
+	now = now.Add(time.Hour)
+	if again := mustSend(t, s, toArtisan("n-1")); again != first {
+		t.Fatalf("replay = %+v, want %+v", again, first)
+	}
+	m, err := s.Message("n-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.SentAt.Equal(testTime) || !m.SentAt.Equal(first.CommittedAt) {
+		t.Fatalf("sent at %v, want the first send's %v", m.SentAt, first.CommittedAt)
+	}
+	msgs, _, err := s.Inbox(artisanInbox, 0, 10)
+	if err != nil || len(msgs) != 1 || !msgs[0].SentAt.Equal(testTime) {
+		t.Fatalf("inbox = %+v, %v; want n-1 sent at %v", msgs, err, testTime)
 	}
 }
 

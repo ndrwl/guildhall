@@ -1107,6 +1107,9 @@ func (r *run) takeResult(s workflow.Step, a *store.StageAttempt) error {
 		if err := r.stall(s, a.Number); err != nil {
 			return fmt.Errorf("interp: %w", err)
 		}
+		if err := r.reportLateSteering(s, a.Number); err != nil {
+			return fmt.Errorf("interp: %w", err)
+		}
 		outcome = store.AttemptSucceeded
 	}
 	if a.Outcome == "" {

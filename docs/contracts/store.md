@@ -42,6 +42,8 @@ The message types `merge-queued`, `rebased`, `rebase-escalated`, `rebase-stuck` 
 
 `DecisionOptions()` returns the option sets of the decisions the store opens itself, a grant's `GrantApprove` and `GrantReject`, for the task page's option-meanings table ([`internal/web`](web.md)).
 The engine-origin `pr-blocked` message type is registered for Director inbox counting and wake delivery.
+The engine-origin `late-steering` message type is registered too: intake's report of steering sent more than 2 seconds after an attempt's result was published ([messaging](../messaging.md#steering-an-attempt)).
+`SendMessage` sets a message's `SentAt` to its send receipt's `CommittedAt`, beside `Sequence`; like `Sequence` it is not part of the request digest (a zero `SentAt` is omitted, so earlier digests hold), a replay keeps the first, and `ValidateMessage` refuses a caller-set `SentAt`. A message stored before it reads as the zero time.
 Its head/state replay identity and observation document are owned by the interpreter; no new store mutation or schema is introduced.
 `SendMessage` keeps its semantics: the same request replays its receipt and a different request under the same id is `ErrMutationConflict`. The interpreter treats that conflict, or `ErrExists`, on a Director message as already reported, so a re-sent message whose text changed never fails an advance ([interpreter](../interpreter.md)).
 
