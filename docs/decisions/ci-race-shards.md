@@ -4,6 +4,7 @@ date: 2026-11-04
 topic: ci
 tasks: d177
 amends: ci-action-pins-and-race.md
+amended-by: ci-go-cache.md
 ---
 
 # CI runs the race detector as three parallel shard jobs, `race (1)`–`race (3)`

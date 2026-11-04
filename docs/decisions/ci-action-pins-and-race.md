@@ -4,7 +4,7 @@ date: 2026-10-31
 topic: ci
 tasks: d78, d84, d89, d93
 amends: ci-matrix-and-lint.md, release-policy-regression-test.md
-amended-by: ci-race-shards.md, ci-neutral-packages-ubuntu-only.md
+amended-by: ci-race-shards.md, ci-neutral-packages-ubuntu-only.md, ci-go-cache.md
 ---
 
 # CI pins actions by commit, runs a Linux race step and runs the release test
