@@ -38,6 +38,7 @@ python3 .github/tests/test_release.py
 CI splits the race run into the parallel jobs `race (1)`–`race (3)`, each running the packages `.github/race-shards.txt` assigns it ([CI race shards](docs/decisions/ci-race-shards.md)).
 A new package must be added to `.github/race-shards.txt`, or all three race jobs fail; `bash .github/race-shards.sh check` checks the list.
 The `Test` step runs packages with no OS-specific files and no `runtime.GOOS` on Linux only, so adding either to a package moves it onto all three operating systems ([CI neutral packages](docs/decisions/ci-neutral-packages-ubuntu-only.md)).
+Each `test (…)` run's summary page lists the 20 slowest packages and tests, and its `test-timings-<os>` artifact holds the raw `go test -json` streams; `./...` skips the summariser, so run its tests with `go test .github/tests/timings/*.go` ([CI test timings](docs/decisions/ci-test-timings.md)).
 
 `gofmt -l .` must print nothing.
 Use the golangci-lint version pinned in `.github/workflows/ci.yml`; the lint policy is recorded in [D4](docs/decisions/ci-matrix-and-lint.md).
