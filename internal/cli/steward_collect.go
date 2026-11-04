@@ -255,12 +255,9 @@ func (a *App) stewardCollectCmd(args []string) int {
 	if _, err := os.Stat(storePath); err != nil {
 		return a.fail(fmt.Errorf("%s: %w", name, noStore(storePath)))
 	}
-	cfg, err := config.Load(cfgPath)
+	cfg, err := admitStewardConfig(cp.dir, cfgPath)
 	if err != nil {
 		return a.fail(fmt.Errorf("%s: %w", name, err))
-	}
-	if cfg.Mode != config.ModeSteward {
-		return a.fail(fmt.Errorf("%s: %s is a %s config, not the steward's", name, cfgPath, cfg.Mode))
 	}
 	c, err := a.stewardCollector(cfg)
 	if err != nil {

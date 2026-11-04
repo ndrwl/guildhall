@@ -50,10 +50,11 @@ var (
 	cliManaged = steward.Remote{Alias: "guild-ws", Path: "/home/guild/tools/managed.toml"}
 )
 
-// stewardApp is an App whose rollouts reach an in-memory fleet holding one Director copy.
+// stewardApp is an App whose rollouts reach an in-memory fleet holding one Director copy, and whose faked git finds
+// the Steward config's private config directory a Git work tree.
 func stewardApp(t *testing.T, managed string) (app *App, stdout, stderr *bytes.Buffer, stewardConfig string, fleet *stewardtest.Fleet) {
 	t.Helper()
-	stewardConfig = writeStewardConfig(t, managed)
+	stewardConfig, private := writeStewardConfig(t, managed)
 	fleet = stewardtest.NewFleet()
 	fleet.Write(cliConfig, []byte(cliCopy))
 	managedCopy, err := config.EncodeManaged(nil)
@@ -61,25 +62,31 @@ func stewardApp(t *testing.T, managed string) (app *App, stdout, stderr *bytes.B
 		t.Fatal(err)
 	}
 	fleet.Write(cliManaged, managedCopy)
-	app, stdout, stderr = newTestApp(nil, nil)
+	app, stdout, stderr = newTestApp(privateWorkTree(private))
 	app.Copier, app.Runner = fleet, fleet
 	return app, stdout, stderr, stewardConfig, fleet
 }
 
-// writeStewardConfig writes a private config directory with cliRoster and managed, and a Steward config naming it.
-func writeStewardConfig(t *testing.T, managed string) string {
+// privateWorkTree is newTestApp's tools for a git on PATH that answers private is a Git work tree.
+func privateWorkTree(private string) (map[string]string, map[string]result) {
+	return map[string]string{"git": "git"}, map[string]result{"git -C " + private + " rev-parse --is-inside-work-tree": {out: "true\n"}}
+}
+
+// writeStewardConfig writes a private config directory with cliRoster and managed, and a Steward copy's config.toml
+// naming it under a [steward] name, as the session admits it. It returns the config's path and the private directory.
+func writeStewardConfig(t *testing.T, managed string) (stewardConfig, private string) {
 	t.Helper()
-	private := t.TempDir()
+	private = t.TempDir()
 	for name, content := range map[string]string{"roster.toml": cliRoster, "managed.toml": managed} {
 		if err := os.WriteFile(filepath.Join(private, name), []byte(content), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	stewardConfig := filepath.Join(t.TempDir(), "steward.toml")
-	if err := os.WriteFile(stewardConfig, []byte("schema_version = 1\nmode = \"steward\"\n[private_config]\nlocation = '"+private+"'\n"), 0o600); err != nil {
+	stewardConfig = filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(stewardConfig, []byte(stewardSessionConfig(private, "[steward]\nname = \"steward\"\n")), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return stewardConfig
+	return stewardConfig, private
 }
 
 func TestStewardRolloutDryRunThenApply(t *testing.T) {
@@ -228,17 +235,24 @@ func TestStewardRolloutRefusals(t *testing.T) {
 	if err := os.WriteFile(director, []byte(strings.Replace(cliCopy, "/srv/src/cli", filepath.ToSlash(t.TempDir()), 1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	remoteConfig := filepath.Join(t.TempDir(), "steward.toml")
-	if err := os.WriteFile(remoteConfig, []byte("schema_version = 1\nmode = \"steward\"\n[private_config]\nlocation = \"git@github.com:example/private.git\"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	remoteConfig := filepath.Join(t.TempDir(), "config.toml")
+	writeFile(t, remoteConfig, "schema_version = 1\nmode = \"steward\"\n[private_config]\nlocation = \"git@github.com:example/private.git\"\n[steward]\nname = \"steward\"\n")
+	unnamed := filepath.Join(t.TempDir(), "config.toml")
+	writeFile(t, unnamed, stewardSessionConfig(t.TempDir(), ""))
+	inline := filepath.Join(t.TempDir(), "config.toml")
+	writeFile(t, inline, stewardSessionConfig(t.TempDir(), "[steward]\nname = \"steward\"\n\n[managed]\n"))
+	managedCopy, _ := writeStewardConfig(t, "schema_version = 1\n")
+	writeFile(t, filepath.Join(filepath.Dir(managedCopy), "managed.toml"), "schema_version = 1\n")
 	plan := filepath.Join(t.TempDir(), "plan")
 	cases := map[string]struct {
 		args []string
 		want string
 	}{
-		"director config":    {[]string{"--config", director, "--machine", "workstation"}, "is not a steward config"},
-		"remote private ref": {[]string{"--config", remoteConfig, "--machine", "workstation"}, "must be a local directory"},
+		"director config":    {[]string{"--config", director, "--machine", "workstation"}, "is a director config, not the steward's"},
+		"no steward name":    {[]string{"--config", unnamed, "--machine", "workstation"}, "has no [steward] name"},
+		"inline managed":     {[]string{"--config", inline, "--machine", "workstation"}, "inline [managed] settings: a Steward copy is never managed"},
+		"managed copy":       {[]string{"--config", managedCopy, "--machine", "workstation"}, "a Steward copy is never managed"},
+		"remote private ref": {[]string{"--config", remoteConfig, "--machine", "workstation"}, "must be an absolute local directory"},
 		"unenrolled machine": {[]string{"--config", cfg, "--machine", "stranger"}, `machine "stranger" is not enrolled`},
 	}
 	for name, c := range cases {
@@ -251,13 +265,18 @@ func TestStewardRolloutRefusals(t *testing.T) {
 		})
 	}
 	app.Copier, app.Runner = nil, nil
-	app.LookPath = func(string) (string, error) { return "", exec.ErrNotFound }
+	app.LookPath = func(name string) (string, error) {
+		if name == "git" {
+			return name, nil
+		}
+		return "", exec.ErrNotFound
+	}
 	stderr.Reset()
-	if code := app.Run([]string{"steward", "rollout", "--config", cfg, "--machine", "workstation", "--plan", plan, "--dry-run"}); code != 1 || !strings.Contains(stderr.String(), "scp") {
+	if code := app.Run([]string{"steward", "rollout", "--config", cfg, "--machine", "workstation", "--plan", plan, "--dry-run"}); code != 1 || !strings.Contains(stderr.String(), "scp is needed for rollouts") {
 		t.Fatalf("missing scp: exit %d; stderr: %s", code, stderr)
 	}
 	app.LookPath = func(name string) (string, error) {
-		if name == "scp" {
+		if name == "scp" || name == "git" {
 			return name, nil
 		}
 		return "", exec.ErrNotFound
@@ -265,6 +284,23 @@ func TestStewardRolloutRefusals(t *testing.T) {
 	stderr.Reset()
 	if code := app.Run([]string{"steward", "rollout", "--config", cfg, "--machine", "workstation", "--plan", plan, "--dry-run"}); code != 1 || !strings.Contains(stderr.String(), "ssh is needed for rollouts") {
 		t.Fatalf("missing ssh: exit %d; stderr: %s", code, stderr)
+	}
+}
+
+// TestStewardRolloutRefusesAPrivateDirThatIsNotAWorkTree: rollout checks the private config checkout as the session
+// does, so a plain directory that is not a Git work tree is refused before any copy is fetched.
+func TestStewardRolloutRefusesAPrivateDirThatIsNotAWorkTree(t *testing.T) {
+	cfg, private := writeStewardConfig(t, "schema_version = 1\n")
+	paths, _ := privateWorkTree(private)
+	app, _, stderr := newTestApp(paths, map[string]result{"git -C " + private + " rev-parse --is-inside-work-tree": {out: "false\n"}})
+	fleet := stewardtest.NewFleet()
+	app.Copier, app.Runner = fleet, fleet
+	args := []string{"steward", "rollout", "--config", cfg, "--machine", "workstation", "--plan", filepath.Join(t.TempDir(), "plan"), "--dry-run"}
+	if code := app.Run(args); code != 1 || !strings.Contains(stderr.String(), "is not a Git work tree") {
+		t.Fatalf("exit %d; stderr: %s", code, stderr)
+	}
+	if calls := fleet.Calls(); len(calls) != 0 {
+		t.Errorf("a refused rollout reached the fleet: %q", calls)
 	}
 }
 
@@ -310,6 +346,10 @@ func TestStewardRolloutRunsSCPFromPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skipf("git is needed for the private config checkout: %v", err)
+	}
 	bin := t.TempDir()
 	for _, name := range []string{"scp", "ssh"} {
 		if runtime.GOOS == "windows" {
@@ -317,14 +357,20 @@ func TestStewardRolloutRunsSCPFromPath(t *testing.T) {
 		}
 		copyFile(t, self, filepath.Join(bin, name))
 	}
+	cfg, private := writeStewardConfig(t, "schema_version = 1\n")
+	if out, err := exec.Command(git, "init", "-q", private).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
 	log := filepath.Join(t.TempDir(), "scp.log")
-	t.Setenv("PATH", bin)
+	// The real git checks the private config checkout. Its own directory goes on PATH after the stubs, so the stub
+	// scp and ssh still come first; a symbolic link to git would not run on Windows, where Git for Windows finds its
+	// installation from the executable's path.
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+filepath.Dir(git))
 	t.Setenv(scpStubEnv, log)
 
 	app := New()
 	var stdout, stderr bytes.Buffer
 	app.Stdout, app.Stderr = &stdout, &stderr
-	cfg := writeStewardConfig(t, "schema_version = 1\n")
 	if code := app.Run([]string{"steward", "rollout", "--config", cfg, "--machine", "workstation", "--plan", filepath.Join(t.TempDir(), "plan"), "--dry-run"}); code != 1 {
 		t.Fatalf("dry run exit %d, want 1; stderr: %s", code, &stderr)
 	}

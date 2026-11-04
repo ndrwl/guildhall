@@ -75,8 +75,8 @@ func TestRolloutReloadAuthorizesTheEnrolledCopy(t *testing.T) {
 		t.Fatalf("mode after enrol = %+v", got)
 	}
 
-	cfg := writeStewardConfig(t, "schema_version = 1\n[managed.review_rule]\nvalue = \"two reviewers\"\npolicy = true\n")
-	app, stdout, stderr := newTestApp(nil, nil)
+	cfg, private := writeStewardConfig(t, "schema_version = 1\n[managed.review_rule]\nvalue = \"two reviewers\"\npolicy = true\n")
+	app, stdout, stderr := newTestApp(privateWorkTree(private))
 	app.Copier, app.Runner = fleet, fleet
 	plan := filepath.Join(t.TempDir(), "plan")
 	args := []string{"steward", "rollout", "--config", cfg, "--machine", "workstation", "--plan", plan}
