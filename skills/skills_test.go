@@ -884,6 +884,7 @@ var notAskedOfTheDirector = map[string]string{
 	"steward status":           "the Steward's command, not the Director's",
 	"steward approval request": "the Steward's command, not the Director's",
 	"steward collect":          "the Steward's command, not the Director's",
+	"steward takeover":         "the Steward's command, not the Director's",
 	"director collected":       "the Steward's collection runs it over SSH; the Director never marks its own items",
 	"render":                   "the engine renders every prompt",
 	"director turn-started":    "the runtime's hook runs it when a turn starts",

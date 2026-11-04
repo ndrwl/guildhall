@@ -303,6 +303,7 @@ Regenerate it with `go test ./internal/doccheck -run TestDecisionIndex -update`,
 - [Steward collection adds three fixed commands and marks items through an scp receipt](decisions/steward-collection-commands.md)
 - [The Steward runs only a fixed allow-list of Guildhall commands over ssh](decisions/steward-fixed-remote-commands.md)
 - [Steward rollouts copy files with scp and run no remote command](decisions/steward-rollouts-copy-with-scp.md)
+- [A Steward changes a machine only through the steps of a setup plan the Guildmaster approved](decisions/steward-setup-plans.md)
 
 ## Former names
 

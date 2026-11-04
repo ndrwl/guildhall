@@ -6,9 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
-	"slices"
 	"strings"
 	"time"
+
+	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
 // DefaultGuildhall is the program a remote command runs when the roster names no guildhall_path: guildhall,
@@ -20,7 +21,8 @@ var ErrNotAllowed = errors.New("not one of the fixed remote commands a Steward m
 
 // The fixed remote commands a Steward may run on an enrolled machine (docs/steward.md#remote-commands), as their
 // arguments after the Guildhall program and before the copy directory, which every one of them ends with.
-// Only these run: no other command, flag or argument can be passed.
+// An argument written argDir is a value: an absolute path in the restricted character set; one written argLabel is
+// a lowercase id (workflow.ValidID). Only these run: no other command, flag or argument can be passed.
 var allowedCommands = []struct {
 	args []string
 	// reserved names the follow-up that builds a command, which is refused until it is built.
@@ -41,6 +43,54 @@ var allowedCommands = []struct {
 	// messages receive takes the Steward message the Steward copied to MessageDropPath into the copy's inbox
 	// (docs/decisions/steward-messages-directors.md).
 	{args: []string{"messages", "receive", "--copy"}},
+	// The takeover commands of an approved setup plan (docs/decisions/steward-setup-plans.md): director status
+	// --json only reads; pause and resume move the copy's session; backup now and store export back its store up;
+	// director enrol records the copy's enrolment with this Steward.
+	{args: []string{"director", "status", "--json", "--copy"}},
+	{args: []string{"director", "pause", "--copy"}},
+	{args: []string{"director", "resume", "--copy"}},
+	{args: []string{"backup", "now", "--copy"}},
+	{args: []string{"store", "export", "--out", argDir, "--copy"}},
+	{args: []string{"director", "enrol", "--steward", argLabel, "--copy"}},
+}
+
+// Value placeholders of allowedCommands.
+const (
+	argDir   = "<dir>"
+	argLabel = "<label>"
+)
+
+// StatusCommand is the read-only remote command that prints the copy's status feed as JSON:
+// `<guildhall> director status --json --copy <copyDir>`.
+func StatusCommand(guildhall, copyDir string) []string {
+	return []string{guildhall, "director", "status", "--json", "--copy", copyDir}
+}
+
+// PauseCommand is `<guildhall> director pause --copy <copyDir>`: the copy's running session starts no new work.
+func PauseCommand(guildhall, copyDir string) []string {
+	return []string{guildhall, "director", "pause", "--copy", copyDir}
+}
+
+// ResumeCommand is `<guildhall> director resume --copy <copyDir>`: the copy's paused session runs again.
+func ResumeCommand(guildhall, copyDir string) []string {
+	return []string{guildhall, "director", "resume", "--copy", copyDir}
+}
+
+// BackupCommand is `<guildhall> backup now --copy <copyDir>`, for a copy whose config has a [backup] table.
+func BackupCommand(guildhall, copyDir string) []string {
+	return []string{guildhall, "backup", "now", "--copy", copyDir}
+}
+
+// ExportCommand is `<guildhall> store export --out <out> --copy <copyDir>`: the store's text export into the new
+// directory out on the machine.
+func ExportCommand(guildhall, out, copyDir string) []string {
+	return []string{guildhall, "store", "export", "--out", out, "--copy", copyDir}
+}
+
+// EnrolCommand is `<guildhall> director enrol --steward <label> --copy <copyDir>`: the copy records that the
+// Steward with label manages it, with the digest of its managed.toml, which enrolment never authorizes.
+func EnrolCommand(guildhall, label, copyDir string) []string {
+	return []string{guildhall, "director", "enrol", "--steward", label, "--copy", copyDir}
 }
 
 // CollectReceiptPath is where, relative to a Director copy's directory, the Steward copies the receipt that
@@ -87,7 +137,7 @@ func CheckCommand(argv []string) error {
 		return fmt.Errorf("%w: program %q must be %s or an absolute guildhall_path", ErrNotAllowed, argv[0], DefaultGuildhall)
 	}
 	for _, c := range allowedCommands {
-		if len(argv) != len(c.args)+2 || !slices.Equal(argv[1:len(argv)-1], c.args) {
+		if len(argv) != len(c.args)+2 || !matchArgs(c.args, argv[1:len(argv)-1]) {
 			continue
 		}
 		if c.reserved != "" {
@@ -101,6 +151,31 @@ func CheckCommand(argv []string) error {
 	return fmt.Errorf("%w: %q", ErrNotAllowed, argv[1:])
 }
 
+// matchArgs reports whether args fit pattern: each fixed word equal, each argDir an absolute file path and each
+// argLabel a lowercase id, all in the restricted character set.
+func matchArgs(pattern, args []string) bool {
+	if len(pattern) != len(args) {
+		return false
+	}
+	for i, p := range pattern {
+		switch p {
+		case argDir:
+			if !validFile(args[i]) {
+				return false
+			}
+		case argLabel:
+			if !workflow.ValidID(args[i]) {
+				return false
+			}
+		default:
+			if args[i] != p {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // validFile reports whether path is an absolute file path, POSIX or Windows, in the restricted character set.
 func validFile(path string) bool {
 	return validDir(posixDirPattern, path) || validDir(windowsDirPattern, path)
@@ -108,7 +183,8 @@ func validFile(path string) bool {
 
 // Runner runs the fixed remote commands on enrolled machines: `config reload` after a rollout publishes a copy's
 // managed.toml, the read-only `director mode --json`, collection's read-only pending lists and
-// `director collected`, and `messages receive` after Deliver copies a Steward message. SSH is the ssh implementation and stewardtest.Fleet an
+// `director collected`, `messages receive` after Deliver copies a Steward message, and an approved takeover's
+// status, pause, resume, backup, export and enrol. SSH is the ssh implementation and stewardtest.Fleet an
 // in-memory one; both pass stewardtest.RunRunnerContract.
 //
 // Run refuses an alias and argv that CheckRun refuses, with an error wrapping ErrNotAllowed, and runs nothing. Otherwise it runs argv as one fixed command on the machine

@@ -8,7 +8,7 @@ description: Use as the Steward when a Steward session starts and its first mess
 A new Steward session starts `recovering`: it starts no new work until you say it is ready.
 The first message names the numbered session's `startup.md`; use that exact path.
 In Claude Code the first message is `/version startup "<path>"`: reply first with only the version output, as that command says, then read `startup.md` at that path.
-It holds your live notes under `## Notes`, if any, and the in-flight items: each rollout approval waiting for the Guildmaster, each one they approved, and each triage decision waiting for them.
+It holds your live notes under `## Notes`, if any, and the in-flight items: each rollout or setup approval waiting for the Guildmaster, each one they approved, and each triage decision waiting for them.
 
 ## Steps
 
@@ -18,6 +18,7 @@ It holds your live notes under `## Notes`, if any, and the in-flight items: each
 4. Work each in-flight item in order:
    - a rollout approval that waits for the Guildmaster: tell them which plan it is and what it changes, and wait for their answer;
    - a rollout plan the Guildmaster approved: apply it with `guildhall-steward-rollout` unless `guildhall steward status` shows its receipt;
+   - a setup approval that waits for the Guildmaster, or a takeover plan they approved: work it with `guildhall-steward-setup`, which applies an approved plan again until it is done;
    - a triage decision that waits for the Guildmaster: present it with `guildhall-steward-triage`.
 5. Read your inbox with `guildhall messages list steward`, handle each message in order and acknowledge it with `guildhall messages ack steward <id>`.
 6. When nothing in flight is yours to act on now, run `guildhall steward ready`.

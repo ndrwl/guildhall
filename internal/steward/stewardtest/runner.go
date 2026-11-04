@@ -70,6 +70,24 @@ func RunRunnerContract(t *testing.T, newHarness func(t *testing.T) RunnerHarness
 				t.Errorf("%s ran %q, want exactly %q", Bravo, got, argv)
 			}
 		}},
+		{"the takeover commands and their values reach the machine unchanged", func(t *testing.T, h RunnerHarness) {
+			cmds := [][]string{
+				steward.StatusCommand(steward.DefaultGuildhall, posixCopy),
+				steward.PauseCommand(steward.DefaultGuildhall, posixCopy),
+				steward.ResumeCommand(steward.DefaultGuildhall, posixCopy),
+				steward.BackupCommand(steward.DefaultGuildhall, posixCopy),
+				steward.ExportCommand(steward.DefaultGuildhall, posixCopy+"/state/steward/takeover/plan-1", posixCopy),
+				steward.EnrolCommand(steward.DefaultGuildhall, "steward", posixCopy),
+			}
+			for _, argv := range cmds {
+				if _, err := h.Runner().Run(context.Background(), Alpha, argv); err != nil {
+					t.Fatalf("Run %q: %v", argv, err)
+				}
+			}
+			if got := h.Ran(t, Alpha); !slices.EqualFunc(got, cmds, slices.Equal) {
+				t.Errorf("%s ran %q, want exactly %q", Alpha, got, cmds)
+			}
+		}},
 		{"commands outside the allow-list are refused and run nothing", func(t *testing.T, h RunnerHarness) {
 			for _, argv := range [][]string{
 				nil,
@@ -93,6 +111,13 @@ func RunRunnerContract(t *testing.T, newHarness func(t *testing.T) RunnerHarness
 				{steward.DefaultGuildhall, "messages", "receive", "-", "--copy", posixCopy},
 				{steward.DefaultGuildhall, "messages", "send", "--copy", posixCopy},
 				{steward.DefaultGuildhall, "messages", "receive", "--copy", posixCopy + "/state/steward/message.json;id"},
+				{steward.DefaultGuildhall, "director", "enrol", "--steward", "s;id", "--copy", posixCopy},
+				{steward.DefaultGuildhall, "director", "enrol", "--copy", posixCopy},
+				{steward.DefaultGuildhall, "store", "export", "--out", "out", "--copy", posixCopy},
+				{steward.DefaultGuildhall, "store", "export", "--out", posixCopy + "/x y", "--copy", posixCopy},
+				{steward.DefaultGuildhall, "director", "stop", "--copy", posixCopy},
+				{steward.DefaultGuildhall, "director", "status", "--copy", posixCopy},
+				{steward.DefaultGuildhall, "backup", "restore", "--copy", posixCopy},
 			} {
 				if _, err := h.Runner().Run(context.Background(), Alpha, argv); !errors.Is(err, steward.ErrNotAllowed) {
 					t.Errorf("Run %q: error %v, want steward.ErrNotAllowed", argv, err)

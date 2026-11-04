@@ -2,7 +2,7 @@
 
 The Steward looks after the guild's Director copies across its machines: it owns the roster and rolls out managed settings to enrolled Director copies over SSH (R1.7, R1.8, R1.31).
 It runs as the **Steward session**, a long-running agent session the Guildhall binary starts and supervises the same way it supervises a Director, and only the Guildmaster talks to it: no Director reaches its inbox.
-This page describes the Steward session, what `guildhall steward rollout` and `guildhall steward collect` do today and what is planned.
+This page describes the Steward session, what `guildhall steward rollout`, `guildhall steward collect` and `guildhall steward takeover` do today and what is planned.
 
 No Director feature requires a Steward.
 A standalone copy, one with no `managed.toml` and no enrolment, starts and behaves exactly as it does without one ([standalone and managed Directors](director-modes.md)).
@@ -102,7 +102,7 @@ A message wakes the Steward session as a Director's wakes a Director ([waking th
 guildhall steward status [--copy <dir>]
 ```
 
-`steward status` prints one JSON document: the newest Steward session, every roster machine with its SSH alias, OS and Director copies, each copy's last rollout from the newest receipt under the copy's `rollouts/`, and every rollout approval with its state, `waiting`, `approved`, `declined` or `void`.
+`steward status` prints one JSON document: the newest Steward session, every roster machine with its SSH alias, OS and Director copies, each copy's last rollout from the newest receipt under the copy's `rollouts/`, and every rollout and setup plan approval with its state, `waiting`, `approved`, `declined` or `void`.
 Each copy also has its `mode`, read with the fixed, read-only [remote command](#remote-commands) `director mode --json` over SSH: the copy's mode name, the Steward it is enrolled with, its `managed.toml` digest, whether the copy's own store authorizes that digest, any refusal, and any `untrusted` digest waiting for the Guildmaster's answer on that copy.
 A copy whose mode cannot be read, because its machine is unreachable, `ssh` is missing or its `guildhall` is too old to know `director mode`, has no `mode`, a `problem` saying why, and a line in `problems`; the command still succeeds.
 Nothing else reaches a Director, and status changes nothing.
@@ -120,6 +120,7 @@ guildhall decide answer --copy <dir> --repo steward --task rollouts --decision r
 `steward approval request` opens, once, the approval decision `rollout-<first 12 hex digits of the digest>` of the reserved task `steward/rollouts`, bound to the plan digest, with the options `approve` and `decline`, and prints it with the command the Guildmaster answers it with.
 Only the Guildmaster answers it, outside any session: `decide answer` refuses it from inside one.
 An answer of `approve` lets the session apply that one plan with `--approve`; `decline`, or a plan with another digest, does not.
+A [takeover](#takeover) plan is approved the same way: `steward approval request --plan <dir>` sees it is a setup plan and opens `setup-<first 12 hex digits>` on the reserved task `steward/setup` instead, which `decide answer` likewise refuses from inside a session, and every takeover needs it.
 Outside any session, `--approve` stands on the Guildmaster's word as before, and the plan and apply digests, the lock, the receipts, the [managed publication](decisions/managed-publication-separate-from-director-config.md) rule and the refusal of changed copies are unchanged.
 
 ### Moving the Steward to another host
@@ -134,8 +135,8 @@ The Steward copy is self-contained, so moving it, such as from a laptop to a Lin
 ## Enrolment comes first
 
 A rollout only reaches machines and Director copies that are already in the roster.
-Enrolment, creating the machine's Guildhall account, SSH setup, host-key trust, Claude and forge sign-in and administrator steps belong to the setup wizard (R1.43-R1.51), which is not implemented yet; its sign-in step is built as the standalone [`guildhall signin`](signin.md), which checks, guides and verifies each runtime's sign-in on the machine it runs on.
-Until then the roster is written by hand in the private config directory.
+An existing Director copy is brought into the roster by a [takeover](#takeover), or by hand ([managing a Director copy](#managing-a-director-copy)).
+Creating the machine's Guildhall account, SSH setup, host-key trust, Claude and forge sign-in and administrator steps belong to the setup wizard (R1.43-R1.51), which is not implemented yet; its sign-in step is built as the standalone [`guildhall signin`](signin.md), which checks, guides and verifies each runtime's sign-in on the machine it runs on.
 A rollout never adds a machine, account, Director or repository to the roster, never creates a Director copy and never asks for or stores a credential.
 
 Once a copy is enrolled, a routine rollout runs without repeating setup.
@@ -293,8 +294,10 @@ The allow-list is exactly ([decision](decisions/steward-fixed-remote-commands.md
 - `lesson list --json --pending --copy <copy_dir>` and `incident list --json --pending --copy <copy_dir>`, which only read the copy's items not yet [collected](#collection);
 - `director collected --copy <copy_dir>`, which marks the items of the receipt collection copied to the copy as collected;
 - `messages receive --copy <copy_dir>`, which receives the [Steward message](#steward-messages) copied to the copy's drop file ([decision](decisions/steward-messages-directors.md));
-- `director reload --copy <copy_dir>`, reserved for [release upgrades](releases.md#guildhall-director-reload) and refused until that is built.
+- `director reload --copy <copy_dir>`, reserved for [release upgrades](releases.md#guildhall-director-reload) and refused until that is built;
+- for an approved [takeover](#takeover) only ([decision](decisions/steward-setup-plans.md)): `director status --json --copy <copy_dir>`, which only reads; `director pause --copy <copy_dir>` and `director resume --copy <copy_dir>`; `backup now --copy <copy_dir>` and `store export --out <dir> --copy <copy_dir>`; and `director enrol --steward <label> --copy <copy_dir>`.
 
+A value other than the copy directory is held to the same rule: `--out` takes an absolute path in the restricted character set and `--steward` a lowercase id.
 Any other command, flag or argument is refused before `ssh` runs, and so is an alias that is not a plain roster alias.
 `ssh` joins the arguments with spaces for the remote side, which then parses them again, through `cmd.exe` or PowerShell on a Windows OpenSSH server and a POSIX shell elsewhere; every value is restricted to letters, digits, `.`, `_`, `-`, `/` and a drive's `:`, which all of them read the same way, so nothing is quoted.
 Each `ssh` run is bounded by a two-minute timeout and is cancelled as `scp` is, killing its process group on Unix and its process elsewhere.
@@ -358,10 +361,59 @@ A delivery that fails, such as an unreachable or sleeping machine or a `guildhal
 `state/steward/` is made by the copy's `director enrol`, `config reload` and pending lists, since `scp` makes no directory.
 A copy that is not in the roster, standalone or removed, gets no Steward message.
 
+## Takeover
+
+```sh
+guildhall steward takeover --config <steward.toml> --machine <label> --director <name> --copy <dir> [--ssh-alias <alias>] --plan <dir> --dry-run
+guildhall steward approval request --plan <dir> [--copy <steward copy>]
+guildhall steward takeover --config <steward.toml> --plan <dir> --apply --approve <plan digest>
+guildhall steward takeover --config <steward.toml> --plan <dir> --abandon
+```
+
+A takeover adopts an existing standalone Director copy into the roster as managed by this Steward, keeping its store, tasks, decisions and local settings ([decision](decisions/steward-setup-plans.md)).
+It is built for Linux machines; native Windows comes later.
+
+**Dry run.** The dry run reads the copy with `scp` and the read-only [remote commands](#remote-commands): its `config.toml`, its mode, which must be `standalone` with no `managed.toml`, and its session.
+It refuses, changing nothing, a copy that is not a director copy named `--director`, has inline `[managed]` settings or a repository whose `owner_machine` is not `--machine`, and a Director or copy directory the roster already lists.
+`--machine` is a roster label; a machine not yet in the roster needs `--ssh-alias`, and is proposed as a new `linux` machine with the `director` role.
+It writes `plan.json`, a `guildhall.setup-plan/1` document, and `files/managed.toml` into the plan directory, and prints the copy, the roster diff and each step with its command.
+The first `managed.toml` has no managed key, so the copy's effective settings do not change; later rollouts bring the Steward's settings.
+The digest binds the copy's `config.toml`, its mode, the roster at the private config's `HEAD`, the planned file and every step, but not the session's state, which moves on its own; a dry run again into the same plan directory gives the same digest when nothing changed, and one whose apply has started is refused.
+
+**Approval.** Every takeover needs the Guildmaster's approval of its exact digest.
+`steward approval request --plan <dir>` opens the decision `setup-<first 12 hex digits>` on the reserved task `steward/setup`, which only the Guildmaster answers, outside any session; inside one, `--approve` stands only on their answer `approve` ([approval in a Steward session](#approval-in-a-steward-session)).
+`--apply` without `--approve` and the plan's digest refuses and runs no step.
+
+**Apply.** Apply holds `.rollout.lock` throughout and refuses with `busy` while it is held.
+The first apply plans again and refuses, running no step, unless the digest is the same, so a copy, roster or planned file that changed since the dry run stops it.
+It then runs the steps in order, each checking before it acts and verifying after:
+
+1. `pause`: a `running` session is paused with `director pause`, so it starts no new work; a session already paused, stopped or absent is left as it is, and a `recovering` or `stopping` one stops the apply until it settles.
+2. `drain`: `director status --json` must list no running attempt; while one runs, the apply ends `waiting drain` and is run again later.
+3. `backup`: `backup now` for a copy with a `[backup]` table, otherwise `store export --out <copy>/state/steward/takeover/<plan directory name>`.
+4. `managed`: the plan's `managed.toml` is copied beside `config.toml` with `scp` and read back.
+5. `enrol`: `director enrol --steward <[steward] name>`.
+6. `reload`: `config reload`, after which `director mode --json` must report the copy `managed`, by this Steward, with the published digest authorized.
+7. `resume`: `director resume`, only for a session the takeover paused.
+8. `roster`: the entry is added to `roster.toml` at the private config's `HEAD`, as text so comments and layout are kept, committed alone through a private index and pushed, as [collection](#collection) commits.
+
+The step log `steps.json` in the plan directory records each step's state, `started`, `done`, `waiting` or `failed`, with what it printed and found.
+It is written before a step acts and after it ends, so an apply killed at any point and run again resumes at the first step not done, and never acts again for a step done; a later apply checks only that the copy's `config.toml` is unchanged.
+`managed`, `enrol` and `reload` run back to back while the session is paused; a stop between them is repaired by applying again.
+Apply prints each step's record and ends with `done`, `waiting <step>: <why>` or `failed <step>: <diagnosis>`, and exits 0 only when done.
+Applying a finished plan checks that the copy is still managed and the roster still holds the entry, and changes nothing.
+
+**Abandon.** `--abandon` gives up a plan before its copy is changed: it resumes a session the takeover paused and marks the plan abandoned, so it never applies.
+Once the `managed` step has run it refuses, since the copy may hold the plan's `managed.toml`; such a plan is finished with `--apply`.
+
+**Failures.** A takeover never deletes or overwrites a store, a copy or a file it did not create.
+When a step fails, the Steward reads the step log and the command's diagnostic, tells the Guildmaster what is wrong, and may apply the same plan again once it is fixed; any other fix is a new dry run, approved again.
+
 ## Managing a Director copy
 
-A Director copy is standalone until the Guildmaster enrols it; a rollout reaches only its `managed.toml` and never enrols it ([standalone and managed Directors](director-modes.md)).
-To bring a copy under this Steward:
+A Director copy is standalone until it is enrolled; a rollout reaches only its `managed.toml` and never enrols it ([standalone and managed Directors](director-modes.md)).
+A [takeover](#takeover) brings a running copy under this Steward in one approved plan.
+To do it by hand instead:
 
 1. Add the machine and the copy to `roster.toml`, with `guildhall_path` if `guildhall` is not on the account's `PATH`.
 2. On the Director's machine, copy [`examples/managed.toml`](../examples/managed.toml) beside the copy's `config.toml`, as its first `managed.toml`.
@@ -387,7 +439,8 @@ A revision naming a `release` moves the copy's pin at its reload, and active tas
 - The rest of R1.31, the release pin and side-by-side release installs designed in [release upgrades](releases.md): the Guildhall home, `guildhall release install` and `status`, the pin, `guildhall release use` and `adopt`, the PATH launcher, tasks recording and running on their release, a standalone copy's `guildhall release rollback` and `release prune`, and the managed pin, `release` and `release_sha256` in `managed.toml` applied by `config reload`, are [built](releases.md#built-so-far). A rollout of a new `release` changes the pin once the release is installed or its binary is in the machine's `releases/.incoming/<version>/`; the rollout copying that binary itself and the remote `director reload` are not built yet.
 - `rollback`, which will restore a preserved revision for new tasks.
 - Tool installs (`guildhall steward install`, R1.7, R1.50) and audits (R1.32); learnings are [collected and triaged](#collection), and an adopted lesson ships by an ordinary rollout.
-- Enrolment through the setup wizard (R1.43-R1.51).
+- Provisioning a new Director copy, the setup engine and doctor, bootstrapping a bare machine, and takeover on native Windows: the later slices of guildhall/d128, under the same [setup plans](decisions/steward-setup-plans.md) (R1.43-R1.51).
+- The [takeover](#takeover)'s live acceptance, which the Guildmaster runs once on the laptop's WSL Director copy: CI runs it only on a stand-in fleet and a local copy.
 - Platform support: tests replace `scp` and `ssh` with stubs on Linux, Windows and macOS, and no platform is claimed as supported for rollouts until acceptance passes there (R1.27).
 - The Steward session's live acceptance: CI runs it against a stand-in runtime only, so it is not claimed until the Guildmaster has run it once with three Director hosts (R1.27, R1.30).
 - Collection's live acceptance, d96's, which the Guildmaster runs once after `guildhall/d124` merges: collection is claimed on Windows only once it passes there (R1.27, R1.30).

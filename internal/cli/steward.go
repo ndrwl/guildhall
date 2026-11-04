@@ -27,6 +27,9 @@ const stewardUsage = `Usage:
   guildhall steward collect [--machine <label>...] [--copy <dir>]
   guildhall steward rollout --config <steward.toml> --machine <label> [--machine <label>...] --plan <dir> --dry-run
   guildhall steward rollout --config <steward.toml> --machine <label> [--machine <label>...] --plan <dir> --apply [--approve <plan digest>]
+  guildhall steward takeover --config <steward.toml> --machine <label> --director <name> --copy <dir> [--ssh-alias <alias>] --plan <dir> --dry-run
+  guildhall steward takeover --config <steward.toml> --plan <dir> --apply --approve <plan digest>
+  guildhall steward takeover --config <steward.toml> --plan <dir> --abandon
 
 start runs the Steward session supervisor, as director start does for a Director; the other lifecycle commands
 mirror the Director's on the Steward copy's steward.store. status prints the session, the roster and each copy's
@@ -35,7 +38,9 @@ file previews to a new --plan directory and changes nothing. --apply carries out
 since; inside a Guildhall session, --approve needs the Guildmaster's answer "approve" to the plan's approval
 decision, which approval request opens. collect reads the lessons and incidents not yet collected from each enrolled
 Director copy, commits them to the private config, pushes it, marks them collected on the copy and opens a triage
-decision for each.
+decision for each. takeover adopts an existing standalone Director copy into the roster as managed, keeping its
+store: the dry run writes the plan, --apply runs it once the Guildmaster approved its digest, resuming at its first
+step not done, and --abandon gives it up before the copy is changed.
 `
 
 // scpTimeout bounds each scp run during a rollout.
@@ -63,10 +68,12 @@ func (a *App) steward(args []string) int {
 			return a.stewardApprovalCmd(args[1:])
 		case "collect":
 			return a.stewardCollectCmd(args[1:])
+		case "takeover":
+			return a.stewardTakeoverCmd(args[1:])
 		}
 	}
 	if len(args) == 0 || args[0] != "rollout" {
-		_, _ = fmt.Fprintf(a.Stderr, "guildhall: steward: the commands are start, ready, pause, resume, stop, reload, handoff, status, approval, collect and rollout\n\n%s", stewardUsage)
+		_, _ = fmt.Fprintf(a.Stderr, "guildhall: steward: the commands are start, ready, pause, resume, stop, reload, handoff, status, approval, collect, rollout and takeover\n\n%s", stewardUsage)
 		return 2
 	}
 	fs := flag.NewFlagSet("steward rollout", flag.ContinueOnError)
@@ -123,7 +130,7 @@ func (a *App) steward(args []string) int {
 	// the Guildmaster's recorded answer to the plan's approval decision (docs/steward.md#approval-in-a-steward-session).
 	if *approve != "" && a.inSession() {
 		storePath := filepath.Join(filepath.Dir(*cfgPath), stewardStoreFile)
-		ok, err := stewardApproved(storePath, *approve)
+		ok, err := stewardDecisionApproved(storePath, stewardRolloutsTask, approvalDecisionID(*approve), *approve)
 		if err != nil {
 			return a.fail(fmt.Errorf("steward rollout: %w", err))
 		}
