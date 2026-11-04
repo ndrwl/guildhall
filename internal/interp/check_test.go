@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/interp"
@@ -120,12 +121,12 @@ func TestCheckResultRefusesUnacknowledgedMessages(t *testing.T) {
 					e, _, _ := newSliceEnv(t, b, true, sliceScript(t, summarisedSpec)...)
 					e.advance(t, interp.Event{Kind: interp.TaskCreated})
 					to := store.Recipient{Role: store.RecipientArtisan, Repository: "app", TaskID: "t7", Step: "plan", Attempt: 1}
+					// The messages are sent before the result is published, so they count against it.
+					e.h.Clock.Set(steerTime)
 					for _, id := range []string{"steer-1", "steer-2"} {
-						if _, err := e.h.SendMessage(store.Message{ID: id, Recipient: store.RecipientArtisan, Repository: "app", TaskID: "t7",
-							Step: "plan", Attempt: 1, Type: "note", Text: "The base moved; rebase first.", Sender: store.SenderDirector}); err != nil {
-							t.Fatal(err)
-						}
+						steer(t, e, id)
 					}
+					publishedAt(t, e, steerTime.Add(time.Minute))
 					want := "unacknowledged steering messages to this attempt: steer-1, steer-2; read each with guildhall messages, acknowledge it with guildhall messages ack <id>, then submit again"
 					if ack {
 						for _, id := range []string{"steer-1", "steer-2"} {
@@ -153,6 +154,127 @@ func TestCheckResultRefusesUnacknowledgedMessages(t *testing.T) {
 					said.agrees(t, e, "plan", 1)
 				})
 			}
+		})
+	}
+}
+
+// steerTime is when the late-steering tests send their messages; they set the result file's publication time around it.
+var steerTime = time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+
+// steer sends the Director's steering message id to the plan step's attempt 1, at the records' clock.
+func steer(t *testing.T, e *env, id string) {
+	t.Helper()
+	if _, err := e.h.SendMessage(store.Message{ID: id, Recipient: store.RecipientArtisan, Repository: "app", TaskID: "t7",
+		Step: "plan", Attempt: 1, Type: "note", Text: "The base moved; rebase first.", Sender: store.SenderDirector}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// planResult is the path of the plan step's attempt 1 result file.
+func planResult(e *env) string {
+	return filepath.Join(e.eng.StateDir, "app", "t7", "plan-1", artisan.ResultFile)
+}
+
+// publishedAt sets the publication time, the modification time, of the plan step's attempt 1 result file.
+func publishedAt(t *testing.T, e *env, at time.Time) {
+	t.Helper()
+	if err := os.Chtimes(planResult(e), at, at); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// lateSteeringReports returns the texts of the Director's late-steering messages.
+func lateSteeringReports(t *testing.T, e *env) []string {
+	t.Helper()
+	var out []string
+	for id, text := range e.messages(t) {
+		if strings.Contains(id, ".late-steering.") {
+			out = append(out, text)
+		}
+	}
+	return out
+}
+
+// TestLateSteeringDoesNotFailAGoodResult: a steering message sent after the result was published does not count
+// against it. CheckResult accepts it, intake succeeds, the message stays unacknowledged, and the Director gets one
+// "arrived after the result" message naming it, which a replay does not send again.
+func TestLateSteeringDoesNotFailAGoodResult(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			e, _, _ := newSliceEnv(t, b, true, sliceScript(t, summarisedSpec)...)
+			e.advance(t, interp.Event{Kind: interp.TaskCreated})
+			publishedAt(t, e, steerTime)
+			e.h.Clock.Set(steerTime.Add(time.Second))
+			steer(t, e, "steer-late")
+			if said := checkBefore(t, e, "plan", 1); said == nil || said.reason != "" {
+				t.Fatalf("CheckResult said %+v, want the result accepted", said)
+			}
+			ev := interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1}
+			e.advance(t, ev)
+			for _, a := range e.attempts(t) {
+				if a.Step == "plan" && a.Number == 1 && (a.Outcome != store.AttemptSucceeded || a.IntakeRejection != "") {
+					t.Fatalf("plan attempt 1 = %s, rejection %q; want it succeeded", a.Outcome, a.IntakeRejection)
+				}
+			}
+			to := store.Recipient{Role: store.RecipientArtisan, Repository: "app", TaskID: "t7", Step: "plan", Attempt: 1}
+			if msgs, _, err := e.h.Records.Inbox(to, 0, 10); err != nil || len(msgs) != 1 || msgs[0].ID != "steer-late" {
+				t.Fatalf("attempt inbox = %+v, %v; want steer-late still unacknowledged", msgs, err)
+			}
+			reports := lateSteeringReports(t, e)
+			if len(reports) != 1 || !strings.Contains(reports[0], "steer-late") || !strings.Contains(reports[0], "arrived after the result") {
+				t.Fatalf("late-steering reports = %q, want one naming steer-late", reports)
+			}
+			if _, err := e.eng.Advance(context.Background(), interp.Event{Kind: ev.Kind, Repository: "app", Task: "t7", Step: "plan", Attempt: 1}); err != nil {
+				t.Logf("replayed advance = %v", err)
+			}
+			if again := lateSteeringReports(t, e); len(again) != 1 {
+				t.Fatalf("late-steering reports after a replay = %q, want the one", again)
+			}
+		})
+	}
+}
+
+// TestSteeringAtOrBeforeTheResultRefuses: a message sent at the result's publication time counts against it, and so
+// does any message while no result is published, as when `guildhall result submit` checks a draft.
+func TestSteeringAtOrBeforeTheResultRefuses(t *testing.T) {
+	const reason = "unacknowledged steering message to this attempt: steer-1; read each with guildhall messages, acknowledge it with guildhall messages ack <id>, then submit again"
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			t.Run("sent at the cutoff", func(t *testing.T) {
+				e, _, _ := newSliceEnv(t, b, true, sliceScript(t, summarisedSpec)...)
+				e.advance(t, interp.Event{Kind: interp.TaskCreated})
+				e.h.Clock.Set(steerTime)
+				steer(t, e, "steer-1")
+				publishedAt(t, e, steerTime)
+				said := checkBefore(t, e, "plan", 1)
+				if said == nil || said.reason != reason {
+					t.Fatalf("CheckResult said %+v, want %q", said, reason)
+				}
+				e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1})
+				said.agrees(t, e, "plan", 1)
+				if reports := lateSteeringReports(t, e); len(reports) != 0 {
+					t.Fatalf("late-steering reports = %q, want none", reports)
+				}
+			})
+			t.Run("no result published", func(t *testing.T) {
+				e, _, _ := newSliceEnv(t, b, true, sliceScript(t, summarisedSpec)...)
+				e.advance(t, interp.Event{Kind: interp.TaskCreated})
+				publishedAt(t, e, steerTime)
+				data, err := os.ReadFile(planResult(e))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(planResult(e)); err != nil {
+					t.Fatal(err)
+				}
+				e.h.Clock.Set(steerTime.Add(time.Hour))
+				steer(t, e, "steer-1")
+				var rejection *interp.Rejection
+				err = e.eng.CheckResult(context.Background(), artisan.AttemptKey{Repository: "app", TaskID: "t7", Step: "plan", Attempt: 1}, data)
+				if !errors.As(err, &rejection) || rejection.Reason != reason || !rejection.Unacknowledged {
+					t.Fatalf("CheckResult = %v, want %q", err, reason)
+				}
+			})
 		})
 	}
 }

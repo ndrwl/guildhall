@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	bolt "go.etcd.io/bbolt"
 
@@ -106,6 +107,9 @@ type Message struct {
 	Sender string `json:"sender,omitempty"`
 	// Sequence is set by the store to the send receipt's sequence.
 	Sequence uint64 `json:"sequence"`
+	// SentAt is set by the store to the send receipt's commit time, and like Sequence is not part of the request.
+	// A message stored before send times were recorded reads as the zero time.
+	SentAt time.Time `json:"sent_at,omitzero"`
 	// Acknowledged is set by AckMessage. It means the recipient consumed the
 	// message, not that any work it mentions succeeded.
 	Acknowledged bool `json:"acknowledged"`
@@ -218,7 +222,9 @@ func (s *Store) SendMessageSaying(m Message, say *Saying) (Receipt, error) {
 		if err != nil {
 			return err
 		}
-		m.Sequence = r.Sequence
+		// The send time is the receipt's commit time, set here so the two agree.
+		r.CommittedAt = s.now().UTC()
+		m.Sequence, m.SentAt = r.Sequence, r.CommittedAt
 		if err := inbox.Put(inboxKey(m.To(), m.Sequence), []byte(m.ID)); err != nil {
 			return err
 		}
@@ -446,8 +452,8 @@ func ValidateMessage(m Message) error {
 	if m.Sender != "" && !slices.Contains(MessageSenders, m.Sender) {
 		return invalid("message sender %q must be one of %s", m.Sender, strings.Join(MessageSenders, ", "))
 	}
-	if m.Sequence != 0 || m.Acknowledged {
-		return invalid("a new message has no sequence and is not acknowledged")
+	if m.Sequence != 0 || !m.SentAt.IsZero() || m.Acknowledged {
+		return invalid("a new message has no sequence or send time and is not acknowledged")
 	}
 	return nil
 }

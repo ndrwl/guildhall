@@ -579,9 +579,13 @@ const (
 	MessageJudgement        = "judgement"
 	MessageJudgementRefused = "judgement-refused"
 	MessageLoopExitRejected = "loop-exit-rejected"
-	MessageMergeHeld        = "merge-held"
-	MessageMergeRefused     = "merge-refused"
-	MessageMerged           = "merged"
+	// MessageLateSteering: intake took a succeeded result whose attempt was sent steering messages after its result
+	// was published; the Artisan never read them and they did not count against the result
+	// (docs/messaging.md#steering-an-attempt).
+	MessageLateSteering = "late-steering"
+	MessageMergeHeld    = "merge-held"
+	MessageMergeRefused = "merge-refused"
+	MessageMerged       = "merged"
 	// MessageSliceDelivered: the Director closed a multi-PR task's slice as already delivered by an earlier slice or a
 	// merged pull request (`guildhall slice delivered`); no code merged, so it is never a merged message and counts
 	// toward no maintenance cadence.
@@ -635,8 +639,8 @@ var MessageTypes = map[string]string{
 	MessageMergeRefused: "engine", MessageMerged: "engine", MessageSliceDelivered: "engine", MessageFinished: "engine", MessagePublished: "engine", MessageStall: "engine",
 	MessageWorkerStalled: "engine and launcher", MessageWorkspaceKept: "engine",
 	MessageMergeQueued: "engine", MessageRebased: "engine", MessageRebaseEscalated: "engine", MessageRebaseStuck: "engine",
-	MessageApprovalCarried: "engine",
-	MessageQuestion:        "local", MessageNote: "local",
+	MessageApprovalCarried: "engine", MessageLateSteering: "engine",
+	MessageQuestion: "local", MessageNote: "local",
 	MessageJudgeFailed: "quality", MessageJudgement: "quality", MessageJudgementRefused: "quality",
 	MessageHerdrLeftOpen: "supervisor", MessagePruneKept: "supervisor", MessageHoldReleased: "supervisor",
 	MessageTriageOpened:        "supervisor",

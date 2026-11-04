@@ -1132,7 +1132,8 @@ func (r *Records) SendMessage(m store.Message) (store.Receipt, error) {
 		if slices.ContainsFunc(r.messages, func(o store.Message) bool { return o.ID == m.ID }) {
 			return fmt.Errorf("%w: message %q", store.ErrExists, m.ID)
 		}
-		m.Sequence = rc.Sequence
+		rc.CommittedAt = r.now()
+		m.Sequence, m.SentAt = rc.Sequence, rc.CommittedAt
 		r.messages = append(r.messages, m)
 		return nil
 	})
