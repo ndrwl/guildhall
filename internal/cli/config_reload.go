@@ -35,6 +35,10 @@ func (a *App) configReload(args []string) int {
 		return code
 	}
 	fail := func(format string, args ...any) int { return a.fail(fmt.Errorf(name+": "+format, args...)) }
+	// A rollout's reload makes the directory a Steward copies its messages into, since scp creates none.
+	if err := ensureReceiptDir(storePath); err != nil {
+		return fail("%w", err)
+	}
 	f, err := readCopyFiles(cfgPath)
 	if err != nil {
 		return fail("%w", err)

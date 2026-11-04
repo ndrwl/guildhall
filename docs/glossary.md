@@ -111,7 +111,15 @@ A finished outcome without a readable result is refused, not guessed.
 - The **dependency gate** stands before a task's first step not run by the Director, such as research after the grill: it passes once every dependency is `done` (merged), or the Director overrides ([the dependency gate](interpreter.md#the-dependency-gate)).
 - A task **held by a dependency** is one the gate holds: its last advance recorded nothing and waits `{"wait":"dependencies"}`, the Director has a `dependency-held` message and `director status` a `dependencies` item.
 - A **dependency override** is the Director's recorded decision, with a reason, to start a held task anyway, `task start --ignore-deps --reason <text>`; it lasts for the rest of the task's life ([`task start`](running.md#task-start)).
-- None of these is the `dependency-notice`, a designed message type between Directors ([Director messaging](messaging.md#message-types)).
+- None of these is the `dependency-notice`, a designed message type between Directors ([Director messaging](messaging.md#message-types)), nor a [Steward message](#steward-message).
+
+## Steward message
+
+- A **Steward message** is a `steward-report` the Steward's supervisor sends an enrolled Director about an issue it found, such as a failed rollout; it informs only and is never a command, dispatch or a push of configuration ([Steward messages](messaging.md#steward-messages), [decision](decisions/steward-messages-directors.md)).
+  Avoid "command" and "instruction" for it.
+- An **external message** is a message from outside the copy's own processes, kept by sender and id outside any repository; a Steward message is the only one built.
+- A **closed inbox** is a Director's inbox refusing one sender's new messages until the Guildmaster answers its alert `reopen` ([closing the inbox](messaging.md#closing-the-inbox-to-a-sender)).
+- The **outbox** is a sender's record of each message it sends: `pending`, then `delivered` or `refused` ([the outbox](messaging.md#the-outbox)).
 
 ## Design round
 

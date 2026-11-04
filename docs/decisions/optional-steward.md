@@ -3,6 +3,7 @@ status: designed
 date: 2026-10-21
 topic: steward
 amends: steward-rollouts-copy-with-scp.md
+amended-by: steward-messages-directors.md
 formerly: D50, 0050-optional-steward.md
 ---
 
@@ -20,7 +21,7 @@ The mode is a store fact recorded by explicit `enrol` and `leave` commands, not 
 Legacy inline `[managed]` settings are refused with guidance to move them to checksum-bearing `managed.toml`, and a copy with that file but no enrolment record must explicitly enrol.
 Guard rails are enforced by the binary in both modes: standalone takes them from local config; managed lets `managed.toml` win for managed keys, which the Director never writes.
 Leaving keeps the last managed values as local values, so leaving never loosens a guard rail silently.
-The Steward acts by command: rollout copies stay `scp`, followed by `guildhall config reload` over SSH to validate and record authorization for the rollout digest in the receiving store.
+The Steward acts by command, and informs by message ([Steward messages](steward-messages-directors.md)): rollout copies stay `scp`, followed by `guildhall config reload` over SSH to validate and record authorization for the rollout digest in the receiving store.
 A digest with no receiving-store rollout, reload or explicit Guildmaster approval is recorded as `observed-untrusted`, raises a system alert and is not applied; a checksum, enrolment, or a receipt held only on the Steward does not authorize it.
 Active tasks retain their bound configuration, and commands needing effective settings refuse an untrusted on-disk revision.
 Lessons are recorded locally in both modes and collected by the Steward on request when managed, so the Director never reaches the Steward or the private repository (R1.8).

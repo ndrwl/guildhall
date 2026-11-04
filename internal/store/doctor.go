@@ -117,6 +117,10 @@ func (s *Store) Doctor() (Report, error) {
 			{bucketLessons, &rep.Lessons, func() any { return new(Lesson) }},
 			{bucketIncidents, &rep.Incidents, func() any { return new(Incident) }},
 			{bucketIncidentObservations, &rep.IncidentObservations, func() any { return new(IncidentObservation) }},
+			{bucketExternal, nil, func() any { return new(ExternalMessage) }},
+			{bucketInboxStates, nil, func() any { return new(InboxState) }},
+			{bucketOutbox, nil, func() any { return new(OutboxEntry) }},
+			{bucketCopyReach, nil, func() any { return new(CopyReach) }},
 		} {
 			if b := directorBucket(tx, d.name); b != nil {
 				_ = b.ForEach(func(k, v []byte) error {

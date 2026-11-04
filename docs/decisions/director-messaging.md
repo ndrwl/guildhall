@@ -2,6 +2,7 @@
 status: designed
 date: 2026-10-21
 topic: messaging
+amended-by: steward-messages-directors.md
 formerly: D49, 0049-director-messaging.md
 ---
 
@@ -15,7 +16,8 @@ This is designed, not built; [Director messaging](../messaging.md#director-messa
 
 ## Decision
 
-The inbox has two external sender types, `guildmaster` and `director`; the Steward never messages and acts by command, and each managed revision it causes is a store event, not a message, so a Director's inbox holds only things the Director must judge.
+The inbox has two external sender types, `guildmaster` and `director`; the Steward changes a Director by command, and each managed revision it causes is a store event, not a message, so a Director's inbox holds only things the Director must judge.
+[Steward messages](steward-messages-directors.md) amend this: the Steward also informs an enrolled Director of issues it finds with a `steward-report`, which is built.
 Messages inform only: a Director message may at most be filed as a ticket that opens a Guildmaster decision, so no Director starts work in another's repositories without the Guildmaster's answer.
 Messages are typed (`handoff-offer`, `dependency-notice`, `question`, `answer`) under a new envelope schema, leaving `guildhall.message/1` unchanged.
 Waking is per sender type: the Guildmaster always wakes, Director messages draw on one wake budget with backoff, and the wake line carries counts only, so no sender types into a Director's session.

@@ -318,13 +318,22 @@ func (sc *scheduledCollect) run() {
 	ctx, cancel := context.WithTimeout(context.Background(), collectTimeout)
 	defer cancel()
 	round, err := sc.a.runCollect(ctx, c, sc.storePath, nil)
-	if errors.Is(err, steward.ErrBusy) {
-		return
-	}
-	if err != nil {
+	busy := errors.Is(err, steward.ErrBusy)
+	if err != nil && !busy {
 		sc.warn("%v", err)
 	}
-	if round == nil {
+	// Steward messages follow the round, even one a busy lock skipped, whose copies then record no reach: the reports
+	// the run finds, and every pending one.
+	reached := round
+	if busy {
+		reached = nil
+	}
+	for _, p := range sc.a.runStewardMessages(ctx, c, sc.cfg, sc.storePath, reached) {
+		if sc.stderr != nil {
+			_, _ = fmt.Fprintf(sc.stderr, "guildhall: steward messages: %s\n", p)
+		}
+	}
+	if busy || round == nil {
 		return
 	}
 	for _, cc := range round.Copies {

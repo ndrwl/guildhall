@@ -13,6 +13,7 @@ import (
 	"slices"
 
 	"github.com/ndrwl/guildhall/internal/admit"
+	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
@@ -116,6 +117,11 @@ func (a *App) decide(args []string) int {
 			case stewardIncidentsTask, stewardLessonsTask:
 				return fail(fmt.Errorf("decision %s/%s/%s is the Guildmaster's triage, and only the Guildmaster answers it, outside any Guildhall session", *repo, *task, *id))
 			}
+		}
+		// An inbox alert is the Guildmaster's too: the Director that closed its inbox cannot reopen it on its own
+		// (docs/messaging.md#closing-the-inbox-to-a-sender).
+		if *repo == config.MessagesRepository && filepath.Base(*path) != stewardStoreFile && a.inSession() {
+			return fail(fmt.Errorf("decision %s/%s/%s is an inbox alert, and only the Guildmaster answers it, outside any Guildhall session", *repo, *task, *id))
 		}
 		var err error
 		if answer, err = a.readAnswer(*answerFile); err != nil {

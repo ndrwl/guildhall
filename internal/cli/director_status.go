@@ -238,7 +238,10 @@ func statusModeOf(cfgPath, storePath string, v store.ManagedView, alerts []store
 
 // reservedRepository reports whether repo is the Director store's reserved managed-mode repository, whose task task
 // listings, the status feed's tasks and prune leave out; its open decisions still reach needs_me.
-func reservedRepository(repo string) bool { return repo == admit.AlertRepository }
+// The messages repository's inbox alert tasks are reserved the same way (docs/messaging.md#closing-the-inbox-to-a-sender).
+func reservedRepository(repo string) bool {
+	return repo == admit.AlertRepository || repo == config.MessagesRepository
+}
 
 type statusTask struct {
 	Repository string            `json:"repository"`

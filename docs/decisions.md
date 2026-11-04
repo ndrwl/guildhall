@@ -286,6 +286,7 @@ Regenerate it with `go test ./internal/doccheck -run TestDecisionIndex -update`,
 - [The Guildmaster and other Directors send a Director typed messages over SSH, which inform but never start work](decisions/director-messaging.md) (designed, not built)
 - [Director and Artisan messages are records in the Director's store](decisions/local-messaging-in-the-store.md)
 - [One registry in the store lists the message types Guildhall sends, and the engine refuses any other](decisions/message-type-registry.md)
+- [The Steward tells an enrolled Director about issues it finds with a Steward message, which informs only](decisions/steward-messages-directors.md)
 
 ## Maintenance and hallmarks
 

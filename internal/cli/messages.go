@@ -9,6 +9,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -19,7 +21,16 @@ const messagesUsage = `usage:
   guildhall messages list --store <path> [--after <sequence>] [--limit <n>] <recipient>
   guildhall messages read --store <path> <message-id>
   guildhall messages ack --store <path> <recipient> <message-id>
+  guildhall messages list --store <path> --from <sender> [--after <sequence>] [--limit <n>]
+  guildhall messages read --store <path> --sender <sender> <message-id>
+  guildhall messages ack --store <path> --sender <sender> director <message-id>
+  guildhall messages summary [--copy <dir>]
+  guildhall messages receive --copy <dir>
+  guildhall messages inbox close --sender <sender> --reason <text> [--copy <dir>]
+  guildhall messages inbox open --sender <sender> [--copy <dir>]
+  guildhall messages outbox [--all] [--copy <dir>]
 a recipient is "director", "steward" (a Steward's store only, from the Guildmaster only) or "artisan:<repository>/<task>/<step>/<attempt>"
+an external sender is "steward": --from and --sender select external messages, which messages receive records
 --copy <dir>, or the copy found from the current directory, may stand in for --store and --config: the copy's director.store, or a Steward copy's steward.store, and config.toml`
 
 // messages runs a messages subcommand against an existing store and prints its result as one JSON document.
@@ -29,6 +40,16 @@ func (a *App) messages(args []string) int {
 		return a.messagesUsage("missing messages subcommand")
 	}
 	sub := args[0]
+	switch sub {
+	case "receive":
+		return a.messagesReceive(args[1:])
+	case "summary":
+		return a.messagesSummaryCmd(args[1:])
+	case "outbox":
+		return a.messagesOutboxCmd(args[1:])
+	case "inbox":
+		return a.messagesInboxCmd(args[1:])
+	}
 	flags := flag.NewFlagSet("messages "+sub, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	path := flags.String("store", "", "store file")
@@ -37,6 +58,8 @@ func (a *App) messages(args []string) int {
 	cp.register(flags)
 	after := flags.Uint64("after", 0, "list messages after this sequence")
 	limit := flags.Int("limit", 20, "list at most this many messages")
+	from := flags.String("from", "", "list the external messages from this sender")
+	sender := flags.String("sender", "", "the external sender of the message to read or acknowledge")
 	var want int
 	switch sub {
 	case "send", "ack":
@@ -51,6 +74,11 @@ func (a *App) messages(args []string) int {
 	}
 	set := map[string]bool{}
 	flags.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	// An external message is selected by its exact sender, never guessed: list --from, read and ack --sender.
+	external := set["from"] || set["sender"]
+	if sub == "list" && set["from"] {
+		want = 0
+	}
 	cerr := cp.apply(a, path, cfgPath, nil)
 	switch {
 	case cerr != nil:
@@ -65,6 +93,19 @@ func (a *App) messages(args []string) int {
 		return a.messagesUsage("--after and --limit apply only to messages list")
 	case sub != "send" && set["config"]:
 		return a.messagesUsage("--config applies only to messages send")
+	case set["from"] && sub != "list":
+		return a.messagesUsage("--from applies only to messages list; read and ack take --sender")
+	case set["sender"] && sub != "read" && sub != "ack":
+		return a.messagesUsage("--sender applies only to messages read and ack; list takes --from")
+	case external && !slices.Contains(store.ExternalSenders, *from+*sender):
+		return a.messagesUsage(fmt.Sprintf("an external sender is one of %s", strings.Join(store.ExternalSenders, ", ")))
+	case sub == "ack" && set["sender"] && flags.Arg(0) != string(store.RecipientDirector):
+		return a.messagesUsage(fmt.Sprintf("an external message is acknowledged by %q, not %q", store.RecipientDirector, flags.Arg(0)))
+	case external && filepath.Base(*path) == stewardStoreFile:
+		return a.messagesUsage(fmt.Sprintf("%s is the Steward's store, which has no external inbox", *path))
+	}
+	if external {
+		return a.messagesExternal(sub, *path, *from+*sender, *after, *limit, flags.Args())
 	}
 	pos := flags.Args()
 	var to store.Recipient
@@ -149,6 +190,31 @@ func (a *App) messages(args []string) int {
 		}
 	}
 	return 0
+}
+
+// messagesExternal runs list --from, read --sender and ack --sender on the external messages of the store at path,
+// from sender (docs/messaging.md#external-messages).
+func (a *App) messagesExternal(sub, path, sender string, after uint64, limit int, pos []string) int {
+	fail := func(err error) int {
+		_, _ = fmt.Fprintf(a.Stderr, "guildhall: messages %s: %v\n", sub, err)
+		return 1
+	}
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+		return fail(noStore(path))
+	}
+	out, err := withStoreClock(path, sub != "ack", a.Now, func(s *store.Store) (any, error) {
+		switch sub {
+		case "list":
+			return externalList(s, sender, after, limit)
+		case "read":
+			return s.External(sender, pos[0])
+		}
+		return s.AckExternal(sender, pos[1])
+	})
+	if err != nil {
+		return fail(err)
+	}
+	return a.printJSON(out)
 }
 
 // listedMessage is a listed message with the wake recorded for it, if any (docs/messaging.md#commands).

@@ -56,8 +56,8 @@ func (r RecipientRole) SessionInbox() bool { return r == RecipientDirector || r 
 // StewardSenders are the senders the Steward's inbox takes: the Guildmaster, and SenderDirector, the tag of the
 // scheduled collection round's report of the items it collected from Director copies (docs/steward.md#inbox). No
 // Director, other Director or Artisan reaches the inbox itself: `messages send` to it is the Guildmaster's only, and
-// only the Steward's own supervisor sends with the director tag. This list is where a later path, such as a
-// Steward-to-Director one, would add a sender.
+// only the Steward's own supervisor sends with the director tag. Steward messages go the other way, from the Steward
+// to a Director's external inbox (ExternalMessage), and add no sender here.
 var StewardSenders = []string{SenderGuildmaster, SenderDirector}
 
 // Recipient names one inbox.
@@ -125,7 +125,9 @@ const (
 )
 
 // MessageSenders is the fixed sender vocabulary; no other value is stored, so no free text reaches a sender.
-var MessageSenders = []string{SenderGuildhall, SenderArtisan, SenderDirector, SenderOtherDirector, SenderGuildmaster, SenderUnknown}
+// SenderSteward is recorded only by `messages receive` on an external message, never by `messages send`, whose
+// sender comes from its environment, so no local process becomes the Steward by setting a variable.
+var MessageSenders = []string{SenderGuildhall, SenderArtisan, SenderDirector, SenderOtherDirector, SenderGuildmaster, SenderSteward, SenderUnknown}
 
 // MessageSender returns m's sender, SenderUnknown for a message recorded with none.
 func MessageSender(m Message) string {

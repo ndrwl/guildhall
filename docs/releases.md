@@ -8,7 +8,7 @@ It implements R1.31: a release pin, side-by-side installs, new tasks only, and r
 The same rules as [standalone and managed Directors](director-modes.md) apply:
 
 - no feature requires a Steward: a standalone Director installs, pins, rolls back and prunes releases on its own;
-- the Steward acts by command over SSH and never messages a Director ([Director messaging](messaging.md#who-may-send));
+- the Steward changes a Director only by command over SSH; a [Steward message](messaging.md#steward-messages) informs the Director and changes nothing;
 - a managed pin the receiving store has not authorized is `observed-untrusted` and is not applied.
 
 ## What already holds
@@ -175,7 +175,8 @@ A task whose recorded release is missing, damaged or installed with another sha2
 
 ## How a running Director picks up a new release
 
-The Steward never tells the Director by message; it acts by command, in order:
+A [Steward message](messaging.md#steward-messages), such as a failed rollout's report, only informs the Director.
+The Steward moves it to a new release by command, in order:
 
 1. `scp` the new binary into `.incoming/<version>/` and the new `managed.toml` ([scp rollouts](decisions/steward-rollouts-copy-with-scp.md));
 2. `guildhall config reload --copy <dir>` over SSH, using recovery dispatch if the pin is absent or its executable is missing or damaged, which authorizes the revision, verifies an already installed target or runs `release install` from `.incoming/` against `release_sha256`, records `release-pin` in that copy's store and then writes that copy's pin;

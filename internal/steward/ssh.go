@@ -38,6 +38,9 @@ var allowedCommands = []struct {
 	{args: []string{"incident", "list", "--json", "--pending", "--copy"}},
 	// director collected marks the items of the receipt the Steward copied to CollectReceiptPath as collected.
 	{args: []string{"director", "collected", "--copy"}},
+	// messages receive takes the Steward message the Steward copied to MessageDropPath into the copy's inbox
+	// (docs/decisions/steward-messages-directors.md).
+	{args: []string{"messages", "receive", "--copy"}},
 }
 
 // CollectReceiptPath is where, relative to a Director copy's directory, the Steward copies the receipt that
@@ -104,8 +107,8 @@ func validFile(path string) bool {
 }
 
 // Runner runs the fixed remote commands on enrolled machines: `config reload` after a rollout publishes a copy's
-// managed.toml, the read-only `director mode --json`, and collection's read-only pending lists and
-// `director collected`. SSH is the ssh implementation and stewardtest.Fleet an
+// managed.toml, the read-only `director mode --json`, collection's read-only pending lists and
+// `director collected`, and `messages receive` after Deliver copies a Steward message. SSH is the ssh implementation and stewardtest.Fleet an
 // in-memory one; both pass stewardtest.RunRunnerContract.
 //
 // Run refuses an alias and argv that CheckRun refuses, with an error wrapping ErrNotAllowed, and runs nothing. Otherwise it runs argv as one fixed command on the machine

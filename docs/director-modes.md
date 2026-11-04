@@ -114,12 +114,16 @@ Both are idempotent through their mutation ids, and neither changes a task: task
 
 ## How the Steward acts
 
-The Steward never messages a Director ([Director messaging](messaging.md#who-may-send)); it acts by command over SSH:
+The Steward changes a Director only by command over SSH:
 
 1. it copies `managed.toml` as [rollouts](steward.md#apply) do today;
 2. it then runs `guildhall config reload --copy <dir>` on the copy with a fixed argument list.
 
 It reads lessons and incidents the same way, by [collection](steward.md#collection): the fixed read-only pending lists, then a receipt copied with `scp` and `guildhall director collected --copy <dir>`.
+
+It informs an enrolled Director of issues it finds, such as a failed rollout, with a [Steward message](messaging.md#steward-messages): an envelope copied with `scp` to the copy's drop file, then `guildhall messages receive --copy <dir>` ([decision](decisions/steward-messages-directors.md)).
+A Steward message informs only: it is not a command, dispatch or a push of configuration, and the Director acts on nothing it says without the Guildmaster.
+A standalone copy is not in the roster and gets none.
 
 `config reload` loads and validates the combined config, runs the migration and mode checks, and records a `managed-revision` event authorizing the rollout digest in the receiving store, with the new and previous digests and the source `reload`.
 A running Director applies the new revision at its next step boundary, for new tasks only (R1.31, R1.62); an active task keeps its bound configuration.
