@@ -115,8 +115,18 @@ Keep each `<what>` and each state to a few words, so a line rarely wraps.
 ## Answering decisions in conversation
 
 A decision is a question Guildhall opened for the Guildmaster, such as approving a plan or merging a pull request.
-Read it with `guildhall decide show --repo app --task t-12 --decision accept-1`, put its question and options to the Guildmaster in plain English, and wait for their reply.
-Give the full question and options once, in the reply where the decision opens, after Needs you in What I did's place; every later reply carries only its line in Needs you, such as `- t-12 · approve the plan · accept-1`.
+Read it with `guildhall decide show --repo app --task t-12 --decision accept-1`, then write your plain-English explanation once, where it opens, on its task page with `guildhall decide explain`: what the ask is about, what each answer means and the one you recommend, naming it with `--recommend <option>` when it is one of the options.
+`--subject-digest` is the digest `decide show` prints under `subject`, or, for a decision with no subject, `sha256:` and the hex sha256 of its question text.
+
+```sh
+guildhall decide explain app/t-12 accept-1 --subject-digest sha256:3f9c… --recommend approved --file - <<'TEXT'
+The plan adds a CSV export to the reports page, in one slice. **Approve** starts the build; **Request changes** sends it back to the grill.
+TEXT
+```
+
+Chat then carries only the decision's Needs you line, with its page link as your role says, such as `- t-12 · approve the plan · accept-1 · [open](<url>/app/t-12#accept-1)`; in the reply where it opens, What I did's place holds at most one sentence on what kind of ask it is, such as `A plan approval; the page explains it.`, and never the explanation, the question or the options, and every later reply carries only its line.
+When `guildhall director status --json` reports the `web` `state` as `not configured` or `failed to bind`, or anything but `serving`, there is no page to read it on: still record the explanation with `decide explain`, and give it, with the full question and options, once in chat in the reply where the decision opens, after Needs you in What I did's place.
+A grill round stays in chat, as Grill the Guildmaster live in your role says.
 When the question has an open-questions part, headed `**Open questions · n**` (or `Open questions in full:` in an ask recorded before it listed the options), relay it word for word after the `**Summary**` block, when there is one: its heading, each question with its recommended option first and its `★ … · Recommended` marker, and on a plan approval the closing `Reply **approve** …` line; never summarise, reorder or drop a question, so the Guildmaster can answer them without opening the spec, design or hallmark report.
 When the Guildmaster wants to read it again, point them to `/clerk:decisions`, or put it to them again when they ask.
 Then record their reply:
