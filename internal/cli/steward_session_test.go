@@ -401,13 +401,8 @@ func TestCopyDiscoveryFindsTheStewardStore(t *testing.T) {
 func stewardRolloutCopy(t *testing.T) (app *App, run func(env map[string]string, stdin string, args ...string) (int, string, string), copyDir, plan, digest string) {
 	t.Helper()
 	app, stdout, stderr, cfg, _ := stewardApp(t, "schema_version = 1\n[managed.review_rule]\nvalue = \"two reviewers\"\npolicy = true\n")
+	// The Steward config is the copy's own config.toml, as steward status reads it.
 	copyDir = filepath.Dir(cfg)
-	// The copy's own config.toml is the Steward config, as steward status reads it.
-	data, err := os.ReadFile(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, filepath.Join(copyDir, "config.toml"), string(data))
 	s, err := store.Open(filepath.Join(copyDir, stewardStoreFile), store.Options{})
 	if err != nil {
 		t.Fatal(err)

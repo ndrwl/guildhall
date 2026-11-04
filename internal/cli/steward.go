@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -172,18 +171,15 @@ func (a *App) fail(err error) int {
 	return 1
 }
 
-// loadRollout reads the Steward copy's config and the private config directory it names.
+// loadRollout admits the Steward copy's config as the session does and reads the private config checkout it names.
 func (a *App) loadRollout(cfgPath string) (*steward.Rollout, error) {
-	cfg, err := config.Load(cfgPath)
+	cfg, err := admitStewardConfig(filepath.Dir(cfgPath), cfgPath)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", cfgPath, err)
+		return nil, err
 	}
-	if cfg.Mode != config.ModeSteward {
-		return nil, fmt.Errorf("%s is not a steward config", cfgPath)
-	}
-	private := cfg.PrivateConfig.Location
-	if info, err := os.Stat(private); !filepath.IsAbs(private) || err != nil || !info.IsDir() {
-		return nil, fmt.Errorf("private_config.location %q must be a local directory holding the private config; clone it first", private)
+	private, err := a.privateCheckout(cfg)
+	if err != nil {
+		return nil, err
 	}
 	copier, runner := a.Copier, a.Runner
 	if copier == nil {

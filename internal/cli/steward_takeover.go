@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/git"
 	"github.com/ndrwl/guildhall/internal/steward"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -154,15 +153,9 @@ func (a *App) setupOutcome(out *steward.Outcome, err error) int {
 // loadSetup is the Setup over the Steward copy's config and private config checkout: it enrols copies with the
 // Steward's [steward] name.
 func (a *App) loadSetup(cfgPath string) (*steward.Setup, error) {
-	cfg, err := config.Load(cfgPath)
+	cfg, err := admitStewardConfig(filepath.Dir(cfgPath), cfgPath)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", cfgPath, err)
-	}
-	if cfg.Mode != config.ModeSteward {
-		return nil, fmt.Errorf("%s is not a steward config", cfgPath)
-	}
-	if cfg.Steward == nil || cfg.Steward.Name == "" {
-		return nil, fmt.Errorf("%s has no [steward] name, the label copies are enrolled with; set it", cfgPath)
+		return nil, err
 	}
 	private, err := a.privateCheckout(cfg)
 	if err != nil {

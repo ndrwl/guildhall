@@ -216,7 +216,22 @@ func TestStewardTakeover(t *testing.T) {
 	}
 }
 
-// TestStewardTakeoverUsage: the modes are exclusive, and the copy's names belong to the dry run.
+// TestStewardTakeoverRefusesAManagedStewardCopy: takeover admits the Steward config as the session does, so a
+// managed.toml beside it refuses the dry run with the session's reason, and nothing is planned.
+func TestStewardTakeoverRefusesAManagedStewardCopy(t *testing.T) {
+	ts := newTakeoverSetup(t)
+	writeFile(t, filepath.Join(ts.steward, "managed.toml"), "schema_version = 1\n")
+	planDir := filepath.Join(ts.steward, "rollouts", "takeover-alpha")
+	code, _, stderr := ts.run(t, false, "", "steward", "takeover", "--config", filepath.Join(ts.steward, "config.toml"), "--machine", "workstation", "--director", "alpha", "--copy", ts.director, "--plan", planDir, "--dry-run")
+	if code != 1 || !strings.Contains(stderr, "a Steward copy is never managed") {
+		t.Fatalf("dry run: exit %d, %s; want the managed copy refused", code, stderr)
+	}
+	if _, err := os.Stat(planDir); err == nil {
+		t.Error("the refused dry run wrote a plan")
+	}
+}
+
+// TestStewardTakeoverUsage:the modes are exclusive, and the copy's names belong to the dry run.
 func TestStewardTakeoverUsage(t *testing.T) {
 	for _, args := range [][]string{
 		{"--config", "c.toml", "--plan", "p"},

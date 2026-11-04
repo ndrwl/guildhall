@@ -209,6 +209,8 @@ Keys follow the config key rules, so credential-like names are refused.
 guildhall steward rollout --config <steward.toml> --machine <label> [--machine <label>...] --plan <new dir> --dry-run
 ```
 
+Rollout, like collect and takeover, admits the Steward config as the [session](#the-steward-session) does: it refuses a managed Steward copy (a `managed.toml` beside `config.toml`) and an inline `[managed]` table, and needs `mode = "steward"`, a `[steward] name` and a private config location that is a Git work tree.
+
 For each Director copy on each named machine, the dry run downloads `config.toml` and `managed.toml`, renders new managed settings and checks the combined config.
 It writes `plan.json` and, for each copy that would change, `files/<machine>/<director>/previous.toml` and `managed.toml` previews into the new plan directory, and prints:
 
@@ -395,6 +397,7 @@ guildhall steward takeover --config <steward.toml> --plan <dir> --abandon
 
 A takeover adopts an existing standalone Director copy into the roster as managed by this Steward, keeping its store, tasks, decisions and local settings ([decision](decisions/steward-setup-plans.md)).
 It is built for Linux machines; native Windows comes later.
+Each of its modes admits the Steward config as [rollout](#dry-run) and collect do, with the session's refusals, and needs the private config location to be a Git work tree.
 
 **Dry run.** The dry run reads the copy with `scp` and the read-only [remote commands](#remote-commands): its `config.toml`, its mode, which must be `standalone` with no `managed.toml`, and its session.
 It refuses, changing nothing, a copy that is not a director copy named `--director`, has inline `[managed]` settings or a repository whose `owner_machine` is not `--machine`, and a Director or copy directory the roster already lists.
