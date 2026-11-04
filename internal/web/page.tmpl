@@ -50,7 +50,8 @@ that shows questions or answers draws them through these two, so a change here c
 {{define "questions"}}{{if .None}}<p class="ph">Open questions: none.</p>{{else}}<p class="ph oqh">Open questions <span class="n">{{.Count}}</span></p><div class="oqs">
 {{- range .Cards}}
 <section class="oq"><p class="qt"><span class="qn">Q{{.N}}</span>{{.Title}}</p>{{if .Body}}<div class="qb">{{.Body}}</div>{{end}}
-{{- if .Rows}}<ul class="ol">{{range .Rows}}<li{{if .Rec}} class="rec"{{end}}>{{if .Mark}}<span class="lt">{{.Mark}}</span>{{end}}<span class="ot">{{.Text}}{{if .Why}}<span class="why">{{.Why}}</span>{{end}}</span>{{if .Rec}}<i class="badge">Recommended</i>{{end}}</li>{{end}}</ul>{{end}}
+{{- if .Pick}}{{$n := .N}}<ul class="ol pk">{{range .Rows}}<li{{if .Rec}} class="rec"{{end}}><label for="p-{{$.Ask}}-{{$n}}-{{.Letter}}"><input type="radio" id="p-{{$.Ask}}-{{$n}}-{{.Letter}}" name="pick-{{$n}}" value="{{if not .Rec}}{{.Letter}}{{end}}"{{if .Checked}} checked{{end}}><span class="lt">{{.Mark}}</span><span class="ot">{{.Text}}{{if .Why}}<span class="why">{{.Why}}</span>{{end}}{{if not .Rec}}<span class="ya">Your answer: Q{{$n}} → {{.Mark}}</span>{{end}}</span>{{if .Rec}}<i class="badge">Recommended</i>{{end}}</label></li>{{end}}</ul>
+{{- else if .Rows}}<ul class="ol">{{range .Rows}}<li{{if .Rec}} class="rec"{{end}}>{{if .Mark}}<span class="lt">{{.Mark}}</span>{{end}}<span class="ot">{{.Text}}{{if .Why}}<span class="why">{{.Why}}</span>{{end}}</span>{{if .Rec}}<i class="badge">Recommended</i>{{end}}</li>{{end}}</ul>{{end}}
 {{- if .Verbatim}}<div class="qv">{{.Verbatim}}</div>{{end}}{{if .More}}<div class="qm">{{.More}}</div>{{end}}</section>
 {{- end}}
 {{- if .Cut}}<p class="cut">(cut; read the document)</p>{{end}}</div>{{end}}{{end}}

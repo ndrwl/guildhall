@@ -6,8 +6,10 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"errors"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -174,6 +176,8 @@ type pageState struct {
 	Refused  string
 	Words    string
 	Sent     string
+	// Picks are the changed picks the refused answer sent, the letter by question number, which its cards check.
+	Picks map[int]string
 	// SayRefused is why words from the Say box were not sent, SayWords the words it kept, and Said the id of the
 	// note it just sent.
 	SayRefused, SayWords, Said string
@@ -234,7 +238,11 @@ func (s *Server) failed(err error, what string, again func(int, string)) bool {
 
 // answer handles POST /<repo>/<task>/answer: it passes the gate, then gives the Answerer the answer, the confirmed
 // recommendation or the words, and redirects to the ask; a refusal shows the page again with its reason on the ask
-// and the words kept.
+// and the words and picks kept.
+//
+// Changed picks (readPicks) become "Qn (x)" lines before the words (withPicks) on Changes requested and on words
+// only; Approved with a changed pick is refused, since it would take the recommendation the pick changed; any other
+// answer ignores them. A malformed pick field is refused before the Answerer.
 func (s *Server) answer(w http.ResponseWriter, r *http.Request, repo, id string) {
 	if !s.readForm(w, r) {
 		return
@@ -262,6 +270,12 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, repo, id string)
 		again(status, reason)
 		return
 	}
+	picks, ok := readPicks(r.PostForm)
+	if !ok {
+		again(http.StatusBadRequest, "a pick is malformed")
+		return
+	}
+	st.Picks = picks
 	if confirm != "" && !words {
 		n, err := strconv.Atoi(confirm)
 		if err != nil || n < 1 {
@@ -277,6 +291,18 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, repo, id string)
 	case !words && send != "answer" && a.Option == "" && a.Confirm == 0:
 		again(http.StatusBadRequest, "choose an answer, or send your words only")
 		return
+	}
+	if len(picks) > 0 && send == "" && a.Confirm == 0 {
+		switch a.Option {
+		case "approved":
+			again(http.StatusBadRequest, "you changed "+pickNames(picks)+"; choose Changes requested")
+			return
+		case "changes_requested":
+			a.Text = withPicks(picks, a.Text)
+		}
+	}
+	if words && len(picks) > 0 {
+		a.Text = withPicks(picks, a.Text)
 	}
 	a.Login = who.Login
 	var err error
@@ -294,6 +320,62 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, repo, id string)
 		target += "?" + url.Values{"sent": {sent}, "ask": {a.Decision}}.Encode()
 	}
 	http.Redirect(w, r, target+"#"+url.PathEscape(a.Decision), http.StatusSeeOther)
+}
+
+// readPicks reads an answer's pick-<N> fields, the cards' radio groups: N a positive number as strconv.Itoa writes
+// it, the value one lower-case letter or, on the recommended pick, empty, and each field sent once. It returns the
+// changed picks, the letter by question number, and false for any field of another shape.
+func readPicks(form url.Values) (map[int]string, bool) {
+	var picks map[int]string
+	for k, vs := range form {
+		num, ok := strings.CutPrefix(k, "pick-")
+		if !ok {
+			continue
+		}
+		n, err := strconv.Atoi(num)
+		if err != nil || n < 1 || strconv.Itoa(n) != num || len(vs) != 1 {
+			return nil, false
+		}
+		switch l := vs[0]; {
+		case l == "":
+		case len(l) == 1 && l[0] >= 'a' && l[0] <= 'z':
+			if picks == nil {
+				picks = map[int]string{}
+			}
+			picks[n] = l
+		default:
+			return nil, false
+		}
+	}
+	return picks, true
+}
+
+// pickNumbers are the question numbers of picks, in order.
+func pickNumbers(picks map[int]string) []int {
+	return slices.Sorted(maps.Keys(picks))
+}
+
+// pickNames names the questions of picks, in order, as "Q2" or "Q2, Q3".
+func pickNames(picks map[int]string) string {
+	var names []string
+	for _, n := range pickNumbers(picks) {
+		names = append(names, "Q"+strconv.Itoa(n))
+	}
+	return strings.Join(names, ", ")
+}
+
+// withPicks is the text an answer records with changed picks: a "Qn (x)" line per pick in question order, then a
+// blank line and words, or the lines alone when words are blank, so the same picks and words give the same bytes.
+func withPicks(picks map[int]string, words string) string {
+	var lines []string
+	for _, n := range pickNumbers(picks) {
+		lines = append(lines, "Q"+strconv.Itoa(n)+" ("+picks[n]+")")
+	}
+	text := strings.Join(lines, "\n")
+	if strings.TrimSpace(words) != "" {
+		text += "\n\n" + words
+	}
+	return text
 }
 
 // say handles POST /<repo>/<task>/say, the Say box: it passes the gate, then gives the Answerer the words about the

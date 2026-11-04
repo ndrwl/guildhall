@@ -92,16 +92,28 @@ Each ask has one box, **Your words**, and below it the answer tiles:
   An ask with no options, a free question, has an **Answer with your words** tile instead.
 - **Send words only**, under the dashed line, answers nothing: your words reach the Director as a note from you, naming the task and decision, shown to you in a toast as `messages send` shows a note, and the page says they were sent.
 
+On a plan or design approval, each open question with lettered options is a pick: tap an option on its card to change that answer, with the recommended option picked to begin with.
+A changed pick shows "Your answer: Q2 → (b)" on its card, and the answer row hides Approved and puts **Changes requested** forward; this needs a browser with CSS `:has()`, and the page has no script.
+What is recorded:
+
+- **Changes requested** records your changed picks as one "Q2 (b)" line each, in question order, then a blank line and your words, or the lines alone when you typed nothing, so the plan or grill goes round again with them as feedback, as typing "Q2 (b)" did. Unchanged picks write nothing.
+- **Approved** with every pick unchanged records exactly what it did before; with a changed pick it is refused, nothing written, with "you changed Q2; choose Changes requested".
+- **Send words only** puts the pick lines before your words in the same way.
+- Any other answer ignores the picks.
+
+Typing "Q2 (b)" in the words box, or in chat, still works.
+
 Below the tiles the page says "Answering as <your login> · your Tailscale login".
 Any other login, or a request whose login Guildhall cannot tell, sees the same page read-only, with the tiles disabled and "Only the Guildmaster's Tailscale login can answer here".
 
-An answer is refused, with nothing written, the reason on the ask and your words kept in the box, when:
+An answer is refused, with nothing written, the reason on the ask and your words and picks kept, when:
 
 - it does not come from your login: each request is checked with `tailscale whois` on its address, so a missing or failing `tailscale` leaves the page read-only;
 - it does not come from the page itself: its `Origin` header, or its `Sec-Fetch-Site` when the browser sends no `Origin`, must be the page's own, and it must carry the page's form token, which changes when the server restarts, so reload a page left open across one;
 - the decision changed since you loaded the page: it was voided, or it is now about another version of its subject; or it was already answered, in chat, with `decide answer` or on the page;
 - the task was cancelled: a cancel needs its asks voided or answered first, so only an ask an earlier release left open can still show on a cancelled task;
-- your answer, with your words, is over 64 KiB, words only are blank or over 16 KiB, or the text is not UTF-8;
+- you pressed Approved after changing a pick, or a pick field is malformed;
+- your answer, with your words and pick lines, is over 64 KiB, words only are blank or over 16 KiB, or the text is not UTF-8;
 - the Director is writing to the store: try again in a moment.
 
 Your words are normalised as `decide answer` reads an answer file: a byte order mark is dropped and Windows line endings become plain ones.
