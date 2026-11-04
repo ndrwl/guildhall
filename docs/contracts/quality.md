@@ -7,6 +7,7 @@ Its seams are `interp.Records` extended with `TaskHistory` and `LatestDirectorSe
 
 `ReadSelfReview` reads a `guildhall.self-review/1` document as the [self-review skill](../../skills/guildhall-self-review/SKILL.md) writes it, taking only its repository, task, number, head and the criteria whose `judge` is `pending`, each with its kind; it refuses another schema, a missing identity or number, and a head that is not an object id, with `ErrSelfReview`.
 `ParseAnswer` reads the judge's `judgement.json` against those pending criteria: `merge_as_is` is `yes` or `no`, and `criteria` lists each pending criterion at most once, a score with a whole `score` from 0 to 3 and a gate with a boolean `pass`, never both, each with non-blank `evidence`; an unknown field, an id that is not pending, a duplicate, a missing judgement of a criterion or more than 1 MiB is refused with `ErrAnswer`.
+`CheckAnswer(promptDir, data)` is `ParseAnswer` against the self-review a judge was given, `inputs/self-review.json` beside its prompt; `CodexAnswer` is the judge's [Codex answer contract](adapter-codex.md#the-wrapper): `judgement.json`, its strict JSON Schema, with a criterion's `score` or `pass` null where its kind has none, which `ParseAnswer` reads as absent, and `CheckAnswer`.
 `ParseJudgement` reads the `guildhall.judgement/1` record Guildhall writes from an accepted answer, refusing another schema or a newer version with `ErrJudgement`.
 
 `Judge.Start` and `Judge.Take` are not safe for concurrent use on the same task; the CLI holds the task's lock around each.
@@ -35,4 +36,5 @@ Its seams are `interp.Records` extended with `TaskHistory` and `LatestDirectorSe
 ## Tests
 
 `quality_test.go` was written red first against stub bodies ([red run](../evidence/quality-judge-2026-10-23-red.txt)): reading the self-review's pending criteria and each refused document; each accepted and refused answer; the refusals of `Start` for an open task, a missing or foreign self-review, nothing pending and a running judge; the original separate-family choice, the pass over a failed profile, a replay after a failed launch and a start refused at a cap, all over a real store and a recording launcher; `Take` recording a judgement once, refusing an answer, and telling a failed attempt; and `Agreement` over judged, audited and paired tasks.
+`CheckAnswer` and `CodexAnswer` are exercised through the Codex wrapper's tests in `internal/adapter/codex`, which write the stub's answer and check it is accepted, and refuse one judging a criterion that is not pending.
 The current judge-start assertions instead expect an unknown builder family, with historical ordering and configuration-drift coverage in `builder_history_test.go` and `review_regression_test.go`.

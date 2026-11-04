@@ -19,13 +19,16 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/adapter/claude"
+	"github.com/ndrwl/guildhall/internal/adapter/codex"
 	"github.com/ndrwl/guildhall/internal/adapter/fake"
 	"github.com/ndrwl/guildhall/internal/adapter/runtimes"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/herdr"
 	"github.com/ndrwl/guildhall/internal/launch"
+	"github.com/ndrwl/guildhall/internal/quality"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workbench"
+	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
 // Exit codes of `artisan start` beyond 0 (succeeded), 1 (error or rejected
@@ -58,6 +61,18 @@ func (a *App) claudeArtisan(args []string) int {
 		return a.usageError("claude-artisan: " + err.Error())
 	}
 	return claude.Main(args, a.Stdout, a.Stderr)
+}
+
+// CodexAnswers are the steps that run on Codex, each with its answer contract: only the quality judge.
+var CodexAnswers = codex.Answers{workflow.JudgeStep: quality.CodexAnswer}
+
+// codexArtisan runs the Codex adapter's wrapper: `guildhall codex-artisan --task --attempt --prompt --result
+// [--codex]`, under CodexAnswers.
+func (a *App) codexArtisan(args []string) int {
+	if _, err := codex.ParseArgs(args); err != nil {
+		return a.usageError("codex-artisan: " + err.Error())
+	}
+	return codex.Main(args, CodexAnswers, a.Stdout, a.Stderr)
 }
 
 // stringList is a repeatable string flag.
