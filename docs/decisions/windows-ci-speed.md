@@ -23,7 +23,7 @@ Defender was already off and no test leaked a process.
 - **Wait ceilings scale on CI; behaviour does not.**
   `testenv.Ceiling(d)` is `d` times 5 when `CI` is set, so a slow runner makes a test slow rather than red, and a local failure still comes promptly.
   It wraps every fixed test ceiling of 5 s or more and the store lock waits of the tests' own opens, and test children sharing `internal/launch`'s `deadline` inherit the scale.
-  The scaled ceiling stops at the larger of `d` and two minutes: unbounded, `cmd/guildhall`'s minute-long waits grew to five and ten minutes, and a stuck macOS run hit `go test`'s ten-minute package timeout, which lost the test's messages.
+  The scaled ceiling stops at the larger of `d` and two minutes: unbounded, `cmd/guildhall`'s minute-long waits grew to five and ten minutes, and a stuck macOS run hit the package timeout, which lost the test's messages; CI runs `go test` with a 20-minute package timeout (see [Package timeout](#package-timeout)).
   It is not applied to graces a test waits out on purpose or to durations the code observes; the production lock wait, `store.DefaultLockTimeout`, is unchanged ([test timing](../test-timing.md)).
 - **Fixtures are built once and copied.**
   Real git, shells and processes stay the subject of their seams' contract tests; only the repeated setup around them is shared.
@@ -36,3 +36,13 @@ What CI runs is unchanged: every package on all three platforms, with the same r
 On instrumented runs ([timings](../evidence/windows-ci-speed-2026-10-22-timings.md)) the Windows `go test` took 249 s and 365 s on main and 91 s and 176 s with this change; Linux went from 52 s to 42-50 s and macOS stayed at about 100 s.
 Tests no longer exercise fsync except where pinned, so a durability regression must be caught by that pinned test or the built binary.
 The ubuntu `TempDir` cleanup flake (sustainability review 11, F41) was not addressed.
+
+## Package timeout
+
+2026-11-04: every `go test` step of CI runs with `-timeout 20m` in place of `go test`'s default ten minutes.
+`internal/interp` took 592 s on a passing Windows run and hit the 600 s default on others (jobs 126609008892 and 126617342232), failing about every other pull request, with `internal/cli` next at 458-513 s.
+Twenty minutes is twice today's slowest package, and a real hang costs at most 20 runner minutes; `CIMaxCeiling` stays at two minutes, so a stuck wait still fails with its own message long before the package timeout.
+`adapter.SkipSyncForTests` joins the store's switch: `internal/interp`'s tests skip the fsync of each result file `WriteResult` publishes, and `TestWriteResultSyncsByDefault` keeps the synced path pinned.
+
+This is a margin, not a fix for growth.
+The follow-ups are cutting `internal/interp`'s git starts (research F2 of d207) and measuring per-test Windows timings (d194).

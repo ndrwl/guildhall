@@ -15,10 +15,11 @@ const CIEnv = "CI"
 // Linux one, so a ceiling tuned on one host is multiplied by this on a runner.
 const CISlowdown = 5
 
-// CIMaxCeiling is the most a scaled ceiling grows to. go test stops a package
-// after ten minutes and loses every message of the test it stops, so a wait
-// scaled past a few minutes, or a test with several such waits, would turn a
-// failure into that timeout; a ceiling already at or above it stays unscaled.
+// CIMaxCeiling is the most a scaled ceiling grows to. CI runs go test with a
+// 20-minute package timeout, which stops a package and loses every message of
+// the test it stops, so a wait scaled past a few minutes, or a test with
+// several such waits, would turn a failure into that timeout; a ceiling
+// already at or above it stays unscaled.
 const CIMaxCeiling = 2 * time.Minute
 
 // Ceiling returns d, the longest a test waits for an event before it fails,

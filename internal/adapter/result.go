@@ -207,7 +207,8 @@ func MarkCancelled(resultFile string, id Identity) error {
 // WriteResult validates r and publishes it at path exactly once: the content
 // is written to a temporary file beside path and then hard-linked into place,
 // so a reader sees either no file or the whole result, and an existing result
-// is never replaced.
+// is never replaced. The temporary file is synced before it is linked, except
+// in a test binary that called SkipSyncForTests.
 func WriteResult(path string, r Result) error {
 	if err := checkCancellation(path, r.Identity); err != nil {
 		return err
@@ -234,8 +235,8 @@ func WriteResult(path string, r Result) error {
 	// lives on under path.
 	defer func() { _ = os.Remove(tmp.Name()) }()
 	_, err = tmp.Write(append(data, '\n'))
-	if err == nil {
-		err = tmp.Sync()
+	if err == nil && !resultSyncSkipped.Load() {
+		err = syncFile(tmp)
 	}
 	if err = errors.Join(err, tmp.Close()); err != nil {
 		return err

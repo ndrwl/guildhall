@@ -40,11 +40,21 @@ type rerunDoc struct {
 	FailedRun string `json:"failed_run"`
 	Job       string `json:"job"`
 	URL       string `json:"url,omitempty"`
-	// Tests are the failing test names of the failed job's log, from its "--- FAIL: <Name>" lines; LogUnavailable is
-	// why the log could not be read.
-	Tests          []string  `json:"tests"`
-	LogUnavailable string    `json:"log_unavailable,omitempty"`
-	RequestedAt    time.Time `json:"requested_at"`
+	// Tests are the failing test names of the failed job's log, from its "--- FAIL: <Name>" lines only, so a test
+	// that was merely running when a go test timeout fired is never named here; Timeout is that timeout, when the
+	// log has one; LogUnavailable is why the log could not be read.
+	Tests          []string      `json:"tests"`
+	Timeout        *rerunTimeout `json:"timeout,omitempty"`
+	LogUnavailable string        `json:"log_unavailable,omitempty"`
+	RequestedAt    time.Time     `json:"requested_at"`
+}
+
+// rerunTimeout is a go test package timeout read from a failed job's log: the duration its panic names, the package
+// its FAIL line names, or "", and the tests its "running tests:" block lists, empty when the log's tail lacks them.
+type rerunTimeout struct {
+	After   string   `json:"after"`
+	Package string   `json:"package,omitempty"`
+	Running []string `json:"running"`
 }
 
 // rerunOutcomeDoc records that the forge refused or failed the rerun of its record, and why; a rerun the forge
@@ -81,6 +91,68 @@ func failedTests(log []byte) []string {
 		}
 	}
 	return out
+}
+
+// The lines of a go test timeout: its panic, the header of the tests it lists, one listed test, and the FAIL line
+// of the package, each matched after the job log's timestamp.
+var (
+	timeoutPanic  = regexp.MustCompile(`^panic: test timed out after (\S+)`)
+	runningHeader = regexp.MustCompile(`^\s*running tests:$`)
+	runningTest   = regexp.MustCompile(`^\s+(\S+) \([^)]*\)$`)
+	failedPackage = regexp.MustCompile(`^FAIL\t(\S+)\t`)
+)
+
+// testTimeout returns the go test timeout of log, read from its first "panic: test timed out after <d>" line: the
+// duration, the tests of the "running tests:" block that follows it, as printed, in order, without repeats and at
+// most maxRerunTests, and the package of the first "FAIL\t<pkg>\t" line after it. A log whose fetched tail lacks the
+// block has no running tests; a log with no such panic has no timeout, and nil is returned.
+func testTimeout(log []byte) *rerunTimeout {
+	lines := strings.Split(string(log), "\n")
+	for i := range lines {
+		lines[i] = cilog.Timestamp.ReplaceAllString(strings.TrimSuffix(lines[i], "\r"), "")
+	}
+	for i, l := range lines {
+		m := timeoutPanic.FindStringSubmatch(l)
+		if m == nil {
+			continue
+		}
+		t := &rerunTimeout{After: m[1], Running: []string{}}
+		rest := lines[i+1:]
+		if len(rest) > 0 && runningHeader.MatchString(rest[0]) {
+			for _, l := range rest[1:] {
+				n := runningTest.FindStringSubmatch(l)
+				if n == nil {
+					break
+				}
+				if !slices.Contains(t.Running, n[1]) && len(t.Running) < maxRerunTests {
+					t.Running = append(t.Running, n[1])
+				}
+			}
+		}
+		for _, l := range rest {
+			if p := failedPackage.FindStringSubmatch(l); p != nil {
+				t.Package = p[1]
+				break
+			}
+		}
+		return t
+	}
+	return nil
+}
+
+// text describes t for a flake message: the package that timed out, after how long, and the tests it was running.
+func (t *rerunTimeout) text() string {
+	var b strings.Builder
+	if t.Package != "" {
+		fmt.Fprintf(&b, "package %s ", t.Package)
+	}
+	fmt.Fprintf(&b, "timed out after %s, running ", t.After)
+	if len(t.Running) == 0 {
+		b.WriteString("tests not in the log tail")
+	} else {
+		b.WriteString(strings.Join(t.Running, ", "))
+	}
+	return b.String()
 }
 
 // checkHash is a short digest of a check name, for the names and message ids that carry one.
@@ -228,6 +300,7 @@ func (r *run) rerunFailed(s workflow.Step, repo config.Repository, pr *pullReque
 				break
 			}
 			d.Tests = failedTests(got.Text)
+			d.Timeout = testTimeout(got.Text)
 		}
 		name := rerunName(s.ID, h, ch.Name)
 		if err := r.putOnce(name, name, "rerun.json", d); err != nil {
@@ -304,9 +377,15 @@ func (r *run) notifyFlakes(s workflow.Step, id string, v validationDoc) error {
 			fmt.Fprintf(&b, " (%s)", d.URL)
 		}
 		fmt.Fprintf(&b, "\npassing run: %s\n", e.PassedRun)
-		if len(d.Tests) > 0 {
+		switch {
+		case len(d.Tests) > 0:
 			fmt.Fprintf(&b, "tests: %s\n", strings.Join(d.Tests, ", "))
-		} else {
+			if d.Timeout != nil {
+				fmt.Fprintf(&b, "timeout: %s\n", d.Timeout.text())
+			}
+		case d.Timeout != nil:
+			fmt.Fprintf(&b, "tests: none failed; %s\n", d.Timeout.text())
+		default:
 			b.WriteString("tests: no test name found in the log")
 			if d.LogUnavailable != "" {
 				fmt.Fprintf(&b, " (%s)", d.LogUnavailable)

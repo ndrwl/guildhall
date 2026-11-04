@@ -450,3 +450,63 @@ func TestValidateRerunLaggingRead(t *testing.T) {
 		t.Errorf("validate-1-result = %+v, want a failed round naming both reruns", v)
 	}
 }
+
+// timeoutLog is the failed Windows job of d173's flake (job 126609008892), cut to its go test timeout: a panic that
+// names the test running when the package's ten minutes ran out, and no "--- FAIL:" line.
+const timeoutLog = "2026-11-04T13:50:16.4680249Z ok  \tgithub.com/ndrwl/guildhall/internal/herdr\t18.062s\r\n" +
+	"2026-11-04T13:54:15.3668618Z panic: test timed out after 10m0s\r\n" +
+	"2026-11-04T13:54:15.3669707Z \trunning tests:\r\n" +
+	"2026-11-04T13:54:15.3670245Z \t\tTestValidateTier2 (0s)\r\n" +
+	"2026-11-04T13:54:15.3670584Z \r\n" +
+	"2026-11-04T13:54:15.3670830Z goroutine 16280 [running]:\r\n" +
+	"2026-11-04T13:54:15.3671389Z testing.(*M).startAlarm.func1()\r\n" +
+	"2026-11-04T13:54:15.3672509Z \tC:/hostedtoolcache/windows/go/1.27.3/x64/src/testing/testing.go:2961 +0x34a\r\n" +
+	"2026-11-04T13:54:15.3722402Z FAIL\tgithub.com/ndrwl/guildhall/internal/interp\t600.123s\r\n" +
+	"2026-11-04T13:54:15.3722895Z ok  \tgithub.com/ndrwl/guildhall/internal/interp/interptest\t3.804s\r\n" +
+	"2026-11-04T13:54:15.3723347Z ##[error]Process completed with exit code 1.\r\n"
+
+// TestValidateRerunFlakeTimeout: a flake whose failed job hit go test's package timeout records no failed test but
+// the timeout, its package and the test that was running, and its flake message names them instead of saying no
+// test name was found. A log that also has a failed test names it as before, with the timeout on a line of its own.
+func TestValidateRerunFlakeTimeout(t *testing.T) {
+	const timedOut = "package github.com/ndrwl/guildhall/internal/interp timed out after 10m0s, running TestValidateTier2"
+	for _, c := range []struct {
+		name, log string
+		tests     []any
+		lines     []string
+	}{
+		{"timeout", timeoutLog, []any{}, []string{"tests: none failed; " + timedOut + "\n"}},
+		{"failed test and timeout", "2026-11-04T13:54:15.0000000Z --- FAIL: TestX (0.01s)\n" + timeoutLog, []any{"TestX"},
+			[]string{"tests: TestX\ntimeout: " + timedOut + "\n"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			e, f := newValidateEnv(t, backends[0])
+			e.eng.CILogLimit = 1 << 20
+			f.SetChecks(repoRemote, head, actionsCheck(windows, "123", forge.CheckFailed))
+			f.SetLog("123", c.log)
+			want(t, e.toValidate(t), waitChecks)
+			rec := e.pullRequestDoc(t, recordName(head, windows))
+			if tests, _ := rec["tests"].([]any); tests == nil || !slices.Equal(tests, c.tests) {
+				t.Errorf("rerun record tests = %v, want %v", rec["tests"], c.tests)
+			}
+			timeout, _ := rec["timeout"].(map[string]any)
+			if running, _ := timeout["running"].([]any); timeout["after"] != "10m0s" ||
+				timeout["package"] != "github.com/ndrwl/guildhall/internal/interp" || !slices.Equal(running, []any{"TestValidateTier2"}) {
+				t.Errorf("rerun record timeout = %v", rec["timeout"])
+			}
+			settle(t, f, head, forge.CheckPassed)
+			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})
+			flakes := withPrefix(e.messages(t), "app.t7.flake.validate."+head[:12]+".")
+			if len(flakes) != 1 {
+				t.Fatalf("flake messages = %v, want one", flakes)
+			}
+			for _, text := range flakes {
+				for _, line := range c.lines {
+					if !strings.Contains(text, line) || strings.Contains(text, "no test name found") {
+						t.Errorf("flake message = %q, want %q", text, line)
+					}
+				}
+			}
+		})
+	}
+}
