@@ -134,6 +134,13 @@ func newSafetyCopy(t *testing.T, local, plan string) *safetyCopy {
 	repository, remote, base := gittest.Repository(t)
 	c := &safetyCopy{t: t, dir: dir, path: path, turns: filepath.Join(dir, "turns.log"), inventory: filepath.Join(dir, "inventory"),
 		herdr: filepath.Join(dir, "herdr")}
+	// Registered after the copy's removal and before start's session cleanups, so on a failed check it runs once the
+	// sessions have ended and before the copy, the only record of what its attempts did, is removed.
+	t.Cleanup(func() {
+		if t.Failed() {
+			c.dump()
+		}
+	})
 	if err := os.Mkdir(c.herdr, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -426,6 +433,150 @@ func (c *safetyCopy) liveProcesses() []artisan.ProcessRecord {
 		}
 	}
 	return live
+}
+
+// dumpFileLimit bounds how much of each attempt file dump prints: the last this many bytes.
+const dumpFileLimit = 64 << 10
+
+// dump logs the evidence a failed check leaves in the copy, before the copy is removed: t-1's attempts with their
+// ownership, its decisions, the Director inbox, the latest Director session, each t-1 attempt directory's launcher
+// log, events, outcome and result, and the Director directory with the owned processes still alive. It never fails
+// or blocks the check: each source is read once, and an error is logged in its place.
+func (c *safetyCopy) dump() {
+	var b strings.Builder
+	c.dumpTo(&b)
+	c.t.Logf("copy evidence (%s):\n%s", c.dir, b.String())
+}
+
+// dumpTo writes dump's evidence to w.
+func (c *safetyCopy) dumpTo(w *strings.Builder) {
+	fmt.Fprintln(w, "== store")
+	if s, err := store.Open(filepath.Join(c.dir, "director.store"), store.Options{ReadOnly: true}); err != nil {
+		fmt.Fprintf(w, "open: %v\n", err)
+	} else {
+		dumpStore(w, s)
+		_ = s.Close()
+	}
+	dirs, err := filepath.Glob(filepath.Join(c.dir, "state", "app", "t-1", "*"))
+	if err != nil {
+		fmt.Fprintf(w, "== attempt directories: %v\n", err)
+	}
+	for _, d := range dirs {
+		// Only attempt directories, <step>-<n>: not the task's work tree.
+		if _, _, ok := artisan.ParseAttemptID(filepath.Base(d)); !ok {
+			continue
+		}
+		if fi, err := os.Stat(d); err != nil || !fi.IsDir() {
+			continue
+		}
+		for _, name := range []string{launch.LogFile, artisan.EventsFile, artisan.OutcomeFile} {
+			dumpFile(w, filepath.Join(d, name))
+		}
+		p := filepath.Join(d, artisan.ResultFile)
+		switch fi, err := os.Stat(p); {
+		case errors.Is(err, os.ErrNotExist):
+			fmt.Fprintf(w, "== %s\n(absent)\n", p)
+		case err != nil:
+			fmt.Fprintf(w, "== %s\n%v\n", p, err)
+		default:
+			fmt.Fprintf(w, "== %s\npresent, %d bytes\n", p, fi.Size())
+		}
+	}
+	director := filepath.Join(c.dir, "director")
+	fmt.Fprintf(w, "== %s\n", director)
+	if err := filepath.WalkDir(director, func(p string, e os.DirEntry, err error) error {
+		if err != nil {
+			fmt.Fprintf(w, "%s: %v\n", p, err)
+			return nil
+		}
+		rel, _ := filepath.Rel(director, p)
+		if fi, ierr := e.Info(); ierr == nil && !e.IsDir() {
+			fmt.Fprintf(w, "%s %d\n", rel, fi.Size())
+		} else {
+			fmt.Fprintf(w, "%s/\n", rel)
+		}
+		// A session's installed skills are the release's, the same in every session.
+		if e.IsDir() && e.Name() == "skills" {
+			return filepath.SkipDir
+		}
+		return nil
+	}); err != nil {
+		fmt.Fprintln(w, err)
+	}
+	// liveProcesses fails the check on an unreadable inventory, so this reads it itself.
+	fmt.Fprintln(w, "== owned processes alive")
+	entries, err := artisantest.Inventory(c.inventory)
+	if err != nil {
+		fmt.Fprintf(w, "inventory: %v\n", err)
+	}
+	for _, e := range entries {
+		if lv, _ := artisan.Probe(e.Identity); lv == artisan.Alive {
+			fmt.Fprintf(w, "%+v\n", e)
+		}
+	}
+}
+
+// dumpStore writes t-1's attempts with their ownership, its decisions, the Director inbox and the latest Director
+// session in s to w, an error in place of any it cannot read.
+func dumpStore(w *strings.Builder, s *store.Store) {
+	fmt.Fprintln(w, "-- t-1 attempts")
+	attempts, err := s.Attempts("app", "t-1")
+	if err != nil {
+		fmt.Fprintf(w, "attempts: %v\n", err)
+	}
+	for _, a := range attempts {
+		fmt.Fprintf(w, "%s-%d outcome=%s", a.Step, a.Number, a.Outcome)
+		if own, err := s.Ownership("app", "t-1", a.Step, a.Number); err != nil {
+			fmt.Fprintf(w, " ownership: %v\n", err)
+		} else {
+			fmt.Fprintf(w, " owner=%s launcher=%+v containment=%+v\n", own.State, own.LauncherIdentity, own.Containment)
+		}
+	}
+	fmt.Fprintln(w, "-- t-1 decisions")
+	decisions, err := s.Decisions("app", "t-1")
+	if err != nil {
+		fmt.Fprintf(w, "decisions: %v\n", err)
+	}
+	for _, d := range decisions {
+		fmt.Fprintf(w, "%s answered=%t\n", d.ID, d.Answered)
+	}
+	fmt.Fprintln(w, "-- Director inbox")
+	messages, _, err := s.Inbox(store.Recipient{Role: store.RecipientDirector}, 0, store.MaxInboxLimit)
+	if err != nil {
+		fmt.Fprintf(w, "inbox: %v\n", err)
+	}
+	for _, m := range messages {
+		fmt.Fprintf(w, "%s %s %q\n", m.ID, m.Type, m.Text)
+	}
+	fmt.Fprintln(w, "-- latest Director session")
+	if d, err := s.LatestDirectorSession(); err != nil {
+		fmt.Fprintf(w, "latest session: %v\n", err)
+	} else {
+		fmt.Fprintf(w, "%d %s\n", d.Number, d.State)
+	}
+}
+
+// dumpFile writes the file at p to w under a header naming it: at most its last dumpFileLimit bytes, (absent) for a
+// missing file, and the error for one it cannot read.
+func dumpFile(w *strings.Builder, p string) {
+	fmt.Fprintf(w, "== %s\n", p)
+	b, err := os.ReadFile(p)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		fmt.Fprintln(w, "(absent)")
+		return
+	case err != nil:
+		fmt.Fprintln(w, err)
+		return
+	}
+	if len(b) > dumpFileLimit {
+		fmt.Fprintf(w, "(truncated: the last %d of %d bytes)\n", dumpFileLimit, len(b))
+		b = b[len(b)-dumpFileLimit:]
+	}
+	_, _ = w.Write(b)
+	if len(b) > 0 && b[len(b)-1] != '\n' {
+		fmt.Fprintln(w)
+	}
 }
 
 // stopAttempt stops attempt n of task's step and proves its launcher gone by launchtest's rule.
@@ -759,6 +910,82 @@ func TestSafetyZeroIdleTurns(t *testing.T) {
 		}
 		c.finish(2)
 	})
+}
+
+// TestSafetyCopyDump: a failed check's dump names every t-1 attempt directory's launcher log, events, outcome and
+// result, the tail of an oversized file with its full size, (absent) for a missing one, and carries on past a store
+// it cannot open; with an empty store it prints each store section.
+func TestSafetyCopyDump(t *testing.T) {
+	dir := t.TempDir()
+	c := &safetyCopy{t: t, dir: dir, inventory: filepath.Join(dir, "inventory")}
+	plan1 := filepath.Join(dir, "state", "app", "t-1", "plan-1")
+	plan2 := filepath.Join(dir, "state", "app", "t-1", "plan-2")
+	work := filepath.Join(dir, "state", "app", "t-1", "work")
+	session := filepath.Join(dir, "director", "session-2")
+	for _, d := range []string{plan1, plan2, work, filepath.Join(session, "skills", "guildhall-review")} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	long := strings.Repeat("x", dumpFileLimit) + "tail-of-the-log\n"
+	for p, b := range map[string]string{
+		filepath.Join(plan1, launch.LogFile):               "head-of-the-log\n" + long,
+		filepath.Join(plan1, artisan.EventsFile):           `{"event":"start"}` + "\n",
+		filepath.Join(plan1, artisan.OutcomeFile):          `{"state":"failed","detail":"launcher exited without a decision"}`,
+		filepath.Join(plan1, artisan.ResultFile):           "{}",
+		filepath.Join(session, "startup.md"):               "# Startup\n",
+		filepath.Join(dir, "state", "app", "t-1", "stray"): "not an attempt",
+	} {
+		if err := os.WriteFile(p, []byte(b), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var b strings.Builder
+	c.dumpTo(&b)
+	out := b.String()
+	for _, want := range []string{
+		"== store\nopen: ",
+		"== " + filepath.Join(plan1, launch.LogFile) + "\n" + fmt.Sprintf("(truncated: the last %d of %d bytes)\n", dumpFileLimit, len(long)+len("head-of-the-log\n")),
+		"tail-of-the-log\n",
+		"== " + filepath.Join(plan1, artisan.EventsFile) + "\n" + `{"event":"start"}` + "\n",
+		"== " + filepath.Join(plan1, artisan.OutcomeFile) + "\n" + `{"state":"failed","detail":"launcher exited without a decision"}` + "\n",
+		"== " + filepath.Join(plan1, artisan.ResultFile) + "\npresent, 2 bytes\n",
+		"== " + filepath.Join(plan2, launch.LogFile) + "\n(absent)\n",
+		"== " + filepath.Join(plan2, artisan.EventsFile) + "\n(absent)\n",
+		"== " + filepath.Join(plan2, artisan.OutcomeFile) + "\n(absent)\n",
+		"== " + filepath.Join(plan2, artisan.ResultFile) + "\n(absent)\n",
+		filepath.Join("session-2", "startup.md") + " 10\n",
+		filepath.Join("session-2", "skills") + "/\n",
+		"== owned processes alive\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("dump does not hold %q:\n%s", want, out)
+		}
+	}
+	for _, unwanted := range []string{"head-of-the-log", "stray", work, "guildhall-review"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("dump holds %q:\n%s", unwanted, out)
+		}
+	}
+
+	s, err := store.Open(filepath.Join(dir, "director.store"), store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	b.Reset()
+	c.dumpTo(&b)
+	out = b.String()
+	for _, want := range []string{"-- t-1 attempts\n", "-- t-1 decisions\n", "-- Director inbox\n", "-- latest Director session\n"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("dump over an empty store does not hold %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "open: ") {
+		t.Errorf("dump could not open the empty store:\n%s", out)
+	}
 }
 
 // kill kills the process pid outright.
