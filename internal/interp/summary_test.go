@@ -95,7 +95,9 @@ func TestPlanCheckRefusesAnUnanswerableSpec(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			e, _, _ := newSliceEnv(t, backends[1], true, sliceScript(t, c.spec)...)
 			e.advance(t, interp.Event{Kind: interp.TaskCreated})
+			said := checkBefore(t, e, "plan", 1)
 			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1}), interp.Next{Wait: interp.WaitDirector, Step: "plan", Attempt: 1})
+			said.agrees(t, e, "plan", 1)
 			a := e.attempts(t)[0]
 			if a.Outcome != store.AttemptFailed || !strings.Contains(a.IntakeRejection, c.says) {
 				t.Errorf("plan attempt = %+v, want it failed saying %q", a, c.says)

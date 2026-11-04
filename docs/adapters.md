@@ -220,8 +220,8 @@ The session's **effective grant** is, in order and with a repeated rule kept onc
 
 1. the profile's [`allowed_tools`](configuration.md#profiles) when it sets them, even to `[]`; otherwise the **shipped default grant** for its name, which only a `claude` profile gets;
 2. then the **repository grant** of the task's repository for that profile, `[repository.profiles.<name>]` ([repositories](configuration.md#repositories)), if any;
-3. then, for every `claude` profile, the **`guildhall` grant**, `Bash(guildhall ci log:*)` (`claude.CILogRule`), which lets the Artisan read its task's [failed CI job logs](ci-logs.md) ([decision](decisions/failed-job-logs.md)).
-   It is added even when the copy sets the profile's own `allowed_tools`, which replace the shipped default and would otherwise drop it, because the command is read-only and serves only the logs its task's validate results record.
+3. then, for every `claude` profile, the **`guildhall` grant** (`claude.GuildhallRules`): `Bash(guildhall ci log:*)` (`claude.CILogRule`), which lets the Artisan read its task's [failed CI job logs](ci-logs.md) ([decision](decisions/failed-job-logs.md)), and `Bash(guildhall result submit:*)` and `Bash(guildhall result check:*)` (`claude.ResultRules`), which let it check its result with intake's checks and fix a rejection while its session is live ([CLI contract](contracts/cli.md)).
+   They are added even when the copy sets the profile's own `allowed_tools`, which replace the shipped default and would otherwise drop them, because the commands read only the Artisan's own task, and `result submit` writes only its own attempt's draft and submission count.
    No `gh`, `curl` or GitHub API rule is granted: Guildhall's own gh fetches the logs.
 4. then the **task grant** the attempt's binding records, if any, while the store does not record it revoked ([task grants](tasks.md#task-grants), [decision](decisions/task-grants.md)).
 

@@ -514,25 +514,59 @@ func (r *run) synthetic(s workflow.Step, profile, key string, inputs []render.In
 	return a, Next{}, nil
 }
 
-// recordRebaseOutputs records rebaser attempt n's head and its rebase.json, which it must list and which must say
-// whether its resolution changes behaviour. The head is the final commit of its worktree, or, as for a build, the
-// commit an explicit head file it lists first names.
-func (r *run) recordRebaseOutputs(s workflow.Step, n int, port string, outputs []adapter.Output) error {
+// checkRebaseOutputs checks rebaser attempt n's outputs and writes nothing: its rebase.json, which it must list and
+// which must say whether its resolution changes behaviour, and its head, the final commit of its worktree, or, as
+// for a build, the commit an explicit head file it lists first names.
+func (r *run) checkRebaseOutputs(s workflow.Step, n int, port string, outputs []adapter.Output) (*checked, error) {
 	i := slices.IndexFunc(outputs, func(o adapter.Output) bool { return o.Path == render.RebaseReportFile })
 	if i < 0 || len(outputs) > 2 || len(outputs) == 2 && i != 1 {
-		return rejectOutput(fmt.Errorf("a succeeded rebase result lists %s, after a head file if it names one", render.RebaseReportFile))
+		return nil, rejectOutput(fmt.Errorf("a succeeded rebase result lists %s, after a head file if it names one", render.RebaseReportFile))
 	}
 	data, err := os.ReadFile(filepath.Join(r.workPath(), render.RebaseReportFile))
 	if err != nil {
-		return rejectOutput(fmt.Errorf("read output %s: %w", render.RebaseReportFile, err))
+		return nil, rejectOutput(fmt.Errorf("read output %s: %w", render.RebaseReportFile, err))
 	}
 	var report rebaseReport
 	dec := json.NewDecoder(strings.NewReader(string(data)))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&report); err != nil || report.BehaviourChange == nil || strings.TrimSpace(report.Reason) == "" {
-		return rejectOutput(fmt.Errorf("%s must be one JSON object with behaviour_change and a reason: %v", render.RebaseReportFile, err))
+		return nil, rejectOutput(fmt.Errorf("%s must be one JSON object with behaviour_change and a reason: %v", render.RebaseReportFile, err))
 	}
-	if err := r.recordRebaseHead(s, n, port, outputs[:i]); err != nil {
+	c := &checked{rebase: data}
+	listed := outputs[:i]
+	if len(listed) == 0 {
+		head, err := r.checkWorkHead(s, n, port)
+		if err != nil {
+			return nil, err
+		}
+		c.head = head
+		return c, nil
+	}
+	if r.document(documentName(place{step: s.ID, round: n, part: port})) != nil {
+		return c, nil
+	}
+	o := listed[0]
+	if !fs.ValidPath(o.Path) || o.Path == "." || strings.ContainsAny(o.Path, `\:`) {
+		return nil, rejectOutput(fmt.Errorf("output path %q is not a clean relative slash-separated path", o.Path))
+	}
+	head, err := os.ReadFile(filepath.Join(r.workPath(), filepath.FromSlash(o.Path)))
+	if err != nil {
+		return nil, rejectOutput(fmt.Errorf("read output %q: %w", o.Path, err))
+	}
+	if err := checkPort(workflow.CodeHead, head); err != nil {
+		return nil, rejectOutput(err)
+	}
+	if err := r.checkHead(s, n, strings.TrimSpace(string(head))); err != nil {
+		return nil, err
+	}
+	c.contents = [][]byte{head}
+	return c, nil
+}
+
+// recordRebaseOutputs records rebaser attempt n's head and its rebase.json, as checkRebaseOutputs passed them in c.
+func (r *run) recordRebaseOutputs(s workflow.Step, n int, port string, outputs []adapter.Output, c *checked) error {
+	i := slices.IndexFunc(outputs, func(o adapter.Output) bool { return o.Path == render.RebaseReportFile })
+	if err := r.recordRebaseHead(s, n, port, outputs[:i], c); err != nil {
 		return err
 	}
 	name := documentName(place{step: s.ID, round: n, part: "rebase"})
@@ -540,33 +574,20 @@ func (r *run) recordRebaseOutputs(s workflow.Step, n int, port string, outputs [
 		return nil
 	}
 	return r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: name,
-		Path: path.Join("tasks", r.task.Repository, r.task.ID, r.key(s.ID, n).AttemptID(), render.RebaseReportFile), SHA256: digest.Of(data).Hex()}, data)
+		Path: path.Join("tasks", r.task.Repository, r.task.ID, r.key(s.ID, n).AttemptID(), render.RebaseReportFile), SHA256: digest.Of(c.rebase).Hex()}, c.rebase)
 }
 
-// recordRebaseHead records rebaser attempt n's head: the commit the head file listed names, checked as a build's,
-// or the worktree's final commit when it lists none.
-func (r *run) recordRebaseHead(s workflow.Step, n int, port string, listed []adapter.Output) error {
+// recordRebaseHead records rebaser attempt n's head: the commit the head file listed names, or the worktree's final
+// commit when it lists none, as checkRebaseOutputs passed them in c.
+func (r *run) recordRebaseHead(s workflow.Step, n int, port string, listed []adapter.Output, c *checked) error {
 	if len(listed) == 0 {
-		return r.recordWorkHead(s, n, port)
+		return r.recordWorkHead(s, n, port, c.head)
 	}
 	name := documentName(place{step: s.ID, round: n, part: port})
 	if r.document(name) != nil {
 		return nil
 	}
-	o := listed[0]
-	if !fs.ValidPath(o.Path) || o.Path == "." || strings.ContainsAny(o.Path, `\:`) {
-		return rejectOutput(fmt.Errorf("output path %q is not a clean relative slash-separated path", o.Path))
-	}
-	data, err := os.ReadFile(filepath.Join(r.workPath(), filepath.FromSlash(o.Path)))
-	if err != nil {
-		return rejectOutput(fmt.Errorf("read output %q: %w", o.Path, err))
-	}
-	if err := checkPort(workflow.CodeHead, data); err != nil {
-		return rejectOutput(err)
-	}
-	if err := r.checkHead(s, n, strings.TrimSpace(string(data))); err != nil {
-		return err
-	}
+	data := c.contents[0]
 	return r.put(store.DocumentRef{Repository: r.task.Repository, TaskID: r.task.ID, Name: name,
-		Path: path.Join("tasks", r.task.Repository, r.task.ID, r.key(s.ID, n).AttemptID(), o.Path), SHA256: digest.Of(data).Hex()}, data)
+		Path: path.Join("tasks", r.task.Repository, r.task.ID, r.key(s.ID, n).AttemptID(), listed[0].Path), SHA256: digest.Of(data).Hex()}, data)
 }

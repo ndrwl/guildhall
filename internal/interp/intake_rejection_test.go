@@ -17,10 +17,13 @@ import (
 
 func assertRejected(t *testing.T, e *env, ev interp.Event, reason string) {
 	t.Helper()
+	// A result check of the still-running attempt says what intake then records (Engine.CheckResult).
+	said := checkBefore(t, e, ev.Step, ev.Attempt)
 	next := e.advance(t, ev)
 	if next != (interp.Next{Wait: interp.WaitDirector, Step: ev.Step, Attempt: ev.Attempt}) {
 		t.Fatalf("rejection wait=%+v", next)
 	}
+	said.agrees(t, e, ev.Step, ev.Attempt)
 	for _, a := range e.attempts(t) {
 		if a.Step == ev.Step && a.Number == ev.Attempt {
 			if a.Outcome != store.AttemptFailed || !strings.Contains(a.IntakeRejection, reason) {

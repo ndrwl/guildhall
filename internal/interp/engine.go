@@ -1062,11 +1062,15 @@ func (r *run) takeResult(s workflow.Step, a *store.StageAttempt) error {
 	}
 	outcome := store.AttemptFailed
 	if res.Status == adapter.StatusSucceeded {
-		if err := r.recordOutputs(s, a.Number, res.Outputs); err != nil {
+		c, err := r.checkOutputs(s, a.Number, res.Outputs)
+		if err != nil {
 			var rejection *resultRejection
 			if errors.As(err, &rejection) {
 				return r.rejectResult(s, a, err)
 			}
+			return fmt.Errorf("interp: outputs of %s attempt %d: %w", s.ID, a.Number, err)
+		}
+		if err := r.recordOutputs(s, a.Number, res.Outputs, c); err != nil {
 			return fmt.Errorf("interp: outputs of %s attempt %d: %w", s.ID, a.Number, err)
 		}
 		if err := r.contest(s, a.Number); err != nil {
@@ -1087,89 +1091,133 @@ func (r *run) takeResult(s workflow.Step, a *store.StageAttempt) error {
 	return writeFile(filepath.Join(r.attemptDir(s.ID, a.Number), "intake.json"), []byte("{}\n"))
 }
 
-// recordOutputs copies each output into the document directory and records it; the first is the step's
-// output port, named <step>-<n>-<port>, and later ones add -<index>. Code heads and review outcomes are
-// checked before anything is recorded.
-func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) error {
+// checked is what checkOutputs read and derived from a succeeded result's outputs, for recordOutputs to record.
+type checked struct {
+	// contents holds each listed output's bytes, in result order.
+	contents [][]byte
+	// review is the first output's review projection, for a review step.
+	review *store.Review
+	// head is a code head derived from committed work when the result lists no head file, "" when that head is
+	// already recorded.
+	head string
+	// rebase is a rebaser's rebase.json.
+	rebase []byte
+}
+
+// checkResult runs intake's checks on res, a parsed result of attempt n of step s, and writes nothing. A failed
+// result is not checked further; a succeeded one's outputs are checked by checkOutputs. A rejection is a
+// *resultRejection with the reason intake records; any other error is operational. Engine.CheckResult and
+// takeResult both reach checkOutputs, so `guildhall result check` and intake give the same reason.
+func (r *run) checkResult(s workflow.Step, n int, res adapter.Result) error {
+	if res.Status != adapter.StatusSucceeded {
+		return nil
+	}
+	_, err := r.checkOutputs(s, n, res.Outputs)
+	return err
+}
+
+// checkOutputs is the check half of intake for a succeeded result's outputs: it refuses everything recordOutputs
+// would refuse to record, and writes nothing. The first output is the step's output port. A check of the port's
+// document is skipped once that document is recorded, since it stands on replay even after the worktree moved on.
+func (r *run) checkOutputs(s workflow.Step, n int, outputs []adapter.Output) (*checked, error) {
 	kind, _ := workflow.LookupKind(s.Type, s.Version)
 	if len(kind.Outputs) != 1 {
-		return fmt.Errorf("%w: %s has %d output ports", ErrUnsupported, s.Type, len(kind.Outputs))
+		return nil, fmt.Errorf("%w: %s has %d output ports", ErrUnsupported, s.Type, len(kind.Outputs))
 	}
 	port := kind.Outputs[0]
 	if s.Type == rebaseKindType {
-		return r.recordRebaseOutputs(s, n, port.Name, outputs)
+		return r.checkRebaseOutputs(s, n, port.Name, outputs)
 	}
+	recorded := r.document(documentName(place{step: s.ID, round: n, part: port.Name})) != nil
 	// A report already recorded stands on replay, even after the worktree moved on.
-	if readOnlyKind(s.Type) && r.document(documentName(place{step: s.ID, round: n, part: port.Name})) == nil {
+	if readOnlyKind(s.Type) && !recorded {
 		if err := r.checkReadOnly(s, n); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	if len(outputs) == 0 {
 		if port.Type == workflow.CodeHead {
-			return r.recordWorkHead(s, n, port.Name)
+			head, err := r.checkWorkHead(s, n, port.Name)
+			if err != nil {
+				return nil, err
+			}
+			return &checked{head: head}, nil
 		}
-		return rejectOutput(fmt.Errorf("a succeeded result lists no output for port %s", port.Name))
+		return nil, rejectOutput(fmt.Errorf("a succeeded result lists no output for port %s", port.Name))
 	}
 	root, err := os.OpenRoot(r.workPath())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() { _ = root.Close() }()
-	contents := make([][]byte, len(outputs))
-	var review *store.Review
+	c := &checked{contents: make([][]byte, len(outputs))}
 	for i, o := range outputs {
 		if !fs.ValidPath(o.Path) || o.Path == "." || strings.ContainsAny(o.Path, `\:`) {
-			return rejectOutput(fmt.Errorf("output path %q is not a clean relative slash-separated path", o.Path))
+			return nil, rejectOutput(fmt.Errorf("output path %q is not a clean relative slash-separated path", o.Path))
 		}
 		data, err := root.ReadFile(filepath.FromSlash(o.Path))
 		if err != nil {
-			return rejectOutput(fmt.Errorf("read output %q: %w", o.Path, err))
+			return nil, rejectOutput(fmt.Errorf("read output %q: %w", o.Path, err))
 		}
 		if i == 0 {
 			if err := checkPort(port.Type, data); err != nil {
-				return rejectOutput(err)
+				return nil, rejectOutput(err)
 			}
 			// A head already recorded stands on replay, even after the branch moved on.
-			if port.Type == workflow.CodeHead && r.document(documentName(place{step: s.ID, round: n, part: port.Name})) == nil {
+			if port.Type == workflow.CodeHead && !recorded {
 				if err := r.checkHead(s, n, strings.TrimSpace(string(data))); err != nil {
-					return err
+					return nil, err
 				}
 			}
 			if isReview(s) {
 				o, err := r.checkOutcome(s, n, data)
 				if err != nil {
-					return err
+					return nil, err
 				}
-				review = reviewOf(*o)
+				c.review = reviewOf(*o)
 			}
 		}
-		contents[i] = data
+		c.contents[i] = data
 	}
 	// A plan's spec is checked for the slice list Guildhall would deliver before it is recorded; one already recorded
 	// stands on replay.
-	if s.Type == "plan" && port.Name == "spec" && r.document(documentName(place{step: s.ID, round: n, part: port.Name})) == nil {
-		if err := r.checkSlices(contents[0]); err != nil {
-			return err
+	if s.Type == "plan" && port.Name == "spec" && !recorded {
+		if err := r.checkSlices(c.contents[0]); err != nil {
+			return nil, err
 		}
 		if r.approvalShows(s.ID + "." + port.Name) {
-			if err := checkSummary(contents[0]); err != nil {
-				return err
+			if err := checkSummary(c.contents[0]); err != nil {
+				return nil, err
 			}
 		}
 	}
 	// A designer's mock-up is checked against its brief's surface, and its design for its open questions, before
 	// anything is recorded; a design already recorded stands on replay.
-	if s.Type == designKindType && r.document(documentName(place{step: s.ID, round: n, part: port.Name})) == nil {
-		if err := r.checkMockup(s, n, outputs, contents); err != nil {
-			return err
+	if s.Type == designKindType && !recorded {
+		if err := r.checkMockup(s, n, outputs, c.contents); err != nil {
+			return nil, err
 		}
-		if err := checkDesignQuestions(contents[0]); err != nil {
-			return err
+		if err := checkDesignQuestions(c.contents[0]); err != nil {
+			return nil, err
 		}
 	}
+	return c, nil
+}
+
+// recordOutputs is the record half of intake: it copies each output checkOutputs passed as c into the document
+// directory and records it; the first is the step's output port, named <step>-<n>-<port>, and later ones add
+// -<index>. A document already recorded stands on replay.
+func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output, c *checked) error {
+	kind, _ := workflow.LookupKind(s.Type, s.Version)
+	port := kind.Outputs[0]
+	if s.Type == rebaseKindType {
+		return r.recordRebaseOutputs(s, n, port.Name, outputs, c)
+	}
+	if len(outputs) == 0 {
+		return r.recordWorkHead(s, n, port.Name, c.head)
+	}
 	for i, o := range outputs {
-		data := contents[i]
+		data := c.contents[i]
 		p := place{step: s.ID, round: n, part: port.Name}
 		if i > 0 && s.Type == designKindType {
 			// A designer's mock-up, its one output after design.md (checkMockup), is recorded under its own part; one
@@ -1192,7 +1240,7 @@ func (r *run) recordOutputs(s workflow.Step, n int, outputs []adapter.Output) er
 			SHA256: digest.Of(data).Hex(),
 		}
 		if i == 0 {
-			d.Review = review
+			d.Review = c.review
 		}
 		if err := r.put(d, data); err != nil {
 			return err

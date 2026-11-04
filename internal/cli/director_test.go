@@ -386,7 +386,7 @@ func TestDirectorStartCheckNamesArtisanPermissions(t *testing.T) {
 			line = l
 		}
 	}
-	const guildhall = ", plus from Guildhall Bash(guildhall ci log:*);"
+	const guildhall = ", plus from Guildhall Bash(guildhall ci log:*), Bash(guildhall result submit:*), Bash(guildhall result check:*);"
 	reviewer := "profile reviewer grants the shipped default " + strings.Join(claude.ShippedDefaultGrants["reviewer"], ", ") + ", plus for repository app Bash(go vet:*)" + guildhall
 	for _, want := range []string{"Director alpha", filepath.Join(dir, "config.toml"), "profile builder grants from the copy Bash(go test:*), Bash(git commit:*)" + guildhall,
 		reviewer, "profile worker gets no shipped default" + guildhall, "edits only", "Bash", "docs/adapters.md#artisan-permissions",
