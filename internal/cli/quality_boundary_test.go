@@ -49,6 +49,10 @@ func TestQualityJudgeRepositoryBoundary(t *testing.T) {
 
 func TestQualityJudgeConfiguredLockWait(t *testing.T) {
 	t.Setenv(roleEnv, "guildhall")
+	// Leave slow runners room for each open under its acquisition deadline, while keeping the refusal ceiling
+	// below the default 30s store wait so ignoring lock_wait, here or in admission's store read, still fails.
+	const lockWait = 5 * time.Second
+	const refusalCeiling = 4 * lockWait
 	for _, command := range [][]string{
 		{"quality", "judge", "--review", "1", "t-1"},
 		{"quality", "judged", "--attempt", "1", "--task", "t-1"},
@@ -61,7 +65,7 @@ func TestQualityJudgeConfiguredLockWait(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if err := os.WriteFile(d.config, []byte(strings.Replace(string(data), "[local]", "[local]\nlock_wait = \"1s\"", 1)), 0600); err != nil {
+				if err := os.WriteFile(d.config, []byte(strings.Replace(string(data), "[local]", "[local]\nlock_wait = \""+lockWait.String()+"\"", 1)), 0600); err != nil {
 					t.Fatal(err)
 				}
 				want := "lock task app/t-1"
@@ -92,8 +96,8 @@ func TestQualityJudgeConfiguredLockWait(t *testing.T) {
 				if code == 0 || !strings.Contains(stderr, want) {
 					t.Fatalf("exit %d, stderr %s; want %s", code, stderr, want)
 				}
-				if elapsed := time.Since(start); elapsed > time.Minute {
-					t.Fatalf("lock wait %v; want configured 1s wait within 4s", elapsed)
+				if elapsed := time.Since(start); elapsed > refusalCeiling {
+					t.Fatalf("lock wait %v; want configured %v wait within %v", elapsed, lockWait, refusalCeiling)
 				}
 			})
 		}

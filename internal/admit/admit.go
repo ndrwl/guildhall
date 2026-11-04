@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
@@ -96,7 +97,8 @@ func Managed(dir string) (bool, error) {
 		// Any error other than the file not existing means it exists.
 		return true, err
 	}
-	v, _, err := managedFacts(filepath.Join(dir, "config.toml"))
+	cfgPath := filepath.Join(dir, "config.toml")
+	v, _, err := managedFacts(cfgPath, fileLockWait(cfgPath))
 	if err != nil {
 		return b != nil, fmt.Errorf("managed mode: %w", err)
 	}
@@ -159,17 +161,47 @@ func (f Files) Load() (*config.Config, error) {
 // ManagedView reads the managed facts of the Director copy whose config is at cfgPath, from the director.store
 // beside it: none when that store does not exist, as for a config that is not in a copy.
 func ManagedView(cfgPath string) (store.ManagedView, error) {
-	v, _, err := managedFacts(cfgPath)
+	v, _, err := managedFacts(cfgPath, fileLockWait(cfgPath))
 	return v, err
 }
 
-// managedFacts is ManagedView with the reserved task's alert decisions.
-func managedFacts(cfgPath string) (store.ManagedView, []store.Decision, error) {
+// localLockWait is the store lock wait for admission's own store reads: the lock_wait that the config.toml bytes
+// local set, or config.DefaultLockWait when they are empty, do not parse or give no positive wait. It reads
+// config.toml alone on purpose: admission has not yet trusted managed.toml, and an unauthorized lock_wait never
+// decides anything (docs/director-modes.md#mode), so a lock_wait set only in managed.toml governs every later store
+// open but not the admission read. The full config's errors are still reported by the later Files.Load.
+func localLockWait(local []byte) time.Duration {
+	if len(local) == 0 {
+		return config.DefaultLockWait
+	}
+	cfg, err := config.Parse(local)
+	if err != nil {
+		return config.DefaultLockWait
+	}
+	d, err := cfg.LockWait()
+	if err != nil || d <= 0 {
+		return config.DefaultLockWait
+	}
+	return d
+}
+
+// fileLockWait is localLockWait of the config.toml at cfgPath; a missing or unreadable file gives the default, so
+// callers that only have a path keep their error behaviour.
+func fileLockWait(cfgPath string) time.Duration {
+	b, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return config.DefaultLockWait
+	}
+	return localLockWait(b)
+}
+
+// managedFacts is ManagedView with the reserved task's alert decisions; it waits up to wait for the store's lock.
+func managedFacts(cfgPath string, wait time.Duration) (store.ManagedView, []store.Decision, error) {
 	path := filepath.Join(filepath.Dir(cfgPath), StoreFile)
 	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
 		return store.ManagedView{Revisions: []store.ManagedRevision{}}, nil, nil
 	}
-	s, err := store.Open(path, store.Options{ReadOnly: true, RequireStore: true, LockTimeout: config.DefaultLockWait})
+	s, err := store.Open(path, store.Options{ReadOnly: true, RequireStore: true, LockTimeout: wait})
 	if err != nil {
 		return store.ManagedView{}, nil, err
 	}
@@ -232,7 +264,7 @@ func Inspect(cfgPath string) (Admission, *config.Config, error) {
 	if err != nil {
 		return Admission{}, nil, err
 	}
-	v, ds, err := managedFacts(cfgPath)
+	v, ds, err := managedFacts(cfgPath, localLockWait(f.Local))
 	if err != nil {
 		return Admission{}, nil, err
 	}
@@ -267,7 +299,8 @@ func Admit(cfgPath string) (*config.Config, Admission, error) {
 	if err != nil {
 		return nil, Admission{}, err
 	}
-	v, ds, err := managedFacts(cfgPath)
+	wait := localLockWait(f.Local)
+	v, ds, err := managedFacts(cfgPath, wait)
 	if err != nil {
 		return nil, Admission{}, fmt.Errorf("managed mode: %w", err)
 	}
@@ -280,7 +313,7 @@ func Admit(cfgPath string) (*config.Config, Admission, error) {
 		return nil, a, err
 	}
 	if a.Mode == ModeManaged && !a.Authorized && (a.Untrusted == nil || a.Untrusted.State == AlertNotOpened || a.approved) {
-		v, ds, err := observe(cfgPath, a)
+		v, ds, err := observe(cfgPath, a, wait)
 		if err != nil {
 			return nil, a, RefusalError{a.Refusal + "; recording the observation failed: " + err.Error()}
 		}
