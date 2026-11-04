@@ -15,7 +15,8 @@ import (
 
 // directorModeEnv chooses the mode the Director suites run their copies in (docs/director-modes.md#testing-both-ways):
 // unset or "standalone" leaves every copy as its helper makes it, and "managed" makes each copy the shared copy
-// helpers return a managed copy with the same effective settings. CI runs this package once each way.
+// helpers return a managed copy with the same effective settings. CI runs this package once each way on Linux,
+// and standalone only on Windows and macOS.
 const directorModeEnv = "GUILDHALL_TEST_DIRECTOR_MODE"
 
 // directorModeFlag is directorModeEnv as a test flag, `go test ./internal/cli -director-mode=managed`; the

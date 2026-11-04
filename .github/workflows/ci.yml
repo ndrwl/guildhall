@@ -103,7 +103,10 @@ jobs:
           go test -count=1 -timeout 20m $tested
       # The Director suites again, each copy managed with the same effective
       # settings (docs/director-modes.md#testing-both-ways).
+      # Ubuntu only: H3b of d178, a coverage-reducing choice the Guildmaster
+      # made for speed; Windows and macOS run these suites standalone only.
       - name: Test Director suites managed
+        if: matrix.os == 'ubuntu-latest'
         env:
           GUILDHALL_CI_REQUIRE: ${{ matrix.require }}
           GUILDHALL_TEST_DIRECTOR_MODE: managed
