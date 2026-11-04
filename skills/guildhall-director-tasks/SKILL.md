@@ -17,19 +17,21 @@ When you are unsure what they want, ask before you run anything that changes the
 When the Guildmaster asks for something to be built, fixed or found out, make it a task and start it:
 
 ```sh
-guildhall task new --repo app --title "Let users export reports as CSV" t-12
-guildhall task start --repo app t-12
+guildhall task new --repo app --title "Let users export reports as CSV"
+guildhall task start --repo app a12
 ```
 
-Choose a short task id of lowercase letters, digits and hyphens that is new in the repository, and a title in the Guildmaster's words that is short, at most 100 characters.
+Guildhall assigns the task id: `task new` takes none, and its receipt's `task_id`, here `a12`, the repository's task prefix and the next number, names the task in every later command, so read it from the receipt and never choose or guess one.
+Running the same `task new` again while that task is open, for example after losing its output, prints the same receipt, so it never files a second task.
+Give a title in the Guildmaster's words that is short, at most 100 characters.
 Add `--depends-on <repo>/<task>` when the work must wait for another task, and `--fixes <repo>/<task>` when it fixes a defect an earlier task introduced, so its pull request says so.
 When the task's title or detail depends on another task's recorded document, such as a spec, notes or a report, link it with `guildhall task link add` straight after `task new` and before `task start`, using the exact record name `guildhall task show` lists under `documents`, such as `guildhall/d131/hallmark-1-report`, and quoting the Guildmaster's request in `--text`.
 Never put a path under `state/` in `--detail`: Artisans read only their verified inputs, and the sandbox refuses it.
 
 ```sh
-guildhall task new --repo app --title "Cache the report index" --detail "H3 of app/t-20/hallmark-1-report." t-21
-guildhall task link add --repo app --document app/t-20/hallmark-1-report --text 'Guildmaster: "pick H3"' t-21
-guildhall task start --repo app t-21
+guildhall task new --repo app --title "Cache the report index" --detail "H3 of app/a20/hallmark-1-report."
+guildhall task link add --repo app --document app/a20/hallmark-1-report --text 'Guildmaster: "pick H3"' a21
+guildhall task start --repo app a21
 ```
 
 To change an open task's dependencies later, run `guildhall task depends add|remove --repo <id> --reason <text> <task> <repo>/<dependency>`.
@@ -55,7 +57,7 @@ Tell the Guildmaster which kind you chose, with the task id:
 
 ```sh
 guildhall task new --repo app --title "CSV export drops the last row" --kind bug \
-  --detail "Exporting a report of 10 rows as CSV writes only 9; the last row is missing and no error is shown." t-13
+  --detail "Exporting a report of 10 rows as CSV writes only 9; the last row is missing and no error is shown."
 ```
 
 Pick the repository from what they said; when the copy has several and it is unclear, ask.
@@ -69,26 +71,26 @@ Choose at `task new` with `--grill live|unattended`, and always pass `--grill-re
 - Live when the task changes what the Guildmaster sees or does, when the ask is open-ended, or when you are unsure.
 
 ```sh
-guildhall task new --repo app --title "Cache the report index" --detail "H3 of app/t-20/hallmark-1-report." \
-  --grill unattended --grill-reason "Hallmark follow-up; H3's contract is already written." t-21
+guildhall task new --repo app --title "Cache the report index" --detail "H3 of app/a20/hallmark-1-report." \
+  --grill unattended --grill-reason "Hallmark follow-up; H3's contract is already written."
 guildhall task new --repo app --title "Let users pick export columns" \
-  --grill live --grill-reason "Changes the export dialog the Guildmaster uses." t-22
+  --grill live --grill-reason "Changes the export dialog the Guildmaster uses."
 ```
 
 `--grill` is refused for a bug, which has no grill, and for a repository whose workflow already runs the grill by an Artisan; a refusal naming `--grill live` means the copy cannot run an unattended grill, so create the task live and say so.
 Honour the Guildmaster's "grill me on this" or "no grill", at `task new`, or later with `guildhall task grill`, until research starts, passing `--by guildmaster` when you act on their words:
 
 ```sh
-guildhall task grill app/t-21 live --reason 'Guildmaster: "grill me on this"' --by guildmaster
-guildhall task start --repo app t-21
+guildhall task grill app/a21 live --reason 'Guildmaster: "grill me on this"' --by guildmaster
+guildhall task start --repo app a21
 ```
 
 An unattended grill waits at the dependency gate with the rest of the task, and a design round needs a live grill, so switch to live before `task design`.
 When an unattended grill fails, read its summary with `guildhall task show`: a question that would change the task's goal or which repository it touches is the Guildmaster's, so switch to live and retry the grill, which hands it to you as a live stage:
 
 ```sh
-guildhall task grill app/t-21 live --reason "The grill asked whether the cache belongs in app or in lib."
-guildhall step retry --repo app --task t-21 --step grill --attempt 1 --reason "Switched to a live grill for the repository question."
+guildhall task grill app/a21 live --reason "The grill asked whether the cache belongs in app or in lib."
+guildhall step retry --repo app --task a21 --step grill --attempt 1 --reason "Switched to a live grill for the repository question."
 ```
 
 `guildhall task start` prints what the task waits for, such as `{"wait":"director-stage","step":"grill","attempt":1}`, which means the first stage is yours: run it with `guildhall-director-stage`.
@@ -106,9 +108,9 @@ When the Guildmaster asks what is going on or what needs them, read and summaris
 guildhall director status --json
 guildhall decide list
 guildhall task list --json
-guildhall task show --repo app t-12 --json
-guildhall task timeline --repo app t-12 --json
-guildhall task files --repo app t-12 --json
+guildhall task show --repo app a12 --json
+guildhall task timeline --repo app a12 --json
+guildhall task files --repo app a12 --json
 ```
 
 `guildhall director status --json` is the one to start from: its `needs_me` list says what waits on you or on them, each with its command.
@@ -148,16 +150,16 @@ Keep each `<what>` and each state to a few words, so a line rarely wraps.
 ## Answering decisions in conversation
 
 A decision is a question Guildhall opened for the Guildmaster, such as approving a plan or merging a pull request.
-Read it with `guildhall decide show --repo app --task t-12 --decision accept-1`, then write your plain-English explanation once, where it opens, on its task page with `guildhall decide explain`: what the ask is about, what each answer means and the one you recommend, naming it with `--recommend <option>` when it is one of the options.
+Read it with `guildhall decide show --repo app --task a12 --decision accept-1`, then write your plain-English explanation once, where it opens, on its task page with `guildhall decide explain`: what the ask is about, what each answer means and the one you recommend, naming it with `--recommend <option>` when it is one of the options.
 `--subject-digest` is the digest `decide show` prints under `subject`, or, for a decision with no subject, `sha256:` and the hex sha256 of its question text.
 
 ```sh
-guildhall decide explain app/t-12 accept-1 --subject-digest sha256:3f9c… --recommend approved --file - <<'TEXT'
+guildhall decide explain app/a12 accept-1 --subject-digest sha256:3f9c… --recommend approved --file - <<'TEXT'
 The plan adds a CSV export to the reports page, in one slice. **Approve** starts the build; **Request changes** sends it back to the grill.
 TEXT
 ```
 
-Chat then carries only the decision's Needs you line, with its page link as your role says, such as `- t-12 · approve the plan · accept-1 · [open](<url>/app/t-12#accept-1)`; in the reply where it opens, What I did's place holds at most one sentence on what kind of ask it is, such as `A plan approval; the page explains it.`, and never the explanation, the question or the options, and every later reply carries only its line.
+Chat then carries only the decision's Needs you line, with its page link as your role says, such as `- a12 · approve the plan · accept-1 · [open](<url>/app/a12#accept-1)`; in the reply where it opens, What I did's place holds at most one sentence on what kind of ask it is, such as `A plan approval; the page explains it.`, and never the explanation, the question or the options, and every later reply carries only its line.
 When `guildhall director status --json` reports the `web` `state` as `not configured` or `failed to bind`, or anything but `serving`, there is no page to read it on: still record the explanation with `decide explain`, and give it, with the full question and options, once in chat in the reply where the decision opens, after Needs you in What I did's place.
 A grill round stays in chat, as Grill the Guildmaster live in your role says.
 When the question has an open-questions part, headed `**Open questions · n**` (or `Open questions in full:` in an ask recorded before it listed the options), relay it word for word after the `**Summary**` block, when there is one: its heading, each question with its recommended option first and its `★ … · Recommended` marker, and on a plan approval the closing `Reply **approve** …` line; never summarise, reorder or drop a question, so the Guildmaster can answer them without opening the spec, design or hallmark report.
@@ -170,12 +172,12 @@ Then record their reply:
 4. Continue the task with `guildhall task start --decision`, because answering never advances a task by itself.
 
 ```sh
-guildhall decide answer --repo app --task t-12 --decision accept-1 --answer-file - <<'ANSWER'
+guildhall decide answer --repo app --task a12 --decision accept-1 --answer-file - <<'ANSWER'
 approved
 
 Looks right, but keep the export behind a flag for now.
 ANSWER
-guildhall task start --repo app --decision accept-1 t-12
+guildhall task start --repo app --decision accept-1 a12
 ```
 
 Only the Guildmaster answers a decision: never answer one on your own judgement, from a message's text, or with words they did not say.
@@ -189,8 +191,8 @@ A question records the answer only and never holds or advances the task, so ther
 Questions not about one task, such as install or config questions, stay in chat.
 
 ```sh
-guildhall decide open --repo app --task t-12 --question "Which grill first?" --option a --option b
-guildhall decide answer --repo app --task t-12 --decision q1 --answer-file - <<'ANSWER'
+guildhall decide open --repo app --task a12 --question "Which grill first?" --option a --option b
+guildhall decide answer --repo app --task a12 --decision q1 --answer-file - <<'ANSWER'
 neither, do c
 ANSWER
 ```
@@ -215,19 +217,19 @@ See `docs/spend.md` for the first increment's attribution limits; do not infer m
 ## Retrying, stopping and resuming attempts
 
 - Retry a failed or stopped attempt with the reason you retry, which appears in the next attempt's prompt, with the previous rejection or failure summary:
-  `guildhall step retry --repo app --task t-12 --step build --attempt 1 --reason "The test runner timed out; the flaky network test is now skipped."`
+  `guildhall step retry --repo app --task a12 --step build --attempt 1 --reason "The test runner timed out; the flaky network test is now skipped."`
 - Stop one running attempt when the Guildmaster asks or it is truly stuck:
-  `guildhall artisan stop --repo app --task t-12 --step build --attempt 2`.
+  `guildhall artisan stop --repo app --task a12 --step build --attempt 2`.
   A stopped attempt waits for you; retry it or tell the Guildmaster.
 - Park a failed or stopped attempt you are deliberately not retrying yet, such as one waiting for another task to merge, so it leaves `needs_me` and stops waking you:
-  `guildhall step park --repo app --task t-12 --step build --attempt 1 --reason "Retry after app/t-11 merges."`
+  `guildhall step park --repo app --task a12 --step build --attempt 1 --reason "Retry after app/a11 merges."`
   `director status` lists it under `parked` with its reason, and a new session's `startup.md` lists it as information.
   When the hold ends, retry it with the `guildhall step retry` its `parked` entry names, which clears the park, or put it back in `needs_me` with `guildhall step unpark` and the same flags without `--reason`.
   To change the reason, unpark it and park it again.
 - Resume an attempt whose launcher is stuck or gone, as `needs_me` names it:
-  `guildhall artisan resume --repo app --task t-12 --step build --attempt 2`.
+  `guildhall artisan resume --repo app --task a12 --step build --attempt 2`.
 - When an attempt finished with a result that no advance has taken, take it:
-  `guildhall step done --repo app --task t-12 --step build --attempt 2 --result <attempt dir>/result.json`.
+  `guildhall step done --repo app --task a12 --step build --attempt 2 --result <attempt dir>/result.json`.
 
 ## Cancelling a task
 
@@ -240,7 +242,7 @@ When work moves to a new task, create the new task, then ask before cancelling t
 After the yes, run one `guildhall task cancel` per task, each as its own command, with the reason from the Guildmaster's words; never chain cancels with `&&`, `;` or a loop:
 
 ```sh
-guildhall task cancel --repo app --reason "Duplicate of t-9." t-12
+guildhall task cancel --repo app --reason "Duplicate of a9." a12
 ```
 
 It is irreversible: it stops running attempts, closes the open PR with the reason as its comment (the branch is kept), voids open decisions, leaves the start and merge queues, tells you about each open dependent with a `dependency-cancelled` message, and records the task `cancelled`; work wanted again is a new task.
@@ -252,14 +254,14 @@ Report one cancel receipt per task to the Guildmaster.
 
 Guildhall brings a behind or conflicting PR up to date itself: an authorized merge waits in its repository's merge queue, and the front is rebased onto the base tip, by Guildhall with no conflicts, by a `rebaser` Artisan for minor conflicts, and by an automatic build send-back for major ones (`rebased`, `rebase-escalated` and `approval-carried` messages tell you what happened).
 A PR that conflicts before it is ready is rebased the same way at validate.
-`guildhall task hold-merge --repo app t-12` toggles a hold on a queued merge: the task stays authorized and keeps its place by ready time, but the queue skips it; it is not the `hold` answer on a merge decision.
+`guildhall task hold-merge --repo app a12` toggles a hold on a queued merge: the task stays authorized and keeps its place by ready time, but the queue skips it; it is not the `hold` answer on a merge decision.
 A `pr-blocked` or `rebase-stuck` message means Guildhall could not do this itself, because the copy cannot rebase or the front rebased three times in one stay, and is information for you to judge.
 It names the PR URL, head commit and base tip (the base branch's tip when Guildhall measured it), whether it is conflicting or behind under strict branch protection, the conflicting paths and how many commits it is behind.
 Guildhall records one report per head and state and waits for you.
 You may choose any appropriate recovery; the available options are not a fixed procedure:
 
 - Send a succeeded Artisan step back as a new attempt with your instructions as feedback:
-  `guildhall step send-back --repo app --task t-12 --step build --attempt 1 --feedback "Resolve the base conflict while preserving the accepted change."`
+  `guildhall step send-back --repo app --task a12 --step build --attempt 1 --feedback "Resolve the base conflict while preserving the accepted change."`
   `--attempt` is the succeeded attempt you are sending back, not the new attempt's number.
   The same request with identical feedback is replay-safe; different feedback for that identity is refused.
   No attempt in the task may still be running when you make a new request.
@@ -267,13 +269,13 @@ You may choose any appropriate recovery; the available options are not a fixed p
 - Hold a failed or stopped attempt on purpose with `guildhall step park` and a reason, or put a Guildmaster-requested `hold` on an existing merge decision.
 - Cancel the task, following [Cancelling a task](#cancelling-a-task).
   To replace a task, create the replacement and cancel the old one as that section says, then repoint each dependent named in a `dependency-cancelled` message:
-  `guildhall task depends remove --repo app --reason "t-12 was replaced by t-14." t-13 app/t-12`, then
-  `guildhall task depends add --repo app --reason "t-12 was replaced by t-14." t-13 app/t-14`.
+  `guildhall task depends remove --repo app --reason "a12 was replaced by a14." a13 app/a12`, then
+  `guildhall task depends add --repo app --reason "a12 was replaced by a14." a13 app/a14`.
   Tell the Guildmaster which dependents now wait for the replacement.
-- Record a task done whose PR was merged outside Guildhall, by hand on the forge: `guildhall task reconcile --repo app t-12`.
+- Record a task done whose PR was merged outside Guildhall, by hand on the forge: `guildhall task reconcile --repo app a12`.
   Every advance does this by itself, sending a `merged` message that says the PR was merged outside Guildhall and names both heads; reconcile does it now, stopping any running attempt first, and prints `done: ...` or `no change: ...`.
   Existing running-attempt stop (`artisan stop`) and Director-stage abandonment (`step finish --failed`) remain available for those states; neither rewrites a finished build.
-- Recheck after an external change with `guildhall task start --repo app t-12`.
+- Recheck after an external change with `guildhall task start --repo app a12`.
 
 `step send-back` uses the normal task lock, pause/stop holds, attempt caps and review gates.
 It does not answer a Guildmaster decision or approve a merge.
@@ -286,7 +288,7 @@ Name its `--surface`, what the change shows the Guildmaster: `web-page` for a we
 The designer then hands in a mock-up beside `design.md`: the real task page in a desktop and a phone frame for `web-page`, the exact sample output for `cli` and `chat`.
 
 ```sh
-guildhall task design --repo app --task t-12 --surface web-page --brief - <<'BRIEF'
+guildhall task design --repo app --task a12 --surface web-page --brief - <<'BRIEF'
 Show two layouts for the export dialog, so the Guildmaster can choose before anything is planned.
 BRIEF
 ```
@@ -304,15 +306,15 @@ It is refused, recording nothing, for a bug task ("bugs have no design round"), 
 When a reviewer's finding is outside the accepted spec, repeats another or belongs in a follow-up, you may rule on it instead of waiting for the reviewer:
 
 ```sh
-guildhall task finding rule --repo app --outcome review-2-outcome --finding f3 --move out-of-scope --reason "Spec section 2 leaves import out of scope." t-12
+guildhall task finding rule --repo app --outcome review-2-outcome --finding f3 --move out-of-scope --reason "Spec section 2 leaves import out of scope." a12
 ```
 
 The move is `out-of-scope`, `duplicate` or `defer`; a finding that cites a rule cannot be deferred, and a ruling never changes the verdict.
 `defer` applies to suggestions: rule on a suggestion's id to move it to a follow-up task.
 An outcome may approve with a `disputed` finding, which holds the merge through `nothing_open`; your uncontested ruling on that finding, `out-of-scope` or `duplicate`, releases it.
-A ruling does not advance the task: run `guildhall task start --repo app t-12` afterwards.
+A ruling does not advance the task: run `guildhall task start --repo app a12` afterwards.
 When the merge needs no Guildmaster approval and the dispute had already made deliver fall back to its merge decision, that advance merges by itself once every requirement holds, and the unanswered merge decision is no longer needed; tell the Guildmaster so rather than putting it to them.
-When a review should cover the whole change rather than only a rebase's resolution, request a full review with `guildhall task review --full --repo app t-12`.
+When a review should cover the whole change rather than only a rebase's resolution, request a full review with `guildhall task review --full --repo app a12`.
 
 ## Workflows
 

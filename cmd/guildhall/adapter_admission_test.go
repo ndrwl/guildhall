@@ -43,7 +43,7 @@ func TestBinaryRefusesImplicitFake(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, args := range [][]string{
-		{"task", "new", "--store", d.store, "--config", d.cfg, "--repo", "app", "--title", "No fake", "t-2"},
+		{"task", "new", "--store", d.store, "--config", d.cfg, "--repo", "app", "--title", "No fake"},
 		append([]string{"task", "start"}, append(d.flags, "legacy")...),
 	} {
 		before, err := os.ReadFile(d.store)
@@ -63,13 +63,13 @@ func TestBinaryRefusesImplicitFake(t *testing.T) {
 	if err := os.WriteFile(file, original, 0600); err != nil {
 		t.Fatal(err)
 	}
-	started := d.advance([]string{"task", "start"}, "t-1")
+	started := d.advance([]string{"task", "start"}, "t1")
 	t.Logf("explicit fake profile: task start output: %s", started)
 	d.want(started, `{"wait":"attempt","step":"plan","attempt":1}`)
 	done := d.done("plan", 1) // Explicit fake actually produces a result, not merely admission.
 	t.Logf("explicit fake profile: step done output: %s", done)
 	d.want(done, `{"wait":"decision","step":"accept","decision":"accept-1"}`)
-	result, err := os.ReadFile(filepath.Join(d.state, "app", "t-1", "plan-1", "result.json"))
+	result, err := os.ReadFile(filepath.Join(d.state, "app", "t1", "plan-1", "result.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

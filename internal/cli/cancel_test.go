@@ -24,7 +24,7 @@ import (
 // appRemote is app's remote in the run configs.
 const appRemote = "git@github.com:example/app.git"
 
-// cancelDirector is a run Director for task cancel: app/t-1 with whatever a test records for it, the fake forge and
+// cancelDirector is a run Director for task cancel: app/t1 with whatever a test records for it, the fake forge and
 // a fake stopper that records the attempts it is asked to stop and answers err.
 type cancelDirector struct {
 	runDirector
@@ -63,12 +63,12 @@ func (c *cancelDirector) write(t *testing.T, fn func(*store.Store) (store.Receip
 	return r
 }
 
-// publish opens t-1's pull request on the fake forge and records it as publish-1-pr, as publish does.
+// publish opens t1's pull request on the fake forge and records it as publish-1-pr, as publish does.
 func (c *cancelDirector) publish(t *testing.T) forge.PullRequest {
 	t.Helper()
 	head := strings.Repeat("b", 40)
 	c.forge.AddCommit(appRepo, head)
-	pr, err := c.forge.Publish(context.Background(), forge.Change{Repository: appRepo, Remote: appRemote, Branch: "guildhall/t-1", Head: head, Title: "Sort the task list"})
+	pr, err := c.forge.Publish(context.Background(), forge.Change{Repository: appRepo, Remote: appRemote, Branch: "guildhall/t1", Head: head, Title: "Sort the task list"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,14 +77,14 @@ func (c *cancelDirector) publish(t *testing.T) forge.PullRequest {
 	return pr
 }
 
-// putDocument writes v as t-1's document name under the state's document directory and records it.
+// putDocument writes v as t1's document name under the state's document directory and records it.
 func (c *cancelDirector) putDocument(t *testing.T, name string, v any) {
 	t.Helper()
 	data, err := json.Marshal(v)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := path.Join("tasks", "app", "t-1", name+".json")
+	p := path.Join("tasks", "app", "t1", name+".json")
 	file := filepath.Join(c.state, "documents", filepath.FromSlash(p))
 	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 		t.Fatal(err)
@@ -93,7 +93,7 @@ func (c *cancelDirector) putDocument(t *testing.T, name string, v any) {
 		t.Fatal(err)
 	}
 	c.write(t, func(s *store.Store) (store.Receipt, error) {
-		return s.PutDocument("doc-"+name, store.DocumentRef{Repository: "app", TaskID: "t-1", Name: name, Path: p, SHA256: digest.Of(data).Hex()})
+		return s.PutDocument("doc-"+name, store.DocumentRef{Repository: "app", TaskID: "t1", Name: name, Path: p, SHA256: digest.Of(data).Hex()})
 	})
 }
 
@@ -109,7 +109,7 @@ func (c *cancelDirector) task(t *testing.T, id string) store.Task {
 
 func (c *cancelDirector) receipts(t *testing.T) int {
 	t.Helper()
-	h, err := withStore(c.store, true, func(s *store.Store) (store.TaskHistory, error) { return s.TaskHistory("app", "t-1") })
+	h, err := withStore(c.store, true, func(s *store.Store) (store.TaskHistory, error) { return s.TaskHistory("app", "t1") })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,45 +126,45 @@ func TestTaskCancelRefusals(t *testing.T) {
 		code int
 		want string
 	}{
-		{[]string{"t-1"}, 2, "--reason is required"},
-		{[]string{"--reason", " ", "t-1"}, 2, "--reason is required"},
+		{[]string{"t1"}, 2, "--reason is required"},
+		{[]string{"--reason", " ", "t1"}, 2, "--reason is required"},
 		{[]string{"--reason", "Duplicate."}, 2, "takes one task id"},
-		{[]string{"--reason", strings.Repeat("x", store.MaxTextBytes+1), "t-1"}, 2, "the limit is"},
+		{[]string{"--reason", strings.Repeat("x", store.MaxTextBytes+1), "t1"}, 2, "the limit is"},
 	} {
 		code, _, stderr := c.cancel(t, tc.args...)
 		if code != tc.code || !strings.Contains(stderr, tc.want) {
 			t.Errorf("task cancel %q: exit %d, %s; want %d and %q", tc.args, code, stderr, tc.code, tc.want)
 		}
 	}
-	code, _, stderr := c.run(t, "task", "cancel", "--store", c.store, "--config", c.config, "--state", c.state, "--repo", "elsewhere", "--reason", "Duplicate.", "t-1")
+	code, _, stderr := c.run(t, "task", "cancel", "--store", c.store, "--config", c.config, "--state", c.state, "--repo", "elsewhere", "--reason", "Duplicate.", "t1")
 	if code != 1 || !strings.Contains(stderr, "elsewhere") {
 		t.Errorf("task cancel in an unlisted repository: exit %d, %s", code, stderr)
 	}
-	code, _, stderr = c.cancel(t, "--reason", "Duplicate.", "t-9")
-	if code != 1 || !strings.Contains(stderr, "t-9") {
+	code, _, stderr = c.cancel(t, "--reason", "Duplicate.", "t9")
+	if code != 1 || !strings.Contains(stderr, "t9") {
 		t.Errorf("task cancel of an unknown task: exit %d, %s", code, stderr)
 	}
 	if got := c.receipts(t); got != before {
 		t.Errorf("refused cancels wrote %d receipts", got-before)
 	}
-	if got := c.task(t, "t-1"); got.State != store.TaskOpen {
+	if got := c.task(t, "t1"); got.State != store.TaskOpen {
 		t.Errorf("task after refusals = %+v, want it open", got)
 	}
 
 	c.write(t, func(s *store.Store) (store.Receipt, error) {
-		return s.SetTaskState("done-t-1", "app", "t-1", store.TaskDone)
+		return s.SetTaskState("done-t1", "app", "t1", store.TaskDone)
 	})
 	before = c.receipts(t)
-	code, _, stderr = c.cancel(t, "--reason", "Duplicate.", "t-1")
+	code, _, stderr = c.cancel(t, "--reason", "Duplicate.", "t1")
 	if code != 1 || !strings.Contains(stderr, "is done") {
 		t.Errorf("task cancel of a done task: exit %d, %s", code, stderr)
 	}
-	if got := c.task(t, "t-1"); got.State != store.TaskDone || got.CancelReason != "" || c.receipts(t) != before {
+	if got := c.task(t, "t1"); got.State != store.TaskDone || got.CancelReason != "" || c.receipts(t) != before {
 		t.Errorf("a refused cancel of a done task changed it: %+v", got)
 	}
 	// A decision an earlier release left open on a done task, such as its audit, is still answered.
-	writeLegacyDecision(t, c.store, store.Decision{Repository: "app", TaskID: "t-1", ID: "q-1", Kind: store.DecisionQuestion, Question: "Which?"})
-	if code, out, stderr := runDecide(t, "This one.\n", "answer", "--store", c.store, "--repo", "app", "--task", "t-1", "--decision", "q-1", "--answer-file", "-"); code != 0 {
+	writeLegacyDecision(t, c.store, store.Decision{Repository: "app", TaskID: "t1", ID: "q-1", Kind: store.DecisionQuestion, Question: "Which?"})
+	if code, out, stderr := runDecide(t, "This one.\n", "answer", "--store", c.store, "--repo", "app", "--task", "t1", "--decision", "q-1", "--answer-file", "-"); code != 0 {
 		t.Errorf("decide answer on a done task: exit %d, %s %s", code, out, stderr)
 	}
 }
@@ -178,58 +178,58 @@ func TestTaskCancelRefusals(t *testing.T) {
 // prints that it is already cancelled and changes nothing.
 func TestTaskCancelEndsEverything(t *testing.T) {
 	c := newCancelDirector(t)
-	newTask(t, c.store, c.config, "app", "Depends on t-1", "t-2", "app/t-1")
-	newTask(t, c.store, c.config, "app", "Unrelated", "t-3")
+	newTask(t, c.store, c.config, "app", "Depends on t1", "app/t1")
+	newTask(t, c.store, c.config, "app", "Unrelated")
 	pr := c.publish(t)
 	c.write(t, func(s *store.Store) (store.Receipt, error) {
-		return s.StartAttempt("start-build", "app", "t-1", "build")
+		return s.StartAttempt("start-build", "app", "t1", "build")
 	})
 	c.write(t, func(s *store.Store) (store.Receipt, error) {
-		return s.StartDirectorAttempt("start-grill", "app", "t-1", "grill", false)
+		return s.StartDirectorAttempt("start-grill", "app", "t1", "grill", false)
 	})
 	_, err := withStore(c.store, false, func(s *store.Store) (store.Receipt, error) {
-		return s.StartCappedAttempt("queue-review", "app", "t-1", "review", store.AttemptCaps{MaxRunning: 1, Queue: &store.StartRequest{Kind: store.StartByTask}})
+		return s.StartCappedAttempt("queue-review", "app", "t1", "review", store.AttemptCaps{MaxRunning: 1, Queue: &store.StartRequest{Kind: store.StartByTask}})
 	})
 	if !errors.Is(err, store.ErrStartQueued) {
 		t.Fatalf("queued start = %v, want ErrStartQueued", err)
 	}
 	for _, id := range []string{"q-1", "q-2"} {
 		c.write(t, func(s *store.Store) (store.Receipt, error) {
-			return s.OpenDecision("open-"+id, store.Decision{Repository: "app", TaskID: "t-1", ID: id, Kind: store.DecisionQuestion, Question: "Which?"})
+			return s.OpenDecision("open-"+id, store.Decision{Repository: "app", TaskID: "t1", ID: id, Kind: store.DecisionQuestion, Question: "Which?"})
 		})
 	}
 	c.write(t, func(s *store.Store) (store.Receipt, error) {
-		return s.AnswerDecision("answer-q-2", "app", "t-1", "q-2", "This one.")
+		return s.AnswerDecision("answer-q-2", "app", "t1", "q-2", "This one.")
 	})
 	c.write(t, func(s *store.Store) (store.Receipt, error) {
-		return s.JoinMergeQueue("join", "app", "t-1", "deliver-1-authorized", "document/publish-1-pr", pr.URL)
+		return s.JoinMergeQueue("join", "app", "t1", "deliver-1-authorized", "document/publish-1-pr", pr.URL)
 	})
-	c.write(t, func(s *store.Store) (store.Receipt, error) { return s.SetMergeHold("hold", "app", "t-1", true) })
+	c.write(t, func(s *store.Store) (store.Receipt, error) { return s.SetMergeHold("hold", "app", "t1", true) })
 
-	const reason = "Duplicate of t-9."
-	code, stdout, stderr := c.cancel(t, "--reason", reason, "t-1")
+	const reason = "Duplicate of t9."
+	code, stdout, stderr := c.cancel(t, "--reason", reason, "t1")
 	if code != 0 {
 		t.Fatalf("task cancel: exit %d, %s %s", code, stdout, stderr)
 	}
 	t.Logf("task cancel printed:\n%s", stdout)
 	for _, line := range []string{
 		"attempt 1 of step build stopped", "attempt 1 of step grill stopped",
-		"pull request " + pr.URL + " closed; branch guildhall/t-1 kept",
+		"pull request " + pr.URL + " closed; branch guildhall/t1 kept",
 		"decision q-1 voided", "left the start queue: attempt 1 of step review", "left the merge queue", "merge hold cleared",
-		"dependent task app/t-2 told", "task app/t-1 cancelled: " + reason,
+		"dependent task app/t2 told", "task app/t1 cancelled: " + reason,
 	} {
 		if !strings.Contains(stdout, line+"\n") {
 			t.Errorf("task cancel did not print %q", line)
 		}
 	}
-	if strings.Contains(stdout, "q-2") || strings.Contains(stdout, "t-3") {
+	if strings.Contains(stdout, "q-2") || strings.Contains(stdout, "t3") {
 		t.Errorf("task cancel touched the answered decision or the unrelated task:\n%s", stdout)
 	}
 	if !slices.Equal(c.stops, []string{"build-1"}) {
 		t.Errorf("stopped through the owner: %q, want only the Artisan attempt build-1", c.stops)
 	}
 
-	got := c.task(t, "t-1")
+	got := c.task(t, "t1")
 	if got.State != store.TaskCancelled || got.CancelReason != reason || got.CancelledAt.IsZero() {
 		t.Errorf("task = %+v, want cancelled with the reason and a time", got)
 	}
@@ -245,10 +245,10 @@ func TestTaskCancelEndsEverything(t *testing.T) {
 	if _, comments := c.forge.Closes(); !slices.Equal(comments, []string{"Cancelled by Guildhall: " + reason}) {
 		t.Errorf("close comments = %q", comments)
 	}
-	if b := c.forge.Branch(appRemote, "guildhall/t-1"); b == "" {
+	if b := c.forge.Branch(appRemote, "guildhall/t1"); b == "" {
 		t.Error("the task branch was deleted")
 	}
-	decisions, err := withStore(c.store, true, func(s *store.Store) ([]store.Decision, error) { return s.Decisions("app", "t-1") })
+	decisions, err := withStore(c.store, true, func(s *store.Store) ([]store.Decision, error) { return s.Decisions("app", "t1") })
 	if err != nil || len(decisions) != 2 || !decisions[0].Void || decisions[0].VoidReason != "Task cancelled: "+reason || decisions[1].Void || !decisions[1].Answered {
 		t.Errorf("decisions = %+v, %v; want q-1 void and q-2 answered", decisions, err)
 	}
@@ -269,13 +269,13 @@ func TestTaskCancelEndsEverything(t *testing.T) {
 		if q.merge, err = s.MergeQueue("app"); err != nil {
 			return q, err
 		}
-		q.hold, err = s.MergeHold("app", "t-1")
+		q.hold, err = s.MergeHold("app", "t1")
 		return q, err
 	})
 	if err != nil || len(queues.starts) != 0 || len(queues.merge.Entries) != 0 || len(queues.merge.Out) != 0 || queues.merge.Front != nil || queues.hold.Held {
 		t.Errorf("queues = %+v, %v; want both empty and no hold", queues, err)
 	}
-	if got := c.task(t, "t-2"); got.State != store.TaskOpen {
+	if got := c.task(t, "t2"); got.State != store.TaskOpen {
 		t.Errorf("dependent = %+v, want it open", got)
 	}
 	unread, err := withStore(c.store, true, func(s *store.Store) ([]store.Message, error) {
@@ -291,48 +291,48 @@ func TestTaskCancelEndsEverything(t *testing.T) {
 			told = append(told, m)
 		}
 	}
-	if len(told) != 1 || told[0].TaskID != "t-2" || !strings.Contains(told[0].Text, "app/t-1") || !strings.Contains(told[0].Text, reason) {
-		t.Errorf("dependency-cancelled messages = %+v, want one about t-2", told)
+	if len(told) != 1 || told[0].TaskID != "t2" || !strings.Contains(told[0].Text, "app/t1") || !strings.Contains(told[0].Text, reason) {
+		t.Errorf("dependency-cancelled messages = %+v, want one about t2", told)
 	}
 
 	// The views.
 	code, out, stderr := runTask(t, "list", "--store", c.store, "--open", "--json")
-	if code != 0 || strings.Contains(out, `"id":"t-1","title"`) || !strings.Contains(out, `"id":"t-2","title"`) {
-		t.Errorf("task list --open: exit %d, %s %s; want t-1 left out", code, out, stderr)
+	if code != 0 || strings.Contains(out, `"id":"t1","title"`) || !strings.Contains(out, `"id":"t2","title"`) {
+		t.Errorf("task list --open: exit %d, %s %s; want t1 left out", code, out, stderr)
 	}
-	code, out, _ = runTask(t, "show", "--store", c.store, "--repo", "app", "--json", "t-1")
+	code, out, _ = runTask(t, "show", "--store", c.store, "--repo", "app", "--json", "t1")
 	if shown := decodeJSON[taskDetail](t, out); code != 0 || shown.Task.State != store.TaskCancelled || shown.Task.CancelReason != reason || shown.Task.CancelledAt.IsZero() {
 		t.Errorf("task show = %+v, want it cancelled with the reason and time", shown.Task)
 	}
 	code, out, _ = runTask(t, "list", "--store", c.store, "--json")
-	if code != 0 || !strings.Contains(out, `"cancel_reason":"Duplicate of t-9."`) || !strings.Contains(out, `"cancelled_at"`) {
-		t.Errorf("task list: %s; want t-1 with its reason and time", out)
+	if code != 0 || !strings.Contains(out, `"cancel_reason":"Duplicate of t9."`) || !strings.Contains(out, `"cancelled_at"`) {
+		t.Errorf("task list: %s; want t1 with its reason and time", out)
 	}
 	st, err := readDirectorStatus(context.Background(), c.store, c.state, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, it := range st.NeedsMe {
-		if it.TaskID == "t-1" || it.Kind == decisionKind {
+		if it.TaskID == "t1" || it.Kind == decisionKind {
 			t.Errorf("director status lists the cancelled task or its void decision: %+v", it)
 		}
 	}
-	code, _, stderr = runDecide(t, "Now.\n", "answer", "--store", c.store, "--repo", "app", "--task", "t-1", "--decision", "q-1", "--answer-file", "-")
+	code, _, stderr = runDecide(t, "Now.\n", "answer", "--store", c.store, "--repo", "app", "--task", "t1", "--decision", "q-1", "--answer-file", "-")
 	if code != 1 || !strings.Contains(stderr, "cancelled") {
 		t.Errorf("decide answer on a cancelled task: exit %d, %s", code, stderr)
 	}
 	if code, out, _ := runDecide(t, "", "list", "--store", c.store); code != 0 || strings.Contains(out, `"q-1"`) {
 		t.Errorf("decide list: exit %d, %s; want the void decision left out", code, out)
 	}
-	code, out, _ = runDecide(t, "", "show", "--store", c.store, "--repo", "app", "--task", "t-1", "--decision", "q-1")
+	code, out, _ = runDecide(t, "", "show", "--store", c.store, "--repo", "app", "--task", "t1", "--decision", "q-1")
 	if d := decodeJSON[store.Decision](t, out); code != 0 || !d.Void || d.VoidReason != "Task cancelled: "+reason {
 		t.Errorf("decide show = %+v, want it void with the reason", d)
 	}
 
 	// A second cancel changes nothing.
 	before := c.receipts(t)
-	code, stdout, stderr = c.cancel(t, "--reason", "Another reason.", "t-1")
-	if code != 0 || stdout != "task app/t-1 is already cancelled: "+reason+"\n" {
+	code, stdout, stderr = c.cancel(t, "--reason", "Another reason.", "t1")
+	if code != 0 || stdout != "task app/t1 is already cancelled: "+reason+"\n" {
 		t.Errorf("a second cancel: exit %d, %q %s", code, stdout, stderr)
 	}
 	if closes, _ := c.forge.Closes(); closes != 1 || c.receipts(t) != before || len(c.stops) != 1 {
@@ -346,17 +346,17 @@ func TestTaskCancelRefusesAnUnprovenStop(t *testing.T) {
 	c := newCancelDirector(t)
 	c.publish(t)
 	c.write(t, func(s *store.Store) (store.Receipt, error) {
-		return s.StartAttempt("start-build", "app", "t-1", "build")
+		return s.StartAttempt("start-build", "app", "t1", "build")
 	})
 	c.write(t, func(s *store.Store) (store.Receipt, error) {
-		return s.OpenDecision("open-q-1", store.Decision{Repository: "app", TaskID: "t-1", ID: "q-1", Kind: store.DecisionQuestion, Question: "Which?"})
+		return s.OpenDecision("open-q-1", store.Decision{Repository: "app", TaskID: "t1", ID: "q-1", Kind: store.DecisionQuestion, Question: "Which?"})
 	})
 	c.err = launch.ErrNotStopped
-	code, stdout, stderr := c.cancel(t, "--reason", "Duplicate.", "t-1")
+	code, stdout, stderr := c.cancel(t, "--reason", "Duplicate.", "t1")
 	if code != 1 || !strings.Contains(stderr, "not cancelled") || stdout != "" {
 		t.Fatalf("task cancel with an unproven stop: exit %d, %q %s", code, stdout, stderr)
 	}
-	if got := c.task(t, "t-1"); got.State != store.TaskOpen {
+	if got := c.task(t, "t1"); got.State != store.TaskOpen {
 		t.Errorf("task = %+v, want it open", got)
 	}
 	if a := c.attempts(t); len(a) != 1 || a[0].Outcome != "" {
@@ -365,7 +365,7 @@ func TestTaskCancelRefusesAnUnprovenStop(t *testing.T) {
 	if prs := c.forge.PullRequests(appRemote); prs[0].State != forge.Open {
 		t.Errorf("pull request = %+v, want it open", prs[0])
 	}
-	if d, err := withStore(c.store, true, func(s *store.Store) ([]store.Decision, error) { return s.Decisions("app", "t-1") }); err != nil || !d[0].Open() {
+	if d, err := withStore(c.store, true, func(s *store.Store) ([]store.Decision, error) { return s.Decisions("app", "t1") }); err != nil || !d[0].Open() {
 		t.Errorf("decisions = %+v, %v; want q-1 open", d, err)
 	}
 }
@@ -378,11 +378,11 @@ func TestTaskCancelRefusesMergedWork(t *testing.T) {
 		pr := c.publish(t)
 		c.putDocument(t, "deliver-1-merge", map[string]any{"schema": "guildhall.pull-request/1", "remote": appRemote, "number": pr.Number, "state": "merged"})
 		before := c.receipts(t)
-		code, _, stderr := c.cancel(t, "--reason", "Duplicate.", "t-1")
+		code, _, stderr := c.cancel(t, "--reason", "Duplicate.", "t1")
 		if code != 1 || !strings.Contains(stderr, "merging") {
 			t.Errorf("task cancel of a merging task: exit %d, %s", code, stderr)
 		}
-		if closes, _ := c.forge.Closes(); closes != 0 || c.receipts(t) != before || c.task(t, "t-1").State != store.TaskOpen {
+		if closes, _ := c.forge.Closes(); closes != 0 || c.receipts(t) != before || c.task(t, "t1").State != store.TaskOpen {
 			t.Errorf("a refused cancel closed %d pull requests or wrote %d receipts", closes, c.receipts(t)-before)
 		}
 	})
@@ -390,12 +390,12 @@ func TestTaskCancelRefusesMergedWork(t *testing.T) {
 		c := newCancelDirector(t)
 		pr := c.publish(t)
 		c.write(t, func(s *store.Store) (store.Receipt, error) {
-			return s.OpenDecision("open-q-1", store.Decision{Repository: "app", TaskID: "t-1", ID: "q-1", Kind: store.DecisionQuestion, Question: "Which?"})
+			return s.OpenDecision("open-q-1", store.Decision{Repository: "app", TaskID: "t1", ID: "q-1", Kind: store.DecisionQuestion, Question: "Which?"})
 		})
 		if _, err := c.forge.Merge(context.Background(), forge.Merge{Repository: appRepo, Remote: appRemote, Number: pr.Number, Head: pr.Head, Title: "Merged on the forge"}); err != nil {
 			t.Fatal(err)
 		}
-		code, _, stderr := c.cancel(t, "--reason", "Duplicate.", "t-1")
+		code, _, stderr := c.cancel(t, "--reason", "Duplicate.", "t1")
 		if code != 1 || !strings.Contains(stderr, "landed") || !strings.Contains(stderr, "recorded done, not cancelled") || !strings.Contains(stderr, pr.URL) {
 			t.Errorf("task cancel of a merged task: exit %d, %s", code, stderr)
 		}
@@ -404,12 +404,12 @@ func TestTaskCancelRefusesMergedWork(t *testing.T) {
 	})
 }
 
-// slicedTask records t-1 as a multi-PR task: an accepted spec of three slices, slice 1 merged on the forge as its
-// pull request and recorded as deliver-1-merge, and slice 2's pull request open on guildhall/t-1.s2.
+// slicedTask records t1 as a multi-PR task: an accepted spec of three slices, slice 1 merged on the forge as its
+// pull request and recorded as deliver-1-merge, and slice 2's pull request open on guildhall/t1.s2.
 func (c *cancelDirector) slicedTask(t *testing.T) (first, second forge.PullRequest) {
 	t.Helper()
 	spec := []byte("# Three\n\n## Goal\n\nThree pull requests.\n\n## Slices\n\n1. **Parser**: one.\n2. **Engine**: two.\n3. **Views**: three.\n")
-	p := path.Join("tasks", "app", "t-1", "plan-1", "spec.md")
+	p := path.Join("tasks", "app", "t1", "plan-1", "spec.md")
 	file := filepath.Join(c.state, "documents", filepath.FromSlash(p))
 	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 		t.Fatal(err)
@@ -418,7 +418,7 @@ func (c *cancelDirector) slicedTask(t *testing.T) (first, second forge.PullReque
 		t.Fatal(err)
 	}
 	c.write(t, func(s *store.Store) (store.Receipt, error) {
-		return s.PutDocument("doc-accept", store.DocumentRef{Repository: "app", TaskID: "t-1", Name: "accept-1-spec", Path: p, SHA256: digest.Of(spec).Hex()})
+		return s.PutDocument("doc-accept", store.DocumentRef{Repository: "app", TaskID: "t1", Name: "accept-1-spec", Path: p, SHA256: digest.Of(spec).Hex()})
 	})
 	first = c.publish(t)
 	merged, err := c.forge.Merge(context.Background(), forge.Merge{Repository: appRepo, Remote: appRemote, Number: first.Number, Head: first.Head, Title: "Parser"})
@@ -429,7 +429,7 @@ func (c *cancelDirector) slicedTask(t *testing.T) (first, second forge.PullReque
 		"url": merged.URL, "branch": merged.Branch, "head": merged.Head, "state": merged.State, "merge_commit": merged.MergeCommit})
 	head := strings.Repeat("c", 40)
 	c.forge.AddCommit(appRepo, head)
-	second, err = c.forge.Publish(context.Background(), forge.Change{Repository: appRepo, Remote: appRemote, Branch: "guildhall/t-1.s2", Head: head, Title: "Engine (slice 2 of 3)"})
+	second, err = c.forge.Publish(context.Background(), forge.Change{Repository: appRepo, Remote: appRemote, Branch: "guildhall/t1.s2", Head: head, Title: "Engine (slice 2 of 3)"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -445,7 +445,7 @@ func TestTaskCancelOfAMultiPRTask(t *testing.T) {
 	t.Run("slice 2 open", func(t *testing.T) {
 		c := newCancelDirectorWith(t, newRunDirectorWith(t, "sliced.toml"))
 		first, second := c.slicedTask(t)
-		code, out, stderr := c.cancel(t, "--reason", "The Guildmaster said: stop after the parser.", "t-1")
+		code, out, stderr := c.cancel(t, "--reason", "The Guildmaster said: stop after the parser.", "t1")
 		if code != 0 {
 			t.Fatalf("task cancel: exit %d, %s", code, stderr)
 		}
@@ -456,12 +456,12 @@ func TestTaskCancelOfAMultiPRTask(t *testing.T) {
 		if prs[0].State != forge.Merged || prs[1].State != forge.Closed {
 			t.Errorf("pull requests = %+v, want slice 1 merged and slice 2 closed", prs)
 		}
-		for _, want := range []string{"pull request " + second.URL + " closed", "task app/t-1 cancelled", "slice 1 of 3 (Parser) merged before the cancel and stands: " + first.URL} {
+		for _, want := range []string{"pull request " + second.URL + " closed", "task app/t1 cancelled", "slice 1 of 3 (Parser) merged before the cancel and stands: " + first.URL} {
 			if !strings.Contains(out, want) {
 				t.Errorf("output does not say %q:\n%s", want, out)
 			}
 		}
-		if got := c.task(t, "t-1"); got.State != store.TaskCancelled {
+		if got := c.task(t, "t1"); got.State != store.TaskCancelled {
 			t.Errorf("task state = %s, want cancelled", got.State)
 		}
 	})
@@ -470,33 +470,33 @@ func TestTaskCancelOfAMultiPRTask(t *testing.T) {
 		_, second := c.slicedTask(t)
 		c.putDocument(t, "deliver--s2-1-merge", map[string]any{"schema": "guildhall.pull-request/1", "remote": appRemote, "number": second.Number, "state": "merged"})
 		before := c.receipts(t)
-		code, _, stderr := c.cancel(t, "--reason", "Duplicate.", "t-1")
+		code, _, stderr := c.cancel(t, "--reason", "Duplicate.", "t1")
 		if code != 1 || !strings.Contains(stderr, "is merging slice 2 of 3") {
 			t.Errorf("task cancel while slice 2 merges: exit %d, %s", code, stderr)
 		}
-		if closes, _ := c.forge.Closes(); closes != 0 || c.receipts(t) != before || c.task(t, "t-1").State != store.TaskOpen {
+		if closes, _ := c.forge.Closes(); closes != 0 || c.receipts(t) != before || c.task(t, "t1").State != store.TaskOpen {
 			t.Errorf("a refused cancel closed %d pull requests or wrote %d receipts", closes, c.receipts(t)-before)
 		}
 	})
 }
 
-// wantMergedOutside checks that t-1 was closed done by the outside-merge rule for pr: its merge recorded as
+// wantMergedOutside checks that t1 was closed done by the outside-merge rule for pr: its merge recorded as
 // outside-<n>-merge, its open decision voided and a merged message sent.
 func (c *cancelDirector) wantMergedOutside(t *testing.T, pr forge.PullRequest) {
 	t.Helper()
-	if got := c.task(t, "t-1"); got.State != store.TaskDone || got.CancelReason != "" {
+	if got := c.task(t, "t1"); got.State != store.TaskDone || got.CancelReason != "" {
 		t.Errorf("task = %+v, want it done", got)
 	}
-	if d, err := withStore(c.store, true, func(s *store.Store) ([]store.Decision, error) { return s.Decisions("app", "t-1") }); err != nil || len(d) != 1 ||
+	if d, err := withStore(c.store, true, func(s *store.Store) ([]store.Decision, error) { return s.Decisions("app", "t1") }); err != nil || len(d) != 1 ||
 		!d[0].Void || d[0].VoidReason != "Task done: pull request "+pr.URL+" merged outside Guildhall" {
 		t.Errorf("decisions = %+v, %v; want q-1 voided", d, err)
 	}
-	docs, err := withStore(c.store, true, func(s *store.Store) ([]store.DocumentRef, error) { return s.Documents("app", "t-1") })
+	docs, err := withStore(c.store, true, func(s *store.Store) ([]store.DocumentRef, error) { return s.Documents("app", "t1") })
 	if err != nil || !slices.ContainsFunc(docs, func(d store.DocumentRef) bool { return d.Name == fmt.Sprintf("outside-%d-merge", pr.Number) }) {
 		t.Errorf("documents = %+v, %v; want outside-%d-merge", docs, err, pr.Number)
 	}
 	m, err := withStore(c.store, true, func(s *store.Store) (store.Message, error) {
-		return s.Message(fmt.Sprintf("app.t-1.merged.outside.%d", pr.Number))
+		return s.Message(fmt.Sprintf("app.t1.merged.outside.%d", pr.Number))
 	})
 	if err != nil || m.Type != store.MessageMerged || !strings.Contains(m.Text, "merged outside Guildhall") {
 		t.Errorf("merged message = %+v, %v", m, err)
@@ -526,17 +526,17 @@ func TestTaskCancelRerunsAfterAFailure(t *testing.T) {
 	c.runDirector.forge = lossy
 	c.publish(t)
 	c.write(t, func(s *store.Store) (store.Receipt, error) {
-		return s.StartAttempt("start-build", "app", "t-1", "build")
+		return s.StartAttempt("start-build", "app", "t1", "build")
 	})
-	code, _, stderr := c.cancel(t, "--reason", "Duplicate.", "t-1")
+	code, _, stderr := c.cancel(t, "--reason", "Duplicate.", "t1")
 	if code != 1 || !strings.Contains(stderr, "connection reset") {
 		t.Fatalf("first cancel: exit %d, %s; want the lost close", code, stderr)
 	}
-	if got := c.task(t, "t-1"); got.State != store.TaskOpen {
+	if got := c.task(t, "t1"); got.State != store.TaskOpen {
 		t.Fatalf("task after the failure = %+v, want it open", got)
 	}
-	code, stdout, stderr := c.cancel(t, "--reason", "Duplicate.", "t-1")
-	if code != 0 || !strings.Contains(stdout, "task app/t-1 cancelled: Duplicate.\n") || strings.Contains(stdout, "stopped") {
+	code, stdout, stderr := c.cancel(t, "--reason", "Duplicate.", "t1")
+	if code != 0 || !strings.Contains(stdout, "task app/t1 cancelled: Duplicate.\n") || strings.Contains(stdout, "stopped") {
 		t.Fatalf("second cancel: exit %d, %s %s", code, stdout, stderr)
 	}
 	if _, comments := c.forge.Closes(); len(comments) != 1 {
@@ -551,12 +551,14 @@ func TestTaskCancelRerunsAfterAFailure(t *testing.T) {
 // new; a done or cancelled dependent, and a task that does not depend on it, is not told.
 func TestTellDependentsSendsOnce(t *testing.T) {
 	c := newCancelDirector(t)
-	for _, id := range []string{"t-2", "t-3"} {
-		newTask(t, c.store, c.config, "app", "Depends on t-1", id, "app/t-1")
+	for _, id := range []string{"t2", "t3"} {
+		if r := newTask(t, c.store, c.config, "app", "Depends on t1 as "+id, "app/t1"); r.TaskID != id {
+			t.Fatalf("task new assigned %s, want %s", r.TaskID, id)
+		}
 	}
-	newTask(t, c.store, c.config, "app", "Unrelated", "t-4")
+	newTask(t, c.store, c.config, "app", "Unrelated")
 	c.write(t, func(s *store.Store) (store.Receipt, error) {
-		return s.SetTaskState("done-t-3", "app", "t-3", store.TaskDone)
+		return s.SetTaskState("done-t3", "app", "t3", store.TaskDone)
 	})
 	cfg, err := config.Load(c.config)
 	if err != nil {
@@ -565,12 +567,12 @@ func TestTellDependentsSendsOnce(t *testing.T) {
 	var told []string
 	say := func(format string, args ...any) { told = append(told, args[1].(string)) }
 	for range 2 {
-		if err := tellDependents(storeRecords{path: c.store}, cfg, store.TaskRef{Repository: "app", ID: "t-1"}, "Duplicate.", say); err != nil {
+		if err := tellDependents(storeRecords{path: c.store}, cfg, store.TaskRef{Repository: "app", ID: "t1"}, "Duplicate.", say); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if !slices.Equal(told, []string{"t-2", "t-2"}) {
-		t.Errorf("told = %q, want t-2 each time", told)
+	if !slices.Equal(told, []string{"t2", "t2"}) {
+		t.Errorf("told = %q, want t2 each time", told)
 	}
 	unread, err := withStore(c.store, true, func(s *store.Store) (map[string]int, error) { return s.DirectorUnread() })
 	if err != nil || unread[store.MessageDependencyCancelled] != 1 {
@@ -585,13 +587,13 @@ func TestAdvanceOfACancelledTask(t *testing.T) {
 		t.Run(string(state), func(t *testing.T) {
 			c := newCancelDirector(t)
 			c.write(t, func(s *store.Store) (store.Receipt, error) {
-				return s.StartAttempt("start-build", "app", "t-1", "build")
+				return s.StartAttempt("start-build", "app", "t1", "build")
 			})
 			c.write(t, func(s *store.Store) (store.Receipt, error) {
 				if state == store.TaskDone {
-					return s.SetTaskState("done", "app", "t-1", store.TaskDone)
+					return s.SetTaskState("done", "app", "t1", store.TaskDone)
 				}
-				return s.CancelTask("cancel", "app", "t-1", "Duplicate.")
+				return s.CancelTask("cancel", "app", "t1", "Duplicate.")
 			})
 			result := c.result("build", 1)
 			if err := os.MkdirAll(filepath.Dir(result), 0o755); err != nil {
@@ -601,12 +603,12 @@ func TestAdvanceOfACancelledTask(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, args := range [][]string{
-				append([]string{"task", "start"}, c.flags("t-1")...),
-				append([]string{"step", "done"}, c.flags("--task", "t-1", "--step", "build", "--attempt", "1", "--result", result)...),
+				append([]string{"task", "start"}, c.flags("t1")...),
+				append([]string{"step", "done"}, c.flags("--task", "t1", "--step", "build", "--attempt", "1", "--result", result)...),
 			} {
 				code, stdout, stderr := c.run(t, args...)
 				switch {
-				case state == store.TaskCancelled && (code != 0 || stdout != "task app/t-1 is cancelled; nothing to advance\n"):
+				case state == store.TaskCancelled && (code != 0 || stdout != "task app/t1 is cancelled; nothing to advance\n"):
 					t.Errorf("%s of a cancelled task: exit %d, %q %s", args[:2], code, stdout, stderr)
 				case state == store.TaskDone && (code != 1 || !strings.Contains(stderr, "not open")):
 					t.Errorf("%s of a done task: exit %d, %q %s", args[:2], code, stdout, stderr)

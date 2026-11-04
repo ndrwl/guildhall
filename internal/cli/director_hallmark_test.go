@@ -75,7 +75,7 @@ func appHallmark(t *testing.T, st directorStatus) statusHallmark {
 func TestDirectorStatusHallmarkCadenceFollowsTheDoneTask(t *testing.T) {
 	d := newRunDirector(t)
 	startMaintenanceSession(t, d.store, 1, store.MaintenancePolicy{HallmarkAfterMerges: 3})
-	sendMergedMessages(t, d.store, "app", "t-1", "m", 3)
+	sendMergedMessages(t, d.store, "app", "t1", "m", 3)
 	due := func(st directorStatus) bool {
 		for _, it := range st.NeedsMe {
 			if it.Kind == maintenanceKind && it.Repository == "app" {
@@ -102,15 +102,15 @@ func TestDirectorStatusHallmarkCadenceFollowsTheDoneTask(t *testing.T) {
 
 	// A done hallmark, recorded nowhere else, resets it; the merge sent while it ran counts toward the next.
 	createHallmarkTask(t, d.store, "app", "h-2")
-	sendMergedMessages(t, d.store, "app", "t-1", "during", 1)
+	sendMergedMessages(t, d.store, "app", "t1", "during", 1)
 	finishHallmarkTask(t, d.store, "app", "h-2")
 	st = readStatus(t, d.store, d.state)
 	if h := appHallmark(t, st); due(st) || h.LastTask != "h-2" || h.LastAt.IsZero() || h.MergedSince != 1 || *h.MergesUntilDue != 2 {
 		t.Fatalf("after a done hallmark: %+v, items %q; want h-2 last with 1 merged since and not due", h, maintenanceItems(st))
 	}
-	sendMergedMessages(t, d.store, "app", "t-1", "after", 2)
+	sendMergedMessages(t, d.store, "app", "t1", "after", 2)
 	st = readStatus(t, d.store, d.state)
-	want := "app: hallmark due: 3 merged since the last | guildhall task new --repo app --kind hallmark --title <text> <id>"
+	want := "app: hallmark due: 3 merged since the last | guildhall task new --repo app --kind hallmark --title <text>"
 	if got := maintenanceItems(st); len(got) != 1 || got[0] != want {
 		t.Fatalf("items = %q\nwant %q", got, want)
 	}
@@ -166,10 +166,10 @@ func TestDirectorStatusHallmarkWaitsForFollowUps(t *testing.T) {
 			d := newRunDirector(t)
 			startMaintenanceSession(t, d.store, 1, store.MaintenancePolicy{HallmarkAfterMerges: 2})
 			createHallmarkTask(t, d.store, "app", "h-1")
-			sendMergedMessages(t, d.store, "app", "t-1", "during", 1)
+			sendMergedMessages(t, d.store, "app", "t1", "during", 1)
 			recordHallmarkReport(t, d.store, "app", "h-1")
 			openFollowUps(t, d.store, "app", "h-1")
-			sendMergedMessages(t, d.store, "app", "t-1", "before", 2)
+			sendMergedMessages(t, d.store, "app", "t1", "before", 2)
 
 			// Open: the merges reach the threshold, but the open hallmark is the running task and holds the item.
 			st := readStatus(t, d.store, d.state)
@@ -205,14 +205,14 @@ func TestDirectorStatusHallmarkWaitsForFollowUps(t *testing.T) {
 			if h := appHallmark(t, st); len(maintenanceItems(st)) != 0 || h.RunningTask != "" || h.LastTask != "h-1" || h.MergedSince != 0 || *h.MergesUntilDue != 2 {
 				t.Fatalf("after the answer: %+v, items %q; want h-1 last and the count restarted at 0", h, maintenanceItems(st))
 			}
-			sendMergedMessages(t, d.store, "app", "t-1", "after", 1)
+			sendMergedMessages(t, d.store, "app", "t1", "after", 1)
 			st = readStatus(t, d.store, d.state)
 			if h := appHallmark(t, st); len(maintenanceItems(st)) != 0 || h.MergedSince != 1 {
 				t.Fatalf("1 merged after the answer: %+v, items %q; want 1 counted and not due", h, maintenanceItems(st))
 			}
-			sendMergedMessages(t, d.store, "app", "t-1", "later", 1)
+			sendMergedMessages(t, d.store, "app", "t1", "later", 1)
 			st = readStatus(t, d.store, d.state)
-			want := "app: hallmark due: 2 merged since the last | guildhall task new --repo app --kind hallmark --title <text> <id>"
+			want := "app: hallmark due: 2 merged since the last | guildhall task new --repo app --kind hallmark --title <text>"
 			if got := maintenanceItems(st); len(got) != 1 || got[0] != want {
 				t.Fatalf("items = %q\nwant %q", got, want)
 			}
@@ -252,22 +252,22 @@ func TestMaintenanceStatusFallsBackToRuns(t *testing.T) {
 	at := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
 	v := store.DirectorView{Session: &store.DirectorSession{Number: 2, Maintenance: store.MaintenancePolicy{HallmarkAfterMerges: 2}},
 		Maintenance: store.MaintenanceView{Baseline: 1, BaselineReceipt: 10, Repositories: []store.RepositoryMaintenance{
-			{Repository: "app", LastHallmark: &store.MaintenanceRun{Kind: store.MaintenanceHallmark, Repository: "app", Task: "t-1", Receipt: 20, Time: at},
+			{Repository: "app", LastHallmark: &store.MaintenanceRun{Kind: store.MaintenanceHallmark, Repository: "app", Task: "t1", Receipt: 20, Time: at},
 				Merged: 2, MergedSequences: []uint64{15, 21, 22}},
 			{Repository: "web", LastHallmark: &store.MaintenanceRun{Kind: store.MaintenanceHallmark, Repository: "web", Task: "w-1", Receipt: 30, Time: at},
 				Merged: 0, MergedSequences: []uint64{12, 25}},
 		}}}
 	done := &interp.Hallmark{Task: store.Task{Repository: "web", ID: "w-0"}, Close: store.TaskClose{Created: 11, Closed: 28, At: at.Add(time.Hour)}}
 	m, items := maintenanceStatus(v, map[string]repoHallmarks{"web": {last: done}})
-	if app := m.Hallmarks[0]; app.LastTask != "t-1" || !app.LastAt.Equal(at) || app.MergedSince != 2 {
+	if app := m.Hallmarks[0]; app.LastTask != "t1" || !app.LastAt.Equal(at) || app.MergedSince != 2 {
 		t.Fatalf("app = %+v; want the run's task and count", app)
 	}
 	if web := m.Hallmarks[1]; web.LastTask != "w-0" || !web.LastAt.Equal(at.Add(time.Hour)) || web.MergedSince != 2 {
 		t.Fatalf("web = %+v; want the done task, counting the 2 merges after its creation", web)
 	}
 	want := []string{
-		"app: hallmark due: 2 merged since the last | guildhall task new --repo app --kind hallmark --title <text> <id>",
-		"web: hallmark due: 2 merged since the last | guildhall task new --repo web --kind hallmark --title <text> <id>",
+		"app: hallmark due: 2 merged since the last | guildhall task new --repo app --kind hallmark --title <text>",
+		"web: hallmark due: 2 merged since the last | guildhall task new --repo web --kind hallmark --title <text>",
 	}
 	if got := maintenanceItems(directorStatus{NeedsMe: items}); !slices.Equal(got, want) {
 		t.Fatalf("items = %q\nwant %q", got, want)

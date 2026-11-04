@@ -399,7 +399,7 @@ func (c *safetyCopy) hasTask(id string) bool {
 
 func (c *safetyCopy) hasDecision(id string) bool {
 	return read(c, func(s *store.Store) (bool, error) {
-		ds, err := s.Decisions("app", "t-1")
+		ds, err := s.Decisions("app", "t1")
 		return slices.ContainsFunc(ds, func(d store.Decision) bool { return d.ID == id }), err
 	})
 }
@@ -632,9 +632,9 @@ func TestSafetyApproval(t *testing.T) {
 		}
 		c.script(
 			"guildhall director ready",
-			"guildhall task new --repo app --title Sort t-1",
+			"guildhall task new --repo app --title Sort",
 			"guildhall workflow approve --repo app --words-file "+words,
-			"guildhall task new --repo app --title Sort t-1",
+			"guildhall task new --repo app --title Sort",
 			"/exit")
 		s := c.start(rt)
 		if code := s.end(); code != 0 {
@@ -644,7 +644,7 @@ func TestSafetyApproval(t *testing.T) {
 		if n := strings.Count(out, "session script: guildhall task new"); n != 1 || !strings.Contains(out, "below the review floor") {
 			t.Errorf("want one refused task new naming the review floor, got %d refusals:\n%s", n, out)
 		}
-		if !c.hasTask("t-1") {
+		if !c.hasTask("t1") {
 			t.Error("the approved task new recorded no task")
 		}
 		c.finish(1)
@@ -661,23 +661,23 @@ func TestSafetyGuardRails(t *testing.T) {
 		c.approve()
 		c.script(
 			"guildhall director ready",
-			"guildhall task new --repo other --title Elsewhere t-9",
-			"guildhall task new --repo app --title One t-1",
-			"guildhall task new --repo app --title Two t-2",
-			"guildhall task start --repo app t-1",
-			"guildhall task start --repo app t-2",
+			"guildhall task new --repo other --title Elsewhere",
+			"guildhall task new --repo app --title One",
+			"guildhall task new --repo app --title Two",
+			"guildhall task start --repo app t1",
+			"guildhall task start --repo app t2",
 			"guildhall director status --json",
-			"guildhall artisan stop --repo app --task t-1 --step plan --attempt 1")
+			"guildhall artisan stop --repo app --task t1 --step plan --attempt 1")
 		s := c.start(rt)
 		stopped := func() bool {
-			a := c.attempts("t-1")
+			a := c.attempts("t1")
 			return len(a) == 1 && a[0].Outcome != ""
 		}
-		c.waitFor("t-1's plan attempt stopped by the script", stopped)
-		c.waitFor("t-2's queued plan started by the start-queue watcher", func() bool { return len(c.attempts("t-2")) == 1 })
+		c.waitFor("t1's plan attempt stopped by the script", stopped)
+		c.waitFor("t2's queued plan started by the start-queue watcher", func() bool { return len(c.attempts("t2")) == 1 })
 		code := s.end()
-		c.stopAttempt("t-1", "plan", 1)
-		c.stopAttempt("t-2", "plan", 1)
+		c.stopAttempt("t1", "plan", 1)
+		c.stopAttempt("t2", "plan", 1)
 		if code != 0 {
 			t.Fatalf("director start exited %d", code)
 		}
@@ -686,19 +686,19 @@ func TestSafetyGuardRails(t *testing.T) {
 			t.Errorf("the unlisted repository was not refused by its guard rail:\n%s", out)
 		}
 		if !strings.Contains(out, `{"wait":"queued","step":"plan","attempt":1,"position":1}`) {
-			t.Errorf("t-2's start was not queued:\n%s", out)
+			t.Errorf("t2's start was not queued:\n%s", out)
 		}
-		if !strings.Contains(out, `"start_queue":[{"repository":"app","task":"t-2","step":"plan","attempt":1,"request":"start","priority":"p3","position":1,`) {
-			t.Errorf("director status did not list t-2's queued start under start_queue:\n%s", out)
+		if !strings.Contains(out, `"start_queue":[{"repository":"app","task":"t2","step":"plan","attempt":1,"request":"start","priority":"p3","position":1,`) {
+			t.Errorf("director status did not list t2's queued start under start_queue:\n%s", out)
 		}
 		if strings.Contains(out, "guard rail max_running_attempts") {
 			t.Errorf("the running cap refused a launch:\n%s", out)
 		}
-		if has(c, func(s *store.Store) error { _, err := s.Task("other", "t-9"); return err }) {
+		if tasks := read(c, func(s *store.Store) ([]store.Task, error) { return s.Tasks("other") }); len(tasks) != 0 {
 			t.Error("the unlisted repository's task was recorded")
 		}
-		if got := c.attempts("t-2"); len(got) != 1 || got[0].Step != "plan" {
-			t.Errorf("t-2 attempts %+v, want plan started once t-1's attempt stopped", got)
+		if got := c.attempts("t2"); len(got) != 1 || got[0].Step != "plan" {
+			t.Errorf("t2 attempts %+v, want plan started once t1's attempt stopped", got)
 		}
 		if slices.ContainsFunc(c.inbox(), func(m store.Message) bool { return m.Type == "budget-refused" }) {
 			t.Error("a queued start sent budget-refused")
@@ -707,7 +707,7 @@ func TestSafetyGuardRails(t *testing.T) {
 	})
 }
 
-// TestSafetyCrashRecovery: task t-1's plan attempt is running when the Director's runtime is killed and then its
+// TestSafetyCrashRecovery: task t1's plan attempt is running when the Director's runtime is killed and then its
 // launcher; with a Guildmaster note unread, director start again renders a startup.md listing the attempt to
 // resume and the note, refuses task new until the scripted Director runs ready, and the Director resumes and
 // retries the attempt; the watcher then takes the task through the workflow, the check answering each decision as
@@ -717,13 +717,13 @@ func TestSafetyCrashRecovery(t *testing.T) {
 	eachRuntime(t, func(t *testing.T, rt string) {
 		c := newSafetyCopy(t, "", "guildhall-fake: result=never\nguildhall-fake: lifetime=5m\n")
 		c.approve()
-		c.guildhall("", "task", "new", "--repo", "app", "--title", "Sort", "t-1")
-		c.script("guildhall director ready", "guildhall task start --repo app t-1")
+		c.guildhall("", "task", "new", "--repo", "app", "--title", "Sort")
+		c.script("guildhall director ready", "guildhall task start --repo app t1")
 		first := c.start(rt)
 		var launcher store.ProcessIdentity
 		c.waitFor("plan attempt 1 running", func() bool {
 			own := read(c, func(s *store.Store) (store.Ownership, error) {
-				own, err := s.Ownership("app", "t-1", "plan", 1)
+				own, err := s.Ownership("app", "t1", "plan", 1)
 				if errors.Is(err, store.ErrNotFound) {
 					return own, nil
 				}
@@ -750,7 +750,7 @@ func TestSafetyCrashRecovery(t *testing.T) {
 			lv, _ := artisan.Probe(artisan.Identity(launcher))
 			return lv != artisan.Alive
 		})
-		c.guildhall(`{"schema":"guildhall.message/1","id":"n-1","recipient":"director","repository":"app","task":"t-1","type":"note","text":"Check on t-1."}`,
+		c.guildhall(`{"schema":"guildhall.message/1","id":"n-1","recipient":"director","repository":"app","task":"t1","type":"note","text":"Check on t1."}`,
 			"messages", "send", "director", "-")
 		type needsMe struct {
 			Repository string `json:"repository"`
@@ -765,17 +765,17 @@ func TestSafetyCrashRecovery(t *testing.T) {
 		if err := json.Unmarshal([]byte(c.guildhall("", "director", "status", "--json")), &status); err != nil {
 			t.Fatal(err)
 		}
-		if !slices.Contains(status.NeedsMe, needsMe{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1, Resume: true}) {
-			t.Errorf("director status needs_me %+v, want app t-1 plan attempt 1 with resume: true", status.NeedsMe)
+		if !slices.Contains(status.NeedsMe, needsMe{Repository: "app", TaskID: "t1", Step: "plan", Attempt: 1, Resume: true}) {
+			t.Errorf("director status needs_me %+v, want app t1 plan attempt 1 with resume: true", status.NeedsMe)
 		}
 
 		c.setPlan("")
 		c.script(
-			"guildhall task new --repo app --title Early t-early",
+			"guildhall task new --repo app --title Early",
 			"guildhall director ready",
-			"guildhall artisan resume --repo app --task t-1 --step plan --attempt 1",
-			"guildhall step retry --repo app --task t-1 --step plan --attempt 1 --reason relaunch-after-the-crash",
-			"guildhall task new --repo app --title Late t-late",
+			"guildhall artisan resume --repo app --task t1 --step plan --attempt 1",
+			"guildhall step retry --repo app --task t1 --step plan --attempt 1 --reason relaunch-after-the-crash",
+			"guildhall task new --repo app --title Late",
 			"/exit")
 		second := c.start(rt)
 		if code := second.end(); code != 0 {
@@ -785,15 +785,16 @@ func TestSafetyCrashRecovery(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, want := range []string{"run `guildhall artisan resume --repo app --task t-1 --step plan --attempt 1`", "1 unread Director message"} {
+		for _, want := range []string{"run `guildhall artisan resume --repo app --task t1 --step plan --attempt 1`", "1 unread Director message"} {
 			if !strings.Contains(string(startup), want) {
 				t.Errorf("startup.md does not name %q:\n%s", want, startup)
 			}
 		}
-		if c.hasTask("t-early") || !c.hasTask("t-late") {
-			t.Errorf("task new before ready recorded %v, after ready %v; want refused, then admitted", c.hasTask("t-early"), c.hasTask("t-late"))
+		// The refused Early takes no number, so Late, admitted after ready, is t2 and there is no t3.
+		if !c.hasTask("t2") || c.hasTask("t3") {
+			t.Errorf("task new after ready recorded %v, a third task %v; want Early refused, then Late admitted as t2", c.hasTask("t2"), c.hasTask("t3"))
 		}
-		// The watcher takes t-1 on through the fake-straight workflow, the check answering each decision as the
+		// The watcher takes t1 on through the fake-straight workflow, the check answering each decision as the
 		// Director would, with decide answer and task start --decision, to the deliver step's merge decision, its
 		// final wait.
 		answer := filepath.Join(c.dir, "answer.md")
@@ -807,20 +808,20 @@ func TestSafetyCrashRecovery(t *testing.T) {
 			c.waitFor("decision "+d.decision+" opened by the watcher", func() bool {
 				return c.hasDecision(d.decision)
 			})
-			c.guildhall("", "decide", "answer", "--repo", "app", "--task", "t-1", "--decision", d.decision, "--answer-file", answer)
-			if got := strings.TrimSpace(c.guildhall("", "task", "start", "--repo", "app", "--decision", d.decision, "t-1")); got != d.next {
+			c.guildhall("", "decide", "answer", "--repo", "app", "--task", "t1", "--decision", d.decision, "--answer-file", answer)
+			if got := strings.TrimSpace(c.guildhall("", "task", "start", "--repo", "app", "--decision", d.decision, "t1")); got != d.next {
 				t.Fatalf("task start --decision %s: got %s, want %s", d.decision, got, d.next)
 			}
 		}
 		var got []string
-		for _, a := range c.attempts("t-1") {
+		for _, a := range c.attempts("t1") {
 			got = append(got, fmt.Sprintf("%s-%d %s", a.Step, a.Number, a.Outcome))
 		}
 		if want := []string{"build-1 succeeded", "plan-1 failed", "plan-2 succeeded"}; !slices.Equal(got, want) {
-			t.Errorf("t-1 attempts %q, want %q", got, want)
+			t.Errorf("t1 attempts %q, want %q", got, want)
 		}
-		c.stopAttempt("t-1", "plan", 2)
-		c.stopAttempt("t-1", "build", 1)
+		c.stopAttempt("t1", "plan", 2)
+		c.stopAttempt("t1", "build", 1)
 		c.finish(2)
 	})
 }
@@ -833,12 +834,12 @@ func TestSafetyZeroIdleTurns(t *testing.T) {
 	eachRuntime(t, func(t *testing.T, rt string) {
 		c := newSafetyCopy(t, "", "")
 		c.approve()
-		c.guildhall("", "task", "new", "--repo", "app", "--title", "Sort", "t-1")
-		c.guildhall("", "task", "start", "--repo", "app", "t-1")
+		c.guildhall("", "task", "new", "--repo", "app", "--title", "Sort")
+		c.guildhall("", "task", "start", "--repo", "app", "t1")
 		c.waitFor("decision accept-1 opened by the watcher", func() bool {
 			return c.hasDecision("accept-1")
 		})
-		c.stopAttempt("t-1", "plan", 1)
+		c.stopAttempt("t1", "plan", 1)
 		for _, m := range c.inbox() {
 			c.guildhall("", "messages", "ack", "director", m.ID)
 		}
@@ -861,7 +862,7 @@ func TestSafetyZeroIdleTurns(t *testing.T) {
 			t.Errorf("wakes over the idle hold %+v, want none", got[len(before):])
 		}
 
-		c.guildhall(`{"schema":"guildhall.message/1","id":"n-1","recipient":"director","repository":"app","task":"t-1","type":"note","text":"Take t-2 next."}`,
+		c.guildhall(`{"schema":"guildhall.message/1","id":"n-1","recipient":"director","repository":"app","task":"t1","type":"note","text":"Take t2 next."}`,
 			"messages", "send", "director", "-")
 		var got []store.Wake
 		for _, w := range wakes() {
@@ -873,7 +874,7 @@ func TestSafetyZeroIdleTurns(t *testing.T) {
 			t.Errorf("wakes for the note %+v, want exactly one, woke", got)
 		}
 		// Guildhall surfaced the note to the Guildmaster on the session's Herdr server, outside the model (d33).
-		if got, want := c.toasts(), []string{"guildhall: note from guildmaster about t-1 --body=Take t-2 next. · guildhall messages read n-1"}; !slices.Equal(got, want) {
+		if got, want := c.toasts(), []string{"guildhall: note from guildmaster about t1 --body=Take t2 next. · guildhall messages read n-1"}; !slices.Equal(got, want) {
 			t.Errorf("toasts %q, want %q", got, want)
 		}
 		want := "guildhall: 1 unread (note 1 from guildmaster)"

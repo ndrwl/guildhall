@@ -21,11 +21,12 @@ func (f *pinFixture) taskRelease(id string) (store.TaskRelease, error) {
 	return withStore(filepath.Join(f.copy, "director.store"), true, func(s *store.Store) (store.TaskRelease, error) { return s.TaskRelease("app", id) })
 }
 
-// newTask runs task new for app/id on the fixture's copy, its workflow approved, and returns its exit code.
-func (f *pinFixture) newTask(id string) int {
+// newTask runs task new for app on the fixture's copy, its workflow approved, with title, and returns its exit code;
+// Guildhall assigns the next id, t1 for the first.
+func (f *pinFixture) newTask(title string) int {
 	f.t.Helper()
 	approveRepo(f.t, filepath.Join(f.copy, "director.store"), filepath.Join(f.copy, "config.toml"), "app")
-	return f.run("task", "new", "--copy", f.copy, "--repo", "app", "--title", "Task "+id, id)
+	return f.run("task", "new", "--copy", f.copy, "--repo", "app", "--title", title)
 }
 
 // install installs a release file holding body as version, reporting store schema schema, and returns its sha256.
@@ -46,10 +47,10 @@ func (f *pinFixture) install(version, body string, schema int) string {
 func TestTaskNewRecordsThePin(t *testing.T) {
 	f := newPinFixture(t)
 	h := release.Home{Dir: f.home, GOOS: runtime.GOOS}
-	if code := f.newTask("t-0"); code != 0 {
+	if code := f.newTask("t1"); code != 0 {
 		t.Fatalf("task new before adopt = %d", code)
 	}
-	if _, err := f.taskRelease("t-0"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := f.taskRelease("t1"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("a task created before adopt recorded a release: %v", err)
 	}
 	if fileExists(f.home) {
@@ -65,11 +66,11 @@ func TestTaskNewRecordsThePin(t *testing.T) {
 	if err := os.WriteFile(h.CopiesFile(), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if code := f.newTask("t-1"); code != 0 {
+	if code := f.newTask("t2"); code != 0 {
 		t.Fatalf("task new = %d", code)
 	}
-	if r, err := f.taskRelease("t-1"); err != nil || r.Version != "v1.0.0" || r.SHA256 != adopted.SHA256 {
-		t.Fatalf("t-1 release %+v, %v; want v1.0.0 %s", r, err, adopted.SHA256)
+	if r, err := f.taskRelease("t2"); err != nil || r.Version != "v1.0.0" || r.SHA256 != adopted.SHA256 {
+		t.Fatalf("t2 release %+v, %v; want v1.0.0 %s", r, err, adopted.SHA256)
 	}
 	if copies, err := h.Copies(); err != nil || !slices.Equal(copies, []string{f.copy}) {
 		t.Fatalf("task new did not register the copy: %q, %v", copies, err)
@@ -78,24 +79,24 @@ func TestTaskNewRecordsThePin(t *testing.T) {
 	if code := f.run("release", "use", "v1.1.0", "--copy", f.copy); code != 0 {
 		t.Fatalf("release use = %d", code)
 	}
-	if code := f.newTask("t-2"); code != 0 {
+	if code := f.newTask("t3"); code != 0 {
 		t.Fatalf("task new after use = %d", code)
 	}
-	if r, err := f.taskRelease("t-1"); err != nil || r.Version != "v1.0.0" {
-		t.Fatalf("the pin change moved t-1: %+v, %v", r, err)
+	if r, err := f.taskRelease("t2"); err != nil || r.Version != "v1.0.0" {
+		t.Fatalf("the pin change moved t2: %+v, %v", r, err)
 	}
-	if r, err := f.taskRelease("t-2"); err != nil || r.Version != "v1.1.0" || r.SHA256 != sum {
-		t.Fatalf("t-2 release %+v, %v; want v1.1.0 %s", r, err, sum)
+	if r, err := f.taskRelease("t3"); err != nil || r.Version != "v1.1.0" || r.SHA256 != sum {
+		t.Fatalf("t3 release %+v, %v; want v1.1.0 %s", r, err, sum)
 	}
 	if err := os.WriteFile(h.Binary("v1.1.0"), []byte("damaged"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if code := f.newTask("t-3"); code != 1 || !strings.Contains(f.stderr.String(), "pins v1.1.0") || !strings.Contains(f.stderr.String(), "damaged") {
+	if code := f.newTask("t4"); code != 1 || !strings.Contains(f.stderr.String(), "pins v1.1.0") || !strings.Contains(f.stderr.String(), "damaged") {
 		t.Fatalf("task new on a damaged pin = %d, %q", code, f.stderr)
 	}
 	tasks, err := withStore(filepath.Join(f.copy, "director.store"), true, func(s *store.Store) ([]store.Task, error) { return s.Tasks("app") })
 	if err != nil || len(tasks) != 3 {
-		t.Fatalf("tasks %d, %v; want t-0, t-1 and t-2 only", len(tasks), err)
+		t.Fatalf("tasks %d, %v; want t1, t2 and t3 only", len(tasks), err)
 	}
 }
 
@@ -106,19 +107,19 @@ func TestReleaseUseRefusesAStoreSchemaChange(t *testing.T) {
 	if code := f.run("release", "adopt", "--copy", f.copy); code != 0 {
 		t.Fatalf("release adopt = %d", code)
 	}
-	if code := f.newTask("t-1"); code != 0 {
+	if code := f.newTask("t1"); code != 0 {
 		t.Fatalf("task new = %d", code)
 	}
 	f.install("v2.0.0", "release v2.0.0", 2)
 	if code := f.run("release", "use", "v2.0.0", "--copy", f.copy); code != 1 ||
-		!strings.Contains(f.stderr.String(), "store schema 2") || !strings.Contains(f.stderr.String(), "app/t-1 on v1.0.0 (store schema 1)") {
+		!strings.Contains(f.stderr.String(), "store schema 2") || !strings.Contains(f.stderr.String(), "app/t1 on v1.0.0 (store schema 1)") {
 		t.Fatalf("release use across a store schema = %d, %q", code, f.stderr)
 	}
 	if pin, _ := release.ReadPin(f.copy); pin != "v1.0.0" || len(f.pins()) != 1 {
 		t.Fatalf("a refused release use moved the pin to %q", pin)
 	}
 	if _, err := withStore(filepath.Join(f.copy, "director.store"), false, func(s *store.Store) (store.Receipt, error) {
-		return s.CancelTask("cancel-t-1", "app", "t-1", "drained")
+		return s.CancelTask("cancel-t1", "app", "t1", "drained")
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -133,13 +134,13 @@ func TestReleaseUseRefusesAStoreSchemaChange(t *testing.T) {
 func TestReleaseStatusListsTasks(t *testing.T) {
 	f := newPinFixture(t)
 	h := release.Home{Dir: f.home, GOOS: runtime.GOOS}
-	if code := f.newTask("t-0"); code != 0 {
+	if code := f.newTask("t1"); code != 0 {
 		t.Fatalf("task new = %d", code)
 	}
 	if code := f.run("release", "adopt", "--copy", f.copy); code != 0 {
 		t.Fatalf("release adopt = %d", code)
 	}
-	if code := f.newTask("t-1"); code != 0 {
+	if code := f.newTask("t2"); code != 0 {
 		t.Fatalf("task new = %d", code)
 	}
 	if code := f.run("release", "status", "--json", "--copy", f.copy); code != 0 {
@@ -149,11 +150,11 @@ func TestReleaseStatusListsTasks(t *testing.T) {
 	if err := json.Unmarshal([]byte(f.stdout.String()), &rep); err != nil {
 		t.Fatal(err)
 	}
-	if rep.Copy == nil || !slices.Equal(rep.Copy.Unrecorded, []string{"app/t-0"}) || len(rep.Copy.Tasks) != 1 ||
-		rep.Copy.Tasks[0].TaskID != "t-1" || rep.Copy.Tasks[0].Version != "v1.0.0" || rep.Copy.Tasks[0].Problem != "" {
+	if rep.Copy == nil || !slices.Equal(rep.Copy.Unrecorded, []string{"app/t1"}) || len(rep.Copy.Tasks) != 1 ||
+		rep.Copy.Tasks[0].TaskID != "t2" || rep.Copy.Tasks[0].Version != "v1.0.0" || rep.Copy.Tasks[0].Problem != "" {
 		t.Fatalf("copy %+v", rep.Copy)
 	}
-	if len(rep.Releases) != 1 || !slices.Equal(rep.Releases[0].Tasks, []string{"app/t-1"}) {
+	if len(rep.Releases) != 1 || !slices.Equal(rep.Releases[0].Tasks, []string{"app/t2"}) {
 		t.Fatalf("releases %+v", rep.Releases)
 	}
 	if items := f.app.taskReleaseItems(filepath.Join(f.copy, "director.store")); len(items) != 0 {
@@ -163,11 +164,11 @@ func TestReleaseStatusListsTasks(t *testing.T) {
 		t.Fatal(err)
 	}
 	if code := f.run("release", "status", "--copy", f.copy); code != 0 ||
-		!strings.Contains(f.stdout.String(), "task app/t-1 runs on v1.0.0, which is damaged") || !strings.Contains(f.stdout.String(), "task app/t-0 recorded no release and runs on the pin") {
+		!strings.Contains(f.stdout.String(), "task app/t2 runs on v1.0.0, which is damaged") || !strings.Contains(f.stdout.String(), "task app/t1 recorded no release and runs on the pin") {
 		t.Fatalf("release status = %d, %q", code, f.stdout)
 	}
 	items := f.app.taskReleaseItems(filepath.Join(f.copy, "director.store"))
-	if len(items) != 1 || items[0].Kind != releaseKind || items[0].TaskID != "t-1" || !strings.Contains(items[0].Reason, "records release v1.0.0, which is damaged") ||
+	if len(items) != 1 || items[0].Kind != releaseKind || items[0].TaskID != "t2" || !strings.Contains(items[0].Reason, "records release v1.0.0, which is damaged") ||
 		!strings.Contains(items[0].Reason, "a rebuild from source may not reproduce its recorded sha256 ") || items[0].Command != "guildhall release install v1.0.0" {
 		t.Fatalf("release items %+v", items)
 	}
@@ -192,7 +193,7 @@ func TestReleaseStatusListsTasks(t *testing.T) {
 		if _, err := h.RunnableAs("v1.0.0", recorded); !errors.As(err, &nr) {
 			t.Fatalf("%s: RunnableAs = %v, want a NotRunnableError", c.name, err)
 		}
-		if code := f.run("release", "status", "--copy", f.copy); code != 0 || !strings.Contains(f.stdout.String(), "task app/t-1 runs on v1.0.0, which "+nr.Why+"\n") {
+		if code := f.run("release", "status", "--copy", f.copy); code != 0 || !strings.Contains(f.stdout.String(), "task app/t2 runs on v1.0.0, which "+nr.Why+"\n") {
 			t.Fatalf("%s: release status = %d, %q; want which %s", c.name, code, f.stdout, nr.Why)
 		}
 		items := f.app.taskReleaseItems(filepath.Join(f.copy, "director.store"))

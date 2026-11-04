@@ -28,6 +28,7 @@ adapter = "fake"
 
 [[repository]]
 id = "app"
+task_prefix = "t"
 path = "/srv/app"
 workflow = "test-default"
 remote = "git@github.com:example/app.git"
@@ -35,6 +36,7 @@ owner_machine = "workstation"
 
 [[repository]]
 id = "lib"
+task_prefix = "l"
 path = "/srv/lib"
 remote = "git@github.com:example/lib.git"
 owner_machine = "workstation"
@@ -128,7 +130,9 @@ func runTask(t *testing.T, args ...string) (int, string, string) {
 	return code, stdout.String(), stderr.String()
 }
 
-func newTask(t *testing.T, storePath, cfg, repo, title, id string, deps ...string) store.Receipt {
+// newTask runs task new for repo with title and deps and returns its receipt, whose TaskID is the id Guildhall
+// assigned: the repository's task_prefix followed by the next number, t1 for app's first and l1 for lib's.
+func newTask(t *testing.T, storePath, cfg, repo, title string, deps ...string) store.Receipt {
 	t.Helper()
 	c, err := config.Load(cfg)
 	if err != nil {
@@ -141,9 +145,9 @@ func newTask(t *testing.T, storePath, cfg, repo, title, id string, deps ...strin
 	for _, d := range deps {
 		args = append(args, "--depends-on", d)
 	}
-	code, out, stderr := runTask(t, append(args, id)...)
+	code, out, stderr := runTask(t, args...)
 	if code != 0 {
-		t.Fatalf("task new %s/%s: exit %d, stderr %s", repo, id, code, stderr)
+		t.Fatalf("task new %s %q: exit %d, stderr %s", repo, title, code, stderr)
 	}
 	return decodeJSON[store.Receipt](t, out)
 }
@@ -191,18 +195,18 @@ func TestTaskNewBindsEffectiveWorkflowAndConfig(t *testing.T) {
 	cfg := writeDirector(t, directorTOML)
 	path := emptyStore(t)
 
-	r := newTask(t, path, cfg, "app", "Fix the login redirect", "t-1")
-	if r.MutationID != "task:app:t-1" || r.Operation != "create-task" || r.Repository != "app" || r.TaskID != "t-1" {
+	r := newTask(t, path, cfg, "app", "Fix the login redirect")
+	if r.MutationID != "task:app:t1" || r.Operation != "create-task" || r.Repository != "app" || r.TaskID != "t1" {
 		t.Fatalf("receipt = %+v", r)
 	}
 	def := testDefault(t)
-	got := readTask(t, path, "app", "t-1")
+	got := readTask(t, path, "app", "t1")
 	if got.Workflow != def.Revision() || got.ConfigDigest != configDigest(t, cfg) || got.State != store.TaskOpen || got.Title != "Fix the login redirect" {
 		t.Fatalf("default task = %+v, want workflow %+v", got, def.Revision())
 	}
 
 	approveRepo(t, path, cfg, "lib")
-	newTask(t, path, cfg, "lib", "Bump the parser", "t-1")
+	newTask(t, path, cfg, "lib", "Bump the parser")
 	data, err := os.ReadFile(filepath.Join(filepath.Dir(cfg), "workflows", "human-review.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -215,7 +219,7 @@ func TestTaskNewBindsEffectiveWorkflowAndConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got = readTask(t, path, "lib", "t-1")
+	got = readTask(t, path, "lib", "l1")
 	if got.Workflow != overridden.Revision() || got.Workflow.Name != "human-review" || got.Workflow.Digest == file.Digest() {
 		t.Fatalf("overridden task workflow = %+v, want %+v (file digest %s)", got.Workflow, overridden.Revision(), file.Digest())
 	}
@@ -234,16 +238,18 @@ func TestTaskNewConfigDigestCoversManagedSettingsNotFormatting(t *testing.T) {
 	enrolManaged(t, filepath.Dir(managed))
 
 	path := emptyStore(t)
-	for id, c := range map[string]string{"t-base": cfg, "t-reformatted": reformatted, "t-managed": managed} {
-		newTask(t, path, c, "app", "Task", id)
+	// The reformatted config files the same request as the base, so it is a retry of t1.
+	ids := map[string]string{}
+	for _, c := range []struct{ name, cfg string }{{"base", cfg}, {"reformatted", reformatted}, {"managed", managed}} {
+		ids[c.name] = newTask(t, path, c.cfg, "app", "Task").TaskID
 	}
-	if got := readTask(t, path, "app", "t-base").ConfigDigest; got != base {
+	if ids["base"] != "t1" || ids["reformatted"] != "t1" || ids["managed"] != "t2" {
+		t.Fatalf("ids = %v, want the reformatted config's task a retry of the base one", ids)
+	}
+	if got := readTask(t, path, "app", "t1").ConfigDigest; got != base {
 		t.Fatalf("base digest %s, want %s", got, base)
 	}
-	if got := readTask(t, path, "app", "t-reformatted").ConfigDigest; got != base {
-		t.Fatalf("reformatting changed the digest: %s, want %s", got, base)
-	}
-	if got := readTask(t, path, "app", "t-managed").ConfigDigest; got == base {
+	if got := readTask(t, path, "app", "t2").ConfigDigest; got == base {
 		t.Fatal("managed.toml did not change the digest")
 	}
 }
@@ -255,8 +261,8 @@ func TestTaskNewConfigPaths(t *testing.T) {
 	relative := filepath.Join("director config", "config.toml")
 
 	approveRepo(t, path, cfg, "lib")
-	newTask(t, path, relative, "lib", "Relative config path", "t-1")
-	if got, want := readTask(t, path, "lib", "t-1").ConfigDigest, configDigest(t, cfg); got != want {
+	newTask(t, path, relative, "lib", "Relative config path")
+	if got, want := readTask(t, path, "lib", "l1").ConfigDigest, configDigest(t, cfg); got != want {
 		t.Fatalf("relative config digest %s, want %s", got, want)
 	}
 }
@@ -301,7 +307,7 @@ func TestTaskNewRefusesWorkflowAndWritesNothing(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "lib", "--title", "Task", "t-1")
+			code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "lib", "--title", "Task")
 			if code != 1 || out != "" {
 				t.Fatalf("exit %d, stdout %q, stderr %q", code, out, stderr)
 			}
@@ -353,7 +359,7 @@ func TestTaskNewRefusesUnknownProfilesAndWritesNothing(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "lib", "--title", "Task", "t-1")
+			code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "lib", "--title", "Task")
 			if code != 1 || out != "" || !strings.Contains(stderr, `step "`+stepID+`" names unknown profile "missing"`) {
 				t.Fatalf("exit %d, stdout %q, stderr %q", code, out, stderr)
 			}
@@ -369,8 +375,8 @@ func TestTaskNewRefusesUnknownProfilesAndWritesNothing(t *testing.T) {
 			}
 			writeFile(t, cfg, toml+"\n[profile.missing]\nadapter = \"claude\"\n")
 			approveRepo(t, path, cfg, "lib")
-			newTask(t, path, cfg, "lib", "Task", "t-1")
-			if got := readTask(t, path, "lib", "t-1"); got.ConfigDigest != configDigest(t, cfg) {
+			newTask(t, path, cfg, "lib", "Task")
+			if got := readTask(t, path, "lib", "l1"); got.ConfigDigest != configDigest(t, cfg) {
 				t.Fatalf("declared-profile task = %+v", got)
 			}
 		})
@@ -381,12 +387,12 @@ func TestTaskDefaultIgnoresShadowFile(t *testing.T) {
 	cfg := writeDirector(t, strings.Replace(directorTOML, `workflow = "test-default"`, `workflow = "default"`, 1))
 	writeFile(t, filepath.Join(filepath.Dir(cfg), "workflows", "default.json"), "invalid JSON")
 	path := emptyStore(t)
-	newTask(t, path, cfg, "app", "Task", "t-1")
+	newTask(t, path, cfg, "app", "Task")
 	def, err := workflow.Default()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := readTask(t, path, "app", "t-1").Workflow; got != def.Revision() {
+	if got := readTask(t, path, "app", "t1").Workflow; got != def.Revision() {
 		t.Fatalf("workflow = %+v, want the shipped default %+v", got, def.Revision())
 	}
 }
@@ -395,72 +401,174 @@ func TestTaskArgumentOrders(t *testing.T) {
 	cfg := writeDirector(t, directorTOML)
 	path := emptyStore(t)
 	approveRepo(t, path, cfg, "lib")
-	newTask(t, path, cfg, "lib", "Dependency", "dep")
+	newTask(t, path, cfg, "lib", "Dependency")
 	approveRepo(t, path, cfg, "app")
-	flags := []string{"--store", path, "--config", cfg, "--repo", "app", "--title=--", "--depends-on", "lib/dep"}
+	flags := []string{"--store", path, "--config", cfg, "--repo", "app", "--title=--", "--depends-on", "lib/l1"}
+	// Each order files the same request, so the later ones are retries printing the first receipt.
 	var first string
-	for _, position := range []int{0, 2, len(flags)} {
-		args := append([]string{"new"}, flags[:position]...)
-		args = append(args, "t-1")
-		args = append(args, flags[position:]...)
+	for _, rotate := range []int{0, 2, 6} {
+		args := append([]string{"new"}, flags[rotate:]...)
+		args = append(args, flags[:rotate]...)
 		code, out, stderr := runTask(t, args...)
 		if code != 0 || (first != "" && out != first) {
-			t.Fatalf("position %d: exit %d, stdout %q, stderr %q", position, code, out, stderr)
+			t.Fatalf("rotation %d: exit %d, stdout %q, stderr %q", rotate, code, out, stderr)
 		}
 		first = out
 	}
 	for _, args := range [][]string{
-		{"show", "--store", path, "--repo", "app", "t-1", "--json"},
-		{"show", "t-1", "--store", path, "--repo", "app", "--json"},
-		{"show", "--store", path, "--repo", "app", "--json", "t-1"},
-		{"show", "--store", path, "--repo", "app", "--json", "--", "t-1"},
+		{"show", "--store", path, "--repo", "app", "t1", "--json"},
+		{"show", "t1", "--store", path, "--repo", "app", "--json"},
+		{"show", "--store", path, "--repo", "app", "--json", "t1"},
+		{"show", "--store", path, "--repo", "app", "--json", "--", "t1"},
 	} {
 		code, out, stderr := runTask(t, args...)
 		if code != 0 {
 			t.Fatalf("%v: exit %d, stderr %s", args, code, stderr)
 		}
 		detail := decodeJSON[taskDetail](t, out)
-		if detail.Task.ID != "t-1" || detail.Task.Title != "--" || len(detail.Task.DependsOn) != 1 {
+		if detail.Task.ID != "t1" || detail.Task.Title != "--" || len(detail.Task.DependsOn) != 1 {
 			t.Fatalf("detail = %+v", detail)
 		}
 	}
 }
 
+// TestTaskNewMaximalIDsRetry: a maximal repository id with a three-letter prefix keeps the task mutation unhashed,
+// "task:<repo>:<id>", and a retry prints the same receipt.
 func TestTaskNewMaximalIDsRetry(t *testing.T) {
-	repo, id := strings.Repeat("r", 63), strings.Repeat("t", 63)
-	cfg := writeDirector(t, strings.Replace(directorTOML, `id = "app"`, `id = "`+repo+`"`, 1))
+	repo := strings.Repeat("r", 63)
+	cfg := writeDirector(t, strings.Replace(strings.Replace(directorTOML, `id = "app"`, `id = "`+repo+`"`, 1), `task_prefix = "t"`, `task_prefix = "zzz"`, 1))
 	path := emptyStore(t)
-	first := newTask(t, path, cfg, repo, "Task", id)
-	sum := sha256.Sum256([]byte("task:" + repo + ":" + id))
-	if first.MutationID != "task:sha256:"+hex.EncodeToString(sum[:]) || len(first.MutationID) > 128 {
+	first := newTask(t, path, cfg, repo, "Task")
+	if first.MutationID != "task:"+repo+":zzz1" || first.TaskID != "zzz1" || len(first.MutationID) > 128 {
 		t.Fatalf("receipt = %+v", first)
 	}
-	if again := newTask(t, path, cfg, repo, "Task", id); again != first {
+	if again := newTask(t, path, cfg, repo, "Task"); again != first {
 		t.Fatalf("retry = %+v, want %+v", again, first)
 	}
-	code, out, stderr := runTask(t, "new", id, "--store", path, "--config", cfg, "--repo", repo, "--title", "Changed")
-	if code != 1 || out != "" || !strings.Contains(stderr, store.ErrMutationConflict.Error()) {
-		t.Fatalf("conflict: exit %d, stdout %q, stderr %q", code, out, stderr)
-	}
-	if got := readTask(t, path, repo, id).Title; got != "Task" {
+	if got := readTask(t, path, repo, "zzz1").Title; got != "Task" {
 		t.Fatalf("title = %q", got)
 	}
 }
 
+// TestTaskNewRetry: rerunning an identical task new prints the same receipt and writes nothing, each run opening the
+// store afresh; a different request takes the next number, and an identical request whose task is cancelled, or
+// done, files a new task.
 func TestTaskNewRetry(t *testing.T) {
 	cfg := writeDirector(t, directorTOML)
 	path := emptyStore(t)
-	first := newTask(t, path, cfg, "app", "Fix the login redirect", "t-1")
-	if again := newTask(t, path, cfg, "app", "Fix the login redirect", "t-1"); again != first {
+	first := newTask(t, path, cfg, "app", "Fix the login redirect")
+	if first.TaskID != "t1" {
+		t.Fatalf("first task = %+v, want t1", first)
+	}
+	before := lastSequence(t, path)
+	if again := newTask(t, path, cfg, "app", "Fix the login redirect"); again != first {
 		t.Fatalf("retry receipt %+v, want %+v", again, first)
 	}
-
-	code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Another title", "t-1")
-	if code != 1 || out != "" || !strings.Contains(stderr, store.ErrMutationConflict.Error()) {
-		t.Fatalf("conflicting retry: exit %d, stdout %q, stderr %q", code, out, stderr)
+	if after := lastSequence(t, path); after != before {
+		t.Fatalf("a retry wrote: sequence %d, was %d", after, before)
 	}
-	if got := readTask(t, path, "app", "t-1").Title; got != "Fix the login redirect" {
-		t.Fatalf("title changed to %q", got)
+
+	if r := newTask(t, path, cfg, "app", "Another title"); r.TaskID != "t2" {
+		t.Fatalf("a different title = %+v, want t2", r)
+	}
+	if r := newTask(t, path, cfg, "app", "Fix the login redirect", "app/t2"); r.TaskID != "t3" {
+		t.Fatalf("different dependencies = %+v, want t3", r)
+	}
+	s, err := store.Open(path, store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CancelTask("cancel-t1", "app", "t1", "filed again"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if r := newTask(t, path, cfg, "app", "Fix the login redirect"); r.TaskID != "t4" || r.MutationID != "task:app:t4" {
+		t.Fatalf("an identical request after a cancel = %+v, want t4", r)
+	}
+	if got := readTask(t, path, "app", "t1"); got.Title != "Fix the login redirect" || got.State != store.TaskCancelled {
+		t.Fatalf("t1 = %+v", got)
+	}
+}
+
+// TestTaskNewAssignsIDs: task new assigns the repository's prefix followed by one more than the highest number of
+// any task id of that form, compared as numbers, ignoring other ids, so a cancelled or pruned highest task still
+// advances it; each repository numbers under its own prefix.
+func TestTaskNewAssignsIDs(t *testing.T) {
+	cfg := writeDirector(t, directorTOML)
+	path := emptyStore(t)
+	approveRepo(t, path, cfg, "lib")
+	if r := newTask(t, path, cfg, "lib", "First"); r.TaskID != "l1" {
+		t.Fatalf("lib's first task = %+v, want l1", r)
+	}
+	if r := newTask(t, path, cfg, "app", "First"); r.TaskID != "t1" {
+		t.Fatalf("app's first task = %+v, want t1", r)
+	}
+	d := readTask(t, path, "app", "t1")
+	s, err := store.Open(path, store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"t9", "t10", "t-1", "t007", "t0", "tx12", "x99"} {
+		task := store.Task{Repository: "app", ID: id, Title: "Seeded " + id, Workflow: d.Workflow, ConfigDigest: d.ConfigDigest}
+		if _, err := s.CreateTask("seed-"+id, task); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.CancelTask("cancel-t10", "app", "t10", "seeded"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if r := newTask(t, path, cfg, "app", "After t10"); r.TaskID != "t11" {
+		t.Fatalf("after a cancelled t10 = %+v, want t11", r)
+	}
+	if r := newTask(t, path, cfg, "lib", "Second"); r.TaskID != "l2" {
+		t.Fatalf("lib's second task = %+v, want l2", r)
+	}
+
+	// A pruned highest task still counts: its records stay.
+	s, err = store.Open(path, store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetTaskState("done-t11", "app", "t11", store.TaskDone); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.PruneTask("prune-t11", store.TaskPrune{Repository: "app", TaskID: "t11", Worktree: store.WorktreeRemoved, Complete: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if r := newTask(t, path, cfg, "app", "After a pruned t11"); r.TaskID != "t12" {
+		t.Fatalf("after a pruned t11 = %+v, want t12", r)
+	}
+}
+
+// TestTaskNewRefusesAnIDAndAMissingPrefix: a task id passed to task new is a usage error saying Guildhall assigns
+// ids, and a repository without task_prefix is refused naming the key and the repository; neither writes anything.
+func TestTaskNewRefusesAnIDAndAMissingPrefix(t *testing.T) {
+	cfg := writeDirector(t, directorTOML)
+	path := emptyStore(t)
+	approveRepo(t, path, cfg, "app")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "T", "t1")
+	if code != 2 || out != "" || !strings.Contains(stderr, `task new takes no task id, but was given "t1"; Guildhall assigns ids`) {
+		t.Fatalf("a passed id: exit %d, stdout %q, stderr %q", code, out, stderr)
+	}
+	noPrefix := writeDirector(t, strings.Replace(directorTOML, "task_prefix = \"t\"\n", "", 1))
+	code, out, stderr = runTask(t, "new", "--store", path, "--config", noPrefix, "--repo", "app", "--title", "T")
+	if code != 1 || out != "" || !strings.Contains(stderr, "repository app has no task_prefix") {
+		t.Fatalf("no prefix: exit %d, stdout %q, stderr %q", code, out, stderr)
+	}
+	if after, err := os.ReadFile(path); err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("a refusal changed the store (%v)", err)
 	}
 }
 
@@ -470,17 +578,17 @@ func TestTaskNewTitleLimit(t *testing.T) {
 	cfg := writeDirector(t, directorTOML)
 	path := emptyStore(t)
 	approveRepo(t, path, cfg, "app")
-	code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", strings.Repeat("é", 101), "t-1")
+	code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", strings.Repeat("é", 101))
 	want := "guildhall: task new: title is 101 characters; the limit is 100; put the full statement in --detail or --detail-file\n"
 	if code != 1 || out != "" || stderr != want {
 		t.Fatalf("long title: exit %d, stdout %q, stderr %q", code, out, stderr)
 	}
-	if code, _, _ := runTask(t, "show", "--store", path, "--repo", "app", "--json", "t-1"); code != 1 {
+	if code, _, _ := runTask(t, "show", "--store", path, "--repo", "app", "--json", "t1"); code != 1 {
 		t.Fatalf("refused task was written: show exit %d", code)
 	}
 	title := strings.Repeat("é", 100)
-	newTask(t, path, cfg, "app", title, "t-1")
-	if got := readTask(t, path, "app", "t-1").Title; got != title {
+	newTask(t, path, cfg, "app", title)
+	if got := readTask(t, path, "app", "t1").Title; got != title {
 		t.Fatalf("title = %q", got)
 	}
 }
@@ -498,15 +606,15 @@ func TestTaskNewDetail(t *testing.T) {
 		args      []string
 		want      string
 	}{
-		{"t-1", "", []string{"--detail", "Running X fails: error: Y"}, "Running X fails: error: Y"},
-		{"t-2", "", []string{"--detail-file", file}, "From a file:\n  error: Y\n"},
-		{"t-3", "From stdin:\r\nerror: Z\n", []string{"--detail-file", "-"}, "From stdin:\nerror: Z\n"},
+		{"t1", "", []string{"--detail", "Running X fails: error: Y"}, "Running X fails: error: Y"},
+		{"t2", "", []string{"--detail-file", file}, "From a file:\n  error: Y\n"},
+		{"t3", "From stdin:\r\nerror: Z\n", []string{"--detail-file", "-"}, "From stdin:\nerror: Z\n"},
 	}
 	for _, c := range cases {
 		app, stdout, stderr := newTestApp(nil, nil)
 		app.Stdin = strings.NewReader(c.stdin)
 		args := append([]string{"task", "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Fix X", "--kind", "bug"}, c.args...)
-		if code := app.Run(append(args, c.id)); code != 0 {
+		if code := app.Run(args); code != 0 {
 			t.Fatalf("%s: exit %d, stdout %q, stderr %q", c.id, code, stdout, stderr)
 		}
 		code, out, errOut := runTask(t, "show", "--store", path, "--repo", "app", "--json", c.id)
@@ -525,17 +633,17 @@ func TestTaskNewDetail(t *testing.T) {
 			t.Errorf("%s: detail = %q, want %q", c.id, shown.Task.Detail, c.want)
 		}
 	}
-	if code, out, _ := runTask(t, "show", "--store", path, "--repo", "app", "--json", "t-1"); code != 0 || !strings.Contains(out, `"detail"`) {
+	if code, out, _ := runTask(t, "show", "--store", path, "--repo", "app", "--json", "t1"); code != 0 || !strings.Contains(out, `"detail"`) {
 		t.Fatalf("show without detail field: exit %d, %s", code, out)
 	}
 
 	code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Fix X",
-		"--detail", "text", "--detail-file", file, "t-4")
+		"--detail", "text", "--detail-file", file)
 	if code != 2 || out != "" || !strings.Contains(stderr, "give --detail or --detail-file, not both") {
 		t.Fatalf("both flags: exit %d, stdout %q, stderr %q", code, out, stderr)
 	}
-	newTask(t, path, cfg, "app", "No detail", "t-5")
-	if code, out, _ := runTask(t, "show", "--store", path, "--repo", "app", "--json", "t-5"); code != 0 || strings.Contains(out, `"detail"`) {
+	newTask(t, path, cfg, "app", "No detail")
+	if code, out, _ := runTask(t, "show", "--store", path, "--repo", "app", "--json", "t4"); code != 0 || strings.Contains(out, `"detail"`) {
 		t.Fatalf("task without a detail: exit %d, %s", code, out)
 	}
 }
@@ -544,21 +652,21 @@ func TestTaskNewDependencies(t *testing.T) {
 	cfg := writeDirector(t, directorTOML)
 	path := emptyStore(t)
 	approveRepo(t, path, cfg, "lib")
-	newTask(t, path, cfg, "lib", "Parser", "t-1")
-	newTask(t, path, cfg, "app", "Schema", "t-2")
+	newTask(t, path, cfg, "lib", "Parser")
+	newTask(t, path, cfg, "app", "Schema")
 
 	code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Login",
-		"--depends-on", "lib/t-1", "--depends-on", "app/t-9", "t-3")
-	if code != 1 || out != "" || !strings.Contains(stderr, "app/t-9") || !strings.Contains(stderr, store.ErrNotFound.Error()) {
+		"--depends-on", "lib/l1", "--depends-on", "app/t9")
+	if code != 1 || out != "" || !strings.Contains(stderr, "app/t9") || !strings.Contains(stderr, store.ErrNotFound.Error()) {
 		t.Fatalf("unknown dependency: exit %d, stdout %q, stderr %q", code, out, stderr)
 	}
-	if code, _, _ := runTask(t, "show", "--store", path, "--repo", "app", "--json", "t-3"); code != 1 {
+	if code, _, _ := runTask(t, "show", "--store", path, "--repo", "app", "--json", "t2"); code != 1 {
 		t.Fatalf("refused task was written: show exit %d", code)
 	}
 
-	newTask(t, path, cfg, "app", "Login", "t-3", "lib/t-1", "app/t-2")
-	want := []store.TaskRef{{Repository: "lib", ID: "t-1"}, {Repository: "app", ID: "t-2"}}
-	got := readTask(t, path, "app", "t-3").DependsOn
+	newTask(t, path, cfg, "app", "Login", "lib/l1", "app/t1")
+	want := []store.TaskRef{{Repository: "lib", ID: "l1"}, {Repository: "app", ID: "t1"}}
+	got := readTask(t, path, "app", "t2").DependsOn
 	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
 		t.Fatalf("depends_on = %+v, want %+v", got, want)
 	}
@@ -569,16 +677,16 @@ func TestTaskNewDependencies(t *testing.T) {
 func TestTaskNewFixes(t *testing.T) {
 	cfg := writeDirector(t, directorTOML)
 	path := emptyStore(t)
-	newTask(t, path, cfg, "app", "Schema", "t-1")
-	code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Fix", "--kind", "feature", "--fixes", "app/t-9", "t-2")
-	if code != 1 || out != "" || !strings.Contains(stderr, "app/t-9") || !strings.Contains(stderr, store.ErrNotFound.Error()) {
+	newTask(t, path, cfg, "app", "Schema")
+	code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Fix", "--kind", "feature", "--fixes", "app/t9")
+	if code != 1 || out != "" || !strings.Contains(stderr, "app/t9") || !strings.Contains(stderr, store.ErrNotFound.Error()) {
 		t.Fatalf("an unknown fixed task: exit %d, stdout %q, stderr %q", code, out, stderr)
 	}
-	if code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Fix", "--kind", "feature", "--fixes", "app/t-1", "t-2"); code != 0 {
+	if code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Fix", "--kind", "feature", "--fixes", "app/t1"); code != 0 {
 		t.Fatalf("task new --fixes: exit %d, stdout %q, stderr %q", code, out, stderr)
 	}
-	if got := readTask(t, path, "app", "t-2").Fixes; got == nil || *got != (store.TaskRef{Repository: "app", ID: "t-1"}) {
-		t.Fatalf("fixes = %+v, want app/t-1", got)
+	if got := readTask(t, path, "app", "t2").Fixes; got == nil || *got != (store.TaskRef{Repository: "app", ID: "t1"}) {
+		t.Fatalf("fixes = %+v, want app/t1", got)
 	}
 }
 
@@ -586,24 +694,24 @@ func TestTaskUsageErrors(t *testing.T) {
 	cfg := writeDirector(t, directorTOML)
 	path := emptyStore(t)
 	cases := map[string][]string{
-		"trailing unknown":       {"show", "t-1", "--store", path, "--repo", "app", "--json", "--unknown"},
-		"trailing disallowed":    {"show", "t-1", "--store", path, "--repo", "app", "--json", "--title", "T"},
-		"flags after terminator": {"show", "--store", path, "--repo", "app", "--", "t-1", "--json"},
+		"trailing unknown":       {"show", "t1", "--store", path, "--repo", "app", "--json", "--unknown"},
+		"trailing disallowed":    {"show", "t1", "--store", path, "--repo", "app", "--json", "--title", "T"},
+		"flags after terminator": {"show", "--store", path, "--repo", "app", "--", "t1", "--json"},
 		"no subcommand":          {},
 		"unknown subcommand":     {"frobnicate"},
-		"new without store":      {"new", "--config", cfg, "--repo", "app", "--title", "T", "t-1"},
-		"new without config":     {"new", "--store", path, "--repo", "app", "--title", "T", "t-1"},
-		"new without repo":       {"new", "--store", path, "--config", cfg, "--title", "T", "t-1"},
-		"new without title":      {"new", "--store", path, "--config", cfg, "--repo", "app", "t-1"},
-		"new without task":       {"new", "--store", path, "--config", cfg, "--repo", "app", "--title", "T"},
-		"bad dependency":         {"new", "--store", path, "--config", cfg, "--repo", "app", "--title", "T", "--depends-on", "t-1", "t-2"},
-		"bad fixed task":         {"new", "--store", path, "--config", cfg, "--repo", "app", "--title", "T", "--fixes", "t-1", "t-2"},
-		"fixes on show":          {"show", "--store", path, "--repo", "app", "--fixes", "app/t-1", "--json", "t-1"},
-		"show without json":      {"show", "--store", path, "--repo", "app", "t-1"},
-		"show without repo":      {"show", "--store", path, "--json", "t-1"},
-		"show with title":        {"show", "--store", path, "--repo", "app", "--title", "T", "--json", "t-1"},
+		"new without store":      {"new", "--config", cfg, "--repo", "app", "--title", "T"},
+		"new without config":     {"new", "--store", path, "--repo", "app", "--title", "T"},
+		"new without repo":       {"new", "--store", path, "--config", cfg, "--title", "T"},
+		"new without title":      {"new", "--store", path, "--config", cfg, "--repo", "app"},
+		"new with a task id":     {"new", "--store", path, "--config", cfg, "--repo", "app", "--title", "T", "t1"},
+		"bad dependency":         {"new", "--store", path, "--config", cfg, "--repo", "app", "--title", "T", "--depends-on", "t1"},
+		"bad fixed task":         {"new", "--store", path, "--config", cfg, "--repo", "app", "--title", "T", "--fixes", "t1"},
+		"fixes on show":          {"show", "--store", path, "--repo", "app", "--fixes", "app/t1", "--json", "t1"},
+		"show without json":      {"show", "--store", path, "--repo", "app", "t1"},
+		"show without repo":      {"show", "--store", path, "--json", "t1"},
+		"show with title":        {"show", "--store", path, "--repo", "app", "--title", "T", "--json", "t1"},
 		"list without json":      {"list", "--store", path},
-		"list with task":         {"list", "--store", path, "--json", "t-1"},
+		"list with task":         {"list", "--store", path, "--json", "t1"},
 		"list with config":       {"list", "--store", path, "--config", cfg, "--json"},
 	}
 	for name, args := range cases {
@@ -626,8 +734,8 @@ func TestTaskRefusesMissingAndEmptyStore(t *testing.T) {
 			writeFile(t, empty, "")
 			for path, want := range map[string]string{missing: "no store at", empty: "not a Guildhall store"} {
 				args := map[string][]string{
-					"new":  {"new", "--store", path, "--config", cfg, "--repo", "app", "--title", "T", "t-1"},
-					"show": {"show", "--store", path, "--repo", "app", "--json", "t-1"},
+					"new":  {"new", "--store", path, "--config", cfg, "--repo", "app", "--title", "T"},
+					"show": {"show", "--store", path, "--repo", "app", "--json", "t1"},
 					"list": {"list", "--store", path, "--json"},
 				}[sub]
 				code, out, stderr := runTask(t, args...)
@@ -648,7 +756,7 @@ func TestTaskRefusesMissingAndEmptyStore(t *testing.T) {
 func TestTaskNewRefusesUnknownRepository(t *testing.T) {
 	cfg := writeDirector(t, directorTOML)
 	path := emptyStore(t)
-	code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "web", "--title", "T", "t-1")
+	code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "web", "--title", "T")
 	if code != 1 || out != "" || !strings.Contains(stderr, `"web"`) {
 		t.Fatalf("exit %d, stdout %q, stderr %q", code, out, stderr)
 	}
@@ -660,29 +768,29 @@ func goldenStore(t *testing.T) string {
 	cfg := writeDirector(t, directorTOML)
 	path := emptyStore(t)
 	approveRepo(t, path, cfg, "lib")
-	newTask(t, path, cfg, "lib", "Bump the parser", "t-1")
-	newTask(t, path, cfg, "app", "Fix the login redirect", "t-2", "lib/t-1")
-	newTask(t, path, cfg, "app", "Add a sign-out link", "t-1")
+	newTask(t, path, cfg, "lib", "Bump the parser")
+	newTask(t, path, cfg, "app", "Add a sign-out link")
+	newTask(t, path, cfg, "app", "Fix the login redirect", "lib/l1")
 	s, err := store.Open(path, store.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
 	steps := []func() (store.Receipt, error){
-		func() (store.Receipt, error) { return s.StartAttempt("g-1", "app", "t-2", "plan") },
+		func() (store.Receipt, error) { return s.StartAttempt("g-1", "app", "t2", "plan") },
 		func() (store.Receipt, error) {
-			return s.FinishAttempt("g-2", "app", "t-2", "plan", 1, store.AttemptSucceeded)
+			return s.FinishAttempt("g-2", "app", "t2", "plan", 1, store.AttemptSucceeded)
 		},
 		func() (store.Receipt, error) {
-			return s.PutDocument("g-3", store.DocumentRef{Repository: "app", TaskID: "t-2", Name: "spec", Path: "tasks/t-2/spec.md", SHA256: strings.Repeat("b", 64)})
+			return s.PutDocument("g-3", store.DocumentRef{Repository: "app", TaskID: "t2", Name: "spec", Path: "tasks/t2/spec.md", SHA256: strings.Repeat("b", 64)})
 		},
 		func() (store.Receipt, error) {
-			return s.OpenDecision("g-4", store.Decision{Repository: "app", TaskID: "t-2", ID: "accept-plan", Kind: store.DecisionQuestion, Question: "Accept the plan?"})
+			return s.OpenDecision("g-4", store.Decision{Repository: "app", TaskID: "t2", ID: "accept-plan", Kind: store.DecisionQuestion, Question: "Accept the plan?"})
 		},
 		func() (store.Receipt, error) {
-			return s.AnswerDecision("g-5", "app", "t-2", "accept-plan", "Yes, but keep the old route.")
+			return s.AnswerDecision("g-5", "app", "t2", "accept-plan", "Yes, but keep the old route.")
 		},
-		func() (store.Receipt, error) { return s.SetTaskPriority("g-6", "app", "t-2", store.PriorityHighest) },
+		func() (store.Receipt, error) { return s.SetTaskPriority("g-6", "app", "t2", store.PriorityHighest) },
 	}
 	for _, step := range steps {
 		if _, err := step(); err != nil {
@@ -709,17 +817,17 @@ func checkGolden(t *testing.T, name, got string) {
 
 func TestTaskShowGolden(t *testing.T) {
 	path := goldenStore(t)
-	code, out, stderr := runTask(t, "show", "--store", path, "--repo", "app", "--json", "t-2")
+	code, out, stderr := runTask(t, "show", "--store", path, "--repo", "app", "--json", "t2")
 	if code != 0 {
 		t.Fatalf("exit %d, stderr %s", code, stderr)
 	}
 	checkGolden(t, "task-show.json", out)
 
-	code, out, _ = runTask(t, "show", "--store", path, "--repo", "app", "--json", "t-1")
+	code, out, _ = runTask(t, "show", "--store", path, "--repo", "app", "--json", "t1")
 	if code != 0 || !strings.Contains(out, `"attempts":[],"documents":[],"decisions":[]`) {
 		t.Fatalf("task without records: exit %d, %s", code, out)
 	}
-	code, out, stderr = runTask(t, "show", "--store", path, "--repo", "app", "--json", "t-9")
+	code, out, stderr = runTask(t, "show", "--store", path, "--repo", "app", "--json", "t9")
 	if code != 1 || out != "" || !strings.Contains(stderr, store.ErrNotFound.Error()) {
 		t.Fatalf("unknown task: exit %d, stdout %q, stderr %q", code, out, stderr)
 	}
@@ -773,7 +881,7 @@ func refuseTask(t *testing.T, path, cfg, repo string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", repo, "--title", "Task", "t-1")
+	code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", repo, "--title", "Task")
 	if code != 1 || out != "" {
 		t.Fatalf("exit %d, stdout %q, stderr %q", code, out, stderr)
 	}
@@ -814,8 +922,8 @@ func TestTaskNewEnforcesWorkflowAuthority(t *testing.T) {
 			t.Errorf("stderr %q does not name the weaker actor", stderr)
 		}
 		approveRepo(t, path, cfg, "lib")
-		newTask(t, path, cfg, "lib", "Task", "t-1")
-		if got := readTask(t, path, "lib", "t-1").Workflow; got != effective.Revision() {
+		newTask(t, path, cfg, "lib", "Task")
+		if got := readTask(t, path, "lib", "l1").Workflow; got != effective.Revision() {
 			t.Fatalf("workflow = %+v, want %+v", got, effective.Revision())
 		}
 	})
@@ -828,7 +936,7 @@ func TestTaskNewEnforcesWorkflowAuthority(t *testing.T) {
 			t.Errorf("stderr %q does not name the floor", stderr)
 		}
 		approveRepo(t, path, cfg, "lib")
-		newTask(t, path, cfg, "lib", "Task", "t-1")
+		newTask(t, path, cfg, "lib", "Task")
 	})
 
 	t.Run("a non-weakening change needs no approval", func(t *testing.T) {
@@ -849,8 +957,8 @@ func TestTaskNewEnforcesWorkflowAuthority(t *testing.T) {
 		cfg := writeDirector(t, toml)
 		writeFile(t, filepath.Join(filepath.Dir(cfg), "workflows", "careful.json"), string(data))
 		path := emptyStore(t)
-		newTask(t, path, cfg, "lib", "Task", "t-1")
-		newTask(t, path, cfg, "app", "Task", "t-1")
+		newTask(t, path, cfg, "lib", "Task")
+		newTask(t, path, cfg, "app", "Task")
 		if got := storeApprovals(t, path); len(got) != 0 {
 			t.Fatalf("approvals = %+v", got)
 		}

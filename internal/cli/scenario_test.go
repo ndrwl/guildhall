@@ -75,11 +75,11 @@ func newDogfoodCopy(t *testing.T, f *forgetest.Fake) (runDirector, string, strin
 	f.SetChecks(remote, base, forge.Check{Name: "ci", State: forge.CheckPassed})
 	// Its review names a profile the shipped default does not, which weakens the default, so it needs approval.
 	approveRepo(t, d.store, cfg, "app")
-	newTask(t, d.store, cfg, "app", "Sort the task list", "t-1")
+	newTask(t, d.store, cfg, "app", "Sort the task list")
 	return d, remote, base
 }
 
-// TestScenarioDogfoodToDeliver drives task app/t-1 on the dogfood-shaped workflow from its grill to its merge, with
+// TestScenarioDogfoodToDeliver drives task app/t1 on the dogfood-shaped workflow from its grill to its merge, with
 // every Artisan the fake playing a scenario file that checks each prompt rendered from the release baseline: the
 // test plays the Director's grill, the plan is given the grill and research notes and matches its golden prompt
 // byte for byte, the scripted build-1 fails and the Director's retry reason and its summary reach build-2's prompt,
@@ -102,8 +102,8 @@ func TestScenarioDogfoodToDeliver(t *testing.T) {
 	noDirectives := fake.Check{Section: "prompt", NotContains: "guildhall-fake:"}
 	plan := fake.ScenarioLaunch{Step: "plan", Attempt: 1, Exact: "plan-1.golden.md",
 		Checks: []fake.Check{noRetry, noDirectives,
-			{Section: "Inputs", Contains: "- context: inputs/tasks/app/t-1/grill-1/notes.md ("},
-			{Section: "Inputs", Contains: "- context: inputs/tasks/app/t-1/research-1/notes.md ("}},
+			{Section: "Inputs", Contains: "- context: inputs/tasks/app/t1/grill-1/notes.md ("},
+			{Section: "Inputs", Contains: "- context: inputs/tasks/app/t1/research-1/notes.md ("}},
 		Respond: fake.Respond{Status: adapter.StatusSucceeded, Summary: "spec written", Files: []fake.ScenarioFile{{Path: "spec.md", Text: spec}}}}
 	if *updateScenario {
 		plan.Exact = ""
@@ -115,7 +115,7 @@ func TestScenarioDogfoodToDeliver(t *testing.T) {
 			Respond: fake.Respond{Status: adapter.StatusSucceeded, Summary: "research notes written", Files: []fake.ScenarioFile{{Path: "notes.md", Text: research}}}},
 		plan,
 		{Step: "build", Attempt: 1, Checks: []fake.Check{noRetry, noDirectives,
-			{Section: "Inputs", Contains: "- spec: inputs/tasks/app/t-1/plan-1/spec.md (" + string(digest.Of([]byte(spec))) + ")"}},
+			{Section: "Inputs", Contains: "- spec: inputs/tasks/app/t1/plan-1/spec.md (" + string(digest.Of([]byte(spec))) + ")"}},
 			Respond: fake.Respond{Status: adapter.StatusFailed, Summary: buildFails}},
 		{Step: "build", Attempt: 2, Checks: []fake.Check{noDirectives,
 			{Section: "Why this is a retry", Contains: "This is a retry of attempt 1, which failed."},
@@ -158,9 +158,9 @@ func TestScenarioDogfoodToDeliver(t *testing.T) {
 	done := func(name string, n int, want string) {
 		t.Helper()
 		d.waitResult(t, name, n)
-		code, out, stderr := d.run(t, append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", name, "--attempt", strconv.Itoa(n), "--result", d.result(name, n))...)...)
+		code, out, stderr := d.run(t, append([]string{"step", "done"}, d.flags("--task", "t1", "--step", name, "--attempt", strconv.Itoa(n), "--result", d.result(name, n))...)...)
 		if code != 0 || strings.TrimSpace(out) != want {
-			r, err := adapter.ReadResult(d.result(name, n), adapter.Identity{TaskID: "t-1", AttemptID: name + "-" + strconv.Itoa(n)})
+			r, err := adapter.ReadResult(d.result(name, n), adapter.Identity{TaskID: "t1", AttemptID: name + "-" + strconv.Itoa(n)})
 			t.Fatalf("step done %s-%d: exit %d, %q, stderr %s; want %s\nresult: %s %q (%v)", name, n, code, out, stderr, want, r.Status, r.Summary, err)
 		}
 	}
@@ -168,18 +168,18 @@ func TestScenarioDogfoodToDeliver(t *testing.T) {
 		t.Helper()
 		file := filepath.Join(t.TempDir(), "answer")
 		writeFile(t, file, words)
-		step("", "decide", "answer", "--store", d.store, "--repo", "app", "--task", "t-1", "--decision", decision, "--answer-file", file)
-		step(want, append([]string{"task", "start"}, d.flags("--decision", decision, "t-1")...)...)
+		step("", "decide", "answer", "--store", d.store, "--repo", "app", "--task", "t1", "--decision", decision, "--answer-file", file)
+		step(want, append([]string{"task", "start"}, d.flags("--decision", decision, "t1")...)...)
 	}
 
-	step(`{"wait":"director-stage","step":"grill","attempt":1}`, append([]string{"task", "start"}, d.flags("t-1")...)...)
+	step(`{"wait":"director-stage","step":"grill","attempt":1}`, append([]string{"task", "start"}, d.flags("t1")...)...)
 	file := filepath.Join(t.TempDir(), "agreed.md")
 	writeFile(t, file, notes)
-	step(`{"wait":"attempt","step":"research","attempt":1}`, append([]string{"step", "finish"}, d.flags("--task", "t-1", "--step", "grill", "--attempt", "1", "--summary", "Agreed: sort by id.", "--output", "notes="+file)...)...)
+	step(`{"wait":"attempt","step":"research","attempt":1}`, append([]string{"step", "finish"}, d.flags("--task", "t1", "--step", "grill", "--attempt", "1", "--summary", "Agreed: sort by id.", "--output", "notes="+file)...)...)
 	done("research", 1, `{"wait":"attempt","step":"plan","attempt":1}`)
 	done("plan", 1, `{"wait":"decision","step":"accept","decision":"accept-1"}`)
 	if *updateScenario {
-		prompt, err := os.ReadFile(filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}.Dir(d.state), "prompt", render.PromptFile))
+		prompt, err := os.ReadFile(filepath.Join(artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "plan", Attempt: 1}.Dir(d.state), "prompt", render.PromptFile))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -187,15 +187,15 @@ func TestScenarioDogfoodToDeliver(t *testing.T) {
 	}
 	answer("accept-1", "approved\n", `{"wait":"attempt","step":"build","attempt":1}`)
 	done("build", 1, `{"wait":"director","step":"build","attempt":1}`)
-	step(`{"wait":"attempt","step":"build","attempt":2}`, append([]string{"step", "retry"}, d.flags("--task", "t-1", "--step", "build", "--attempt", "1", "--reason", reason)...)...)
+	step(`{"wait":"attempt","step":"build","attempt":2}`, append([]string{"step", "retry"}, d.flags("--task", "t1", "--step", "build", "--attempt", "1", "--reason", reason)...)...)
 	done("build", 2, `{"wait":"attempt","step":"review","attempt":1}`)
 	done("review", 1, `{"wait":"decision","step":"deliver","decision":"deliver-1"}`)
 	answer("deliver-1", "merge\n", `{"wait":"done","step":"deliver"}`)
 
-	if prs := f.PullRequests(remote); len(prs) != 1 || prs[0].Branch != "guildhall/t-1" || prs[0].Head != base || prs[0].State != forge.Merged {
+	if prs := f.PullRequests(remote); len(prs) != 1 || prs[0].Branch != "guildhall/t1" || prs[0].Head != base || prs[0].State != forge.Merged {
 		t.Errorf("pull requests = %+v, want the task branch's head merged", prs)
 	}
-	if task := readTask(t, d.store, "app", "t-1"); task.State != store.TaskDone {
+	if task := readTask(t, d.store, "app", "t1"); task.State != store.TaskDone {
 		t.Errorf("task state = %s, want done", task.State)
 	}
 	fake.CheckScenarioRecords(t, path)
@@ -208,7 +208,7 @@ func TestScenarioDogfoodToDeliver(t *testing.T) {
 	if len(failed) != 1 || failed[0] != "build-1 failed" {
 		t.Errorf("attempts not succeeded = %q, want only the scripted build-1 failure", failed)
 	}
-	if r, err := adapter.ReadResult(d.result("build", 1), adapter.Identity{TaskID: "t-1", AttemptID: "build-1"}); err != nil || r.Summary != buildFails {
+	if r, err := adapter.ReadResult(d.result("build", 1), adapter.Identity{TaskID: "t1", AttemptID: "build-1"}); err != nil || r.Summary != buildFails {
 		t.Errorf("build-1 result = %+v, %v; want the scripted failure, not a scenario mismatch", r, err)
 	}
 }

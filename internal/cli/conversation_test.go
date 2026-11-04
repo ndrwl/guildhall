@@ -107,20 +107,20 @@ func TestTaskSay(t *testing.T) {
 // writes no second entry.
 func TestConversationMirrorsWhereTheWordsAre(t *testing.T) {
 	path := decideStorePath(t)
-	code, _, errOut := runDecide(t, "", "open", "--store", path, "--repo", "app", "--task", "t-1", "--question", "Back off or *stop*?", "--option", "back-off", "--option", "stop")
+	code, _, errOut := runDecide(t, "", "open", "--store", path, "--repo", "app", "--task", "t1", "--question", "Back off or *stop*?", "--option", "back-off", "--option", "stop")
 	if code != 0 {
 		t.Fatalf("open = %d %s", code, errOut)
 	}
-	if code, _, _ := runDecide(t, "", "open", "--store", path, "--repo", "app", "--task", "t-1", "--question", "Back off or *stop*?", "--option", "back-off", "--option", "stop"); code != 0 {
+	if code, _, _ := runDecide(t, "", "open", "--store", path, "--repo", "app", "--task", "t1", "--question", "Back off or *stop*?", "--option", "back-off", "--option", "stop"); code != 0 {
 		t.Fatal("reopen failed")
 	}
-	if code, _, errOut := runDecide(t, "back-off\r\n\r\nkeep it cheap\r\n", "answer", "--store", path, "--repo", "app", "--task", "t-1", "--decision", "q1", "--answer-file", "-"); code != 0 {
+	if code, _, errOut := runDecide(t, "back-off\r\n\r\nkeep it cheap\r\n", "answer", "--store", path, "--repo", "app", "--task", "t1", "--decision", "q1", "--answer-file", "-"); code != 0 {
 		t.Fatalf("answer = %d %s", code, errOut)
 	}
-	if code, _, _ := runDecide(t, "back-off\n\nkeep it cheap\n", "answer", "--store", path, "--repo", "app", "--task", "t-1", "--decision", "q1", "--answer-file", "-"); code != 0 {
+	if code, _, _ := runDecide(t, "back-off\n\nkeep it cheap\n", "answer", "--store", path, "--repo", "app", "--task", "t1", "--decision", "q1", "--answer-file", "-"); code != 0 {
 		t.Fatal("re-answer failed")
 	}
-	got := conversation(t, path, "app", "t-1")
+	got := conversation(t, path, "app", "t1")
 	want := []store.Saying{
 		{Author: store.ConversationDirector, Tag: "q1", Kind: store.ConversationSay, Text: "Back off or *stop*?"},
 		{Author: store.ConversationGuildmasterChat, Tag: "q1", Kind: store.ConversationSay, Text: "back-off\n\nkeep it cheap\n"},
@@ -128,15 +128,15 @@ func TestConversationMirrorsWhereTheWordsAre(t *testing.T) {
 	if len(got) != 2 || got[0].Saying != want[0] || got[1].Saying != want[1] {
 		t.Fatalf("conversation = %+v", got)
 	}
-	r, err := withStore(path, true, func(s *store.Store) (store.Receipt, error) { return s.Receipt("decision-answer:app:t-1:q1") })
+	r, err := withStore(path, true, func(s *store.Store) (store.Receipt, error) { return s.Receipt("decision-answer:app:t1:q1") })
 	if err != nil || !got[1].At.Equal(r.CommittedAt) {
 		t.Errorf("the answer's entry is at %v, its receipt %+v, %v", got[1].At, r, err)
 	}
 	// A refused answer writes no entry with it.
-	if code, _, _ := runDecide(t, "stop", "answer", "--store", path, "--repo", "app", "--task", "t-1", "--decision", "q1", "--answer-file", "-"); code != 1 {
+	if code, _, _ := runDecide(t, "stop", "answer", "--store", path, "--repo", "app", "--task", "t1", "--decision", "q1", "--answer-file", "-"); code != 1 {
 		t.Fatal("a second answer was recorded")
 	}
-	if n := len(conversation(t, path, "app", "t-1")); n != 2 {
+	if n := len(conversation(t, path, "app", "t1")); n != 2 {
 		t.Errorf("a refused answer wrote an entry: %d", n)
 	}
 }

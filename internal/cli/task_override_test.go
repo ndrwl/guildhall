@@ -30,9 +30,9 @@ func overrideStore(t *testing.T) (path, cfg string) {
 // prints every record.
 func TestTaskOverrideSetUnsetList(t *testing.T) {
 	path, cfg := overrideStore(t)
-	words := `Guildmaster: "run t-2 at high effort."`
+	words := `Guildmaster: "run t2 at high effort."`
 	set := func(value string) []string {
-		return []string{"override", "set", "--store", path, "--config", cfg, "--repo", "app", "--key", "default_effort", "--value", value, "--text", words, "t-2"}
+		return []string{"override", "set", "--store", path, "--config", cfg, "--repo", "app", "--key", "default_effort", "--value", value, "--text", words, "t2"}
 	}
 	code, out, stderr := runTask(t, set("high")...)
 	if code != 0 || stderr != "" {
@@ -40,10 +40,10 @@ func TestTaskOverrideSetUnsetList(t *testing.T) {
 	}
 	var rc store.Receipt
 	if err := json.Unmarshal([]byte(out), &rc); err != nil || rc.Record != "task-override/1" || rc.Operation != "add-task-override" ||
-		rc.MutationID != "task-override:app:t-2:set:default_effort:0" {
+		rc.MutationID != "task-override:app:t2:set:default_effort:0" {
 		t.Fatalf("set receipt = %+v, %v", rc, err)
 	}
-	if code, again, _ := runTask(t, "override", "set", "t-2", "--text", words, "--value", "high", "--key", "default_effort", "--repo", "app", "--config", cfg, "--store", path); code != 0 || again != out {
+	if code, again, _ := runTask(t, "override", "set", "t2", "--text", words, "--value", "high", "--key", "default_effort", "--repo", "app", "--config", cfg, "--store", path); code != 0 || again != out {
 		t.Fatalf("rerun: exit %d, %s, want %s", code, again, out)
 	}
 	for i, value := range []string{"low", "high"} {
@@ -52,12 +52,12 @@ func TestTaskOverrideSetUnsetList(t *testing.T) {
 		}
 	}
 	// unset reads no config, so it needs none.
-	if code, out, stderr := runTask(t, "override", "unset", "--store", path, "--repo", "app", "--key", "default_effort", "--text", "Guildmaster: back to normal.", "t-2"); code != 0 ||
-		!strings.Contains(out, `"record":"task-override/4"`) || !strings.Contains(out, `"mutation_id":"task-override:app:t-2:unset:default_effort:3"`) {
+	if code, out, stderr := runTask(t, "override", "unset", "--store", path, "--repo", "app", "--key", "default_effort", "--text", "Guildmaster: back to normal.", "t2"); code != 0 ||
+		!strings.Contains(out, `"record":"task-override/4"`) || !strings.Contains(out, `"mutation_id":"task-override:app:t2:unset:default_effort:3"`) {
 		t.Fatalf("unset: exit %d, %s, stderr %s", code, out, stderr)
 	}
 
-	code, out, stderr = runTask(t, "override", "list", "--store", path, "--repo", "app", "--json", "t-2")
+	code, out, stderr = runTask(t, "override", "list", "--store", path, "--repo", "app", "--json", "t2")
 	var records []store.TaskOverride
 	if code != 0 || json.Unmarshal([]byte(out), &records) != nil || len(records) != 4 {
 		t.Fatalf("list: exit %d, %s, stderr %s", code, out, stderr)
@@ -71,10 +71,10 @@ func TestTaskOverrideSetUnsetList(t *testing.T) {
 	if active := store.ActiveTaskOverrides(records); len(active) != 0 {
 		t.Errorf("active after unset = %+v", active)
 	}
-	if code, out, _ := runTask(t, "override", "list", "--store", path, "--repo", "app", "--json", "t-1"); code != 0 || out != "[]\n" {
+	if code, out, _ := runTask(t, "override", "list", "--store", path, "--repo", "app", "--json", "t1"); code != 0 || out != "[]\n" {
 		t.Errorf("list of a task without overrides: exit %d, %q", code, out)
 	}
-	if code, _, stderr := runTask(t, "override", "list", "--store", path, "--repo", "app", "--json", "t-9"); code != 1 || !strings.Contains(stderr, store.ErrNotFound.Error()) {
+	if code, _, stderr := runTask(t, "override", "list", "--store", path, "--repo", "app", "--json", "t9"); code != 1 || !strings.Contains(stderr, store.ErrNotFound.Error()) {
 		t.Errorf("list of an unknown task: exit %d, stderr %q", code, stderr)
 	}
 	app, stdout, stderr2 := newTestApp(nil, nil)
@@ -90,22 +90,22 @@ func TestTaskOverrideRefusals(t *testing.T) {
 	path, cfg := overrideStore(t)
 	for name, args := range map[string][]string{
 		"no subcommand":          {},
-		"unknown subcommand":     {"clear", "--store", path, "--repo", "app", "t-2"},
-		"no config on set":       {"set", "--store", path, "--repo", "app", "--key", "default_effort", "--value", "high", "--text", "Words.", "t-2"},
-		"config on unset":        {"unset", "--store", path, "--config", cfg, "--repo", "app", "--key", "default_effort", "--text", "Words.", "t-2"},
-		"value on unset":         {"unset", "--store", path, "--repo", "app", "--key", "default_effort", "--value", "high", "--text", "Words.", "t-2"},
-		"no key":                 {"set", "--store", path, "--config", cfg, "--repo", "app", "--value", "high", "--text", "Words.", "t-2"},
-		"no value":               {"set", "--store", path, "--config", cfg, "--repo", "app", "--key", "default_effort", "--text", "Words.", "t-2"},
-		"no text":                {"set", "--store", path, "--config", cfg, "--repo", "app", "--key", "default_effort", "--value", "high", "t-2"},
-		"no repo":                {"set", "--store", path, "--config", cfg, "--key", "default_effort", "--value", "high", "--text", "Words.", "t-2"},
+		"unknown subcommand":     {"clear", "--store", path, "--repo", "app", "t2"},
+		"no config on set":       {"set", "--store", path, "--repo", "app", "--key", "default_effort", "--value", "high", "--text", "Words.", "t2"},
+		"config on unset":        {"unset", "--store", path, "--config", cfg, "--repo", "app", "--key", "default_effort", "--text", "Words.", "t2"},
+		"value on unset":         {"unset", "--store", path, "--repo", "app", "--key", "default_effort", "--value", "high", "--text", "Words.", "t2"},
+		"no key":                 {"set", "--store", path, "--config", cfg, "--repo", "app", "--value", "high", "--text", "Words.", "t2"},
+		"no value":               {"set", "--store", path, "--config", cfg, "--repo", "app", "--key", "default_effort", "--text", "Words.", "t2"},
+		"no text":                {"set", "--store", path, "--config", cfg, "--repo", "app", "--key", "default_effort", "--value", "high", "t2"},
+		"no repo":                {"set", "--store", path, "--config", cfg, "--key", "default_effort", "--value", "high", "--text", "Words.", "t2"},
 		"no task":                {"set", "--store", path, "--config", cfg, "--repo", "app", "--key", "default_effort", "--value", "high", "--text", "Words."},
-		"two tasks":              {"unset", "--store", path, "--repo", "app", "--key", "default_effort", "--text", "Words.", "t-1", "t-2"},
+		"two tasks":              {"unset", "--store", path, "--repo", "app", "--key", "default_effort", "--text", "Words.", "t1", "t2"},
 		"bad task id":            {"unset", "--store", path, "--repo", "app", "--key", "default_effort", "--text", "Words.", "T 2"},
-		"json on set":            {"set", "--store", path, "--config", cfg, "--repo", "app", "--key", "default_effort", "--value", "high", "--text", "Words.", "--json", "t-2"},
-		"key on list":            {"list", "--store", path, "--repo", "app", "--key", "default_effort", "--json", "t-2"},
-		"list without json":      {"list", "--store", path, "--repo", "app", "t-2"},
-		"flags after terminator": {"list", "--store", path, "--repo", "app", "--", "t-2", "--json"},
-		"no store":               {"unset", "--repo", "app", "--key", "default_effort", "--text", "Words.", "t-2"},
+		"json on set":            {"set", "--store", path, "--config", cfg, "--repo", "app", "--key", "default_effort", "--value", "high", "--text", "Words.", "--json", "t2"},
+		"key on list":            {"list", "--store", path, "--repo", "app", "--key", "default_effort", "--json", "t2"},
+		"list without json":      {"list", "--store", path, "--repo", "app", "t2"},
+		"flags after terminator": {"list", "--store", path, "--repo", "app", "--", "t2", "--json"},
+		"no store":               {"unset", "--repo", "app", "--key", "default_effort", "--text", "Words.", "t2"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			code, out, stderr := runTask(t, append([]string{"override"}, args...)...)
@@ -119,19 +119,19 @@ func TestTaskOverrideRefusals(t *testing.T) {
 		args []string
 		want string
 	}{
-		"unknown setting":       {[]string{"set", "--config", cfg, "--key", "no_such_setting", "--value", "1", "--text", "Words.", "t-2"}, `unknown setting "no_such_setting"`},
-		"step key":              {[]string{"set", "--config", cfg, "--key", "step.build.effort", "--value", "max", "--text", "Words.", "t-2"}, `unknown setting "step.build.effort"`},
-		"machine-wide":          {[]string{"set", "--config", cfg, "--key", "lock_wait", "--value", "1m", "--text", "Words.", "t-2"}, "`lock_wait` is machine-wide; it cannot be overridden per task"},
-		"excluded merge key":    {[]string{"set", "--config", cfg, "--key", "merge.reapprove_after_rebase", "--value", "never", "--text", "Words.", "t-2"}, "`[repository.merge]` is not overridable per task"},
-		"looser merge":          {[]string{"set", "--config", cfg, "--key", "merge.requires.ci_green", "--value", "false", "--text", "Words.", "t-2"}, "may only make merge requirements stricter"},
-		"excluded director":     {[]string{"set", "--config", cfg, "--key", "director.idle_after", "--value", "1m", "--text", "Words.", "t-2"}, "`[director]` is not overridable per task"},
-		"managed-pinned":        {[]string{"set", "--config", cfg, "--key", "ci_log_limit", "--value", "2MiB", "--text", "Words.", "t-2"}, "`ci_log_limit` is pinned by a managed setting that is not overridable"},
-		"invalid value":         {[]string{"set", "--config", cfg, "--key", "default_effort", "--value", "huge", "--text", "Words.", "t-2"}, "default_effort"},
-		"blank text":            {[]string{"set", "--config", cfg, "--key", "default_effort", "--value", "high", "--text", " ", "t-2"}, "must not be empty"},
-		"unknown task":          {[]string{"set", "--config", cfg, "--key", "default_effort", "--value", "high", "--text", "Words.", "t-9"}, store.ErrNotFound.Error()},
-		"unset when absent":     {[]string{"unset", "--key", "default_effort", "--text", "Words.", "t-2"}, "no override of default_effort in effect"},
-		"unset of a step key":   {[]string{"unset", "--key", "step.build.effort", "--text", "Words.", "t-2"}, "is a step key"},
-		"unset of a spaced key": {[]string{"unset", "--key", "default effort", "--text", "Words.", "t-2"}, "without whitespace"},
+		"unknown setting":       {[]string{"set", "--config", cfg, "--key", "no_such_setting", "--value", "1", "--text", "Words.", "t2"}, `unknown setting "no_such_setting"`},
+		"step key":              {[]string{"set", "--config", cfg, "--key", "step.build.effort", "--value", "max", "--text", "Words.", "t2"}, `unknown setting "step.build.effort"`},
+		"machine-wide":          {[]string{"set", "--config", cfg, "--key", "lock_wait", "--value", "1m", "--text", "Words.", "t2"}, "`lock_wait` is machine-wide; it cannot be overridden per task"},
+		"excluded merge key":    {[]string{"set", "--config", cfg, "--key", "merge.reapprove_after_rebase", "--value", "never", "--text", "Words.", "t2"}, "`[repository.merge]` is not overridable per task"},
+		"looser merge":          {[]string{"set", "--config", cfg, "--key", "merge.requires.ci_green", "--value", "false", "--text", "Words.", "t2"}, "may only make merge requirements stricter"},
+		"excluded director":     {[]string{"set", "--config", cfg, "--key", "director.idle_after", "--value", "1m", "--text", "Words.", "t2"}, "`[director]` is not overridable per task"},
+		"managed-pinned":        {[]string{"set", "--config", cfg, "--key", "ci_log_limit", "--value", "2MiB", "--text", "Words.", "t2"}, "`ci_log_limit` is pinned by a managed setting that is not overridable"},
+		"invalid value":         {[]string{"set", "--config", cfg, "--key", "default_effort", "--value", "huge", "--text", "Words.", "t2"}, "default_effort"},
+		"blank text":            {[]string{"set", "--config", cfg, "--key", "default_effort", "--value", "high", "--text", " ", "t2"}, "must not be empty"},
+		"unknown task":          {[]string{"set", "--config", cfg, "--key", "default_effort", "--value", "high", "--text", "Words.", "t9"}, store.ErrNotFound.Error()},
+		"unset when absent":     {[]string{"unset", "--key", "default_effort", "--text", "Words.", "t2"}, "no override of default_effort in effect"},
+		"unset of a step key":   {[]string{"unset", "--key", "step.build.effort", "--text", "Words.", "t2"}, "is a step key"},
+		"unset of a spaced key": {[]string{"unset", "--key", "default effort", "--text", "Words.", "t2"}, "without whitespace"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			code, out, stderr := runTask(t, append(append([]string{"override"}, tc.args[0], "--store", path, "--repo", "app"), tc.args[1:]...)...)
@@ -140,7 +140,7 @@ func TestTaskOverrideRefusals(t *testing.T) {
 			}
 		})
 	}
-	if code, out, stderr := runTask(t, "override", "list", "--store", path, "--repo", "app", "--json", "t-2"); code != 0 || out != "[]\n" {
+	if code, out, stderr := runTask(t, "override", "list", "--store", path, "--repo", "app", "--json", "t2"); code != 0 || out != "[]\n" {
 		t.Errorf("after refusals: exit %d, %q, stderr %s", code, out, stderr)
 	}
 }
@@ -150,7 +150,7 @@ func TestTaskOverrideRefusals(t *testing.T) {
 // task timeline lists every override record with its time.
 func TestTaskShowOverrides(t *testing.T) {
 	path, cfg := overrideStore(t)
-	if code, _, stderr := runTask(t, "override", "set", "--store", path, "--config", cfg, "--repo", "app", "--key", "default_effort", "--value", "high", "--text", "Guildmaster: high.", "t-2"); code != 0 {
+	if code, _, stderr := runTask(t, "override", "set", "--store", path, "--config", cfg, "--repo", "app", "--key", "default_effort", "--value", "high", "--text", "Guildmaster: high.", "t2"); code != 0 {
 		t.Fatalf("set: exit %d, stderr %s", code, stderr)
 	}
 	// An override recorded before the managed pin it now loses to.
@@ -158,7 +158,7 @@ func TestTaskShowOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.AddTaskOverride("pinned", "app", "t-2", store.TaskOverrideSet, config.CILogLimitKey, "2MiB", 0, "Guildmaster: more log."); err != nil {
+	if _, err := s.AddTaskOverride("pinned", "app", "t2", store.TaskOverrideSet, config.CILogLimitKey, "2MiB", 0, "Guildmaster: more log."); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {
@@ -170,7 +170,7 @@ func TestTaskShowOverrides(t *testing.T) {
 	}
 	show := func(args ...string) shown {
 		t.Helper()
-		code, out, stderr := runTask(t, append([]string{"show", "--store", path, "--repo", "app", "--json", "t-2"}, args...)...)
+		code, out, stderr := runTask(t, append([]string{"show", "--store", path, "--repo", "app", "--json", "t2"}, args...)...)
 		var d shown
 		if code != 0 || json.Unmarshal([]byte(out), &d) != nil {
 			t.Fatalf("show %v: exit %d, %s, stderr %s", args, code, out, stderr)
@@ -190,7 +190,7 @@ func TestTaskShowOverrides(t *testing.T) {
 		t.Errorf("skipped_overrides with the config = %+v", d.SkippedOverrides)
 	}
 
-	code, out, stderr := runTask(t, "timeline", "--store", path, "--repo", "app", "--json", "t-2")
+	code, out, stderr := runTask(t, "timeline", "--store", path, "--repo", "app", "--json", "t2")
 	var tl struct {
 		Overrides []store.TaskOverride `json:"overrides"`
 	}
@@ -207,7 +207,7 @@ func TestTaskShowAlsoRequires(t *testing.T) {
 	cfg := writeDirector(t, strings.Replace(directorTOML, "owner_machine = \"workstation\"\n\n[[repository]]\nid = \"lib\"",
 		"owner_machine = \"workstation\"\n\n[repository.merge.requires]\nguildmaster_approval = false\nci_green = false\n\n[[repository]]\nid = \"lib\"", 1))
 	for _, key := range []string{"merge.requires.ci_green", "repository.merge.requires.artisan_approval"} {
-		if code, _, stderr := runTask(t, "override", "set", "--store", path, "--config", cfg, "--repo", "app", "--key", key, "--value", "true", "--text", "Guildmaster: stricter.", "t-2"); code != 0 {
+		if code, _, stderr := runTask(t, "override", "set", "--store", path, "--config", cfg, "--repo", "app", "--key", key, "--value", "true", "--text", "Guildmaster: stricter.", "t2"); code != 0 {
 			t.Fatalf("set %s: exit %d, stderr %s", key, code, stderr)
 		}
 	}
@@ -215,7 +215,7 @@ func TestTaskShowAlsoRequires(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.AddTaskOverride("looser", "app", "t-2", store.TaskOverrideSet, "merge.requires.nothing_open", "false", 0, "Recorded before the rule."); err != nil {
+	if _, err := s.AddTaskOverride("looser", "app", "t2", store.TaskOverrideSet, "merge.requires.nothing_open", "false", 0, "Recorded before the rule."); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {
@@ -227,7 +227,7 @@ func TestTaskShowAlsoRequires(t *testing.T) {
 	}
 	show := func(args ...string) shown {
 		t.Helper()
-		code, out, stderr := runTask(t, append([]string{"show", "--store", path, "--repo", "app", "--json", "t-2"}, args...)...)
+		code, out, stderr := runTask(t, append([]string{"show", "--store", path, "--repo", "app", "--json", "t2"}, args...)...)
 		var d shown
 		if code != 0 || json.Unmarshal([]byte(out), &d) != nil {
 			t.Fatalf("show %v: exit %d, %s, stderr %s", args, code, out, stderr)
@@ -251,34 +251,34 @@ func TestTaskShowAlsoRequires(t *testing.T) {
 // with a malformed or repeated key, is a usage error.
 func TestTaskNewOverride(t *testing.T) {
 	path, cfg := overrideStore(t)
-	newArgs := func(id string, extra ...string) []string {
-		return append([]string{"new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Overridden", id}, extra...)
+	newArgs := func(extra ...string) []string {
+		return append([]string{"new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Overridden"}, extra...)
 	}
-	code, _, stderr := runTask(t, newArgs("t-8", "--override", "default_effort=high", "--override", "lock_wait=1m", "--override-quote", "Guildmaster: so.")...)
+	code, _, stderr := runTask(t, newArgs("--override", "default_effort=high", "--override", "lock_wait=1m", "--override-quote", "Guildmaster: so.")...)
 	if code != 1 || !strings.Contains(stderr, "`lock_wait` is machine-wide") {
 		t.Fatalf("refused override: exit %d, stderr %s; want exit 1 naming lock_wait", code, stderr)
 	}
-	if code, _, _ := runTask(t, "show", "--store", path, "--repo", "app", "--json", "t-8"); code != 1 {
+	if code, _, _ := runTask(t, "show", "--store", path, "--repo", "app", "--json", "t3"); code != 1 {
 		t.Errorf("show of the refused task: exit %d, want 1 for no task", code)
 	}
 	for name, args := range map[string][]string{
-		"no quote":   newArgs("t-8", "--override", "default_effort=high"),
-		"no value":   newArgs("t-8", "--override", "default_effort", "--override-quote", "So."),
-		"twice":      newArgs("t-8", "--override", "default_effort=high", "--override", "default_effort=low", "--override-quote", "So."),
-		"quote only": newArgs("t-8", "--override-quote", "So."),
+		"no quote":   newArgs("--override", "default_effort=high"),
+		"no value":   newArgs("--override", "default_effort", "--override-quote", "So."),
+		"twice":      newArgs("--override", "default_effort=high", "--override", "default_effort=low", "--override-quote", "So."),
+		"quote only": newArgs("--override-quote", "So."),
 	} {
 		if code, _, stderr := runTask(t, args...); code != 2 {
 			t.Errorf("%s: exit %d, stderr %s; want 2", name, code, stderr)
 		}
 	}
-	args := newArgs("t-9", "--override", "stall_interval=5m", "--override", "default_effort=high", "--override-quote", "Guildmaster: so.")
-	if code, out, stderr := runTask(t, args...); code != 0 || !strings.Contains(out, `"record":"task"`) {
+	args := newArgs("--override", "stall_interval=5m", "--override", "default_effort=high", "--override-quote", "Guildmaster: so.")
+	if code, out, stderr := runTask(t, args...); code != 0 || !strings.Contains(out, `"record":"task"`) || !strings.Contains(out, `"task_id":"t3"`) {
 		t.Fatalf("task new: exit %d, %s, stderr %s", code, out, stderr)
 	}
-	if code, _, stderr := runTask(t, args...); code != 0 {
-		t.Fatalf("task new rerun: exit %d, stderr %s", code, stderr)
+	if code, out, stderr := runTask(t, args...); code != 0 || !strings.Contains(out, `"task_id":"t3"`) {
+		t.Fatalf("task new rerun: exit %d, %s, stderr %s", code, out, stderr)
 	}
-	code, out, stderr := runTask(t, "override", "list", "--store", path, "--repo", "app", "--json", "t-9")
+	code, out, stderr := runTask(t, "override", "list", "--store", path, "--repo", "app", "--json", "t3")
 	var records []store.TaskOverride
 	if code != 0 || json.Unmarshal([]byte(out), &records) != nil || len(records) != 2 ||
 		records[0].Key != "stall_interval" || records[1].Key != "default_effort" || records[1].Text != "Guildmaster: so." {

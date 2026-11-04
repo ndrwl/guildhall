@@ -1,7 +1,7 @@
 # Guildhall attempt
 
 Repository: app
-Task: t-1
+Task: t1
 Step: plan (plan version 1)
 Attempt: 1
 Profile: planner
@@ -53,8 +53,8 @@ Submit your result with `guildhall result submit`, as the Result template says: 
 
 The inputs directory beside this prompt holds a verified copy of each input document.
 
-- context: inputs/tasks/app/t-1/grill-1/notes.md (sha256:a699e7f529b7acba202345fe072022c8c1462a63d3055ba0279afb490b5e35fb)
-- context: inputs/tasks/app/t-1/research-1/notes.md (sha256:911353b8a71fa0b59ef9d6d7f18bbdc430211d601966e07447ef45757d3b59e3)
+- context: inputs/tasks/app/t1/grill-1/notes.md (sha256:a699e7f529b7acba202345fe072022c8c1462a63d3055ba0279afb490b5e35fb)
+- context: inputs/tasks/app/t1/research-1/notes.md (sha256:911353b8a71fa0b59ef9d6d7f18bbdc430211d601966e07447ef45757d3b59e3)
 
 ## Standards
 
@@ -169,7 +169,7 @@ After writing the required files (or committing the code head), write this JSON 
 {
   "schema": "guildhall.artisan-result",
   "version": 1,
-  "task_id": "t-1",
+  "task_id": "t1",
   "attempt_id": "plan-1",
   "status": "succeeded",
   "summary": "What was done, in one or more sentences.",

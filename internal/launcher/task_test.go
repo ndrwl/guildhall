@@ -73,7 +73,7 @@ func TestLauncherRunsATaskOnItsRecordedRelease(t *testing.T) {
 		{"quality judge", a, []string{"quality", "judge", "--repo", "app", "--review", "1", "old"}, "v1.0.0"},
 		{"an unrecorded task", a, []string{"task", "start", "--repo", "app", "legacy"}, "v2.0.0"},
 		{"an unknown task", a, []string{"step", "done", "--repo", "app", "--task", "nope"}, "v2.0.0"},
-		{"new work", a, []string{"task", "new", "--repo", "app", "--title", "x", "t-new"}, "v2.0.0"},
+		{"new work", a, []string{"task", "new", "--repo", "app", "--title", "x"}, "v2.0.0"},
 		{"a task's read-only command", a, []string{"task", "show", "--repo", "app", "--json", "old"}, "v2.0.0"},
 		{"help", a, []string{"task", "start", "--help"}, "v2.0.0"},
 	} {
@@ -171,7 +171,7 @@ func TestTaskCommand(t *testing.T) {
 		{[]string{"artisan", "start", "--task", "t"}, true, Task{}, "needs --repo and --task"},
 		{[]string{"step", "retry", "--repo", "r", "--repo", "s", "--task", "t"}, true, Task{}, "conflicting tasks"},
 		{[]string{"step", "done", "--repo"}, true, Task{}, "needs a value"},
-		{[]string{"task", "new", "--repo", "r", "t"}, false, Task{}, ""},
+		{[]string{"task", "new", "--repo", "r", "--title", "t"}, false, Task{}, ""},
 		{[]string{"task", "show", "--repo", "r", "t"}, false, Task{}, ""},
 		{[]string{"artisan", "stop", "--repo", "r", "--task", "t"}, false, Task{}, ""},
 		{[]string{"step", "done", "-h"}, false, Task{}, ""},

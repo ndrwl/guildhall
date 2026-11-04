@@ -119,7 +119,7 @@ func TestReleasePrune(t *testing.T) {
 	if code := f.run("release", "adopt", "--copy", f.copy); code != 0 {
 		t.Fatalf("release adopt = %d", code)
 	}
-	if code := f.newTask("t-1"); code != 0 {
+	if code := f.newTask("t1"); code != 0 {
 		t.Fatalf("task new = %d", code)
 	}
 	for _, v := range []string{"v1.1.0", "v1.2.0", "v1.3.0"} {
@@ -135,7 +135,7 @@ func TestReleasePrune(t *testing.T) {
 	}
 
 	// Every release past the newest three is held, so nothing goes, and status says why each stays.
-	if code := f.run("release", "prune", "--copy", f.copy); code != 0 || !strings.Contains(f.stdout.String(), "kept v1.0.0 past the newest 3: recorded by active task app/t-1 of copy "+f.copy) {
+	if code := f.run("release", "prune", "--copy", f.copy); code != 0 || !strings.Contains(f.stdout.String(), "kept v1.0.0 past the newest 3: recorded by active task app/t1 of copy "+f.copy) {
 		t.Fatalf("release prune = %d, %q", code, f.stdout)
 	}
 	if len(f.prunes()) != 0 {
@@ -160,7 +160,7 @@ func TestReleasePrune(t *testing.T) {
 		"v1.3.0": {"pinned by copy " + b},
 		"v1.2.0": {"pinned by copy " + f.copy},
 		"v1.1.0": {"rollback target of copy " + f.copy},
-		"v1.0.0": {"recorded by active task app/t-1 of copy " + f.copy},
+		"v1.0.0": {"recorded by active task app/t1 of copy " + f.copy},
 	} {
 		if !slices.Equal(kept[v], want) {
 			t.Errorf("%s kept for %q, want %q", v, kept[v], want)
@@ -172,7 +172,7 @@ func TestReleasePrune(t *testing.T) {
 
 	// Once the task is cancelled, nothing holds v1.0.0.
 	if _, err := withStore(filepath.Join(f.copy, "director.store"), false, func(s *store.Store) (store.Receipt, error) {
-		return s.CancelTask("cancel-t-1", "app", "t-1", "done with it")
+		return s.CancelTask("cancel-t1", "app", "t1", "done with it")
 	}); err != nil {
 		t.Fatal(err)
 	}

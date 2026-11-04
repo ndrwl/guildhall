@@ -27,7 +27,7 @@ func (c resultCopy) steer(t *testing.T, id, text string) {
 		t.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
-	if _, err := s.SendMessage(store.Message{ID: id, Recipient: store.RecipientArtisan, Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1,
+	if _, err := s.SendMessage(store.Message{ID: id, Recipient: store.RecipientArtisan, Repository: "app", TaskID: "t1", Step: "plan", Attempt: 1,
 		Type: "note", Text: text, Sender: store.SenderDirector}); err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestArtisanMessagesListAndAck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.SendMessage(store.Message{ID: "q-1", Recipient: store.RecipientDirector, Repository: "app", TaskID: "t-1", Type: "question", Text: "Which?"})
+	_, err = s.SendMessage(store.Message{ID: "q-1", Recipient: store.RecipientDirector, Repository: "app", TaskID: "t1", Type: "question", Text: "Which?"})
 	_ = s.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -102,7 +102,7 @@ func TestArtisanMessagesRefusals(t *testing.T) {
 		"--store":           {"messages", "list", "--store", path},
 		"--copy":            {"messages", "--copy", c.dir},
 		"a recipient":       {"messages", "list", "director"},
-		"another attempt":   {"messages", "list", "artisan:app/t-1/plan/2"},
+		"another attempt":   {"messages", "list", "artisan:app/t1/plan/2"},
 		"ack with a target": {"messages", "ack", "artisan:" + env, "steer-1"},
 		"send":              {"messages", "send", "--store", path, "director", "-"},
 		"read":              {"messages", "read", "steer-1"},
@@ -199,7 +199,7 @@ func TestFakeAcksSteering(t *testing.T) {
 			promptFile := filepath.Join(t.TempDir(), "prompt.md")
 			writeFile(t, promptFile, prompt)
 			var out strings.Builder
-			args := fake.Args{Identity: adapter.Identity{TaskID: "t-1", AttemptID: "plan-1"}, PromptFile: promptFile, ResultFile: c.draftFile()}
+			args := fake.Args{Identity: adapter.Identity{TaskID: "t1", AttemptID: "plan-1"}, PromptFile: promptFile, ResultFile: c.draftFile()}
 			if err := fake.Run(context.Background(), args, &out, func(context.Context, time.Duration) error { return nil }); err != nil {
 				t.Fatalf("fake: %v\n%s", err, out.String())
 			}
@@ -253,7 +253,7 @@ func TestSteeringWarnsWhenUnread(t *testing.T) {
 	if took > 10*time.Second {
 		t.Errorf("the read waited %v, not the copy's 50ms lock wait", took)
 	}
-	if stdout.Len() != 0 || strings.Count(stderr.String(), "\n") != 1 || !strings.HasPrefix(stderr.String(), "guildhall: warning: steering messages to attempt app/t-1/plan/1 not read: ") {
+	if stdout.Len() != 0 || strings.Count(stderr.String(), "\n") != 1 || !strings.HasPrefix(stderr.String(), "guildhall: warning: steering messages to attempt app/t1/plan/1 not read: ") {
 		t.Fatalf("locked store: stdout %q, stderr %q; want one warning line", stdout, stderr)
 	}
 	// Outside the copy, result check still runs and reports its own refusal after the warning.
@@ -262,7 +262,7 @@ func TestSteeringWarnsWhenUnread(t *testing.T) {
 	app.Getwd = func() (string, error) { return wd, nil }
 	app.Getenv = func(k string) string { return map[string]string{artisan.AttemptEnv: c.key.String()}[k] }
 	if code := app.Run([]string{"result", "check", "draft.json"}); code != 2 || stdout.Len() != 0 ||
-		!strings.HasPrefix(stderr.String(), "guildhall: warning: steering messages to attempt app/t-1/plan/1 not read: no Guildhall copy runs attempt") ||
+		!strings.HasPrefix(stderr.String(), "guildhall: warning: steering messages to attempt app/t1/plan/1 not read: no Guildhall copy runs attempt") ||
 		!strings.Contains(stderr.String(), noCopyLine(wd)) {
 		t.Fatalf("outside a copy: exit %d, %q, %q", code, stdout, stderr)
 	}

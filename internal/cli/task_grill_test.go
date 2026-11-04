@@ -48,33 +48,33 @@ func TestTaskNewGrill(t *testing.T) {
 	cfg := writeDirector(t, directorTOML)
 	path := emptyStore(t)
 	approveRepo(t, path, cfg, "app")
-	args := []string{"new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Follow up", "--grill", "unattended", "--grill-reason", "A hallmark follow-up with its contracts written.", "t-1"}
+	args := []string{"new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Follow up", "--grill", "unattended", "--grill-reason", "A hallmark follow-up with its contracts written."}
 	for range 2 {
 		if code, _, stderr := runTask(t, args...); code != 0 {
 			t.Fatalf("task new --grill: exit %d, stderr %s", code, stderr)
 		}
 	}
-	g := showGrill(t, path, "t-1")
+	g := showGrill(t, path, "t1")
 	if g.Line != "grill: unattended (director): A hallmark follow-up with its contracts written." || g.Mode != workflow.GrillUnattended || g.Number != 1 || g.SetAt == nil {
-		t.Errorf("t-1 grill = %+v", g)
+		t.Errorf("t1 grill = %+v", g)
 	}
-	if got := grillRecords(t, path, "t-1"); len(got) != 1 || got[0].Reason != "A hallmark follow-up with its contracts written." || got[0].By != store.GrillModeByDirector {
-		t.Errorf("t-1 timeline grill modes = %+v, want the one record", got)
-	}
-
-	newTask(t, path, cfg, "app", "Ask me", "t-2")
-	if g := showGrill(t, path, "t-2"); g.Line != "grill: live" || g.Mode != workflow.GrillLive || g.Number != 0 || g.SetAt != nil {
-		t.Errorf("t-2 grill = %+v, want live with no record", g)
-	}
-	if got := grillRecords(t, path, "t-2"); got == nil || len(got) != 0 {
-		t.Errorf("t-2 timeline grill modes = %+v, want an empty list", got)
+	if got := grillRecords(t, path, "t1"); len(got) != 1 || got[0].Reason != "A hallmark follow-up with its contracts written." || got[0].By != store.GrillModeByDirector {
+		t.Errorf("t1 timeline grill modes = %+v, want the one record", got)
 	}
 
-	code, _, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Fix it", "--kind", "bug", "--grill", "live", "t-3")
+	newTask(t, path, cfg, "app", "Ask me")
+	if g := showGrill(t, path, "t2"); g.Line != "grill: live" || g.Mode != workflow.GrillLive || g.Number != 0 || g.SetAt != nil {
+		t.Errorf("t2 grill = %+v, want live with no record", g)
+	}
+	if got := grillRecords(t, path, "t2"); got == nil || len(got) != 0 {
+		t.Errorf("t2 timeline grill modes = %+v, want an empty list", got)
+	}
+
+	code, _, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Fix it", "--kind", "bug", "--grill", "live")
 	if code != 1 || !strings.Contains(stderr, "no grill run by the Director") {
 		t.Errorf("task new --kind bug --grill: exit %d, stderr %s; want 1 naming the missing grill", code, stderr)
 	}
-	if code, _, _ := runTask(t, "show", "--store", path, "--repo", "app", "--json", "t-3"); code != 1 {
+	if code, _, _ := runTask(t, "show", "--store", path, "--repo", "app", "--json", "t3"); code != 1 {
 		t.Errorf("the refused bug was created")
 	}
 }
@@ -89,7 +89,7 @@ func TestTaskNewGrillUsage(t *testing.T) {
 		"an unknown mode":             {"--grill", "skipped", "--grill-reason", "why"},
 		"a two-line reason":           {"--grill", "live", "--grill-reason", "one\ntwo"},
 	} {
-		if code, out, _ := runTask(t, append(append(append([]string{}, base...), extra...), "t-1")...); code != 2 || out != "" {
+		if code, out, _ := runTask(t, append(append(append([]string{}, base...), extra...), "t1")...); code != 2 || out != "" {
 			t.Errorf("%s: exit %d, %q; want 2", name, code, out)
 		}
 	}
@@ -102,11 +102,11 @@ func TestTaskNewGrillNeedsAnArtisanAdapter(t *testing.T) {
 	cfg := writeDirector(t, strings.Replace(directorTOML, "[profile.demo]", "[profile.researcher]\nadapter = \"codex\"\n\n[profile.demo]", 1))
 	path := emptyStore(t)
 	approveRepo(t, path, cfg, "app")
-	code, _, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "T", "--grill", "unattended", "--grill-reason", "Delegated.", "t-1")
+	code, _, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "T", "--grill", "unattended", "--grill-reason", "Delegated.")
 	if code != 1 || !strings.Contains(stderr, `step "grill"`) || !strings.Contains(stderr, "--grill live") {
 		t.Errorf("task new --grill unattended: exit %d, stderr %s; want 1 naming the grill and --grill live", code, stderr)
 	}
-	if code, _, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "T", "--grill", "live", "t-1"); code != 0 {
+	if code, _, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "T", "--grill", "live"); code != 0 {
 		t.Errorf("task new --grill live: exit %d, stderr %s", code, stderr)
 	}
 }
@@ -116,30 +116,30 @@ func TestTaskNewGrillNeedsAnArtisanAdapter(t *testing.T) {
 func TestTaskGrill(t *testing.T) {
 	cfg := writeDirector(t, directorTOML)
 	path := emptyStore(t)
-	for _, id := range []string{"t-1", "t-2", "t-3"} {
-		newTask(t, path, cfg, "app", "Sort", id)
+	for _, id := range []string{"t1", "t2", "t3"} {
+		newTask(t, path, cfg, "app", "Sort "+id)
 	}
-	if code, _, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Fix", "--kind", "bug", "t-4"); code != 0 {
+	if code, _, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Fix", "--kind", "bug"); code != 0 {
 		t.Fatalf("task new bug: exit %d, stderr %s", code, stderr)
 	}
 	grill := func(args ...string) (int, string, string) {
 		return runTask(t, append([]string{"grill", "--store", path, "--config", cfg}, args...)...)
 	}
 	for range 2 {
-		if code, out, stderr := grill("app/t-1", "unattended", "--reason", "Delegated: you decide."); code != 0 || !strings.Contains(out, `"record":"grill-mode/1"`) {
+		if code, out, stderr := grill("app/t1", "unattended", "--reason", "Delegated: you decide."); code != 0 || !strings.Contains(out, `"record":"grill-mode/1"`) {
 			t.Fatalf("task grill unattended: exit %d, %s, stderr %s", code, out, stderr)
 		}
 	}
-	if code, _, stderr := grill("app/t-1", "unattended", "--reason", "Again."); code != 1 || !strings.Contains(stderr, "already unattended") {
+	if code, _, stderr := grill("app/t1", "unattended", "--reason", "Again."); code != 1 || !strings.Contains(stderr, "already unattended") {
 		t.Errorf("the mode in effect: exit %d, stderr %s", code, stderr)
 	}
-	if code, _, stderr := grill("--by", "guildmaster", "app/t-1", "live", "--reason", "The Guildmaster: grill me on this."); code != 0 {
+	if code, _, stderr := grill("--by", "guildmaster", "app/t1", "live", "--reason", "The Guildmaster: grill me on this."); code != 0 {
 		t.Fatalf("task grill live: exit %d, stderr %s", code, stderr)
 	}
-	if g := showGrill(t, path, "t-1"); g.Line != "grill: live (guildmaster): The Guildmaster: grill me on this." || g.Number != 2 {
-		t.Errorf("t-1 grill = %+v", g)
+	if g := showGrill(t, path, "t1"); g.Line != "grill: live (guildmaster): The Guildmaster: grill me on this." || g.Number != 2 {
+		t.Errorf("t1 grill = %+v", g)
 	}
-	if code, _, stderr := grill("app/t-2", "live", "--reason", "Keep it live."); code != 1 || !strings.Contains(stderr, "already live") {
+	if code, _, stderr := grill("app/t2", "live", "--reason", "Keep it live."); code != 1 || !strings.Contains(stderr, "already live") {
 		t.Errorf("live on a task with no record: exit %d, stderr %s", code, stderr)
 	}
 
@@ -147,12 +147,12 @@ func TestTaskGrill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, a := range [][2]string{{"t-2", "grill"}, {"t-3", "grill"}, {"t-3", "research"}} {
+	for _, a := range [][2]string{{"t2", "grill"}, {"t3", "grill"}, {"t3", "research"}} {
 		if _, err := s.StartAttempt("attempt:"+a[0]+":"+a[1], "app", a[0], a[1]); err != nil {
 			t.Fatal(err)
 		}
-		if a[0] == "t-3" && a[1] == "grill" {
-			if _, err := s.FinishAttempt("finish:t-3:grill", "app", "t-3", "grill", 1, store.AttemptSucceeded); err != nil {
+		if a[0] == "t3" && a[1] == "grill" {
+			if _, err := s.FinishAttempt("finish:t3:grill", "app", "t3", "grill", 1, store.AttemptSucceeded); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -163,16 +163,16 @@ func TestTaskGrill(t *testing.T) {
 	for name, c := range map[string]struct {
 		task, want string
 	}{
-		"a running grill":    {"app/t-2", "grill attempt 1 of task app/t-2 is running"},
-		"a started research": {"app/t-3", "research has started"},
-		"a bug":              {"app/t-4", "no grill run by the Director"},
-		"an unknown task":    {"app/t-9", "not found"},
+		"a running grill":    {"app/t2", "grill attempt 1 of task app/t2 is running"},
+		"a started research": {"app/t3", "research has started"},
+		"a bug":              {"app/t4", "no grill run by the Director"},
+		"an unknown task":    {"app/t9", "not found"},
 	} {
 		if code, _, stderr := grill(c.task, "unattended", "--reason", "Delegated."); code != 1 || !strings.Contains(stderr, c.want) {
 			t.Errorf("%s: exit %d, stderr %s; want 1 naming %q", name, code, stderr, c.want)
 		}
 	}
-	for _, id := range []string{"t-2", "t-3", "t-4"} {
+	for _, id := range []string{"t2", "t3", "t4"} {
 		if got := grillRecords(t, path, id); len(got) != 0 {
 			t.Errorf("%s: a refusal recorded %+v", id, got)
 		}
@@ -183,13 +183,13 @@ func TestTaskGrill(t *testing.T) {
 func TestTaskGrillUsage(t *testing.T) {
 	base := []string{"grill", "--store", "s", "--config", "c"}
 	for name, args := range map[string][]string{
-		"no reason":         {"app/t-1", "live"},
-		"no mode":           {"app/t-1", "--reason", "r"},
-		"an unknown mode":   {"app/t-1", "skipped", "--reason", "r"},
-		"an unknown setter": {"app/t-1", "live", "--reason", "r", "--by", "artisan"},
-		"no repository":     {"t-1", "live", "--reason", "r"},
-		"a two-line reason": {"app/t-1", "live", "--reason", "a\nb"},
-		"an unknown flag":   {"app/t-1", "live", "--reason", "r", "--force"},
+		"no reason":         {"app/t1", "live"},
+		"no mode":           {"app/t1", "--reason", "r"},
+		"an unknown mode":   {"app/t1", "skipped", "--reason", "r"},
+		"an unknown setter": {"app/t1", "live", "--reason", "r", "--by", "artisan"},
+		"no repository":     {"t1", "live", "--reason", "r"},
+		"a two-line reason": {"app/t1", "live", "--reason", "a\nb"},
+		"an unknown flag":   {"app/t1", "live", "--reason", "r", "--force"},
 	} {
 		if code, out, _ := runTask(t, append(append([]string{}, base...), args...)...); code != 2 || out != "" {
 			t.Errorf("%s: exit %d, %q; want 2", name, code, out)

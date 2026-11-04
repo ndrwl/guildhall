@@ -14,7 +14,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
-// messagingStorePath returns a store with task app/t-1 and a running build attempt 1.
+// messagingStorePath returns a store with task app/t1 and a running build attempt 1.
 func messagingStorePath(t *testing.T) string {
 	t.Helper()
 	path := writeStore(t)
@@ -23,7 +23,7 @@ func messagingStorePath(t *testing.T) string {
 		t.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
-	if _, err := s.StartAttempt("m-attempt", "app", "t-1", "build"); err != nil {
+	if _, err := s.StartAttempt("m-attempt", "app", "t1", "build"); err != nil {
 		t.Fatal(err)
 	}
 	return path
@@ -35,7 +35,7 @@ func envelope(id, recipient string) string {
   "id": %q,
   "recipient": %q,
   "repository": "app",
-  "task": "t-1",
+  "task": "t1",
   "step": "build",
   "attempt": 1,
   "type": "note",
@@ -142,7 +142,7 @@ func TestMessagesSendFromFileAndStdin(t *testing.T) {
 		t.Fatalf("retry: exit %d, output %q, want %q", code, again, out)
 	}
 
-	code, out, stderr = runMessagesAsDirector(t, copyDir, envelope("n-1", "artisan"), "send", "--store", path, "artisan:app/t-1/build/1", "-")
+	code, out, stderr = runMessagesAsDirector(t, copyDir, envelope("n-1", "artisan"), "send", "--store", path, "artisan:app/t1/build/1", "-")
 	if code != 0 {
 		t.Fatalf("send from stdin: exit %d, stderr %s", code, stderr)
 	}
@@ -170,8 +170,8 @@ func TestMessagesSendRefusals(t *testing.T) {
 		want  string
 	}{
 		"conflicting reuse":            {strings.Replace(envelope("q-1", "director"), "Tests pass", "Tests fail", 1), []string{"--store", path, "director", "-"}, 1, "already used"},
-		"recipient mismatch":           {envelope("q-2", "director"), []string{"--store", path, "artisan:app/t-1/build/1", "-"}, 1, "addressed to"},
-		"artisan from the guildmaster": {envelope("n-2", "artisan"), []string{"--store", path, "artisan:app/t-1/build/1", "-"}, 1, "takes messages send from director only"},
+		"recipient mismatch":           {envelope("q-2", "director"), []string{"--store", path, "artisan:app/t1/build/1", "-"}, 1, "addressed to"},
+		"artisan from the guildmaster": {envelope("n-2", "artisan"), []string{"--store", path, "artisan:app/t1/build/1", "-"}, 1, "takes messages send from director only"},
 		"unknown field":                {strings.Replace(envelope("q-3", "director"), `"type"`, `"approve": true, "type"`, 1), []string{"--store", path, "director", "-"}, 1, "unknown field"},
 		"missing body file":            {"", []string{"--store", path, "director", filepath.Join(t.TempDir(), "none.json")}, 1, "body"},
 		"missing store":                {envelope("q-4", "director"), []string{"--store", missing, "director", "-"}, 1, "no store at"},
@@ -244,7 +244,7 @@ func TestMessagesListReadAck(t *testing.T) {
 		code int
 		want string
 	}{
-		"ack by wrong recipient": {[]string{"ack", "--store", path, "artisan:app/t-1/build/1", "q-2"}, 1, "addressed to"},
+		"ack by wrong recipient": {[]string{"ack", "--store", path, "artisan:app/t1/build/1", "q-2"}, 1, "addressed to"},
 		"read missing":           {[]string{"read", "--store", path, "q-9"}, 1, "not found"},
 		"limit over maximum":     {[]string{"list", "--store", path, "--limit", "101", "director"}, 1, "limit"},
 		"limit not a number":     {[]string{"list", "--store", path, "--limit", "ten", "director"}, 2, "limit"},
@@ -320,7 +320,7 @@ func TestMessagesConcurrentSends(t *testing.T) {
 func TestMessagesListShowsWake(t *testing.T) {
 	copyDir, path := copyStorePath(t)
 	markCopy(t, copyDir)
-	for _, to := range []string{"director", "artisan:app/t-1/build/1"} {
+	for _, to := range []string{"director", "artisan:app/t1/build/1"} {
 		role, _, _ := strings.Cut(to, ":")
 		if code, _, stderr := runMessagesAsDirector(t, copyDir, envelope("m-"+role, role), "send", "--store", path, to, "-"); code != 0 {
 			t.Fatalf("send to %s: %s", to, stderr)
@@ -338,7 +338,7 @@ func TestMessagesListShowsWake(t *testing.T) {
 		p.Messages[0].Wake.MessageID != "m-director" || p.Messages[0].Wake.Time.IsZero() {
 		t.Fatalf("director list = %s", out)
 	}
-	_, out, _ = runMessages(t, "", "list", "--store", path, "artisan:app/t-1/build/1")
+	_, out, _ = runMessages(t, "", "list", "--store", path, "artisan:app/t1/build/1")
 	if p := decodeJSON[page](t, out); len(p.Messages) != 1 || p.Messages[0].Wake != nil || strings.Contains(out, `"wake"`) {
 		t.Fatalf("artisan list = %s", out)
 	}

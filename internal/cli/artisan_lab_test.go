@@ -89,14 +89,14 @@ func TestWorkflowArtisanHerdrLab(t *testing.T) {
 		return ""
 	}
 	focusBefore := focusedWorkspace()
-	cmd := exec.Command(binary, "task", "start", "--copy", dir, "--repo", "app", "t-1")
+	cmd := exec.Command(binary, "task", "start", "--copy", dir, "--repo", "app", "t1")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("workflow start: %v: %s", err, out)
 	}
 	if focusAfter := focusedWorkspace(); focusBefore != focusAfter {
 		t.Fatalf("Artisan stole focus: before %s after %s", focusBefore, focusAfter)
 	}
-	at := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}
+	at := artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "plan", Attempt: 1}
 	b, err = os.ReadFile(filepath.Join(at.Dir(d.state), launch.PaneClaimFile))
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +111,7 @@ func TestWorkflowArtisanHerdrLab(t *testing.T) {
 	}
 	workspaceFound := false
 	for _, w := range workspaces {
-		if w.ID == ref.WorkspaceID && w.Label == "└ t-1 · plan #1" {
+		if w.ID == ref.WorkspaceID && w.Label == "└ t1 · plan #1" {
 			workspaceFound = true
 		}
 	}
@@ -141,7 +141,7 @@ func TestWorkflowArtisanHerdrLab(t *testing.T) {
 	}
 	found := false
 	for _, tab := range tabs {
-		if tab.ID == ref.TabID && strings.Contains(tab.Label, "t-1/plan/1") {
+		if tab.ID == ref.TabID && strings.Contains(tab.Label, "t1/plan/1") {
 			found = true
 		}
 	}

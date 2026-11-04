@@ -16,8 +16,8 @@ import (
 func TestNextReadersWaitForExclusiveHolder(t *testing.T) {
 	d := newRunDirector(t)
 	const body = `{"wait":"checks","step":"validate"}`
-	writeNext(t, d.state, "t-1", body+"\n")
-	path := filepath.Join(d.state, "app", "t-1", nextFile)
+	writeNext(t, d.state, "t1", body+"\n")
+	path := filepath.Join(d.state, "app", "t1", nextFile)
 	for _, reader := range []string{"status", "watcher", "supervisor-test"} {
 		t.Run(reader, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {

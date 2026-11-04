@@ -23,7 +23,7 @@ import (
 )
 
 var taskUsage = `usage:
-  guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--detail <text> | --detail-file <file|->] [--kind feature|bug|hallmark] [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] [--override <key>=<value>... --override-quote <text>] [--grill live|unattended --grill-reason <text>] <task>
+  guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--detail <text> | --detail-file <file|->] [--kind feature|bug|hallmark] [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] [--override <key>=<value>... --override-quote <text>] [--grill live|unattended --grill-reason <text>]
   guildhall task priority --store <path> --repo <id> <task> <level>
   guildhall task hold-merge --store <path> --repo <id> <task>
   guildhall task show --store <path> [--config <director.toml>] --repo <id> <task> --json
@@ -45,6 +45,8 @@ var taskUsage = `usage:
   guildhall task say --store <path> --repo <id> --task <id> --tag <attempt|decision> --text-file <path|-> ... (guildhall task say --help for its usage)
 --copy <dir>, or the copy found from the current directory, may stand in for --store, --config and --state:
 the copy's director.store, config.toml and state
+task new takes no task id: Guildhall assigns the repository's task_prefix followed by the next number, such as d42,
+and prints it as the receipt's task_id; rerunning an identical request while its task is open prints the same receipt
 --title is a short name of at most 100 characters; the full statement goes in --detail, or --detail-file reads it
 from a file or - for standard input
 --grill records the task's grill mode with --grill-reason, a one-line reason, which unattended requires: live, the
@@ -251,7 +253,7 @@ func (a *App) task(args []string) int {
 	var allowed map[string]bool
 	switch sub {
 	case "new":
-		want, allowed = 1, map[string]bool{"store": true, "config": true, "repo": true, "title": true, "detail": true, "detail-file": true, "kind": true, "depends-on": true, "fixes": true, "priority": true,
+		want, allowed = 0, map[string]bool{"store": true, "config": true, "repo": true, "title": true, "detail": true, "detail-file": true, "kind": true, "depends-on": true, "fixes": true, "priority": true,
 			"override": true, "override-quote": true, "grill": true, "grill-reason": true}
 	case "priority":
 		want, allowed = 2, map[string]bool{"store": true, "repo": true}
@@ -342,6 +344,8 @@ func (a *App) task(args []string) int {
 		return a.taskUsage("task review requires --full")
 	case sub != "new" && sub != "finding rule" && sub != "review" && sub != "priority" && sub != "hold-merge" && !*asJSON:
 		return a.taskUsage(fmt.Sprintf("task %s prints JSON only; pass --json", sub))
+	case sub == "new" && len(positional) > 0:
+		return a.taskUsage(fmt.Sprintf("task new takes no task id, but was given %q; Guildhall assigns ids, and the receipt's task_id names the new task", positional[0]))
 	case len(positional) != want:
 		return a.taskUsage(fmt.Sprintf("task %s takes %d arguments", sub, want))
 	}
@@ -362,6 +366,7 @@ func (a *App) task(args []string) int {
 	}
 	var task store.Task
 	var accepted acceptedWorkflow
+	var taskPrefix string
 	if sub == "new" {
 		// A long title is refused first, naming where its detail belongs; the store enforces the same limit.
 		if n := utf8.RuneCountInString(*title); n > store.MaxTitleRunes {
@@ -376,10 +381,15 @@ func (a *App) task(args []string) int {
 		// Resolve configuration and validate the effective workflow before opening the store.
 		// Task fields and dependencies are validated by CreateTask in the store.
 		var err error
-		if task, accepted, err = acceptTask(*cfgPath, *repo, kind.resolve(fixed.ref)); err != nil {
+		var r config.Repository
+		if task, accepted, r, err = acceptTask(*cfgPath, *repo, kind.resolve(fixed.ref)); err != nil {
 			return fail(err)
 		}
-		task.ID, task.Title, task.Detail, task.DependsOn, task.Fixes = positional[0], *title, *detail, deps, fixed.ref
+		var set bool
+		if taskPrefix, set = r.TaskIDPrefix(); !set {
+			return fail(fmt.Errorf("repository %s has no task_prefix; Guildhall assigns its task ids as that prefix followed by a number, so set task_prefix in its [[repository]] entry (docs/configuration.md#repositories)", *repo))
+		}
+		task.Title, task.Detail, task.DependsOn, task.Fixes = *title, *detail, deps, fixed.ref
 		// The grill mode is judged before the store opens too: only a workflow with a Director grill takes one, and
 		// an unattended grill needs an Artisan adapter for its profile.
 		if *grill != "" {
@@ -433,7 +443,7 @@ func (a *App) task(args []string) int {
 		}
 		if err = admitWorkflow(s, accepted); err != nil {
 			err = fmt.Errorf("%w; the Guildmaster approves this revision with guildhall workflow approve --config <director.toml> --repo %s", err, *repo)
-		} else {
+		} else if task.ID, err = assignTaskID(s, task, taskPrefix); err == nil {
 			if taskRelease != nil {
 				out, err = s.CreateTaskWithRelease(mutationID("task", task.Repository, task.ID), task, *taskRelease)
 			} else {
@@ -527,18 +537,18 @@ type acceptedWorkflow struct {
 
 // acceptTask loads the Director config at cfgPath and returns a task of kind taskKind for repository repo bound to
 // the repository's effective workflow revision for that kind and the configuration digest, with the workflow
-// admitWorkflow checks.
-func acceptTask(cfgPath, repo, taskKind string) (store.Task, acceptedWorkflow, error) {
+// admitWorkflow checks, and the repository's config entry, whose task_prefix task new assigns the task id under.
+func acceptTask(cfgPath, repo, taskKind string) (store.Task, acceptedWorkflow, config.Repository, error) {
 	cfg, r, err := loadRepository(cfgPath, repo)
 	if err != nil {
-		return store.Task{}, acceptedWorkflow{}, err
+		return store.Task{}, acceptedWorkflow{}, config.Repository{}, err
 	}
 	w, err := repositoryWorkflow(filepath.Join(filepath.Dir(cfgPath), "workflows"), cfg, r, taskKind)
 	if err != nil {
-		return store.Task{}, acceptedWorkflow{}, fmt.Errorf("repository %s: %w", repo, err)
+		return store.Task{}, acceptedWorkflow{}, config.Repository{}, fmt.Errorf("repository %s: %w", repo, err)
 	}
 	if err := cfg.CheckArtisanAdapters(w.effective); err != nil {
-		return store.Task{}, acceptedWorkflow{}, fmt.Errorf("repository %s: %w", repo, err)
+		return store.Task{}, acceptedWorkflow{}, config.Repository{}, fmt.Errorf("repository %s: %w", repo, err)
 	}
 	var named []string
 	for _, step := range w.effective.Steps {
@@ -547,13 +557,59 @@ func acceptTask(cfgPath, repo, taskKind string) (store.Task, acceptedWorkflow, e
 		}
 	}
 	if err := checkProfileSettings(cfg, named); err != nil {
-		return store.Task{}, acceptedWorkflow{}, fmt.Errorf("repository %s: %w", repo, err)
+		return store.Task{}, acceptedWorkflow{}, config.Repository{}, fmt.Errorf("repository %s: %w", repo, err)
 	}
 	data, err := json.Marshal(cfg)
 	if err != nil {
-		return store.Task{}, acceptedWorkflow{}, fmt.Errorf("config digest: %w", err)
+		return store.Task{}, acceptedWorkflow{}, config.Repository{}, fmt.Errorf("config digest: %w", err)
 	}
-	return store.Task{Repository: repo, Workflow: w.effective.Revision(), ConfigDigest: string(digest.Of(data))}, w, nil
+	return store.Task{Repository: repo, Workflow: w.effective.Revision(), ConfigDigest: string(digest.Of(data))}, w, r, nil
+}
+
+// assignTaskID returns the id task new files task under in repository task.Repository, read from s while task new
+// holds the store's writer lock. An open task of the repository with the same request (title, detail, workflow
+// revision, so kind, configuration digest, dependencies and fixes) is a retry, and keeps its id so the task mutation
+// replays its original receipt; any other request takes prefix followed by one more than the highest number of any
+// task id of that form, whatever its state, or prefix1 for the first. Ids not of that form, such as t-1 or d007, are
+// ignored.
+func assignTaskID(s *store.Store, task store.Task, prefix string) (string, error) {
+	tasks, err := s.Tasks(task.Repository)
+	if err != nil {
+		return "", err
+	}
+	high := 0
+	for _, t := range tasks {
+		if t.State == store.TaskOpen && sameTaskRequest(t, task) {
+			return t.ID, nil
+		}
+		if n, ok := taskNumber(t.ID, prefix); ok && n > high {
+			high = n
+		}
+	}
+	return prefix + strconv.Itoa(high+1), nil
+}
+
+// taskNumber is the number of id when it is prefix followed by a number with no leading zero, compared as a number
+// because the store orders ids bytewise, d10 before d9.
+func taskNumber(id, prefix string) (int, bool) {
+	rest, ok := strings.CutPrefix(id, prefix)
+	if !ok || rest == "" || rest[0] < '1' || rest[0] > '9' {
+		return 0, false
+	}
+	for _, c := range rest {
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+	}
+	n, err := strconv.Atoi(rest)
+	return n, err == nil
+}
+
+// sameTaskRequest reports whether an existing task t was filed by the same task new request as task.
+func sameTaskRequest(t, task store.Task) bool {
+	sameFixes := (t.Fixes == nil) == (task.Fixes == nil) && (t.Fixes == nil || *t.Fixes == *task.Fixes)
+	return t.Title == task.Title && t.Detail == task.Detail && t.Workflow == task.Workflow && t.ConfigDigest == task.ConfigDigest &&
+		slices.Equal(t.DependsOn, task.DependsOn) && sameFixes
 }
 
 // loadRepository loads the Director config at cfgPath and finds repository repo in it.

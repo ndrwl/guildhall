@@ -11,12 +11,17 @@ import (
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
-// kindTask runs task new t-id in repository app with extra flags and returns its exit code and standard error.
-func kindTask(t *testing.T, path, cfg, id string, extra ...string) (int, string) {
+// kindTask runs task new in repository app with extra flags and returns its exit code, standard error and the id it
+// assigned, empty when it was refused.
+func kindTask(t *testing.T, path, cfg string, extra ...string) (int, string, string) {
 	t.Helper()
 	args := append([]string{"new", "--store", path, "--config", cfg, "--repo", "app", "--title", "Task"}, extra...)
-	code, _, stderr := runTask(t, append(args, id)...)
-	return code, stderr
+	code, out, stderr := runTask(t, args...)
+	var id string
+	if code == 0 {
+		id = decodeJSON[store.Receipt](t, out).TaskID
+	}
+	return code, stderr, id
 }
 
 // approveKind records the Guildmaster's approval of repository app's effective workflow for taskKind.
@@ -40,7 +45,7 @@ func kindRevision(t *testing.T, cfg, taskKind string) workflow.Revision {
 
 // TestTaskNewKinds: with no kind a task binds the repository's workflow; --kind bug, or --fixes alone, binds the
 // shipped bug workflow exactly as shipped, with no approval; --kind feature --fixes binds the feature workflow and
-// keeps the fixed task; and retrying with another kind is a mutation conflict.
+// keeps the fixed task; and the same title with another kind is another request, so it files a new task.
 func TestTaskNewKinds(t *testing.T) {
 	cfg := writeDirector(t, rolesTOML)
 	path := emptyStore(t)
@@ -52,27 +57,33 @@ func TestTaskNewKinds(t *testing.T) {
 	if feature.Name != "default" || bug != shippedBug.Revision() {
 		t.Fatalf("feature %+v, bug %+v", feature, bug)
 	}
-	newTask(t, path, cfg, "app", "Task", "t-1")
-	if got := readTask(t, path, "app", "t-1").Workflow; got != feature {
+	newTask(t, path, cfg, "app", "Task")
+	if got := readTask(t, path, "app", "t1").Workflow; got != feature {
 		t.Fatalf("no kind: workflow %+v, want %+v", got, feature)
 	}
 
-	for id, extra := range map[string][]string{"t-2": {"--kind", "bug"}, "t-3": {"--fixes", "app/t-1"}} {
-		if code, stderr := kindTask(t, path, cfg, id, extra...); code != 0 {
-			t.Fatalf("%s: exit %d, stderr %s", id, code, stderr)
+	for _, extra := range [][]string{{"--kind", "bug"}, {"--fixes", "app/t1"}} {
+		code, stderr, id := kindTask(t, path, cfg, extra...)
+		if code != 0 {
+			t.Fatalf("%v: exit %d, stderr %s", extra, code, stderr)
 		}
 		if got := readTask(t, path, "app", id).Workflow; got != bug {
 			t.Fatalf("%s %v: workflow %+v, want %+v", id, extra, got, bug)
 		}
 	}
-	if code, stderr := kindTask(t, path, cfg, "t-4", "--kind", "feature", "--fixes", "app/t-1"); code != 0 {
-		t.Fatalf("--kind feature --fixes: exit %d, stderr %s", code, stderr)
+	if code, stderr, id := kindTask(t, path, cfg, "--kind", "feature", "--fixes", "app/t1"); code != 0 || id != "t4" {
+		t.Fatalf("--kind feature --fixes: exit %d, id %s, stderr %s", code, id, stderr)
 	}
-	if got := readTask(t, path, "app", "t-4"); got.Workflow != feature || got.Fixes == nil || *got.Fixes != (store.TaskRef{Repository: "app", ID: "t-1"}) {
+	if got := readTask(t, path, "app", "t4"); got.Workflow != feature || got.Fixes == nil || *got.Fixes != (store.TaskRef{Repository: "app", ID: "t1"}) {
 		t.Fatalf("--kind feature --fixes: task %+v", got)
 	}
-	if code, stderr := kindTask(t, path, cfg, "t-2", "--kind", "feature"); code != 1 || !strings.Contains(stderr, store.ErrMutationConflict.Error()) {
-		t.Fatalf("retry with another kind: exit %d, stderr %s", code, stderr)
+	// t2 is a bug titled Task; the same title as a feature is t1's request, so it is a retry of t1, and as a bug
+	// again it is a retry of t2.
+	if code, stderr, id := kindTask(t, path, cfg, "--kind", "feature"); code != 0 || id != "t1" {
+		t.Fatalf("the feature again: exit %d, id %s, stderr %s", code, id, stderr)
+	}
+	if code, stderr, id := kindTask(t, path, cfg, "--kind", "bug"); code != 0 || id != "t2" {
+		t.Fatalf("the bug again: exit %d, id %s, stderr %s", code, id, stderr)
 	}
 }
 
@@ -101,14 +112,14 @@ func TestTaskNewKindOverride(t *testing.T) {
 	if want.Name != "my-bug" {
 		t.Fatalf("bug resolves to %+v", want)
 	}
-	if code, stderr := kindTask(t, path, cfg, "t-1", "--kind", "bug"); code != 1 || !strings.Contains(stderr, "not authorized") {
+	if code, stderr, _ := kindTask(t, path, cfg, "--kind", "bug"); code != 1 || !strings.Contains(stderr, "not authorized") {
 		t.Fatalf("unapproved my-bug: exit %d, stderr %s", code, stderr)
 	}
 	approveKind(t, path, cfg, config.TaskKindBug)
-	if code, stderr := kindTask(t, path, cfg, "t-1", "--kind", "bug"); code != 0 {
+	if code, stderr, _ := kindTask(t, path, cfg, "--kind", "bug"); code != 0 {
 		t.Fatalf("my-bug: exit %d, stderr %s", code, stderr)
 	}
-	if got := readTask(t, path, "app", "t-1").Workflow; got != want {
+	if got := readTask(t, path, "app", "t1").Workflow; got != want {
 		t.Fatalf("workflow %+v, want %+v", got, want)
 	}
 	if got := kindRevision(t, cfg, config.TaskKindFeature); got.Name != "default" {
@@ -121,7 +132,7 @@ func TestTaskNewKindOverride(t *testing.T) {
 func TestTaskNewKindRefusals(t *testing.T) {
 	cfg := writeDirector(t, rolesTOML)
 	path := emptyStore(t)
-	code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "T", "--kind", "docs", "t-1")
+	code, out, stderr := runTask(t, "new", "--store", path, "--config", cfg, "--repo", "app", "--title", "T", "--kind", "docs")
 	if code != 2 || out != "" || !strings.Contains(stderr, `--kind "docs" is not a task kind; use feature, bug or hallmark`) {
 		t.Fatalf("unknown --kind: exit %d, stdout %q, stderr %s", code, out, stderr)
 	}

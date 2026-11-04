@@ -13,7 +13,7 @@ import (
 func TestDirectorStoppedRuntimeRecoveryHoldsAdmission(t *testing.T) {
 	d := newRunDirector(t)
 	recordSession(t, d.store, true, store.DirectorRunning)
-	d.recordUnlaunched(t, "t-2")
+	d.recordUnlaunched(t, "t2")
 	inv := t.TempDir()
 	u, err := startRuntime(artisantest.Command(inv, artisantest.Worker{Grandchildren: 1}), 1, d.store)
 	if err != nil {
@@ -44,11 +44,11 @@ func TestDirectorStoppedRuntimeRecoveryHoldsAdmission(t *testing.T) {
 		if _, err := withStore(d.store, true, checkSupersede); !errors.Is(err, errStopSweeping) {
 			t.Errorf("replacement during recovery = %v; want stop sweeping", err)
 		}
-		if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"paused","step":"plan"}`+"\n" {
+		if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...); code != 0 || out != `{"wait":"paused","step":"plan"}`+"\n" {
 			t.Errorf("start during recovery: %d, %s, %s", code, out, stderr)
 		}
 		_, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
-			return s.TakeOwnership("recovery-owner", store.Ownership{Repository: "app", TaskID: "t-2", Step: "plan", Attempt: 1, LauncherIdentity: store.ProcessIdentity(launcher)}, func(store.Ownership) (store.Liveness, error) { return store.ProbeGone, nil })
+			return s.TakeOwnership("recovery-owner", store.Ownership{Repository: "app", TaskID: "t2", Step: "plan", Attempt: 1, LauncherIdentity: store.ProcessIdentity(launcher)}, func(store.Ownership) (store.Liveness, error) { return store.ProbeGone, nil })
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -65,7 +65,7 @@ func TestDirectorStoppedRuntimeRecoveryHoldsAdmission(t *testing.T) {
 		t.Fatalf("replacement after failure = %v", err)
 	}
 	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
-		return s.FinishAttempt("recovery-owner-finish", "app", "t-2", "plan", 1, store.AttemptStopped)
+		return s.FinishAttempt("recovery-owner-finish", "app", "t2", "plan", 1, store.AttemptStopped)
 	}); err != nil {
 		t.Fatal(err)
 	}

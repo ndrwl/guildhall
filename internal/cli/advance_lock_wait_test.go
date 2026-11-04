@@ -17,9 +17,9 @@ func TestAdvancePreflightLockWait(t *testing.T) {
 	const lockWait = 5 * time.Second
 	const refusalCeiling = 4 * lockWait
 	for _, command := range [][]string{
-		{"task", "start", "t-1"},
-		{"task", "start", "t-1", "--decision", "d-1"},
-		{"step", "retry", "--task", "t-1", "--step", "build", "--attempt", "1"},
+		{"task", "start", "t1"},
+		{"task", "start", "t1", "--decision", "d-1"},
+		{"step", "retry", "--task", "t1", "--step", "build", "--attempt", "1"},
 	} {
 		t.Run(strings.Join(command, " "), func(t *testing.T) {
 			d := newRunDirector(t)

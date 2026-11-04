@@ -51,9 +51,11 @@ For each repository with a `hallmark due` item, launch a hallmark: a `hallmark` 
 There is nothing to record: Guildhall reads the hallmark from its task.
 
 ```sh
-guildhall task new --repo <repo> --kind hallmark --title "Hallmark after 4 merges" <id>
+guildhall task new --repo <repo> --kind hallmark --title "Hallmark after 4 merges"
 guildhall task start --repo <repo> <id>
 ```
+
+`task new` takes no id: Guildhall assigns it, and `<id>` is the `task_id` its receipt prints.
 
 While the task is open the item stays out of `needs_me` and status shows the task as the repository's `running_task`, so never launch a second one.
 The task stays open until its `follow-ups` decision is answered, deferred or not, so the next hallmark waits for the Guildmaster's feedback on this one.
@@ -68,7 +70,7 @@ Read the report, then:
 1. Present the `follow-ups` decision to the Guildmaster: `guildhall decide show` gives the report path and its ranked `H<n>` titles, and the report's record name to link is the one `guildhall task show --repo <repo> <hallmark task>` lists under `documents`, such as `guildhall/d131/hallmark-1-report`.
 2. Answer it with `guildhall decide answer`, in the Guildmaster's words: `pick` with the ids they chose on the following lines, such as `H1, H3`, or `none`.
 3. Run `guildhall task start --decision follow-ups --repo <repo> <id>`; answering never advances a task, and this advance closes the hallmark done.
-4. For each picked id only, run `guildhall task new`, then `guildhall task link add --repo <repo> --document <repo>/<hallmark task>/hallmark-<n>-report --text '<the Guildmaster's follow-ups answer, quoted>' <new task>`, then `guildhall task start`; Guildhall creates no task from the answer.
+4. For each picked id only, run `guildhall task new`, then `guildhall task link add --repo <repo> --document <repo>/<hallmark task>/hallmark-<n>-report --text '<the Guildmaster's follow-ups answer, quoted>' <new task>`, `<new task>` the `task_id` its receipt prints, then `guildhall task start`; Guildhall creates no task from the answer.
    The task's detail names the `H<n>` and the report's record name, never the report's path, because Artisans cannot read paths under `state/`; the link gives them a verified copy.
 
 Then read the self-review ledger, as `guildhall-self-review` asks at hallmark time, and give its lowest criteria to the hallmark's findings.

@@ -20,7 +20,7 @@ import (
 // The resume command a pane registers starts with a plain command name, as
 // Herdr requires, and its flags name the same attempt through this CLI.
 func TestResumeArgvShape(t *testing.T) {
-	at := launch.Attempt{Store: filepath.Join(t.TempDir(), "g.store"), StateDir: t.TempDir(), Key: artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 3}}
+	at := launch.Attempt{Store: filepath.Join(t.TempDir(), "g.store"), StateDir: t.TempDir(), Key: artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "build", Attempt: 3}}
 	argv := launch.ResumeArgv(at)
 	if len(argv) < 3 || argv[0] != "guildhall" || argv[1] != "artisan" || argv[2] != "resume" {
 		t.Fatalf("ResumeArgv = %q, want guildhall artisan resume ...", argv)
@@ -86,7 +86,7 @@ func launcherProcess(t *testing.T, o ownedAttempt) (*exec.Cmd, chan struct{}, *b
 		if err != nil {
 			continue
 		}
-		own, err := s.Ownership("app", "t-1", "build", 1)
+		own, err := s.Ownership("app", "t1", "build", 1)
 		_ = s.Close()
 		if err == nil && own.State == store.OwnerRunning && own.LauncherIdentity.PID == run.Process.Pid {
 			return run, exited, &runErr

@@ -24,7 +24,7 @@ func TestArtisanStopDrainsSilentPeer(t *testing.T) {
 	owner := o.ownership(t)
 	ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(30*time.Second))
 	defer cancel()
-	key := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}
+	key := artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "build", Attempt: 1}
 	wrong := key
 	wrong.TaskID = "not-this-task"
 	reply, err := artisan.Call(ctx, owner.Endpoint, wrong, artisan.Identity(owner.LauncherIdentity), artisan.OpStop)

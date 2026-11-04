@@ -81,7 +81,7 @@ func reviewAfterRebase(t *testing.T, requestedFull bool) {
 	done := func(name string, n int, want string) {
 		t.Helper()
 		d.waitResult(t, name, n)
-		step(want, append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", name, "--attempt", fmt.Sprint(n), "--result", d.result(name, n))...)...)
+		step(want, append([]string{"step", "done"}, d.flags("--task", "t1", "--step", name, "--attempt", fmt.Sprint(n), "--result", d.result(name, n))...)...)
 	}
 	documents := func() map[string]store.DocumentRef {
 		t.Helper()
@@ -90,7 +90,7 @@ func reviewAfterRebase(t *testing.T, requestedFull bool) {
 			t.Fatal(err)
 		}
 		defer func() { _ = s.Close() }()
-		refs, err := s.Documents("app", "t-1")
+		refs, err := s.Documents("app", "t1")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -116,18 +116,18 @@ func reviewAfterRebase(t *testing.T, requestedFull bool) {
 	}
 
 	b1 := gitIn(app.Remote, "rev-parse", "trunk")
-	step(`{"wait":"attempt","step":"plan","attempt":1}`, append([]string{"task", "start"}, d.flags("t-1")...)...)
+	step(`{"wait":"attempt","step":"plan","attempt":1}`, append([]string{"task", "start"}, d.flags("t1")...)...)
 	done("plan", 1, `{"wait":"decision","step":"accept","decision":"accept-1"}`)
 	// The plan attempt made the worktree; the first build commits the task's change in it.
-	work := filepath.Join(d.state, "app", "t-1", "work")
+	work := filepath.Join(d.state, "app", "t1", "work")
 	h1 := commit(work, "task.txt", "task\n")
 	guide("build", "head:"+h1)
 	answer := filepath.Join(t.TempDir(), "answer")
 	if err := os.WriteFile(answer, []byte("approved\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	step("", "decide", "answer", "--store", d.store, "--repo", "app", "--task", "t-1", "--decision", "accept-1", "--answer-file", answer)
-	step(`{"wait":"attempt","step":"build","attempt":1}`, append([]string{"task", "start"}, d.flags("--decision", "accept-1", "t-1")...)...)
+	step("", "decide", "answer", "--store", d.store, "--repo", "app", "--task", "t1", "--decision", "accept-1", "--answer-file", answer)
+	step(`{"wait":"attempt","step":"build","attempt":1}`, append([]string{"task", "start"}, d.flags("--decision", "accept-1", "t1")...)...)
 	spec := "sha256:" + documents()["plan-1-spec"].SHA256
 	guide("review", fmt.Sprintf(`outcome.json:{"schema":"guildhall.review-outcome/2","reviewer":"automated","verdict":"changes_requested","summary":"One more round.","findings":[{"id":"f1","rule":"S2","summary":"Another round."}],"revisions":{"subject":{"code_head":%q},"spec_digest":%q,"standards_revision":"standards-1"}}`, h1, spec))
 	done("build", 1, `{"wait":"attempt","step":"review","attempt":1}`)
@@ -146,7 +146,7 @@ func reviewAfterRebase(t *testing.T, requestedFull bool) {
 	guide("build", "head:"+h2)
 	done("review", 1, `{"wait":"attempt","step":"build","attempt":2}`)
 	if requestedFull {
-		step("", "task", "review", "--store", d.store, "--repo", "app", "--full", "t-1")
+		step("", "task", "review", "--store", d.store, "--repo", "app", "--full", "t1")
 	}
 	done("build", 2, `{"wait":"attempt","step":"review","attempt":2}`)
 	wantScope := git.ScopeRebase
@@ -172,7 +172,7 @@ func reviewAfterRebase(t *testing.T, requestedFull bool) {
 			t.Fatal(err)
 		}
 		defer func() { _ = s.Close() }()
-		requests, err := s.FullReviews("app", "t-1")
+		requests, err := s.FullReviews("app", "t1")
 		if err != nil || len(requests) != 1 || requests[0].ConsumedBy != "review-2" {
 			t.Fatalf("full-review requests = %+v, error %v", requests, err)
 		}

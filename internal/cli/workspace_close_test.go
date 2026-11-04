@@ -393,109 +393,109 @@ func TestWorkspaceCloseSweep(t *testing.T) {
 		want  result
 	}{
 		{name: "due at the delay", since: after, setup: func(f *sweepFixture) artisan.AttemptKey {
-			k := f.attempt("t-1", "build", store.AttemptSucceeded, nil)
+			k := f.attempt("t1", "build", store.AttemptSucceeded, nil)
 			return f.writeRecord(k, f.presented(k, "w2", launch.WorkspaceLabel(k)))
 		}, want: result{closed: []string{"workspace w2"}, marked: true}},
 		{name: "one second before the delay", since: after - time.Second, setup: func(f *sweepFixture) artisan.AttemptKey {
-			k := f.attempt("t-1", "build", store.AttemptSucceeded, nil)
+			k := f.attempt("t1", "build", store.AttemptSucceeded, nil)
 			return f.writeRecord(k, f.presented(k, "w2", launch.WorkspaceLabel(k)))
 		}, want: result{noHerdr: true}},
 		{name: "a delay of zero", since: time.Hour, after: -1, setup: func(f *sweepFixture) artisan.AttemptKey {
-			k := f.attempt("t-1", "build", store.AttemptSucceeded, nil)
+			k := f.attempt("t1", "build", store.AttemptSucceeded, nil)
 			return f.writeRecord(k, f.presented(k, "w2", launch.WorkspaceLabel(k)))
 		}, want: result{noHerdr: true}},
 		{name: "an unfinished attempt", since: time.Hour, setup: func(f *sweepFixture) artisan.AttemptKey {
-			k := f.attempt("t-1", "build", "", nil)
+			k := f.attempt("t1", "build", "", nil)
 			return f.writeRecord(k, f.presented(k, "w2", launch.WorkspaceLabel(k)))
 		}, want: result{noHerdr: true}},
 		{name: "an owner not proven gone", since: time.Hour, setup: func(f *sweepFixture) artisan.AttemptKey {
-			k := f.attempt("t-1", "build", store.AttemptSucceeded, nil)
+			k := f.attempt("t1", "build", store.AttemptSucceeded, nil)
 			f.notGone[k] = true
 			return f.writeRecord(k, f.presented(k, "w2", launch.WorkspaceLabel(k)))
 		}, want: result{noHerdr: true}},
 		{name: "a success intake rejected", since: after, setup: func(f *sweepFixture) artisan.AttemptKey {
-			k := f.attempt("t-1", "build", store.AttemptSucceeded, nil)
+			k := f.attempt("t1", "build", store.AttemptSucceeded, nil)
 			f.mutate(func(s *store.Store) error {
-				_, err := s.RejectAttempt(f.id(), "app", "t-1", "build", 1, "no code head")
+				_, err := s.RejectAttempt(f.id(), "app", "t1", "build", 1, "no code head")
 				return err
 			})
 			return f.writeRecord(k, f.presented(k, "w2", launch.WorkspaceLabel(k)))
 		}, want: result{closed: []string{"workspace w2"}, marked: true}},
 		{name: "a failed attempt", since: after, setup: func(f *sweepFixture) artisan.AttemptKey {
-			k := f.attempt("t-1", "build", store.AttemptFailed, nil)
+			k := f.attempt("t1", "build", store.AttemptFailed, nil)
 			return f.writeRecord(k, f.presented(k, "w2", launch.WorkspaceLabel(k)))
 		}, want: result{closed: []string{"workspace w2"}, marked: true}},
 		{name: "a stopped attempt", since: after, setup: func(f *sweepFixture) artisan.AttemptKey {
-			k := f.attempt("t-1", "build", store.AttemptStopped, nil)
+			k := f.attempt("t1", "build", store.AttemptStopped, nil)
 			return f.writeRecord(k, f.presented(k, "w2", launch.WorkspaceLabel(k)))
 		}, want: result{closed: []string{"workspace w2"}, marked: true}},
 		{name: "a stopped attempt before the delay", since: after - time.Second, setup: func(f *sweepFixture) artisan.AttemptKey {
-			k := f.attempt("t-1", "build", store.AttemptStopped, nil)
+			k := f.attempt("t1", "build", store.AttemptStopped, nil)
 			return f.writeRecord(k, f.presented(k, "w2", launch.WorkspaceLabel(k)))
 		}, want: result{noHerdr: true}},
 		{name: "a launching claim", since: after, setup: func(f *sweepFixture) artisan.AttemptKey {
-			k := f.attempt("t-1", "build", store.AttemptFailed, `{"state":"launching"}`+"\n")
+			k := f.attempt("t1", "build", store.AttemptFailed, `{"state":"launching"}`+"\n")
 			f.presented(k, "w2", launch.WorkspaceLabel(k))
 			return k
 		}, want: result{report: "launch claim"}},
 		{name: "an unparsable record", since: after, setup: func(f *sweepFixture) artisan.AttemptKey {
-			return f.attempt("t-1", "build", store.AttemptFailed, "{")
+			return f.attempt("t1", "build", store.AttemptFailed, "{")
 		}, want: result{report: "does not name"}},
 		{name: "a workspace already gone", since: after, setup: func(f *sweepFixture) artisan.AttemptKey {
-			k := f.attempt("t-1", "build", store.AttemptSucceeded, nil)
+			k := f.attempt("t1", "build", store.AttemptSucceeded, nil)
 			return f.writeRecord(k, adapter.TabRef{Session: sweepSession, WorkspaceID: "w7", TabID: "w7:t2", PaneID: "w7:p2"})
 		}, want: result{marked: true}},
 		{name: "a tab already gone", since: after, setup: func(f *sweepFixture) artisan.AttemptKey {
-			k := f.attempt("t-1", "build", store.AttemptSucceeded, nil)
+			k := f.attempt("t1", "build", store.AttemptSucceeded, nil)
 			ref := f.presented(k, "w2", launch.WorkspaceLabel(k))
 			f.workspace("w2").tabs[0].id = "w2:t9"
 			return f.writeRecord(k, ref)
 		}, want: result{marked: true}},
 		{name: "a recorded id now labelled otherwise", since: after, setup: func(f *sweepFixture) artisan.AttemptKey {
-			k := f.attempt("t-1", "build", store.AttemptSucceeded, nil)
+			k := f.attempt("t1", "build", store.AttemptSucceeded, nil)
 			ref := f.presented(k, "w2", "notes")
 			f.workspace("w2").tabs[0].label = "shell"
 			return f.writeRecord(k, ref)
 		}, want: result{report: "tab labelled shell"}},
 		{name: "a per-attempt workspace whose tab is relabelled", since: after, setup: func(f *sweepFixture) artisan.AttemptKey {
-			k := f.attempt("t-1", "build", store.AttemptSucceeded, nil)
+			k := f.attempt("t1", "build", store.AttemptSucceeded, nil)
 			ref := f.presented(k, "w2", launch.WorkspaceLabel(k))
 			f.workspace("w2").tabs[0].label = "shell"
 			return f.writeRecord(k, ref)
 		}, want: result{report: "tab labelled shell"}},
 		{name: "an extra tab", since: after, setup: func(f *sweepFixture) artisan.AttemptKey {
-			k := f.attempt("t-1", "build", store.AttemptSucceeded, nil)
+			k := f.attempt("t1", "build", store.AttemptSucceeded, nil)
 			ref := f.presented(k, "w2", launch.WorkspaceLabel(k))
 			w := f.workspace("w2")
 			w.tabs = append(w.tabs, &fakeTab{id: "w2:t3", label: "mine", pane: "w2:p3", panes: 1})
 			return f.writeRecord(k, ref)
 		}, want: result{report: "holds 2 tabs"}},
 		{name: "an extra pane", since: after, setup: func(f *sweepFixture) artisan.AttemptKey {
-			k := f.attempt("t-1", "build", store.AttemptSucceeded, nil)
+			k := f.attempt("t1", "build", store.AttemptSucceeded, nil)
 			ref := f.presented(k, "w2", launch.WorkspaceLabel(k))
 			f.workspace("w2").tabs[0].panes = 2
 			return f.writeRecord(k, ref)
 		}, want: result{report: "holds panes"}},
 		{name: "a busy shell", since: after, setup: func(f *sweepFixture) artisan.AttemptKey {
-			k := f.attempt("t-1", "build", store.AttemptSucceeded, nil)
+			k := f.attempt("t1", "build", store.AttemptSucceeded, nil)
 			ref := f.presented(k, "w2", launch.WorkspaceLabel(k))
 			f.workspace("w2").tabs[0].busy = true
 			return f.writeRecord(k, ref)
 		}, want: result{report: "not an idle shell"}},
 		{name: "a moved pane", since: after, setup: func(f *sweepFixture) artisan.AttemptKey {
-			k := f.attempt("t-1", "build", store.AttemptSucceeded, nil)
+			k := f.attempt("t1", "build", store.AttemptSucceeded, nil)
 			ref := f.presented(k, "w2", launch.WorkspaceLabel(k))
 			f.workspace("w2").tabs[0].pane = "w2:p9"
 			return f.writeRecord(k, ref)
 		}, want: result{report: "moved"}},
 		{name: "a record from another session", since: after, setup: func(f *sweepFixture) artisan.AttemptKey {
-			k := f.attempt("t-1", "build", store.AttemptSucceeded, nil)
+			k := f.attempt("t1", "build", store.AttemptSucceeded, nil)
 			ref := f.presented(k, "w2", launch.WorkspaceLabel(k))
 			ref.Session = "other-lab"
 			return f.writeRecord(k, ref)
 		}, want: result{report: `session "other-lab"`}},
 		{name: "an old-layout tab in the Director's workspace", since: after, setup: func(f *sweepFixture) artisan.AttemptKey {
-			k := f.attempt("t-1", "build", store.AttemptSucceeded, nil)
+			k := f.attempt("t1", "build", store.AttemptSucceeded, nil)
 			f.host.workspaces = append(f.host.workspaces, &fakeWorkspace{id: "w1", label: "director", tabs: []*fakeTab{
 				{id: "w1:t1", label: "director", pane: "w1:p1", panes: 1, busy: true},
 				{id: "w1:t3", label: launch.TabLabel(k), pane: "w1:p3", panes: 1},
@@ -503,11 +503,11 @@ func TestWorkspaceCloseSweep(t *testing.T) {
 			return f.writeRecord(k, adapter.TabRef{Session: sweepSession, WorkspaceID: "w1", TabID: "w1:t3", PaneID: "w1:p3"})
 		}, want: result{closed: []string{"tab w1:t3"}, marked: true}},
 		{name: "a #140 workspace labelled as its tab", since: after, setup: func(f *sweepFixture) artisan.AttemptKey {
-			k := f.attempt("t-1", "build", store.AttemptSucceeded, nil)
+			k := f.attempt("t1", "build", store.AttemptSucceeded, nil)
 			return f.writeRecord(k, f.presented(k, "w2", launch.TabLabel(k)))
 		}, want: result{closed: []string{"workspace w2"}, marked: true}},
 		{name: "a judge attempt", since: after, setup: func(f *sweepFixture) artisan.AttemptKey {
-			k := f.attempt("t-1", workflow.JudgeStep, store.AttemptSucceeded, nil)
+			k := f.attempt("t1", workflow.JudgeStep, store.AttemptSucceeded, nil)
 			return f.writeRecord(k, f.presented(k, "w2", launch.WorkspaceLabel(k)))
 		}, want: result{closed: []string{"workspace w2"}, marked: true}},
 	} {
@@ -539,7 +539,7 @@ func TestWorkspaceCloseSweep(t *testing.T) {
 				t.Fatalf("reported %+v, want one report", reports)
 			case tc.want.report != "":
 				m := reports[0]
-				if want := "app.t-1." + store.MessageHerdrLeftOpen + "." + k.AttemptID(); m.ID != want || m.Step != k.Step || m.Attempt != k.Attempt {
+				if want := "app.t1." + store.MessageHerdrLeftOpen + "." + k.AttemptID(); m.ID != want || m.Step != k.Step || m.Attempt != k.Attempt {
 					t.Errorf("report %+v, want id %s for %s", m, want, k)
 				}
 				if m.Acknowledged {
@@ -600,7 +600,7 @@ func TestWorkspaceCloseSweepClosesALaunchingClaimsWorkspace(t *testing.T) {
 	}{{name: "idle"}, {name: "a foreign tab", foreign: true}} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newSweepFixture(t)
-			k := f.attempt("t-1", "build", store.AttemptFailed, nil)
+			k := f.attempt("t1", "build", store.AttemptFailed, nil)
 			ref := f.presented(k, "w2", launch.WorkspaceLabel(k))
 			if tc.foreign {
 				w := f.workspace("w2")
@@ -639,7 +639,7 @@ func TestWorkspaceCloseSweepClosesALaunchingClaimsWorkspace(t *testing.T) {
 
 func TestWorkspaceCloseSweepWithoutASessionCallsNoHerdr(t *testing.T) {
 	f := newSweepFixture(t)
-	k := f.attempt("t-1", "build", store.AttemptSucceeded, nil)
+	k := f.attempt("t1", "build", store.AttemptSucceeded, nil)
 	f.writeRecord(k, f.presented(k, "w2", launch.WorkspaceLabel(k)))
 	sw := f.sweep(time.Minute, time.Hour)
 	sw.session = ""
@@ -667,9 +667,9 @@ func TestWorkspaceCloseSweepWithoutASessionCallsNoHerdr(t *testing.T) {
 
 func TestWorkspaceCloseSweepAbandonsTheRoundWhenHerdrFails(t *testing.T) {
 	f := newSweepFixture(t)
-	k := f.attempt("t-1", "build", store.AttemptSucceeded, nil)
+	k := f.attempt("t1", "build", store.AttemptSucceeded, nil)
 	f.writeRecord(k, f.presented(k, "w2", launch.WorkspaceLabel(k)))
-	l := f.attempt("t-2", "build", store.AttemptSucceeded, `{"state":"launching"}`)
+	l := f.attempt("t2", "build", store.AttemptSucceeded, `{"state":"launching"}`)
 	f.host.fail = errors.New("herdr stopped: context deadline exceeded")
 	before, err := withStore(f.storePath, true, func(s *store.Store) ([]store.Receipt, error) { return s.Receipts() })
 	if err != nil {
@@ -699,7 +699,7 @@ func TestWorkspaceCloseSweepAbandonsTheRoundWhenHerdrFails(t *testing.T) {
 
 func TestWorkspaceCloseSweepSkipsTheRoundWhileOrderingHoldsTheLock(t *testing.T) {
 	f := newSweepFixture(t)
-	k := f.attempt("t-1", "build", store.AttemptSucceeded, nil)
+	k := f.attempt("t1", "build", store.AttemptSucceeded, nil)
 	f.writeRecord(k, f.presented(k, "w2", launch.WorkspaceLabel(k)))
 	f.locked = true
 	f.sweep(time.Minute, time.Hour).run()
@@ -710,9 +710,9 @@ func TestWorkspaceCloseSweepSkipsTheRoundWhileOrderingHoldsTheLock(t *testing.T)
 
 func TestWorkspaceCloseSweepReportsOnceAndForgetsWhatItClosed(t *testing.T) {
 	f := newSweepFixture(t)
-	closed := f.attempt("t-1", "build", store.AttemptSucceeded, nil)
+	closed := f.attempt("t1", "build", store.AttemptSucceeded, nil)
 	f.writeRecord(closed, f.presented(closed, "w2", launch.WorkspaceLabel(closed)))
-	busy := f.attempt("t-2", "build", store.AttemptSucceeded, nil)
+	busy := f.attempt("t2", "build", store.AttemptSucceeded, nil)
 	f.writeRecord(busy, f.presented(busy, "w3", launch.WorkspaceLabel(busy)))
 	f.workspace("w3").tabs[0].busy = true
 	f.sweep(time.Minute, time.Hour).run()
@@ -747,7 +747,7 @@ func TestWorkspaceCloseSweepReportsOnceAndForgetsWhatItClosed(t *testing.T) {
 
 func TestWorkspaceCloseSweepAfterARestartClosesWhatBecameDue(t *testing.T) {
 	f := newSweepFixture(t)
-	k := f.attempt("t-1", "build", store.AttemptSucceeded, nil)
+	k := f.attempt("t1", "build", store.AttemptSucceeded, nil)
 	f.writeRecord(k, f.presented(k, "w2", launch.WorkspaceLabel(k)))
 	// The supervisor's last sweep ran before the attempt was due, then the supervisor ended.
 	f.sweep(5*time.Minute, time.Minute).run()

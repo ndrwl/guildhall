@@ -667,7 +667,7 @@ func TestDirectorSessionServesTheTaskPages(t *testing.T) {
 	done := superviseWith(t, dir, time.Hour, func(a *App) { a.WebListen = stub.listen })
 	testenv.WaitFor(t, "session 1 serves", func() bool { return len(stub.bound()) == 1 })
 	first := stub.bound()[0]
-	if code, body := getPage(t, "http://"+first+"/app/t-1"); code != http.StatusOK || !strings.Contains(body, "Sort the task list") {
+	if code, body := getPage(t, "http://"+first+"/app/t1"); code != http.StatusOK || !strings.Contains(body, "Sort the task list") {
 		t.Errorf("page: %d\n%s", code, body)
 	}
 	if code, out, stderr := directorCmd(t, nil, "status", "--json", "--copy", dir); code != 0 || !strings.Contains(out, `"web":{"state":"serving","url":"http://host.tail.ts.net:4388","links":"markdown"}`) {
@@ -690,7 +690,7 @@ func TestDirectorSessionServesTheTaskPages(t *testing.T) {
 	if _, err := net.Dial("tcp", first); err == nil {
 		t.Error("session 1's server still listens after the reload")
 	}
-	if code, _ := getPage(t, "http://"+stub.bound()[1]+"/app/t-1"); code != http.StatusOK {
+	if code, _ := getPage(t, "http://"+stub.bound()[1]+"/app/t1"); code != http.StatusOK {
 		t.Errorf("session 2's page: %d", code)
 	}
 	copyRun(t, dir, "director", "stop", "--now")

@@ -204,7 +204,7 @@ func TestSayOnThePage(t *testing.T) {
 // marks; an option not offered is a usage error.
 func TestDecideOpenRecommend(t *testing.T) {
 	path := decideStorePath(t)
-	code, out, errOut := runDecide(t, "", "open", "--store", path, "--repo", "app", "--task", "t-1", "--question", "Back off or stop?", "--option", "back-off", "--option", "stop", "--recommend", "stop")
+	code, out, errOut := runDecide(t, "", "open", "--store", path, "--repo", "app", "--task", "t1", "--question", "Back off or stop?", "--option", "back-off", "--option", "stop", "--recommend", "stop")
 	if code != 0 {
 		t.Fatalf("open = %d %s", code, errOut)
 	}
@@ -212,11 +212,11 @@ func TestDecideOpenRecommend(t *testing.T) {
 	if d.ID != "q1" || d.Recommended != "stop" {
 		t.Fatalf("decision = %+v", d)
 	}
-	if code, again, _ := runDecide(t, "", "open", "--store", path, "--repo", "app", "--task", "t-1", "--question", "Back off or stop?", "--option", "back-off", "--option", "stop", "--recommend", "stop"); code != 0 ||
+	if code, again, _ := runDecide(t, "", "open", "--store", path, "--repo", "app", "--task", "t1", "--question", "Back off or stop?", "--option", "back-off", "--option", "stop", "--recommend", "stop"); code != 0 ||
 		decodeJSON[store.Decision](t, again).ID != "q1" {
 		t.Errorf("reopen = %d %s, want q1 again", code, again)
 	}
-	if code, _, errOut := runDecide(t, "", "open", "--store", path, "--repo", "app", "--task", "t-1", "--question", "Which?", "--option", "a", "--recommend", "b"); code != 2 ||
+	if code, _, errOut := runDecide(t, "", "open", "--store", path, "--repo", "app", "--task", "t1", "--question", "Which?", "--option", "a", "--recommend", "b"); code != 2 ||
 		!strings.Contains(errOut, "must be one of the --option values") {
 		t.Errorf("a recommendation not offered = %d %s", code, errOut)
 	}

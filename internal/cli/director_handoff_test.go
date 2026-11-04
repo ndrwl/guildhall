@@ -145,7 +145,7 @@ func TestDirectorReloadNowDuringAStage(t *testing.T) {
 	d := newRunDirectorWith(t, "grill.toml")
 	flags := []string{"--store", d.store, "--state", d.state}
 	recordSession(t, d.store, false, store.DirectorRunning)
-	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-1")...)...); code != 0 || out != `{"wait":"director-stage","step":"grill","attempt":1}`+"\n" {
+	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t1")...)...); code != 0 || out != `{"wait":"director-stage","step":"grill","attempt":1}`+"\n" {
 		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 	}
 	if code, out, stderr := runCLI(t, append([]string{"director", "reload", "--now"}, flags...)...); code != 0 {
@@ -164,12 +164,12 @@ func TestPlainReloadAppliesWithAGrillOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFile(t, cfg, strings.Replace(string(b), `workflow = "fake-straight"`, `workflow = "fake-grill"`, 1))
-	// fake-grill has no validate step, so it is below the review floor; t-1 was created on fake-straight by
+	// fake-grill has no validate step, so it is below the review floor; t1 was created on fake-straight by
 	// supervisedCopy.
 	approveRepo(t, d.store, cfg, "app")
-	newTask(t, d.store, cfg, "app", "Grill first", "t-2")
+	newTask(t, d.store, cfg, "app", "Grill first")
 	done := supervise(t, dir, 0)
-	code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t-2")...)...)
+	code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t2")...)...)
 	if code != 0 || !strings.Contains(out, `"wait":"director-stage"`) {
 		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 	}
@@ -197,7 +197,7 @@ func TestPlainReloadAppliesWithAGrillOpen(t *testing.T) {
 	}
 	found := false
 	for _, at := range v.Attempts {
-		if at.TaskID == "t-2" && at.Step == started.Step && at.Number == started.Attempt {
+		if at.TaskID == "t2" && at.Step == started.Step && at.Number == started.Attempt {
 			found = true
 			if at.Outcome != "" {
 				t.Errorf("grill attempt = %+v; want it unfinished", at)
@@ -205,9 +205,9 @@ func TestPlainReloadAppliesWithAGrillOpen(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("attempts = %+v; want attempt %d of %s of t-2", v.Attempts, started.Attempt, started.Step)
+		t.Errorf("attempts = %+v; want attempt %d of %s of t2", v.Attempts, started.Attempt, started.Step)
 	}
-	k := artisan.AttemptKey{Repository: "app", TaskID: "t-2", Step: started.Step, Attempt: started.Attempt}
+	k := artisan.AttemptKey{Repository: "app", TaskID: "t2", Step: started.Step, Attempt: started.Attempt}
 	if handed, err := interp.HandedToDirector(k.Dir(d.state)); err != nil || !handed {
 		t.Errorf("grill attempt handed = %v, %v; want still handed to the Director", handed, err)
 	}
@@ -288,7 +288,7 @@ func copyRun(t *testing.T, dir string, args ...string) {
 func TestReloadNowRestartsTheSessionAtTheTurnEnd(t *testing.T) {
 	dir, _ := supervisedCopy(t)
 	done := supervise(t, dir, time.Hour)
-	copyRun(t, dir, "director", "note", "add", "--kind", "plan", "Carry on with t-1.")
+	copyRun(t, dir, "director", "note", "add", "--kind", "plan", "Carry on with t1.")
 	copyRun(t, dir, "director", "reload", "--now")
 	holdsOne(t, dir, 1)
 	copyRun(t, dir, "director", "turn-ended")
@@ -301,7 +301,7 @@ func TestReloadNowRestartsTheSessionAtTheTurnEnd(t *testing.T) {
 		t.Errorf("reload = %+v; want --now applied from session 1 to 2", r)
 	}
 	startup, err := os.ReadFile(filepath.Join(dir, "director", "session-2", render.StartupFile))
-	if err != nil || !strings.Contains(string(startup), "## Notes\n\n### plan\n- n1 (s1, 0m): Carry on with t-1.\n\n## In flight") {
+	if err != nil || !strings.Contains(string(startup), "## Notes\n\n### plan\n- n1 (s1, 0m): Carry on with t1.\n\n## In flight") {
 		t.Errorf("session 2 startup.md = %s, %v; want it to list the note", startup, err)
 	}
 	holdsOne(t, dir, 2)

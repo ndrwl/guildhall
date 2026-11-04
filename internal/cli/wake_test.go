@@ -121,7 +121,7 @@ func TestMessagesSendToAnArtisanWakesNoDirector(t *testing.T) {
 	app.Getwd = func() (string, error) { return copyDir, nil }
 	app.Stdin = strings.NewReader(envelope("n-1", "artisan"))
 	app.DirectorPane = panes
-	if code := app.Run([]string{"messages", "send", "--store", path, "artisan:app/t-1/build/1", "-"}); code != 0 {
+	if code := app.Run([]string{"messages", "send", "--store", path, "artisan:app/t1/build/1", "-"}); code != 0 {
 		t.Fatalf("send: exit %d, stderr %s", code, stderr)
 	}
 	if ws := readWakes(t, path); len(ws) != 0 || len(panes.lines) != 0 {
@@ -153,7 +153,7 @@ func TestTheAdvanceWakesOutsideTheTaskLock(t *testing.T) {
 	pane := &slowPane{typing: make(chan struct{}), release: make(chan struct{})}
 	d.pane = pane
 	startSession(t, d.store, store.DirectorPane{Session: "lab", Workspace: "w1", Tab: "w1:t2", Pane: "w1:p2"})
-	start := append([]string{"task", "start"}, d.flags("t-1")...)
+	start := append([]string{"task", "start"}, d.flags("t1")...)
 	want := `{"wait":"director-stage","step":"grill","attempt":1}` + "\n"
 	type ran struct {
 		code        int
@@ -177,7 +177,7 @@ func TestTheAdvanceWakesOutsideTheTaskLock(t *testing.T) {
 	if r := <-first; r.code != 0 || r.out != want {
 		t.Errorf("the first task start: %+v", r)
 	}
-	if ws := readWakes(t, d.store); len(ws) != 1 || ws[0].MessageID != "app.t-1.stage.grill-1" || ws[0].Decision != store.WakeWoke {
+	if ws := readWakes(t, d.store); len(ws) != 1 || ws[0].MessageID != "app.t1.stage.grill-1" || ws[0].Decision != store.WakeWoke {
 		t.Errorf("wakes = %+v, want one woke for the stage message", ws)
 	}
 }

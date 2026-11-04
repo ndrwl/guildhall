@@ -38,19 +38,19 @@ func TestDirectorStatusRecoversUnlaunchedJudges(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := s.CreateTask("create", store.Task{Repository: "app", ID: "t-1", Title: "Delivered", Workflow: def.Revision(), ConfigDigest: "sha256:" + strings.Repeat("a", 64)}); err != nil {
+			if _, err := s.CreateTask("create", store.Task{Repository: "app", ID: "t1", Title: "Delivered", Workflow: def.Revision(), ConfigDigest: "sha256:" + strings.Repeat("a", 64)}); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := s.SetTaskState("done", "app", "t-1", store.TaskDone); err != nil {
+			if _, err := s.SetTaskState("done", "app", "t1", store.TaskDone); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := s.StartAttempt("unlaunched", "app", "t-1", workflow.JudgeStep); err != nil {
+			if _, err := s.StartAttempt("unlaunched", "app", "t1", workflow.JudgeStep); err != nil {
 				t.Fatal(err)
 			}
 			if err := s.Close(); err != nil {
 				t.Fatal(err)
 			}
-			key := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: workflow.JudgeStep, Attempt: 1}
+			key := artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: workflow.JudgeStep, Attempt: 1}
 			for name, data := range tc.files {
 				file := filepath.Join(key.Dir(state), filepath.FromSlash(name))
 				if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
@@ -69,9 +69,9 @@ func TestDirectorStatusRecoversUnlaunchedJudges(t *testing.T) {
 				t.Fatalf("recovery items: %+v", got.NeedsMe)
 			}
 			item := got.NeedsMe[0]
-			want := "guildhall quality judge --repo app t-1"
+			want := "guildhall quality judge --repo app t1"
 			if tc.review != "" {
-				want = "guildhall quality judge --repo app --review " + tc.review + " t-1"
+				want = "guildhall quality judge --repo app --review " + tc.review + " t1"
 			}
 			if item.Kind != "retry" || !item.Retryable || item.Resume || item.Attempt != 1 || item.Step != workflow.JudgeStep || item.Command != want {
 				t.Fatalf("unlaunched recovery = %+v, want %s", item, want)

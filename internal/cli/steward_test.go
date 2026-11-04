@@ -39,6 +39,7 @@ notes_dir = "notes"
 
 [[repository]]
 id = "cli"
+task_prefix = "c"
 path = '/srv/src/cli'
 remote = "git@github.com:example/cli.git"
 owner_machine = "workstation"

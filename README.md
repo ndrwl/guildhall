@@ -47,23 +47,23 @@ The session below is illustrative, not a transcript of a real task: the conversa
 
 > **You:** Add a health check endpoint to the app repository.
 >
-> **Director:** Created task t-2 in `app`. I'll research and plan it, then bring you the plan to accept.
+> **Director:** Created task a2 in `app`. I'll research and plan it, then bring you the plan to accept.
 >
 > *(later)*
 >
 > **You:** What needs me?
 >
-> **Director:** One decision: the plan for t-2 is ready. It adds `/healthz` and a test. Accept it?
+> **Director:** One decision: the plan for a2 is ready. It adds `/healthz` and a test. Accept it?
 >
 > **You:** Yes, but keep the migration behind a flag.
 >
-> **Director:** Recorded. Building t-2 now; I'll come back when it has been reviewed.
+> **Director:** Recorded. Building a2 now; I'll come back when it has been reviewed.
 >
 > *(later)*
 >
-> **Director:** t-2 passed review. Ready to merge?
+> **Director:** a2 passed review. Ready to merge?
 >
-> **You:** Merge it. And stop the build on t-3; I've changed my mind.
+> **You:** Merge it. And stop the build on a3; I've changed my mind.
 
 Behind the scenes each task follows a workflow; the default one is research, plan, your approval, build, independent review, then delivery under the repository's merge requirements.
 You can change it per repository, for example to review changes yourself instead of an agent.
@@ -152,7 +152,7 @@ The commands are the Director's tools; you can also call them yourself to script
 - `guildhall setup doctor`, `guildhall setup wizard` and `guildhall setup run`: check this machine against Guildhall's step files (Herdr, Go, Git and Claude Code, sign-in, WSL settings), close the fixable gaps and walk through the human ones as numbered steps; see [setup](docs/setup.md).
 - `guildhall signin`: check this machine's Claude Code, Codex and `gh` sign-ins with a real call, and print the command and link for a missing one; see [sign-in](docs/signin.md).
 - `guildhall secrets init`: create this machine's age key outside every copy and print its public key, for the secrets `director start` decrypts in memory; see [secrets](docs/secrets.md).
-- `guildhall task new|show|list|timeline|files|finding rule|review`: create and inspect tasks; see [tasks](docs/tasks.md).
+- `guildhall task new|show|list|timeline|files|finding rule|review`: create and inspect tasks, each new one under the next id Guildhall assigns from its repository's `task_prefix`, such as `d42`; see [tasks](docs/tasks.md#task-ids).
 - `guildhall task start` and `guildhall step done`: advance a task through its workflow; see [running a task](docs/running.md).
 - `guildhall task cancel`: end an open task for good, with a reason, closing its pull request and voiding its decisions; see [tasks](docs/tasks.md#task-cancel).
 - `guildhall task reconcile`: record a task done whose pull request was merged outside Guildhall; see [tasks](docs/tasks.md#task-reconcile).

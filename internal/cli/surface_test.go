@@ -80,13 +80,13 @@ func TestMessagesSendRecordsTheSenderFromWhereItRuns(t *testing.T) {
 	// The attempt marker wins over an inherited Director session, and inside an attempt messages send is refused
 	// outright (d173), so no message is ever recorded from the artisan sender.
 	if messageSender(func(k string) string {
-		return map[string]string{"GUILDHALL_ATTEMPT": "app/t-1/build/1", "GUILDHALL_SESSION": "1"}[k]
+		return map[string]string{"GUILDHALL_ATTEMPT": "app/t1/build/1", "GUILDHALL_SESSION": "1"}[k]
 	}, func() (string, error) { return copyDir, nil }, path) != store.SenderArtisan {
 		t.Error("an attempt in a Director session is not the artisan sender")
 	}
 	app, stdout, stderr := newTestApp(nil, nil)
 	app.Getenv = func(k string) string {
-		return map[string]string{"GUILDHALL_ATTEMPT": "app/t-1/build/1", "GUILDHALL_SESSION": "1"}[k]
+		return map[string]string{"GUILDHALL_ATTEMPT": "app/t1/build/1", "GUILDHALL_SESSION": "1"}[k]
 	}
 	app.Getwd = func() (string, error) { return copyDir, nil }
 	app.Stdin = strings.NewReader(envelope("n-artisan", "director"))
@@ -100,21 +100,21 @@ func TestMessagesSendRecordsTheSenderFromWhereItRuns(t *testing.T) {
 func TestGuildhallSendsRecordGuildhall(t *testing.T) {
 	path := messagingStorePath(t)
 	records := storeRecords{path: path}
-	e := messaging.Envelope{Schema: "guildhall.message/1", ID: "app.t-1.merged", Recipient: store.RecipientDirector, Repository: "app", Task: "t-1", Type: store.MessageMerged, Text: "Merged."}
+	e := messaging.Envelope{Schema: "guildhall.message/1", ID: "app.t1.merged", Recipient: store.RecipientDirector, Repository: "app", Task: "t1", Type: store.MessageMerged, Text: "Merged."}
 	if _, err := (wakingOutbox{records: records, stderr: &strings.Builder{}}).Send(store.Recipient{Role: store.RecipientDirector}, e); err != nil {
 		t.Fatal(err)
 	}
 	deferred := &deferredOutbox{records: records}
-	e.ID = "app.t-1.published"
+	e.ID = "app.t1.published"
 	if _, err := deferred.Send(store.Recipient{Role: store.RecipientDirector}, e); err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []string{"app.t-1.merged", "app.t-1.published"} {
+	for _, id := range []string{"app.t1.merged", "app.t1.published"} {
 		if m := readMessage(t, path, id); m.Sender != store.SenderGuildhall {
 			t.Errorf("%s sender = %q, want guildhall", id, m.Sender)
 		}
 	}
-	if m := leftOpenMessage(closeCandidate{key: artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}}, "busy"); m.Sender != store.SenderGuildhall {
+	if m := leftOpenMessage(closeCandidate{key: artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "build", Attempt: 1}}, "busy"); m.Sender != store.SenderGuildhall {
 		t.Errorf("left-open sender = %q, want guildhall", m.Sender)
 	}
 }
@@ -153,7 +153,7 @@ func sendSurfaced(t *testing.T, path, body string, env map[string]string, wd str
 }
 
 func directorEnvelope(id, typ, text string) string {
-	b, err := json.Marshal(messaging.Envelope{Schema: "guildhall.message/1", ID: id, Recipient: store.RecipientDirector, Repository: "app", Task: "t-1", Type: typ, Text: text})
+	b, err := json.Marshal(messaging.Envelope{Schema: "guildhall.message/1", ID: id, Recipient: store.RecipientDirector, Repository: "app", Task: "t1", Type: typ, Text: text})
 	if err != nil {
 		panic(err)
 	}
@@ -172,7 +172,7 @@ func TestMessagesSendSurfacesANoteBeforeTheWake(t *testing.T) {
 		t.Fatalf("send: exit %d, stderr %s", code, stderr)
 	}
 	want := []string{
-		"toast lab: guildhall: note from guildmaster about t-1 | Start d32 now. · guildhall messages read d32-request-1",
+		"toast lab: guildhall: note from guildmaster about t1 | Start d32 now. · guildhall messages read d32-request-1",
 		"wake: guildhall: 1 unread (note 1 from guildmaster)",
 	}
 	if !slices.Equal(log.events, want) {
@@ -210,7 +210,7 @@ func TestMessagesSendSurfacesOnlyNotesAndOtherDirectors(t *testing.T) {
 	if code, stderr := sendSurfaced(t, path, directorEnvelope("q-2", "question", "Can I take lib?"), other, markCopy(t, t.TempDir()), log); code != 0 || stderr != "" {
 		t.Fatalf("send: exit %d, stderr %s", code, stderr)
 	}
-	if len(log.events) != 2 || log.events[0] != "toast lab: guildhall: note from other-director about t-1 | Can I take lib? · guildhall messages read q-2" {
+	if len(log.events) != 2 || log.events[0] != "toast lab: guildhall: note from other-director about t1 | Can I take lib? · guildhall messages read q-2" {
 		t.Fatalf("events %q", log.events)
 	}
 }

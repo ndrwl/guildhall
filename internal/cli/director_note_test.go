@@ -12,7 +12,7 @@ import (
 // grouped by kind, flagging a note whose task is done, or "No notes." when there are none.
 func TestDirectorNoteCommands(t *testing.T) {
 	d := newRunDirector(t)
-	newTask(t, d.store, d.config, "app", "Another", "t-2")
+	newTask(t, d.store, d.config, "app", "Another")
 	flags := []string{"--store", d.store}
 	run := func(args ...string) (int, string, string) {
 		return runCLI(t, append(append([]string{"director", "note"}, args...), flags...)...)
@@ -29,9 +29,9 @@ func TestDirectorNoteCommands(t *testing.T) {
 		want string
 	}{
 		{[]string{"add", "--kind", "plan", "rebase d20 after d18 merges"}, "n1 added\n"},
-		{[]string{"add", "--kind", "promised", "--task", "app/t-1", "report when t-1 merges"}, "n2 added\n"},
+		{[]string{"add", "--kind", "promised", "--task", "app/t1", "report when t1 merges"}, "n2 added\n"},
 		{[]string{"add", "--kind", "guildmaster", "prefers short replies"}, "n3 added\n"},
-		{[]string{"add", "--task", "app/t-2", "--kind", "plan", "drop t-2 if t-1 covers it"}, "n4 added\n"},
+		{[]string{"add", "--task", "app/t2", "--kind", "plan", "drop t2 if t1 covers it"}, "n4 added\n"},
 		{[]string{"edit", "n1", "rebase d20 and d22 after d18 merges"}, "n1 edited\n"},
 		{[]string{"add", "--kind", "plan", "gone soon"}, "n5 added\n"},
 		{[]string{"remove", "n5", "--reason", "done"}, "n5 removed\n"},
@@ -41,21 +41,21 @@ func TestDirectorNoteCommands(t *testing.T) {
 		}
 	}
 	if _, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
-		return s.SetTaskState("finish-t-1", "app", "t-1", store.TaskDone)
+		return s.SetTaskState("finish-t1", "app", "t1", store.TaskDone)
 	}); err != nil {
 		t.Fatal(err)
 	}
 	code, out, stderr := run("list")
-	want := "### promised\n- n2 app/t-1 (s1, 0m): report when t-1 merges [task done, check it]\n" +
+	want := "### promised\n- n2 app/t1 (s1, 0m): report when t1 merges [task done, check it]\n" +
 		"### guildmaster\n- n3 (s1, 0m): prefers short replies\n" +
-		"### plan\n- n1 (s1, 0m): rebase d20 and d22 after d18 merges\n- n4 app/t-2 (s1, 0m): drop t-2 if t-1 covers it\n"
+		"### plan\n- n1 (s1, 0m): rebase d20 and d22 after d18 merges\n- n4 app/t2 (s1, 0m): drop t2 if t1 covers it\n"
 	if code != 0 || out != want {
 		t.Fatalf("list: exit %d, stderr %s\n%s\nwant\n%s", code, stderr, out, want)
 	}
 	for name, args := range map[string][]string{
 		"bad kind":         {"add", "--kind", "doing", "x"},
 		"multi-line":       {"add", "--kind", "plan", "a\nb"},
-		"unknown task":     {"add", "--kind", "plan", "--task", "app/t-9", "x"},
+		"unknown task":     {"add", "--kind", "plan", "--task", "app/t9", "x"},
 		"unknown note":     {"edit", "n9", "x"},
 		"removed note":     {"edit", "n5", "x"},
 		"removed again":    {"remove", "n5", "--reason", "other"},

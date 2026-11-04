@@ -55,7 +55,7 @@ func TestInterruptedAdvanceReleasesTheTask(t *testing.T) {
 	}
 	done := func(name string) {
 		d.waitResult(t, name, 1)
-		step(append([]string{"step", "done"}, d.flags("--task", "t-1", "--step", name, "--attempt", "1", "--result", d.result(name, 1))...)...)
+		step(append([]string{"step", "done"}, d.flags("--task", "t1", "--step", name, "--attempt", "1", "--result", d.result(name, 1))...)...)
 	}
 	answer := func(decision, words string) {
 		t.Helper()
@@ -63,15 +63,15 @@ func TestInterruptedAdvanceReleasesTheTask(t *testing.T) {
 		if err := os.WriteFile(file, []byte(words), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		step("decide", "answer", "--store", d.store, "--repo", "app", "--task", "t-1", "--decision", decision, "--answer-file", file)
+		step("decide", "answer", "--store", d.store, "--repo", "app", "--task", "t1", "--decision", decision, "--answer-file", file)
 	}
-	step(append([]string{"task", "start"}, d.flags("t-1")...)...)
+	step(append([]string{"task", "start"}, d.flags("t1")...)...)
 	done("plan")
 	answer("accept-1", "approved\n")
-	step(append([]string{"task", "start"}, d.flags("--decision", "accept-1", "t-1")...)...)
+	step(append([]string{"task", "start"}, d.flags("--decision", "accept-1", "t1")...)...)
 	done("build")
 	answer("sign-off-1", "approved\n")
-	step(append([]string{"task", "start"}, d.flags("--decision", "sign-off-1", "t-1")...)...)
+	step(append([]string{"task", "start"}, d.flags("--decision", "sign-off-1", "t1")...)...)
 	answer("deliver-1", "merge\n")
 
 	merging := make(chan struct{})
@@ -83,19 +83,19 @@ func TestInterruptedAdvanceReleasesTheTask(t *testing.T) {
 		case <-time.After(testenv.Ceiling(time.Minute)):
 		}
 	}()
-	if code, out, _ := d.run(t, append([]string{"task", "start"}, d.flags("--decision", "deliver-1", "t-1")...)...); code == 0 {
+	if code, out, _ := d.run(t, append([]string{"task", "start"}, d.flags("--decision", "deliver-1", "t1")...)...); code == 0 {
 		t.Fatalf("interrupted task start: exit 0, %s", out)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), testenv.Ceiling(30*time.Second))
 	defer cancel()
-	release, err := artisan.LockAttempt(ctx, filepath.Join(d.state, "app", "t-1"))
+	release, err := artisan.LockAttempt(ctx, filepath.Join(d.state, "app", "t1"))
 	if err != nil {
 		t.Fatalf("task lock after the interrupt: %v", err)
 	}
 	release()
 
 	d.forge = f
-	if got := step(append([]string{"task", "start"}, d.flags("--decision", "deliver-1", "t-1")...)...); got != `{"wait":"done","step":"deliver"}` {
+	if got := step(append([]string{"task", "start"}, d.flags("--decision", "deliver-1", "t1")...)...); got != `{"wait":"done","step":"deliver"}` {
 		t.Fatalf("replayed advance: %s", got)
 	}
 	if prs := f.PullRequests(remote); len(prs) != 1 || prs[0].State != forge.Merged {
@@ -117,7 +117,7 @@ func TestTheWatcherReportsAnInterruptedLaunch(t *testing.T) {
 	if err := os.WriteFile(plan, append(guide, "guildhall-fake: result=never\nguildhall-fake: lifetime=1m\n"...), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	k := artisan.AttemptKey{Repository: "app", TaskID: "t-1", Step: "plan", Attempt: 1}
+	k := artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: "plan", Attempt: 1}
 	if err := os.MkdirAll(k.Dir(d.state), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestTheWatcherReportsAnInterruptedLaunch(t *testing.T) {
 			}
 		}
 	}()
-	if code, out, stderr := d.run(t, "task", "start", "--copy", dir, "--repo", "app", "t-1"); code == 0 {
+	if code, out, stderr := d.run(t, "task", "start", "--copy", dir, "--repo", "app", "t1"); code == 0 {
 		t.Fatalf("interrupted task start: exit 0, %q, stderr %s", out, stderr)
 	}
 	select {
@@ -156,7 +156,7 @@ func TestTheWatcherReportsAnInterruptedLaunch(t *testing.T) {
 	for end := time.Now().Add(testenv.Ceiling(time.Minute)); ; time.Sleep(50 * time.Millisecond) {
 		s, err := store.Open(d.store, store.Options{ReadOnly: true})
 		if err == nil {
-			msg, err = s.Message("app.t-1.attempt-failed.plan-1")
+			msg, err = s.Message("app.t1.attempt-failed.plan-1")
 			_ = s.Close()
 		}
 		if err == nil {
