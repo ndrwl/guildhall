@@ -187,6 +187,7 @@ func (b webBuilder) task() web.Task {
 	t.Slices = b.slices()
 	t.Status = b.status()
 	t.Steps = b.steps()
+	t.Grill = b.grillLine()
 	t.Story = b.story(t.Documents)
 	for _, e := range b.h.Conversation {
 		t.Conversation = append(t.Conversation, web.Message{Number: e.Number, Author: e.Author, Tag: e.Tag, Stage: webTagStage(e.Tag),
@@ -488,13 +489,19 @@ func (b webBuilder) steps() []web.Step {
 		return nil
 	}
 	cur := b.current()
+	def, _ := workflow.ApplyGrillMode(b.def, b.grillMode().Mode)
 	var out []web.Step
-	for _, s := range b.def.Steps {
+	for _, s := range def.Steps {
 		slice := 1
-		if b.def.InSlices(s.ID) {
+		if def.InSlices(s.ID) {
 			slice = cur
 		}
 		st := web.Step{Name: webStepName(s.ID), State: web.StateLater, Note: "later"}
+		// An Artisan grill has no rounds with the Guildmaster, so its row names it and says finished, not rounds.
+		unattended := s.Type == "grill" && s.Actor() == workflow.ArtisanActor
+		if unattended {
+			st.Name = webUnattendedGrill
+		}
 		var last *timedAttempt
 		rounds := 0
 		for i := range b.tl.Attempts {
@@ -509,6 +516,9 @@ func (b webBuilder) steps() []web.Step {
 				st.State, st.Note = web.StateRunning, "running"
 			case store.AttemptSucceeded:
 				st.State, st.Note = web.StateDone, webCount(rounds, "round")
+				if unattended {
+					st.Note = "finished"
+				}
 			default:
 				st.State, st.Note = web.StateFailed, string(last.Outcome)
 			}
@@ -535,6 +545,21 @@ func (b webBuilder) steps() []web.Step {
 		out = append(out, st)
 	}
 	return out
+}
+
+// grillMode is the task's grill mode in effect: its latest record, or live for a task with none.
+func (b webBuilder) grillMode() store.GrillMode {
+	return store.CurrentGrillMode(b.h.GrillModes)
+}
+
+// grillLine is the band's grill-mode line, task show's "grill: unattended (director): <reason>" or "grill: live";
+// "" for a task whose workflow has no grill step and that has no grill-mode record, such as a bug.
+func (b webBuilder) grillLine() string {
+	g := b.grillMode()
+	if g.Number == 0 && (b.def == nil || !slices.ContainsFunc(b.def.Steps, func(s workflow.Step) bool { return s.Type == "grill" })) {
+		return ""
+	}
+	return g.Line()
 }
 
 // webCount says n of a noun: "1 round", "3 rounds".

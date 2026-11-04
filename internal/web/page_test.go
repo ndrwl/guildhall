@@ -222,6 +222,27 @@ func TestTaskPageEmpty(t *testing.T) {
 	}
 }
 
+// TestTaskPageGrillMode: the band shows the task's grill-mode line under where it stands, and the stepper the row's
+// name and note as the Source gives them (d172); a task with no line shows none.
+func TestTaskPageGrillMode(t *testing.T) {
+	task := Task{Repository: "r", ID: "t1", Title: "A task", State: "open", Stands: "not started",
+		Grill: "grill: unattended (director): contracts <already> written",
+		Steps: []Step{{Name: "Unattended grill (Artisan)", State: StateDone, Note: "finished"}, {Name: "Research", State: StateLater, Note: "later"}}}
+	s := New(Options{Source: &fakeSource{tasks: map[string]Task{"r/t1": task, "r/t2": {Repository: "r", ID: "t2", Title: "A bug", State: "open", Stands: "not started"}}}, Location: time.UTC, Host: testHost})
+	body := get(t, s, "/r/t1").Body.String()
+	for _, want := range []string{
+		`<p class="ws"><b>Not started.</b></p>` + "\n" + `<p class="gm">grill: unattended (director): contracts &lt;already&gt; written</p>`,
+		`<li class="ok"><b>Unattended grill (Artisan)</b>finished</li>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page lacks %s", want)
+		}
+	}
+	if body := get(t, s, "/r/t2").Body.String(); strings.Contains(body, `class="gm"`) {
+		t.Error("a task with no grill line shows one")
+	}
+}
+
 // TestRoutes: unknown paths, other methods, a missing task, a busy store and a failing source each give their
 // refusal page with no detail.
 func TestRoutes(t *testing.T) {
