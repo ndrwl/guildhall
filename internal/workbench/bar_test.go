@@ -8,7 +8,7 @@ import (
 )
 
 // TestBarFull: on a pane BarWidth wide or wider the bar is four lines and a rule; with colour off the start time
-// stands in for the elapsed time and tokens, and a bar with no URL, slices or Asked: line leaves those out.
+// stands in for the elapsed time and tokens, as it does with colour on when the bar is not pinned, and a bar with no URL, slices or Asked: line leaves those out.
 func TestBarFull(t *testing.T) {
 	start := time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC)
 	now := start.Add(42 * time.Second)
@@ -32,16 +32,25 @@ func TestBarFull(t *testing.T) {
 	}
 
 	out.Reset()
-	r = NewRenderer(&out, Options{Width: 80, Color: true, Location: time.UTC})
+	r = NewRenderer(&out, Options{Width: 80, Height: 24, Color: true, Location: time.UTC})
 	r.Event(Usage(Tokens{Input: 1, Output: 900, CacheRead: 400}))
 	r.Bar(b, now)
 	if !strings.Contains(out.String(), "build · slice 3 of 4 · attempt 2 · started 09:00:00 · 42s · 1.3k tok") {
-		t.Errorf("live bar lacks its elapsed time and tokens:\n%s", visible(out.String()))
+		t.Errorf("pinned bar lacks its elapsed time and tokens:\n%s", visible(out.String()))
+	}
+
+	// A coloured bar that cannot be pinned, its height unknown, is printed once like a plain one.
+	out.Reset()
+	r = NewRenderer(&out, Options{Width: 80, Color: true, Location: time.UTC})
+	r.Event(Usage(Tokens{Output: 900}))
+	r.Bar(b, now)
+	if s := stripSGR(out.String()); !strings.Contains(s, "build · slice 3 of 4 · attempt 2 · started 09:00:00\n") {
+		t.Errorf("coloured bar printed once shows more than its start time:\n%s", visible(out.String()))
 	}
 }
 
 // TestBarOneLine: below BarWidth the bar is one line, fields dropped from the right until it fits, a rule, and the
-// URL unbroken however long it is.
+// URL unbroken however long it is. Printed once, it shows the start time; pinned, the elapsed time and tokens.
 func TestBarOneLine(t *testing.T) {
 	start := time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC)
 	b := Bar{Repository: "guildhall", Task: "d169", Title: "ignored", Step: "build", Slice: 3, Slices: 4, Attempt: 1,
@@ -51,8 +60,8 @@ func TestBarOneLine(t *testing.T) {
 		color bool
 		want  string
 	}{
-		{59, true, "d169 build · attempt 1 · 6m09s · 214k tok"},
-		{40, true, "d169 build · attempt 1 · 6m09s"},
+		{59, true, "d169 build · attempt 1 · started 09:00:00"},
+		{40, true, "d169 build · attempt 1"},
 		{40, false, "d169 build · attempt 1"},
 		{50, false, "d169 build · attempt 1 · started 09:00:00"},
 	} {
@@ -64,6 +73,17 @@ func TestBarOneLine(t *testing.T) {
 		want := []string{tc.want, strings.Repeat("─", tc.width), b.URL}
 		if strings.Join(lines, "\n") != strings.Join(want, "\n") {
 			t.Errorf("width %d colour %v: %q, want %q", tc.width, tc.color, lines, want)
+		}
+	}
+
+	// Pinned, the one-line bar is live, and fields drop from the right until it fits.
+	for width, want := range map[int]string{59: "d169 build · attempt 1 · 6m09s · 214k tok", 40: "d169 build · attempt 1 · 6m09s"} {
+		var out bytes.Buffer
+		r := NewRenderer(&out, Options{Width: width, Height: 24, Color: true, Location: time.UTC})
+		r.Event(Usage(Tokens{Input: 214_000}))
+		r.Bar(b, start.Add(6*time.Minute+9*time.Second))
+		if !strings.Contains(out.String(), "m"+want+"\x1b[0m") {
+			t.Errorf("width %d pinned: %q lacks %q", width, out.String(), want)
 		}
 	}
 }

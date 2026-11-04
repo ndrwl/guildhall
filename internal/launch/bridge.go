@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"time"
 
@@ -107,8 +108,30 @@ func Present(b Bridge, out io.Writer) error {
 	if b.Output == workbench.OutputPlain {
 		return presentPlain(b, logPath, done, out)
 	}
-	return presentWorkbench(b, logPath, done, out, workbench.Detect(out, os.Getenv), time.Now)
+	resized, stopResize := workbench.WatchResize(out)
+	defer stopResize()
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, artisan.StopSignals...)
+	defer signal.Stop(stop)
+	return presentWorkbench(b, logPath, done, out, pane{Opts: workbench.Detect(out, os.Getenv), Now: time.Now,
+		Resized: resized, Size: func() (int, int) { return workbench.Size(out) }, Stop: stop})
 }
+
+// pane is the terminal a Workbench is shown on.
+type pane struct {
+	Opts workbench.Options
+	// Now is the clock.
+	Now func() time.Time
+	// Resized receives when the pane may have been resized, and Size is then its width and height, zero when
+	// unknown; both are nil for a pane that is not a terminal.
+	Resized <-chan struct{}
+	Size    func() (cols, rows int)
+	// Stop receives a signal that ends the bridge: SIGINT, SIGTERM or SIGHUP.
+	Stop <-chan os.Signal
+}
+
+// redrawInterval is how often a pinned status bar is redrawn.
+const redrawInterval = time.Second
 
 // presentPlain copies launcher.log to out unchanged, as before the Workbench, then the banner as plain text and
 // FinishLine.
@@ -134,16 +157,25 @@ func presentPlain(b Bridge, logPath string, done <-chan error, out io.Writer) er
 	}
 }
 
-// presentWorkbench shows the Workbench on out until done, with opts and the clock now.
-func presentWorkbench(b Bridge, logPath string, done <-chan error, out io.Writer, opts workbench.Options, now func() time.Time) error {
-	r := workbench.NewRenderer(out, opts)
+// presentWorkbench shows the Workbench on p until done. A pinned status bar is redrawn once a second and at a
+// resize, and its scroll region is reset on every way out: before the banner, on an output error and on a stop
+// signal, which ends the presentation but never the launcher.
+func presentWorkbench(b Bridge, logPath string, done <-chan error, out io.Writer, p pane) error {
+	now := p.Now
+	r := workbench.NewRenderer(out, p.Opts)
+	defer r.Unpin()
 	r.Bar(b.bar(), now())
 	s := workbench.NewSession(r, logPath, b.Attempt.Dir(), now())
 	defer s.Close()
+	redraw := now().Add(redrawInterval)
 	for {
 		// Output errors are presentation errors only: the child remains owned.
 		if err := s.Poll(now()); err != nil {
 			return err
+		}
+		if t := now(); !t.Before(redraw) {
+			r.Redraw(t)
+			redraw = t.Add(redrawInterval)
 		}
 		select {
 		case err := <-done:
@@ -152,6 +184,12 @@ func presentWorkbench(b Bridge, logPath string, done <-chan error, out io.Writer
 			r.Println("\n" + FinishLine(b.CloseAfter))
 			r.Close()
 			return err
+		case <-p.Resized:
+			w, h := p.Size()
+			r.Resize(w, h, now())
+		case sig := <-p.Stop:
+			r.Close()
+			return fmt.Errorf("pane bridge stopped by %v; the attempt's launcher carries on", sig)
 		case <-time.After(pollInterval):
 		}
 	}

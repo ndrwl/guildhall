@@ -40,6 +40,9 @@ type Options struct {
 	Width int
 	// Color allows SGR codes; without it the output holds no ESC byte.
 	Color bool
+	// Height is the terminal's rows, zero when unknown or not a terminal. With colour and a known height the status
+	// bar is pinned above a scroll region.
+	Height int
 	// Location is the zone of tool-line timestamps; nil is time.Local.
 	Location *time.Location
 }
@@ -58,7 +61,9 @@ type Renderer struct {
 	thinking bool
 	// tokens are the latest KindUsage totals.
 	tokens Tokens
-	err    error
+	// pin is the status bar, nil before Bar.
+	pin *pin
+	err error
 }
 
 // Tokens are the latest token totals a KindUsage event reported, zero before any.
@@ -87,6 +92,12 @@ type span struct {
 // line writes spans as one line: SGR codes only when colour is on, and a reset after any coloured line.
 func (r *Renderer) line(spans ...span) {
 	r.thinking = false
+	r.write(r.format(spans) + "\n")
+}
+
+// format is spans as one line with no newline: SGR codes only when colour is on, and a reset after any coloured
+// line.
+func (r *Renderer) format(spans []span) string {
 	var b strings.Builder
 	coloured := false
 	cur := plain
@@ -103,8 +114,7 @@ func (r *Renderer) line(spans ...span) {
 	if coloured {
 		b.WriteString(reset)
 	}
-	b.WriteByte('\n')
-	r.write(b.String())
+	return b.String()
 }
 
 func (r *Renderer) write(s string) {
@@ -117,9 +127,11 @@ func (r *Renderer) write(s string) {
 // Println writes s, Guildhall's own text, unchanged and unstyled, then a newline.
 func (r *Renderer) Println(s string) { r.write(s + "\n") }
 
-// Close writes any open burst's summary and resets the terminal's graphic rendition when colour is on.
+// Close writes any open burst's summary, unpins the status bar and resets the terminal's graphic rendition when
+// colour is on.
 func (r *Renderer) Close() {
 	r.endBurst(time.Time{})
+	r.Unpin()
 	if r.opts.Color {
 		r.write(reset)
 	}
@@ -241,10 +253,12 @@ type Closing struct {
 	URL     string
 }
 
-// Banner writes the closing banner: the result's status, or that no result was written, then c's elapsed time,
-// cost and tokens on the same line, the result's summary wrapped, and the task's page as its last line.
+// Banner unpins the status bar, then writes the closing banner: the result's status, or that no result was
+// written, then c's elapsed time, cost and tokens on the same line, the result's summary wrapped, and the task's
+// page as its last line.
 func (r *Renderer) Banner(res *Result, c Closing) {
 	r.endBurst(time.Time{})
+	r.Unpin()
 	r.line()
 	r.line(span{strings.Repeat("─", r.opts.Width), dim})
 	var facts []string
