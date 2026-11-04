@@ -547,6 +547,10 @@ type Profile struct {
 	// list, even an empty one, replaces that default. A pointer keeps the difference through JSON while leaving the
 	// config digest of a config that sets no empty list unchanged.
 	AllowedTools *[]string `toml:"allowed_tools" json:",omitempty"`
+	// InheritEnv are the names of this machine's injected secrets (docs/secrets.md) the profile's Artisans are
+	// given; every other injected name is withheld from them. Its entries are environment variable names, never
+	// values.
+	InheritEnv []string `toml:"inherit_env" json:",omitempty"`
 }
 
 // AllowedToolsSet reports whether the profile sets allowed_tools, even to an empty list.
@@ -897,6 +901,7 @@ func (c *Config) validate() []string {
 			add("profile %q: runs the %s adapter, which runs read-only and grants no allowed_tools; remove allowed_tools", name, p.Adapter)
 		}
 		problems = append(problems, checkAllowedTools(fmt.Sprintf("profile %q", name), p.AllowedToolsList())...)
+		problems = append(problems, checkInheritEnv(fmt.Sprintf("profile %q", name), p.InheritEnv)...)
 	}
 
 	if st := c.Steward; st != nil {
@@ -1072,6 +1077,25 @@ func checkAllowedTools(where string, rules []string) []string {
 			problems = append(problems, fmt.Sprintf("%s: allowed_tools lists %q twice", where, rule))
 		}
 		seen[rule] = true
+	}
+	return problems
+}
+
+// envNamePattern is an environment variable name in the portable shell form.
+var envNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// checkInheritEnv reports each inherit_env entry for where that is not an environment variable name or that the
+// list repeats. A name such as API_KEY is allowed: it names a secret and holds none.
+func checkInheritEnv(where string, names []string) []string {
+	var problems []string
+	seen := map[string]bool{}
+	for _, n := range names {
+		if !envNamePattern.MatchString(n) {
+			problems = append(problems, fmt.Sprintf("%s: inherit_env: %q is not an environment variable name", where, n))
+		} else if seen[n] {
+			problems = append(problems, fmt.Sprintf("%s: inherit_env lists %q twice", where, n))
+		}
+		seen[n] = true
 	}
 	return problems
 }

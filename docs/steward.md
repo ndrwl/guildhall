@@ -64,6 +64,7 @@ guildhall steward start [runtime] [--tab] [--check] [--copy <dir>]
 
 `steward start` runs the same supervisor as [`director start`](director.md#start), with the Steward's own preflight and steps.
 Its preflight checks, in order: the config is a Steward config with a `[steward] name` and no `managed.toml` beside it, since a Steward copy is never managed; the runtime is known and on `PATH`; `guildhall` is on `PATH`; `steward.store` opens; the private config location is an absolute directory that is a Git work tree; its roster is valid; and `ssh` and `scp` are on `PATH`.
+Like `director start`, it then decrypts the machine's [secrets file](secrets.md#at-start) in memory, withheld from the Steward's runtime.
 `--check` runs the preflight only, then probes the [sign-in](signin.md#in-the-start-preflight) of the Steward copy's runtimes, report only, never `gh`; and `--tab` opens the tab `steward <name>` in the Herdr workspace named by `[steward] name`, as a Director's tab opens in its own.
 Each session renders the release's `roles/steward.md`, or the copy's `baseline/roles/steward.md`, and every release skill, and its `startup.md` lists the live notes and the decisions in flight: each rollout approval waiting for the Guildmaster, each one they approved, and each open [triage](#triage) decision.
 A session starts `recovering` and starts nothing new until `guildhall steward ready`.
@@ -138,6 +139,7 @@ A rollout only reaches machines and Director copies that are already in the rost
 An existing Director copy is brought into the roster by a [takeover](#takeover), or by hand ([managing a Director copy](#managing-a-director-copy)).
 Creating the machine's Guildhall account, SSH setup, host-key trust, Claude and forge sign-in and administrator steps belong to the setup wizard (R1.43-R1.51), which is not implemented yet; its sign-in step is built as the standalone [`guildhall signin`](signin.md), which checks, guides and verifies each runtime's sign-in on the machine it runs on.
 A rollout never adds a machine, account, Director or repository to the roster, never creates a Director copy and never asks for or stores a credential.
+Each machine's other [secrets](secrets.md) are sops ciphertext encrypted to its own age key, from `guildhall secrets init`, and decrypted in memory by `director start` and `steward start`; until the Steward pushes them, a separate command from rollouts, they are written by hand on each machine.
 
 Once a copy is enrolled, a routine rollout runs without repeating setup.
 Changes outside routine authority need the Guildmaster's approval of the exact plan, as described under [approval](#approval).

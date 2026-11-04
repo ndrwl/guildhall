@@ -26,6 +26,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/herdr"
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/quality"
+	"github.com/ndrwl/guildhall/internal/secrets"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workbench"
 	"github.com/ndrwl/guildhall/internal/workflow"
@@ -310,7 +311,7 @@ func (a *App) artisanStart(args []string) int {
 				return a.fail(err)
 			}
 			argv := append([]string{exe, "artisan", "start"}, bridgeArgs(args)...)
-			if err := launch.Present(launch.Bridge{Argv: argv, Env: os.Environ(), Attempt: at, CloseAfter: closeAfter, Output: paneOutput}, a.Stderr); err != nil {
+			if err := launch.Present(launch.Bridge{Argv: argv, Env: secrets.Strip(os.Environ()), Attempt: at, CloseAfter: closeAfter, Output: paneOutput}, a.Stderr); err != nil {
 				return a.fail(err)
 			}
 			return 0
@@ -397,6 +398,11 @@ func (a *App) runOwned(at launch.Attempt, adapterName, prompt, workdir, copyDir,
 	if err != nil {
 		return a.fail(err)
 	}
+	inherited, err := a.inheritedSecrets(spec.Copy, profile)
+	if err != nil {
+		return a.fail(fmt.Errorf("artisan start: inherit_env: %w", err))
+	}
+	cmd = withInherited(cmd, inherited)
 	ctx := context.Background()
 	signals := make(chan os.Signal, 4)
 	signal.Notify(signals, artisan.StopSignals...)

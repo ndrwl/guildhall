@@ -43,6 +43,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/render"
+	"github.com/ndrwl/guildhall/internal/secrets"
 	"github.com/ndrwl/guildhall/internal/workbench"
 )
 
@@ -177,6 +178,8 @@ type Args struct {
 	// Settings are passed to Claude Code as --model and --effort, each only when set.
 	adapter.Settings
 	allowedTools []string
+	// redactor replaces the inherited secret values in the event file and the published result; nil is none.
+	redactor *secrets.Redactor
 }
 
 // ParseArgs parses the wrapper arguments; the prompt and result paths must be absolute
@@ -449,6 +452,11 @@ func Run(ctx context.Context, a Args, stdout, stderr io.Writer) error {
 	if err := (Adapter{}).CheckSettings(a.Settings); err != nil {
 		return err
 	}
+	// Values the Artisan inherited through its profile's inherit_env are redacted from its output, so from
+	// launcher.log, from the Workbench event file and from the result (docs/secrets.md#redaction).
+	red := secrets.FromEnv(os.Getenv)
+	stdout, stderr = red.Writer(stdout), red.Writer(stderr)
+	a.redactor = red
 	var err error
 	a.allowedTools, err = ProfileTools(a.Copy, a.Profile, a.Repository)
 	if err != nil {
@@ -497,7 +505,7 @@ func Run(ctx context.Context, a Args, stdout, stderr io.Writer) error {
 	defer stopReady(nil)
 	cmd := exec.CommandContext(ctx, path, ClaudeArgs(a)...)
 	output := &limitedBuffer{limit: maxOutputBytes}
-	events, closeEvents := openEvents(a.ResultFile)
+	events, closeEvents := openEvents(a.ResultFile, a.redactor)
 	defer closeEvents()
 	stream := &readableStream{out: stdout, events: events, result: output}
 	act := newActivity()
@@ -542,13 +550,14 @@ func WorkbenchPath(result string) string {
 }
 
 // openEvents opens the attempt's Workbench event file for append, and returns its writer and a closer. A file
-// that cannot be opened writes no events, and is never an error: the event file is presentation only.
-func openEvents(result string) (*workbench.Writer, func()) {
+// that cannot be opened writes no events, and is never an error: the event file is presentation only. Each event
+// line has red's values redacted.
+func openEvents(result string, red *secrets.Redactor) (*workbench.Writer, func()) {
 	f, err := os.OpenFile(WorkbenchPath(result), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil, func() {}
 	}
-	return workbench.NewWriter(f), func() { _ = f.Close() }
+	return workbench.NewWriter(red.Writer(f)), func() { _ = f.Close() }
 }
 
 // exitStatus is the exit status err reports for Claude's process: 0 for none, the process's status, or -1 when
@@ -831,6 +840,7 @@ func publish(draft string, a Args) error {
 	if err != nil {
 		return err
 	}
+	data = a.redactor.Bytes(data)
 	tmp, err := os.CreateTemp(filepath.Dir(a.ResultFile), "."+filepath.Base(a.ResultFile)+".*.tmp")
 	if err != nil {
 		return err

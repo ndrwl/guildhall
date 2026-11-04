@@ -292,7 +292,7 @@ func TestShippedProfiles(t *testing.T) {
 	if p := cfg.Profiles["reviewer"]; !reflect.DeepEqual(p, Profile{Adapter: "fake", Model: "m"}) {
 		t.Errorf("reviewer = %+v, want the copy's section alone", p)
 	}
-	if ShippedProfiles["reviewer"] != (Profile{Adapter: "claude"}) {
+	if !reflect.DeepEqual(ShippedProfiles["reviewer"], Profile{Adapter: "claude"}) {
 		t.Errorf("a copy section changed the shipped reviewer: %+v", ShippedProfiles["reviewer"])
 	}
 

@@ -36,7 +36,7 @@ A requirement describes intended behaviour, not shipped behaviour: see the READM
 | # | Requirement |
 |---|---|
 | R1.9 | Each Director copy has its own configuration: a `mode` (steward or director), a private-configuration reference (Steward only), a `managed` section written only by Steward pushes, a `local` section owned by the Director, and a repository list (path, remote, owner machine, merge requirements). Each managed key says whether a local override is allowed *(default: the exact layout)*. `mode` keeps meaning steward or director: whether a Director copy is standalone or managed is a store fact, its newest enrolment event, and the managed section is the separate `managed.toml` ([director modes](director-modes.md#mode)) |
-| R1.10 | No configuration contains credentials; sign-in stays in each runtime's own store |
+| R1.10 | No configuration contains credentials in clear; sign-in stays in each runtime's own store; other secrets exist only as per-machine ciphertext and in a process's memory ([secrets](secrets.md)) |
 | R1.11 | Workflows are JSON (R1.56). The rest of the copy configuration is TOML *(default)*. Every schema is versioned, and an unknown newer schema version is refused rather than guessed |
 
 ## Workflow and state

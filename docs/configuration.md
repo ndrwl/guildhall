@@ -296,8 +296,9 @@ Names are lowercase identifiers, so three review stages can name `reviewer-opus`
 | `model`, `effort` | The attempt's [runtime settings](adapters.md#runtime-settings), which defines defaults, supported values and refusals. |
 | `role` | A role prompt replacing the release's Artisan role: a relative slash-separated path inside the config file's directory. |
 | `allowed_tools` | The tool permission rules this Director grants the profile's Artisan beyond its runtime's baseline, such as `["Bash(go test:*)", "Bash(git commit:*)"]`. Unset, a `claude` profile named `builder`, `designer`, `planner`, `rebaser`, `reviewer` or `researcher`, shipped or declared, gets its shipped default grant and one of another name gets nothing; a set list, even `[]`, replaces that default. A repository grant adds to either. Only the `claude` adapter grants them ([Artisan permissions](adapters.md#artisan-permissions), with the default table and the suggested Go repository grant). |
+| `inherit_env` | The names of this machine's [injected secrets](secrets.md#model-driven-processes-get-none) the profile's owned Artisans get, such as `["OPENAI_API_KEY"]`; every other injected name is withheld from them, and unset gives none. Each entry is an environment variable name, listed once, never a value. |
 
-A profile names no credential.
+A profile names no credential: `inherit_env` names secrets and holds none.
 For how the copy/profile reference reaches the runtime, see [Artisan permissions](adapters.md#artisan-permissions).
 
 Each `allowed_tools` entry is a tool name, optionally with a specifier in parentheses, with no control characters and listed once; a rule allowing every shell command, `Bash`, `Bash(*)` or `Bash(:*)`, is refused, so a grant names its commands.

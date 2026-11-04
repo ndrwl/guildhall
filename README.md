@@ -150,6 +150,7 @@ The commands are the Director's tools; you can also call them yourself to script
 
 - `guildhall version` and `guildhall doctor`: version, revision, latest merge, how far behind main, platform and which tools are installed.
 - `guildhall signin`: check this machine's Claude Code, Codex and `gh` sign-ins with a real call, and print the command and link for a missing one; see [sign-in](docs/signin.md).
+- `guildhall secrets init`: create this machine's age key outside every copy and print its public key, for the secrets `director start` decrypts in memory; see [secrets](docs/secrets.md).
 - `guildhall task new|show|list|timeline|files|finding rule|review`: create and inspect tasks; see [tasks](docs/tasks.md).
 - `guildhall task start` and `guildhall step done`: advance a task through its workflow; see [running a task](docs/running.md).
 - `guildhall task cancel`: end an open task for good, with a reason, closing its pull request and voiding its decisions; see [tasks](docs/tasks.md#task-cancel).

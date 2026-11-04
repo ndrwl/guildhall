@@ -25,6 +25,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/herdr"
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/release"
+	"github.com/ndrwl/guildhall/internal/secrets"
 	"github.com/ndrwl/guildhall/internal/session"
 	"github.com/ndrwl/guildhall/internal/store"
 )
@@ -142,12 +143,22 @@ func (a *App) startSession(role *sessionRole, args []string) int {
 		}
 		return 1
 	}
+	// The supervisor a tab runs decrypts the secrets file in its own start.
+	var injected secrets.Values
+	if !*tab {
+		if injected, err = a.sessionSecrets(role.command, copyDir); err != nil {
+			return 1
+		}
+	}
 	if *check {
 		a.signinReport(p)
 		return 0
 	}
 	if *tab {
 		return a.openDirectorTab(host, p, copyDir, storePath, fl.Arg(0))
+	}
+	if err := injectSecrets(injected, os.Getenv, setenv); err != nil {
+		return a.fail(fmt.Errorf("%s: %w", name, err))
 	}
 	if pane == (store.DirectorPane{}) {
 		var reason string

@@ -13,6 +13,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/interp"
+	"github.com/ndrwl/guildhall/internal/secrets"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
@@ -157,7 +158,8 @@ func (p *Process) launchFiles(ctx context.Context, k artisan.AttemptKey, slices 
 		if effort != "" {
 			cmd.Args = append(cmd.Args, "--effort", effort)
 		}
-		cmd.Env = append(append(os.Environ(), p.Env...), k.Env())
+		// The launcher gets no injected secret; it decrypts its profile's inherit_env names itself.
+		cmd.Env = append(append(secrets.Strip(os.Environ()), p.Env...), k.Env())
 		cmd.Stdout, cmd.Stderr = log, log
 		return cmd
 	}

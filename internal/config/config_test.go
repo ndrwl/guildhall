@@ -572,3 +572,29 @@ func TestCheckKey(t *testing.T) {
 		}
 	}
 }
+
+// TestInheritEnv: a profile's inherit_env lists environment variable names, even credential-like ones, since they
+// name secrets and hold none; a malformed or repeated name is refused, and a credential-like setting key still is.
+func TestInheritEnv(t *testing.T) {
+	base := director(t) + "\n[profile.builder]\nadapter = \"claude\"\n"
+	cfg, err := Parse([]byte(base + "inherit_env = [\"OPENAI_API_KEY\", \"DB_PASSWORD\"]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Profiles["builder"].InheritEnv; len(got) != 2 || got[0] != "OPENAI_API_KEY" {
+		t.Fatalf("inherit_env = %q", got)
+	}
+	for list, want := range map[string]string{
+		`["1BAD"]`:      `inherit_env: "1BAD" is not an environment variable name`,
+		`["A=b"]`:       `is not an environment variable name`,
+		`["X", "X"]`:    `inherit_env lists "X" twice`,
+		`["sk-secret"]`: `is not an environment variable name`,
+	} {
+		if _, err := Parse([]byte(base + "inherit_env = " + list + "\n")); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("inherit_env = %s: error %v, want %q", list, err, want)
+		}
+	}
+	if err := CheckKey("secret_x"); err == nil || !strings.Contains(err.Error(), "looks like a credential") {
+		t.Fatalf("CheckKey(secret_x) = %v, want a refusal", err)
+	}
+}

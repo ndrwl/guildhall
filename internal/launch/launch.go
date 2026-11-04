@@ -71,6 +71,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/atomicfile"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/reconcile"
+	"github.com/ndrwl/guildhall/internal/secrets"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
@@ -345,8 +346,7 @@ func Run(ctx context.Context, c Config) (Report, error) {
 	}
 	recorded.own = own
 	cmd := exec.Command(c.Command.Argv[0], c.Command.Argv[1:]...)
-	// The attempt marker goes last, over any inherited value, so the worker's sends are the Artisan's (d33).
-	cmd.Dir, cmd.Env = c.Command.Dir, append(append(os.Environ(), c.Command.Env...), k.Env())
+	cmd.Dir, cmd.Env = c.Command.Dir, workerEnv(os.Environ(), c.Command.Env, k)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = c.Stdin, c.Stdout, c.Stderr
 	stopOnEnd := context.AfterFunc(ctx, func() { _, _ = l.Stop() })
 	out, runErr := l.Run(cmd, c.Signals)
@@ -451,6 +451,14 @@ func (l *lastLine) Write(p []byte) (int, error) {
 func (l *lastLine) String() string {
 	lines := strings.Split(strings.TrimSpace(string(l.buf)), "\n")
 	return strings.TrimSpace(lines[len(lines)-1])
+}
+
+// workerEnv is the worker's environment: environ, then its command's entries, then the attempt marker last, over
+// any inherited value, so the worker's sends are the Artisan's (d33). The worker is model-driven, so environ's
+// injected secrets are dropped (secrets.Strip): it gets only those its command adds, the names its profile's
+// inherit_env lists.
+func workerEnv(environ, command []string, k artisan.AttemptKey) []string {
+	return append(append(secrets.Strip(environ), command...), k.Env())
 }
 
 // lastOutput is the worker's last output for the heartbeat: the newest modification time of those of ws that are

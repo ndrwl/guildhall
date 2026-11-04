@@ -875,6 +875,7 @@ var notAskedOfTheDirector = map[string]string{
 	"help":                     "the Director answers in plain English",
 	"store init":               "a store exists before any Director runs",
 	"signin":                   "the Guildmaster signs each machine in at their own terminal; director start --check reports it",
+	"secrets init":             "the Guildmaster creates each machine's key at their own terminal",
 	"director start":           "the Guildmaster starts the Director; a session cannot start itself",
 	"artisan start":            "task start and step retry launch every attempt",
 	"fake-artisan":             "a test wrapper artisan start runs",

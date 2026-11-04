@@ -21,6 +21,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ndrwl/guildhall/internal/secrets"
 )
 
 // MinVersion is the oldest Herdr release whose client and server this package
@@ -85,7 +87,9 @@ func New(opts Options) (*Client, error) {
 		session: opts.Session,
 		command: append([]string(nil), opts.Command...),
 		run:     execRun,
-		environ: os.Environ,
+		// Herdr may start its server from this call, and the server's panes run model-driven processes, so it
+		// gets no injected secret (docs/secrets.md#model-driven-processes-get-none).
+		environ: func() []string { return secrets.Strip(os.Environ()) },
 	}, nil
 }
 

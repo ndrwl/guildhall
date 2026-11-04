@@ -8,6 +8,9 @@ import (
 	"github.com/ndrwl/guildhall/internal/artisan"
 )
 
+// WorkerEnv is workerEnv.
+var WorkerEnv = workerEnv
+
 // DieAtWorkerStart makes Run's units kill this process, with no cleanup,
 // when asked to start the worker: the launcher is gone after taking
 // ownership and before its worker is recorded.

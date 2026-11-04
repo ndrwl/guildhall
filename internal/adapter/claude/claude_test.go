@@ -24,6 +24,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/interp/interptest"
 	"github.com/ndrwl/guildhall/internal/launch"
+	"github.com/ndrwl/guildhall/internal/secrets"
 	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
@@ -567,6 +568,33 @@ func TestRunWritesUsage(t *testing.T) {
 			t.Errorf("a stopped session wrote a usage file: %v", err)
 		}
 	})
+}
+
+// TestRunRedactsInheritedSecrets: a value the Artisan inherited, named in secrets.RedactEnv, is redacted from the
+// wrapper's output, which the launcher appends to launcher.log, from the Workbench event file and from the
+// published result.
+func TestRunRedactsInheritedSecrets(t *testing.T) {
+	claudetest.Install(t)
+	t.Setenv(secrets.RedactEnv, "STUB_SECRET")
+	t.Setenv("STUB_SECRET", claudetest.Summary)
+	spec := testSpec(t)
+	if err := os.WriteFile(spec.PromptFile, []byte(claudetest.Prompt(adaptertest.Succeed)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if err := claude.Run(context.Background(), args(spec), &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stdout.String()+stderr.String(), claudetest.Summary) || !strings.Contains(stdout.String(), secrets.Redacted) {
+		t.Errorf("output %q holds the value or no redaction", stdout.String()+stderr.String())
+	}
+	r, err := adapter.ReadResult(spec.ResultFile, spec.Identity)
+	if err != nil || r.Summary != secrets.Redacted {
+		t.Errorf("result %+v, %v; want its summary redacted", r, err)
+	}
+	if events, err := os.ReadFile(claude.WorkbenchPath(spec.ResultFile)); err != nil || strings.Contains(string(events), claudetest.Summary) {
+		t.Errorf("event file holds the value, or %v", err)
+	}
 }
 
 // TestRunPublishesDespiteUsageFailure: a usage file that cannot be written is an error, but the draft is still

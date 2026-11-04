@@ -3,6 +3,7 @@ package claude_test
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -163,7 +164,7 @@ func TestShippedClaudeRoleDefaults(t *testing.T) {
 		t.Fatal("the example has no repository granting its builder")
 	}
 	for name, p := range cfg.Profiles {
-		if p != config.ShippedProfiles[name] {
+		if !reflect.DeepEqual(p, config.ShippedProfiles[name]) {
 			t.Errorf("profile %s = %+v, want only the shipped profiles", name, p)
 		}
 	}

@@ -21,6 +21,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/render"
+	"github.com/ndrwl/guildhall/internal/secrets"
 	"github.com/ndrwl/guildhall/internal/session"
 	"github.com/ndrwl/guildhall/internal/store"
 )
@@ -380,7 +381,7 @@ func startRuntime(c *exec.Cmd, n int, storePath string) (runtimeUnit, error) {
 		return nil, err
 	}
 	if c.Env == nil {
-		c.Env = os.Environ()
+		c.Env = secrets.Strip(os.Environ())
 	}
 	// The attempts' launchers the runtime starts leave the unit, under their own ownership and stop.
 	c.Env = append(c.Env, artisan.SessionEnv(u)...)
@@ -795,9 +796,10 @@ func reloadSession(storePath string, n int) (bool, error) {
 
 // runtimeEnv is the runtime's environment: environ, then PWD naming dir as a shell would, then extra. Without it the
 // runtime inherits the supervisor's PWD, so the commands it runs bare report the resolved working directory, and
-// copy discovery finds the copy spelled differently from --copy (macOS's /var is /private/var).
+// copy discovery finds the copy spelled differently from --copy (macOS's /var is /private/var). The runtime is
+// model-driven, so environ's injected secrets are dropped (secrets.Strip): the runtime and its descendants get none.
 func runtimeEnv(environ []string, dir string, extra []string) []string {
-	env := append([]string{}, environ...)
+	env := secrets.Strip(environ)
 	if dir != "" {
 		if abs, err := filepath.Abs(dir); err == nil {
 			env = append(env, "PWD="+abs)
