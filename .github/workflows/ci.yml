@@ -54,10 +54,32 @@ jobs:
         run: go build ./...
       - name: Vet
         run: go vet ./...
+      # Packages with no OS-specific files and no runtime.GOOS run on Linux
+      # only; Windows and macOS test the rest
+      # (docs/decisions/ci-neutral-packages-ubuntu-only.md).
       - name: Test
         env:
           GUILDHALL_CI_REQUIRE: ${{ matrix.require }}
-        run: go test -timeout 20m ./...
+        run: |
+          neutral=$(bash .github/neutral-packages.sh neutral)
+          if [ "${{ matrix.os }}" = ubuntu-latest ]; then
+            echo "neutral packages (run on ubuntu only):"
+            echo "$neutral"
+            echo "go test -timeout 20m ./..."
+            go test -timeout 20m ./...
+            exit 0
+          fi
+          tested=$(bash .github/neutral-packages.sh tested)
+          echo "skipped here, run on ubuntu only:"
+          echo "$neutral"
+          if [ -z "$neutral" ] || [ -z "$tested" ]; then
+            echo "neutral-packages.sh printed an empty neutral or tested list"
+            exit 1
+          fi
+          echo "tested here:"
+          echo "$tested"
+          # Import paths hold no spaces, so word splitting gives one each.
+          go test -timeout 20m $tested
       # The Director suites again, each copy managed with the same effective
       # settings (docs/director-modes.md#testing-both-ways).
       - name: Test Director suites managed

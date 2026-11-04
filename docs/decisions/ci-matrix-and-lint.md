@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-10-20
 topic: ci
-amended-by: ci-action-pins-and-race.md
+amended-by: ci-action-pins-and-race.md, ci-neutral-packages-ubuntu-only.md
 formerly: D4, 0004-ci-matrix-and-lint.md
 ---
 

@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-10-22
 topic: ci
+amended-by: ci-neutral-packages-ubuntu-only.md
 formerly: D81, 0081-windows-ci-speed.md
 ---
 
