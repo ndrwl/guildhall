@@ -3,6 +3,7 @@
 `guildhall spend report --copy <dir> [--repo <name>] [--task <id>] [--since <RFC3339>] [--json]` reads the existing store and attempt usage files without writing, launching processes or parsing transcripts.
 This first increment reports only recorded aggregate usage; the unavailable attribution dimensions are listed below.
 The default is a human-readable table; `--json` returns the same complete report as JSON.
+The [November 2026 token usage audit](audits/token-usage-2026-11.md) breaks this spend down by step, outcome, day and cache behaviour, and ranks the savings.
 `--copy` defaults to the copy found from the current directory ([copies](running.md#copies)); alternatively, use both `--store <path>` and `--state <dir>` to select an existing store and its attempt state directory explicitly.
 Unknown flags, positional arguments and invalid timestamps fail before opening the store.
 An absent store is an error, not an empty report.
