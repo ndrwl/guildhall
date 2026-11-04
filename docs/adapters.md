@@ -153,10 +153,13 @@ The Claude adapter runs one attempt as a non-interactive Claude Code session, wi
 Its command is `guildhall claude-artisan --task <id> --attempt <id> --prompt <file> --result <file> [--copy <dir> --profile <name>] [--model <model>] [--effort <level>] [--claude <program>]`, a wrapper in the attempt's working directory that runs:
 
 ```text
-claude --print <instruction> --output-format stream-json --verbose --permission-mode acceptEdits [--model <model>] [--effort <level>] --settings <settings file> --add-dir <model directory>
+claude --print <instruction> --output-format stream-json --verbose --permission-mode acceptEdits --disallowedTools <dropped tools> [--model <model>] [--effort <level>] --settings <settings file> --add-dir <model directory>
 ```
 
 - `--model` and `--effort` are the profile's effective [runtime settings](#runtime-settings), each passed only when nonempty.
+- `--disallowedTools` is one comma-joined value, `claude.DisallowedTools`, the same for every profile: `Workflow`, `ScheduleWakeup`, `ReportFindings`, `ListAgents`, `SendMessage`, `CronCreate`, `CronDelete`, `CronList`, `RemoteTrigger`, `PushNotification`, `DesignSync`, `EnterWorktree` and `ExitWorktree`.
+  No stage uses them, and their schemas cost about 5k prompt tokens per attempt ([audit](audits/token-usage-2026-11.md), [probe](evidence/claude-disallowed-tools-2026-11-04.txt)); dropping the worktree tools also keeps an Artisan in its assigned worktree.
+  `Agent`, `Skill`, `ToolSearch`, `WebSearch`, `WebFetch`, `Monitor`, `TaskStop` and `NotebookEdit` are kept.
 
 - `claude` is looked up on `PATH` when the attempt starts unless `--claude` names an absolute program; sign-in is the machine's own (R1.28).
 - The model directory is `model` beside the result file, the attempt directory's [model directory](artisan.md#commands); the wrapper replaces it on every run with a copy of the prompt file, `prompt.md`, and of the `inputs` and `skills` directories beside the prompt, so the attempt's result, cancel marker, outcome, lock, events and launcher log are never in a directory Claude may write.
