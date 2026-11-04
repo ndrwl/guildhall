@@ -3,6 +3,7 @@ status: accepted
 date: 2026-11-04
 topic: steward
 tasks: d130
+amended-by: steward-secrets-push.md
 ---
 
 # A machine's secrets are sops+age ciphertext encrypted to its own key, decrypted in memory at start

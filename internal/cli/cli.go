@@ -63,6 +63,8 @@ Commands:
                  check each runtime's sign-in on this machine, print the command and link for a missing one,
                  wait, then verify it with a real call; --check reports only
   secrets init   create this machine's age key outside every copy, owner-only, and print its public key
+  secrets check [--json] [--copy <dir>]
+                 report whether this machine's secrets file decrypts with its key and which names it holds
   store init <path>
                  create and initialize an empty store file
   store doctor <path>
@@ -87,6 +89,8 @@ Commands:
                  collect enrolled copies' lessons and incidents into the private config and open their triage
   steward takeover ...
                  plan, apply or abandon the takeover of an existing Director copy as managed, keeping its store
+  steward secrets set|plan|apply ...
+                 encrypt a machine's secret to its age key and commit it, and push machines' ciphertext by approved plan
   messages send|list|read|ack --store <path> ...
                  send, list, read and acknowledge local Director and Artisan messages
   messages summary|receive|inbox|outbox [--copy <dir>] ...

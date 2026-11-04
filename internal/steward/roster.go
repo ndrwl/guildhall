@@ -17,6 +17,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/ndrwl/guildhall/internal/config"
+	"github.com/ndrwl/guildhall/internal/secrets"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
@@ -43,8 +44,11 @@ const (
 // Roster lists the enrolled machines, their Directors and repositories.
 // Every entry is an authorised rollout target; a rollout never adds one.
 type Roster struct {
-	SchemaVersion int       `toml:"schema_version"`
-	Machines      []Machine `toml:"machine"`
+	SchemaVersion int `toml:"schema_version"`
+	// RecoveryRecipient is the age public key of the Guildmaster's recovery key, which every machine's secrets file
+	// is encrypted to as well as the machine's own key (docs/secrets.md#the-steward-pushes-them).
+	RecoveryRecipient string    `toml:"recovery_recipient"`
+	Machines          []Machine `toml:"machine"`
 }
 
 // Machine is one enrolled machine, reached through one SSH alias for its one Guildhall account.
@@ -56,8 +60,11 @@ type Machine struct {
 	Roles    []Role `toml:"roles"`
 	// GuildhallPath is the absolute path of the guildhall program the Steward's remote commands run on the machine;
 	// empty means guildhall on the PATH of the machine's Guildhall account. Windows paths use forward slashes.
-	GuildhallPath string     `toml:"guildhall_path"`
-	Directors     []Director `toml:"director"`
+	GuildhallPath string `toml:"guildhall_path"`
+	// AgeRecipient is the public key of the machine's own age key, which guildhall secrets init prints there: the
+	// recipient its secrets file is encrypted to. It is not a secret. Empty means the machine gets no pushed secrets.
+	AgeRecipient string     `toml:"age_recipient"`
+	Directors    []Director `toml:"director"`
 }
 
 // Guildhall is the program the Steward's remote commands run on the machine: its guildhall_path, else guildhall.
@@ -130,7 +137,13 @@ func decodeStrict(what string, data []byte, supported int, v any) (toml.MetaData
 func (r *Roster) validate() []string {
 	var problems []string
 	add := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
-	labels, aliases := map[string]bool{}, map[string]bool{}
+	labels, aliases, recipients := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	if r.RecoveryRecipient != "" {
+		if !secrets.ValidRecipient(r.RecoveryRecipient) {
+			add("recovery_recipient %q is not an age public key (age1...)", r.RecoveryRecipient)
+		}
+		recipients[r.RecoveryRecipient] = true
+	}
 	for i, m := range r.Machines {
 		name := fmt.Sprintf("machine %d", i+1)
 		if !workflow.ValidID(m.Label) {
@@ -148,6 +161,15 @@ func (r *Roster) validate() []string {
 			add("ssh_alias %q is used by more than one machine", m.SSHAlias)
 		}
 		aliases[m.SSHAlias] = true
+		if m.AgeRecipient != "" {
+			switch {
+			case !secrets.ValidRecipient(m.AgeRecipient):
+				add("%s: age_recipient %q is not an age public key (age1...); guildhall secrets init prints the machine's", name, m.AgeRecipient)
+			case recipients[m.AgeRecipient]:
+				add("%s: age_recipient is the recovery key's or another machine's; each machine has its own key", name)
+			}
+			recipients[m.AgeRecipient] = true
+		}
 		dirPattern := posixDirPattern
 		switch m.OS {
 		case OSLinux, OSDarwin:

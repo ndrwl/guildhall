@@ -151,7 +151,8 @@ The commands are the Director's tools; you can also call them yourself to script
 - `guildhall version` and `guildhall doctor`: version, revision, latest merge, how far behind main, platform and which tools are installed.
 - `guildhall setup doctor`, `guildhall setup wizard` and `guildhall setup run`: check this machine against Guildhall's step files (Herdr, Go, Git and Claude Code, sign-in, WSL settings), close the fixable gaps and walk through the human ones as numbered steps; see [setup](docs/setup.md).
 - `guildhall signin`: check this machine's Claude Code, Codex and `gh` sign-ins with a real call, and print the command and link for a missing one; see [sign-in](docs/signin.md).
-- `guildhall secrets init`: create this machine's age key outside every copy and print its public key, for the secrets `director start` decrypts in memory; see [secrets](docs/secrets.md).
+- `guildhall secrets init`: create this machine's age key outside every copy and print its public key, for the secrets `director start` decrypts in memory; `guildhall secrets check` reports whether the file decrypts and its names; see [secrets](docs/secrets.md).
+- `guildhall steward secrets set|plan|apply`: encrypt a value read from the terminal to a machine's age key, commit the ciphertext to the private config, and push it to the machine by a plan the Guildmaster approves; see [secrets](docs/secrets.md#the-steward-pushes-them).
 - `guildhall task new|show|list|timeline|files|finding rule|review`: create and inspect tasks, each new one under the next id Guildhall assigns from its repository's `task_prefix`, such as `d42`; see [tasks](docs/tasks.md#task-ids).
 - `guildhall task start` and `guildhall step done`: advance a task through its workflow; see [running a task](docs/running.md).
 - `guildhall task cancel`: end an open task for good, with a reason, closing its pull request and voiding its decisions; see [tasks](docs/tasks.md#task-cancel).

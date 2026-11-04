@@ -17,7 +17,8 @@ A copy is backed up file by file into a backup that is never pruned, so neither 
 `GUILDHALL_SECRETS_DIR`, when set, names the directory used instead of `~/.config/guildhall`; the test guards set it to an empty directory ([testenv](contracts/testenv.md)), and a machine has no reason to.
 
 Each name is an environment variable name, such as `OPENAI_API_KEY`, and each value a string.
-Until the [Steward pushes secrets files](#not-yet), the Guildmaster writes the file on the machine with `sops`, such as `sops --age <public key> --encrypt --input-type dotenv --output-type yaml plain.env > ~/.config/guildhall/secrets.sops.yaml`, from a plaintext file they then delete.
+On an enrolled machine [the Steward pushes the file](#the-steward-pushes-them).
+On a standalone one the Guildmaster writes it there with `sops`, such as `sops --age <public key> --encrypt --input-type dotenv --output-type yaml plain.env > ~/.config/guildhall/secrets.sops.yaml`, from a plaintext file they then delete.
 
 ## secrets init
 
@@ -29,6 +30,16 @@ guildhall secrets init
 It never prints the secret key.
 With a key already there, it keeps it and prints its public key, read with `age-keygen -y`.
 It needs `age-keygen` on `PATH`, and is refused on Windows, where an owner-only key is not yet supported (R1.27).
+
+## secrets check
+
+```sh
+guildhall secrets check [--json] [--copy <dir>]
+```
+
+`secrets check` reports this machine's key, with its public key, and its secrets file, with the file's sha256, whether it decrypts with the key and the names it holds, never a value, and changes nothing.
+With `--copy`, a key or file inside that copy is refused.
+Without `--json` it prints one line each and exits 1 when the file exists but does not decrypt; with `--json` it prints the report as one JSON document and exits 0, so the Steward, which runs `secrets check --json --copy <copy_dir>` over SSH, reads why.
 
 ## At start
 
@@ -61,7 +72,54 @@ The Claude and Codex wrappers replace each value `GUILDHALL_REDACT_NAMES` names 
 A value shorter than four bytes is not redacted, since it would match ordinary text, and each write is redacted on its own, so a value the runtime splits across two writes is not found.
 Redaction is defence in depth only: the guarantee is that a model-driven process holds no value it was not given.
 
+## The Steward pushes them
+
+The [Steward](steward.md) keeps each enrolled machine's secrets as ciphertext in the private config and pushes it, by a command separate from rollouts, so a rollout never carries a credential ([decision](decisions/steward-secrets-push.md)).
+
+**Keys.** Each machine's [roster](steward.md#rostertoml) entry records `age_recipient`, the public key `guildhall secrets init` printed on it, and the roster records `recovery_recipient`, the public key of the Guildmaster's recovery key.
+Every machine's file is encrypted to its own key and the recovery key, which lets the Steward add a value to a file it cannot otherwise read.
+The recovery key lives on the Steward machine at `~/.config/guildhall/recovery.key`, outside every copy, owner-only; create it there with `age-keygen -o ~/.config/guildhall/recovery.key` and put the public key it prints in the roster.
+
+**Files.** The private config holds `secrets/<machine>.sops.yaml` for each machine, and `.sops.yaml`, generated from the roster with one rule per machine, so `sops` run by hand on a file encrypts it the same way.
+A value several machines need is set on each of them, so removing one machine never re-encrypts another's file.
+
+### secrets set
+
+```sh
+guildhall steward secrets set --config <steward.toml> <machine> <NAME>
+```
+
+`secrets set` reads the value from the terminal, asking on standard error with echo off, or else from standard input, all of it but one final line ending; a value on the command line, where the process list and shell history would show it, is refused.
+It holds the private config's `.rollout.lock`, decrypts the machine's committed file, if there is one, in memory with the recovery key, adds or replaces the name, and has `sops` encrypt the result from its standard input to the machine's key and the recovery key.
+It then commits only that file and `.sops.yaml`, through a private index as [collection](steward.md#collection) does, pushes the private config, and prints the file's names, its sha256 and the commit, never the value.
+A machine with no `age_recipient`, a roster with no `recovery_recipient`, or an existing file with no recovery key to decrypt it is refused before anything is written.
+
+### secrets plan and apply
+
+```sh
+guildhall steward secrets plan --config <steward.toml> --machine <label> [--machine <label>...] --plan <new dir>
+guildhall steward approval request --plan <dir> [--copy <steward copy>]
+guildhall steward secrets apply --config <steward.toml> --machine <label> [--machine <label>...] --plan <dir> --approve <plan digest>
+```
+
+The plan reads each machine's file at the private config's `HEAD` and runs the fixed, read-only remote command `secrets check --json --copy <copy_dir>` on the machine, with its first Director copy, and changes nothing.
+It writes `plan.json`, a `guildhall.secrets-plan/1` document, and each changing machine's ciphertext under `files/<machine>/`, and prints each machine's status, `change`, `unchanged` or `refused`, its names, its file's digest now and after, and the commands, with the plan digest and the apply command.
+The plan holds names and digests, never a value.
+A machine is refused when it is a Windows machine (R1.27), has no Director copy, no `age_recipient`, no committed file or one not encrypted to exactly its key and the recovery key, or cannot be checked, or when its key's public key is not its `age_recipient`, or its secrets file is not at `~/.config/guildhall/secrets.sops.yaml`.
+
+Every secrets plan needs the Guildmaster's approval of its exact digest: `steward approval request` opens the decision `secrets-<first 12 hex digits>` on the reserved task `steward/secrets`, which only the Guildmaster answers, outside any session, and inside one `--approve` stands only on their answer `approve` ([approval in a Steward session](steward.md#approval-in-a-steward-session)).
+
+Apply holds `.rollout.lock`, plans again and refuses, writing nothing, unless the digest is the same and the staged ciphertext intact, then, on each machine that changes:
+
+1. copies the ciphertext over `~/.config/guildhall/secrets.sops.yaml` with `scp`;
+2. reads it back and compares its sha256 with the plan;
+3. runs `secrets check --json` there, which must find the file decrypting with the machine's own key to the planned names.
+
+The receipt `receipt-<UTC time>.json` in the plan directory records each machine's status, `applied`, `unchanged`, `failed`, `verify_failed` or `check_failed`, its names, its digests and every command with what `secrets check` printed, never a value.
+A failure on one machine does not stop the others, and apply exits 1 unless every machine is applied or unchanged.
+The machine's sessions decrypt the new file at their next start.
+
 ## Not yet
 
-The Steward pushing each machine's secrets file, with the machine's public key in the roster, and revoking a lost machine by rotating every value it could read, are later changes.
-Until then a secrets file is written by hand on its machine, and rotating a value means re-encrypting the file there.
+Revoking a lost machine, by removing its recipient and file and rotating every value it could read, is a later change.
+Until then, removing a machine's `age_recipient` and file by hand stops further pushes to it, but the values it held must be rotated at their providers and set again on the machines that still need them.

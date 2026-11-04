@@ -2,7 +2,7 @@
 
 The Steward looks after the guild's Director copies across its machines: it owns the roster and rolls out managed settings to enrolled Director copies over SSH (R1.7, R1.8, R1.31).
 It runs as the **Steward session**, a long-running agent session the Guildhall binary starts and supervises the same way it supervises a Director, and only the Guildmaster talks to it: no Director reaches its inbox.
-This page describes the Steward session, what `guildhall steward rollout`, `guildhall steward collect` and `guildhall steward takeover` do today and what is planned.
+This page describes the Steward session, what `guildhall steward rollout`, `guildhall steward collect`, `guildhall steward takeover` and `guildhall steward secrets` do today and what is planned.
 
 No Director feature requires a Steward.
 A standalone copy, one with no `managed.toml` and no enrolment, starts and behaves exactly as it does without one ([standalone and managed Directors](director-modes.md)).
@@ -123,6 +123,7 @@ guildhall decide answer --copy <dir> --repo steward --task rollouts --decision r
 Only the Guildmaster answers it, outside any session: `decide answer` refuses it from inside one.
 An answer of `approve` lets the session apply that one plan with `--approve`; `decline`, or a plan with another digest, does not.
 A [takeover](#takeover) plan is approved the same way: `steward approval request --plan <dir>` sees it is a setup plan and opens `setup-<first 12 hex digits>` on the reserved task `steward/setup` instead, which `decide answer` likewise refuses from inside a session, and every takeover needs it.
+A [secrets](#secrets) plan opens `secrets-<first 12 hex digits>` on the reserved task `steward/secrets` the same way, and every secrets push needs it.
 Outside any session, `--approve` stands on the Guildmaster's word as before, and the plan and apply digests, the lock, the receipts, the [managed publication](decisions/managed-publication-separate-from-director-config.md) rule and the refusal of changed copies are unchanged.
 
 ### Moving the Steward to another host
@@ -141,7 +142,7 @@ An existing Director copy is brought into the roster by a [takeover](#takeover),
 Creating the machine's Guildhall account, SSH setup, host-key trust, Claude and forge sign-in and administrator steps belong to the setup wizard (R1.43-R1.51), which is not implemented yet; its sign-in step is built as the standalone [`guildhall signin`](signin.md), which checks, guides and verifies each runtime's sign-in on the machine it runs on.
 The engine such a wizard and d128's provisioning run on, [`guildhall setup`](setup.md), is built: its doctor reports a machine's gaps against step files and its wizard walks a person through the human ones, but no Steward command runs it on a machine yet.
 A rollout never adds a machine, account, Director or repository to the roster, never creates a Director copy and never asks for or stores a credential.
-Each machine's other [secrets](secrets.md) are sops ciphertext encrypted to its own age key, from `guildhall secrets init`, and decrypted in memory by `director start` and `steward start`; until the Steward pushes them, a separate command from rollouts, they are written by hand on each machine.
+Each machine's other [secrets](secrets.md) are sops ciphertext encrypted to its own age key, from `guildhall secrets init`, and decrypted in memory by `director start` and `steward start`; the Steward sets and pushes them with [`steward secrets`](#secrets), a separate command from rollouts.
 
 Once a copy is enrolled, a routine rollout runs without repeating setup.
 Changes outside routine authority need the Guildmaster's approval of the exact plan, as described under [approval](#approval).
@@ -156,12 +157,14 @@ Two files in it drive rollouts; neither belongs in this public repository (R1.2)
 
 ```toml
 schema_version = 1
+recovery_recipient = "age1..."
 
 [[machine]]
 label = "workstation"
 ssh_alias = "guild-workstation"
 os = "linux"
 roles = ["steward", "director"]
+age_recipient = "age1..."
 
 [[machine.director]]
 name = "tools"
@@ -172,11 +175,13 @@ repositories = ["cli", "docs-site"]
 | Key | Meaning |
 |---|---|
 | `schema_version` | Required; currently `1`. A newer version is refused, and unknown keys are refused. |
+| `recovery_recipient` | Optional. The age public key of the Guildmaster's recovery key, which every machine's [secrets file](secrets.md#the-steward-pushes-them) is also encrypted to; [`steward secrets`](#secrets) needs it. Not a secret. |
 | `[[machine]] label` | The machine's unique lowercase name; repositories name it as `owner_machine`. |
 | `ssh_alias` | A `Host` entry in the Steward user's SSH config. The alias, not the roster, holds the address, user and key. Letters, digits, `.`, `_` and `-` only, so no user, option or shell syntax can be passed. |
 | `os` | `linux`, `windows` or `darwin`; it decides the path form. |
 | `roles` | `steward` and/or `director`. A machine that lists Directors needs `director`. |
 | `guildhall_path` | Optional. The absolute path of the `guildhall` program the [remote commands](#remote-commands) run on the machine, in its `os` path form with the same characters as `copy_dir`, such as `C:/Users/guild/bin/guildhall.exe`. Without it, `guildhall` on the `PATH` of the machine's Guildhall account is run. |
+| `age_recipient` | Optional. The public key `guildhall secrets init` printed on the machine, which its [secrets file](secrets.md#the-steward-pushes-them) is encrypted to; without it the machine gets no pushed secrets. Not a secret, and no two machines, nor the recovery key, share one. |
 | `[[machine.director]] name` | The Director's name, which its copy's config must match. |
 | `copy_dir` | Absolute path of the Director copy's directory, holding `config.toml` and the published `managed.toml`. Windows paths use a drive letter and forward slashes, such as `C:/Users/guild/directors/tools`. Only letters, digits, `.`, `_`, `-` and `/` are allowed, with no `.` or `..` segments. |
 | `repositories` | The repository ids the copy must have. |
@@ -265,7 +270,7 @@ Applying an unchanged plan performs no remote writes and runs no remote command,
 
 The [managed-file checksum framing](configuration.md#config-file) makes combined loading explicitly refuse incomplete or corrupted transfers, including syntactically valid truncated TOML.
 This is integrity detection, not atomic publication: non-atomic scp may transiently refuse reads and does not prove uninterrupted config availability.
-The `.rollout.lock` file in the private config directory excludes concurrent applies and [collections](#collection) using that directory on this Steward.
+The `.rollout.lock` file in the private config directory excludes concurrent applies, [collections](#collection), takeovers and [secrets](secrets.md#the-steward-pushes-them) sets and applies using that directory on this Steward.
 It does not protect against another host, another private directory or a manual managed-file writer; designate one Steward writer for each fleet and do not edit managed files during rollout.
 The lock holds its owner's record: the PID and OS start token of the process that took it, its command line and when it took it. A refusal names that owner, or an unknown owner since the file's modification time when the lock has no readable record, as an older binary's has.
 If a writer crashes, stop competing invocations and confirm that the owning process has exited before manually removing its stale lock.
@@ -302,6 +307,7 @@ The allow-list is exactly ([decision](decisions/steward-fixed-remote-commands.md
 - `director collected --copy <copy_dir>`, which marks the items of the receipt collection copied to the copy as collected;
 - `messages receive --copy <copy_dir>`, which receives the [Steward message](#steward-messages) copied to the copy's drop file ([decision](decisions/steward-messages-directors.md));
 - `director status --json --copy <copy_dir>`, which only reads the copy's status feed, for the [Director health](#director-health) checks ([decision](decisions/steward-reads-director-status.md)) and an approved [takeover](#takeover);
+- `secrets check --json --copy <copy_dir>`, which only reads: whether the machine's [secrets file](secrets.md#secrets-check) decrypts with its key and which names it holds, never a value, run by [`steward secrets`](#secrets) ([decision](decisions/steward-secrets-push.md));
 - `director reload --copy <copy_dir>`, reserved for [release upgrades](releases.md#guildhall-director-reload) and refused until that is built;
 - for an approved [takeover](#takeover) only ([decision](decisions/steward-setup-plans.md)): `director pause --copy <copy_dir>` and `director resume --copy <copy_dir>`; `backup now --copy <copy_dir>` and `store export --out <dir> --copy <copy_dir>`; and `director enrol --steward <label> --copy <copy_dir>`.
 
@@ -355,6 +361,19 @@ It does not say the owner crashed, since a takeover apply can hold the lock for 
 A round that opens triage decisions sends the Steward's inbox one `triage-opened` message per kind, with the [`director` sender tag](#inbox), which wakes the session; a round with nothing new sends nothing and wakes nothing.
 Unset, the default, nothing is collected on a schedule, and nothing polls or spends model tokens because an item is queued (R1.7).
 Each scheduled run then sends its [Steward messages](#steward-messages), even when the round found the lock busy.
+
+## Secrets
+
+```sh
+guildhall steward secrets set --config <steward.toml> <machine> <NAME>
+guildhall steward secrets plan --config <steward.toml> --machine <label> [--machine <label>...] --plan <new dir>
+guildhall steward secrets apply --config <steward.toml> --machine <label> [--machine <label>...] --plan <dir> --approve <plan digest>
+```
+
+`steward secrets` keeps each enrolled machine's [secrets](secrets.md) as sops ciphertext in the private config, `secrets/<machine>.sops.yaml`, encrypted to the machine's `age_recipient` and the roster's `recovery_recipient`, with `.sops.yaml` generated from the roster.
+`set` reads a value from the terminal or standard input, never the command line, encrypts it at once and commits and pushes only ciphertext.
+`plan` and `apply` push a machine's committed ciphertext with `scp`, read it back by digest and run the read-only [remote command](#remote-commands) `secrets check` there, after the Guildmaster approves the plan's exact digest on the reserved task `steward/secrets`; plans and receipts hold names and digests, never a value.
+It is a separate command from [rollouts](#apply), which stay credential-free; [secrets](secrets.md#the-steward-pushes-them) describes it in full.
 
 ## Steward messages
 

@@ -312,6 +312,7 @@ Regenerate it with `go test ./internal/doccheck -run TestDecisionIndex -update`,
 - [The Steward runs only a fixed allow-list of Guildhall commands over ssh](decisions/steward-fixed-remote-commands.md)
 - [The Steward reads each enrolled Director's status to report a stuck, unhealthy or out-of-date Director](decisions/steward-reads-director-status.md)
 - [Steward rollouts copy files with scp and run no remote command](decisions/steward-rollouts-copy-with-scp.md)
+- [The Steward pushes each machine's secrets ciphertext by an approved plan, and adds a read-only secrets check](decisions/steward-secrets-push.md)
 - [A Steward changes a machine only through the steps of a setup plan the Guildmaster approved](decisions/steward-setup-plans.md)
 
 ## Former names

@@ -52,6 +52,9 @@ var allowedCommands = []struct {
 	{args: []string{"backup", "now", "--copy"}},
 	{args: []string{"store", "export", "--out", argDir, "--copy"}},
 	{args: []string{"director", "enrol", "--steward", argLabel, "--copy"}},
+	// secrets check --json reports whether the machine's secrets file decrypts with its key and which names it holds,
+	// never a value, changing nothing (docs/decisions/steward-secrets-push.md).
+	{args: []string{"secrets", "check", "--json", "--copy"}},
 }
 
 // Value placeholders of allowedCommands.
@@ -91,6 +94,12 @@ func ExportCommand(guildhall, out, copyDir string) []string {
 // Steward with label manages it, with the digest of its managed.toml, which enrolment never authorizes.
 func EnrolCommand(guildhall, label, copyDir string) []string {
 	return []string{guildhall, "director", "enrol", "--steward", label, "--copy", copyDir}
+}
+
+// SecretsCheckCommand is the read-only remote command that reports the machine's secrets file, with copyDir one of
+// its Director copies, which the key and file must be outside: `<guildhall> secrets check --json --copy <copyDir>`.
+func SecretsCheckCommand(guildhall, copyDir string) []string {
+	return []string{guildhall, "secrets", "check", "--json", "--copy", copyDir}
 }
 
 // CollectReceiptPath is where, relative to a Director copy's directory, the Steward copies the receipt that

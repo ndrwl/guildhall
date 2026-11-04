@@ -2,7 +2,9 @@ package cli
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -17,10 +19,14 @@ import (
 // secretsTimeout bounds one run of sops or age-keygen.
 const secretsTimeout = 30 * time.Second
 
-// secretsCmd runs `guildhall secrets init` (docs/secrets.md#secrets-init).
+// secretsCmd runs `guildhall secrets init` (docs/secrets.md#secrets-init) and `guildhall secrets check`
+// (docs/secrets.md#secrets-check).
 func (a *App) secretsCmd(args []string) int {
+	if len(args) > 0 && args[0] == "check" {
+		return a.secretsCheckCmd(args[1:])
+	}
 	if len(args) != 1 || args[0] != "init" {
-		return a.usageError("secrets: the one command is init, which takes no arguments")
+		return a.usageError("secrets: the commands are init, which takes no arguments, and check [--json] [--copy <dir>]")
 	}
 	p, err := secrets.DefaultPaths()
 	if err != nil {
@@ -39,6 +45,56 @@ func (a *App) secretsCmd(args []string) int {
 	}
 	_, _ = fmt.Fprintf(a.Stdout, "public key: %s\n", pub)
 	_, _ = fmt.Fprintf(a.Stdout, "secrets file: %s, encrypted to the public key; director start and steward start decrypt it in memory\n", p.File)
+	return 0
+}
+
+// secretsCheckCmd runs `guildhall secrets check [--json] [--copy <dir>]`: it reports whether this machine's secrets
+// file decrypts with its key and which names it holds, never a value, changing nothing. The Steward runs it with
+// --json over ssh after it pushes the file. With --copy, a key or file inside that copy is refused.
+func (a *App) secretsCheckCmd(args []string) int {
+	fl := flag.NewFlagSet("secrets check", flag.ContinueOnError)
+	fl.SetOutput(io.Discard)
+	asJSON := fl.Bool("json", false, "")
+	copyDir := fl.String("copy", "", "")
+	if err := fl.Parse(args); err != nil {
+		return a.usageError("secrets check: " + err.Error())
+	}
+	if fl.NArg() > 0 {
+		return a.usageError(fmt.Sprintf("secrets check: unexpected argument %q", fl.Arg(0)))
+	}
+	p, err := secrets.DefaultPaths()
+	if err == nil && *copyDir != "" {
+		err = p.Outside(*copyDir)
+	}
+	if err != nil {
+		return a.fail(fmt.Errorf("secrets check: %w", err))
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), secretsTimeout)
+	defer cancel()
+	r := secrets.Check(ctx, p, nil)
+	if *asJSON {
+		return a.printJSON(r)
+	}
+	switch {
+	case !r.KeyExists:
+		_, _ = fmt.Fprintf(a.Stdout, "key: none at %s\n", r.Key)
+	default:
+		_, _ = fmt.Fprintf(a.Stdout, "key: %s, public key %s\n", r.Key, r.Recipient)
+	}
+	switch {
+	case !r.FileExists:
+		_, _ = fmt.Fprintf(a.Stdout, "secrets file: none at %s\n", r.File)
+	case r.Decrypts:
+		_, _ = fmt.Fprintf(a.Stdout, "secrets file: %s (sha256 %s) decrypts to %d names: %s\n", r.File, r.FileSHA256, len(r.Names), strings.Join(r.Names, ", "))
+	default:
+		_, _ = fmt.Fprintf(a.Stdout, "secrets file: %s (sha256 %s) does not decrypt\n", r.File, r.FileSHA256)
+	}
+	if r.Problem != "" {
+		_, _ = fmt.Fprintf(a.Stdout, "problem: %s\n", r.Problem)
+	}
+	if r.FileExists && !r.Decrypts {
+		return 1
+	}
 	return 0
 }
 

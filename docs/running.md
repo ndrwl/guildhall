@@ -282,7 +282,7 @@ The backup tree mirrors the copy: it holds **every regular file in the copy, min
 | CI log caches, `state/<repo>/<task>/ci-logs/` | A cache of forge data that [`ci log`](ci-logs.md) fetches again |
 | `director.store` itself, `backup.git/`, the `state/backup-last.json` stamp, `*.lock` files, anything named `.git`, symbolic links, sockets and other non-regular files | Exported instead, the backup itself, or not data |
 | Claude Code's session logs in its config directory (`~/.claude/projects`) | Outside the copy, large and growing daily, and may hold secrets from tool output; a restore does not need them |
-| The machine's age key and secrets file in `~/.config/guildhall` | Outside every copy, so never in the backup; a start refuses either inside its copy ([secrets](secrets.md#where-they-live)) |
+| The machine's age key and secrets file, and on the Steward machine the recovery key, in `~/.config/guildhall` | Outside every copy, so never in the backup; a start refuses either inside its copy ([secrets](secrets.md#where-they-live)) |
 | The Steward's `steward.store`, `rollouts/` and config checkout | Not a Director's; a Steward backup is a follow-up |
 
 The tip of the branch mirrors the copy as it is now: a file [`guildhall prune`](#pruning) removes leaves the next commit's tree and stays in git history, which is the backup's retention.
