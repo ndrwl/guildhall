@@ -186,9 +186,9 @@ func VoidAlerts(s *store.Store, d, reason string) error {
 // a.ManagedDigest with no authorization: one observed-untrusted revision per digest and enrolment, and one
 // approve/reject decision on the reserved task, opened once. An alert already answered approve is applied
 // (ApplyAnswer) instead, so the digest becomes authorized. It returns the managed facts and alert decisions as they
-// stand after recording.
-func observe(cfgPath string, a Admission) (store.ManagedView, []store.Decision, error) {
-	s, err := store.Open(filepath.Join(filepath.Dir(cfgPath), StoreFile), store.Options{RequireStore: true, LockTimeout: config.DefaultLockWait})
+// stand after recording. It waits up to wait, the admission read's lock wait, for the store's lock.
+func observe(cfgPath string, a Admission, wait time.Duration) (store.ManagedView, []store.Decision, error) {
+	s, err := store.Open(filepath.Join(filepath.Dir(cfgPath), StoreFile), store.Options{RequireStore: true, LockTimeout: wait})
 	if err != nil {
 		return store.ManagedView{}, nil, err
 	}
