@@ -42,8 +42,11 @@ func sampleAttempt() *attemptLog {
 	a.w.Write(Thinking("First the spec."))
 	a.show(Text("Reading the spec.\n\n**Then** testing.", nil), "Reading the spec.", "", "**Then** testing.")
 	a.other("claude: warning: something on stderr")
+	// Usage, like thinking, carries no log lines and renders nothing of its own, so the order around it holds.
+	a.w.Write(Usage(Tokens{Input: 10, Output: 5}))
 	a.w.Write(Thinking("Now read and test."))
 	a.show(ToolCall("t1", "Read", "spec.md", nil), "tool: Read spec.md")
+	a.w.Write(Usage(Tokens{Input: 20, Output: 9}))
 	a.show(ToolCall("t2", "Bash", "go test ./...", nil), "tool: Bash go test ./...")
 	a.w.Write(Thinking(""))
 	a.w.Write(ToolResult("t2", true, 12, 1))
@@ -91,12 +94,14 @@ func TestMergeInterleaved(t *testing.T) {
 	events := ReadAll(&a.events)
 	got := render(func(r *Renderer) {
 		m := NewMerger(r)
-		// One event arrives before each line: never behind the lines, as the wrapper's order guarantees.
+		// Two events arrive before each line: never behind the lines, as the wrapper's order guarantees.
 		next := 0
 		for _, l := range logLines(a) {
-			if next < len(events) {
-				m.Events(events[next])
-				next++
+			for range 2 {
+				if next < len(events) {
+					m.Events(events[next])
+					next++
+				}
 			}
 			m.Line(l, true)
 		}
@@ -147,6 +152,7 @@ func TestMergeResyncsPastAnEventWhoseLinesNeverCame(t *testing.T) {
 			stamped(ToolResult("x", true, 1, 1), 0),
 			stamped(Thinking("between"), 0),
 			stamped(ToolCall("t1", "Read", "a.go", []string{"tool: Read a.go"}), 0),
+			stamped(Usage(Tokens{Output: 3}), 0),
 			stamped(Thinking("after"), 0),
 			stamped(Text("two\nlines", []string{"two", "lines"}), 0))
 		m.Line("other", true)
@@ -154,6 +160,9 @@ func TestMergeResyncsPastAnEventWhoseLinesNeverCame(t *testing.T) {
 		m.Line("two", true)
 		m.Line("lines", true)
 		m.Flush()
+		if r.Tokens().Output != 3 {
+			t.Errorf("tokens after resync = %+v", r.Tokens())
+		}
 	})
 	if want := "other\nlost\n14:03:09 ✗ tool · error, 1 B\n┃ between\n14:03:09 ▸ read 1 file\n┃ after\ntwo\nlines\n"; got != want {
 		t.Errorf("resynced =\n%q\nwant\n%q", got, want)

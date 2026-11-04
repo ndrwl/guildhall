@@ -487,7 +487,18 @@ The **Workbench** is what the bridge shows: a formatted, read-only live display 
 It is Guildhall's own Go code (`internal/workbench`), separate from [Lanterns](lanterns.md), with no Claude plugin, hook or Node.
 `launcher.log` stays the plain and complete record of the attempt: formatting is applied only on the way to the pane, and nothing the Workbench shows is written back to it.
 
-- A header names the attempt: `guildhall <repository> · <task> · <step> · <attempt>`.
+- A status bar, printed once at the top, says what the Artisan was asked to do. On a pane 60 columns or wider it is four lines and a rule:
+  1. the repository, task id and title;
+  2. the step, the slice of a multi-PR task (`slice 3 of 4`), the attempt, `started HH:MM:SS`, and, with colour on, the elapsed time and tokens so far, such as `6m09s · 214k tok`;
+  3. `Asked:` and one line of what the Artisan was given: the `- **Goal:**` bullet of the Summary block of the task's newest accepted spec or, before a spec is accepted (grill, research, design and plan attempts), the first sentence of the task's detail;
+  4. the task page's URL, `http://<[web].address>/<repo>/<task>` ([task pages](web.md#the-task-page)), as plain text, which terminals make clickable; no OSC 8 link is sent, and the line is left out with no `[web]` table.
+
+  Below 60 columns it is one line, such as `d169 build · attempt 1 · 6m09s · 214k tok`, its fields dropped from the right until it fits, then a rule, and the URL is printed once, unbroken, as the first line of the text below, so it stays clickable.
+  Long text is cut at a word, then `…`.
+  The elapsed time counts from the attempt's start, when its prompt was written just before the launch, so a bridge replaying the files later shows the attempt's time.
+  Tokens are the running totals of the runtime's `usage` events; a pane with none shows no tokens, and no live dollar figure is shown.
+  With colour off the start time stands in for the elapsed time and tokens, which a bar printed once would leave stale.
+  `artisan start --pane-launch` reads the title, detail, accepted spec and slice count from the store, waiting at most 2 seconds for its lock, and the address from the copy's `config.toml`; anything it cannot read is left out of the bar rather than failing the launch.
 - The model's thinking is shown in full, word-wrapped, after a magenta `┃ ` margin on every line, in italic at full brightness and with no Markdown; without colour the margin alone marks it.
   Two pieces of thinking in a row are kept apart by a blank line.
   Thinking the model did not show, a redacted, empty or signature-only block, is one dimmed `· thinking not shown by the model` line.
@@ -507,10 +518,12 @@ It is Guildhall's own Go code (`internal/workbench`), separate from [Lanterns](l
 - After a minute with no new output reaching the pane, a dimmed `· quiet for 1m` line appears, and again at 2, 4 and 8 minutes and so on, doubling, so a long wait adds only a few lines.
   It is measured from live arrival in the bridge, never from event timestamps, so a resumed or recovered bridge replaying the files from the start shows no quiet lines; it goes to the pane only, so stall detection, which reads `launcher.log`'s modification time, is unchanged.
 - Once the launcher exits, after any advance output, a closing banner reads the attempt's result file and shows `✓ succeeded` or `✗ failed` with the summary, wrapped, or `no result written` when the file is missing or malformed; the finished line above follows it unchanged.
+  Its first line also gives the elapsed time, the cost and the tokens, as in `✓ succeeded · 6m09s · $1.84 · 214k tokens`, from the attempt's [usage file](adapters.md#usage-file), or for tokens, without one, the last `usage` event; each is left out when it is not known, and they drop from the right on a narrow pane.
+  The task page's URL is the banner's last line.
 
 The bridge tails `launcher.log` and the runtime's event file, [`workbench.jsonl`](adapters.md#claude-adapter), every 100 ms, reading the log first.
 Events render in order.
-An event carrying `log` lines waits until exactly those lines come next from `launcher.log`, which are then shown as the event instead; an event without them, thinking, a tool result or the runtime's end, renders as soon as every earlier event has; a line no pending event claims is an other line.
+An event carrying `log` lines waits until exactly those lines come next from `launcher.log`, which are then shown as the event instead; an event without them, thinking, usage, a tool result or the runtime's end, renders as soon as every earlier event has; a line no pending event claims is an other line.
 Because the wrapper writes each event before its lines, nothing is shown twice and nothing is lost.
 An event whose lines never arrive is shown as soon as a later event's lines arrive, so later events are not held behind it, or else at the end.
 With no event file, for another adapter or a wrapper older than the Workbench, or after the file's `truncated` event, the log is shown alone: a `tool:` line as a tool call, `▸ <Name> <subject>`, with no timestamp, result or summary, a `guildhall:` line as an other line, and the rest as text.

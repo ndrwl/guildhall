@@ -6,6 +6,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -109,10 +110,13 @@ func TestReadableStreamFixtureEvents(t *testing.T) {
 	if !bytes.Equal(events, want) {
 		t.Errorf("events =\n%s\nwant\n%s", events, want)
 	}
-	got := workbench.ReadAll(bytes.NewReader(events))
+	got, usage := withoutUsage(workbench.ReadAll(bytes.NewReader(events)))
 	kinds := make([]string, len(got))
 	for i, e := range got {
 		kinds[i] = string(e.Kind)
+	}
+	if len(usage) != 5 || usage[len(usage)-1] != (workbench.Tokens{Input: 10, Output: 118, CacheCreation: 21059, CacheRead: 68569}) {
+		t.Errorf("usage events = %+v", usage)
 	}
 	// The Agent and Read calls are one assistant message's parallel calls; the subagent's own Bash call and result
 	// come between the Read's result and the Agent's.
@@ -178,16 +182,57 @@ func TestReadableStreamFixtureEventsThinking(t *testing.T) {
 	if !bytes.Equal(events.Bytes(), want) {
 		t.Errorf("events =\n%s\nwant\n%s", events.Bytes(), want)
 	}
-	got := workbench.ReadAll(bytes.NewReader(events.Bytes()))
+	got, usage := withoutUsage(workbench.ReadAll(bytes.NewReader(events.Bytes())))
 	kinds := make([]string, len(got))
 	for i, e := range got {
 		kinds[i] = string(e.Kind)
+	}
+	// Each assistant message's usage counts once however many content blocks repeat it, as running totals.
+	if want := []workbench.Tokens{{Input: 2, Output: 16, CacheCreation: 5889, CacheRead: 11382}, {Input: 4, Output: 19, CacheCreation: 7812, CacheRead: 28653},
+		{Input: 6, Output: 59, CacheCreation: 8038, CacheRead: 47847}}; !slices.Equal(usage, want) {
+		t.Errorf("usage events = %+v, want %+v", usage, want)
 	}
 	if wantKinds := "tool_call tool_result thinking tool_call tool_result text"; strings.Join(kinds, " ") != wantKinds {
 		t.Fatalf("event kinds = %s, want %s", strings.Join(kinds, " "), wantKinds)
 	}
 	if e := got[2]; e.Text != "" || e.Log != nil {
 		t.Errorf("thinking event = %+v, want no text and no log", e)
+	}
+}
+
+// withoutUsage splits events into the rest and the totals of their KindUsage events, in order.
+func withoutUsage(events []workbench.Event) ([]workbench.Event, []workbench.Tokens) {
+	var rest []workbench.Event
+	var usage []workbench.Tokens
+	for _, e := range events {
+		switch {
+		case e.Kind != workbench.KindUsage:
+			rest = append(rest, e)
+		case e.Usage != nil && e.Log == nil:
+			usage = append(usage, *e.Usage)
+		}
+	}
+	return rest, usage
+}
+
+// TestReadableStreamUsage: usage is summed over message ids, a message repeating its usage on each block counts
+// once at its latest, an unchanged total writes nothing, and a user event's usage is ignored.
+func TestReadableStreamUsage(t *testing.T) {
+	var events bytes.Buffer
+	stream := &readableStream{out: &bytes.Buffer{}, events: workbench.NewWriter(&events), result: &limitedBuffer{limit: maxOutputBytes}}
+	for _, l := range []string{
+		`{"type":"assistant","message":{"id":"m1","usage":{"input_tokens":3,"output_tokens":1,"cache_read_input_tokens":100},"content":[{"type":"thinking","thinking":""}]}}`,
+		`{"type":"assistant","message":{"id":"m1","usage":{"input_tokens":3,"output_tokens":1,"cache_read_input_tokens":100},"content":[{"type":"text","text":"hi"}]}}`,
+		`{"type":"assistant","message":{"id":"m1","usage":{"input_tokens":3,"output_tokens":9,"cache_read_input_tokens":100},"content":[{"type":"text","text":"more"}]}}`,
+		`{"type":"user","message":{"id":"u1","usage":{"input_tokens":1000},"content":[]}}`,
+		`{"type":"assistant","message":{"id":"m2","usage":{"input_tokens":2,"output_tokens":5,"cache_creation_input_tokens":50},"content":[]}}`,
+	} {
+		_, _ = stream.Write([]byte(l + "\n"))
+	}
+	_, usage := withoutUsage(workbench.ReadAll(&events))
+	want := []workbench.Tokens{{Input: 3, Output: 1, CacheRead: 100}, {Input: 3, Output: 9, CacheRead: 100}, {Input: 5, Output: 14, CacheCreation: 50, CacheRead: 100}}
+	if !slices.Equal(usage, want) {
+		t.Errorf("usage = %+v, want %+v", usage, want)
 	}
 }
 

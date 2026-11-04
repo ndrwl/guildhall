@@ -56,8 +56,13 @@ type Renderer struct {
 	// thinking is set while the last line written ended shown thinking, so the next shown thinking is kept apart
 	// from it by a blank line.
 	thinking bool
-	err      error
+	// tokens are the latest KindUsage totals.
+	tokens Tokens
+	err    error
 }
+
+// Tokens are the latest token totals a KindUsage event reported, zero before any.
+func (r *Renderer) Tokens() Tokens { return r.tokens }
 
 // NewRenderer returns a Renderer writing to out.
 func NewRenderer(out io.Writer, opts Options) *Renderer {
@@ -120,12 +125,6 @@ func (r *Renderer) Close() {
 	}
 }
 
-// Header writes the attempt's header and a rule under it.
-func (r *Renderer) Header(repo, task, step, attempt string) {
-	r.line(span{clean("guildhall " + strings.Join([]string{repo, task, step, attempt}, " · ")), bold})
-	r.line(span{strings.Repeat("─", r.opts.Width), dim})
-}
-
 // Event writes one event. Tool calls and results write nothing of their own but are counted in the open burst,
 // whose one summary line is written when thinking, text, the end or truncation closes it; a failed call writes its
 // own error line as its result arrives.
@@ -155,6 +154,11 @@ func (r *Renderer) Event(e Event) {
 			r.burst.errors++
 		}
 		r.failedCall(e.Time, e.ID, sizeText(deref(e.Bytes), deref(e.Lines)))
+	case KindUsage:
+		// Usage writes nothing: it keeps the bar's and the banner's tokens current.
+		if e.Usage != nil {
+			r.tokens = *e.Usage
+		}
 	case KindEnd:
 		r.endBurst(e.Time)
 		r.line(span{r.clock(e.Time) + " · exited with status " + strconv.Itoa(deref(e.Exit)), dim})
@@ -228,22 +232,57 @@ type Result struct {
 	Summary string
 }
 
-// Banner writes the closing banner: the result's status and its summary wrapped, or that no result was written.
-func (r *Renderer) Banner(res *Result) {
+// Closing is what the closing banner shows beside the result: how long the attempt took, what it cost and how many
+// tokens it used, each left out when it is not known, and the task's page, empty with no [web] table.
+type Closing struct {
+	Elapsed time.Duration
+	CostUSD *float64
+	Tokens  int64
+	URL     string
+}
+
+// Banner writes the closing banner: the result's status, or that no result was written, then c's elapsed time,
+// cost and tokens on the same line, the result's summary wrapped, and the task's page as its last line.
+func (r *Renderer) Banner(res *Result, c Closing) {
 	r.endBurst(time.Time{})
 	r.line()
 	r.line(span{strings.Repeat("─", r.opts.Width), dim})
+	var facts []string
+	if c.Elapsed > 0 {
+		facts = append(facts, elapsedText(c.Elapsed))
+	}
+	if c.CostUSD != nil {
+		facts = append(facts, fmt.Sprintf("$%.2f", *c.CostUSD))
+	}
+	if c.Tokens > 0 {
+		facts = append(facts, tokenText(c.Tokens)+" tokens")
+	}
+	// The facts drop from the right until the line fits the pane.
+	head := func(s string, st style) {
+		for len(facts) > 0 && len([]rune(s+" · "+strings.Join(facts, " · "))) > r.opts.Width {
+			facts = facts[:len(facts)-1]
+		}
+		spans := []span{{s, st}}
+		if len(facts) > 0 {
+			spans = append(spans, span{" · " + strings.Join(facts, " · "), dim})
+		}
+		r.line(spans...)
+	}
 	switch {
 	case res == nil:
-		r.line(span{"✗ no result written", failure})
-		return
+		head("✗ no result written", failure)
 	case res.Status == "succeeded":
-		r.line(span{"✓ succeeded", success})
+		head("✓ succeeded", success)
 	default:
-		r.line(span{"✗ " + clean(res.Status), failure})
+		head("✗ "+clean(res.Status), failure)
 	}
-	for _, l := range strings.Split(clean(res.Summary), "\n") {
-		r.wrap(toRunes(l, plain), "  ", "  ")
+	if res != nil {
+		for _, l := range strings.Split(clean(res.Summary), "\n") {
+			r.wrap(toRunes(l, plain), "  ", "  ")
+		}
+	}
+	if c.URL != "" {
+		r.line(span{clean(c.URL), tool})
 	}
 }
 

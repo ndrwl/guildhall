@@ -23,7 +23,8 @@ func stamped(e Event, offset time.Duration) Event {
 
 // scenario renders one attempt's worth of every kind of line.
 func scenario(r *Renderer) {
-	r.Header("guildhall", "d36", "build", "1")
+	r.Event(stamped(Usage(Tokens{Input: 12, Output: 2000, CacheCreation: 40000, CacheRead: 172000}), 0))
+	r.Bar(scenarioBar, at.Add(6*time.Minute+9*time.Second))
 	r.Event(stamped(Thinking("The spec asks for **thinking** first. I should read it, then run the tests across every package to see where the repository stands.\n\nA second paragraph \x1b[31mwith\x1b[0m an injected escape."), 0))
 	r.Event(stamped(Thinking("Two pieces of thinking in a row stay apart."), 0))
 	r.Event(stamped(Thinking(""), 0))
@@ -57,9 +58,17 @@ func scenario(r *Renderer) {
 	r.Other("some Claude stderr \x1b[2J")
 	r.Quiet(2 * time.Minute)
 	r.Event(stamped(End(0), 60*time.Second))
-	r.Banner(&Result{Status: "succeeded", Summary: "Built the Workbench: a formatted Artisan stream in the pane, with tests for the renderer, the merge and the quiet line."})
+	cost := 1.844
+	r.Banner(&Result{Status: "succeeded", Summary: "Built the Workbench: a formatted Artisan stream in the pane, with tests for the renderer, the merge and the quiet line."},
+		Closing{Elapsed: 6*time.Minute + 9*time.Second, CostUSD: &cost, Tokens: r.Tokens().Total(), URL: scenarioBar.URL})
 	r.Close()
 }
+
+// scenarioBar is the status bar of the scenario's attempt.
+var scenarioBar = Bar{Repository: "guildhall", Task: "d169", Title: "Artisan Workbench shows the thought process and a status bar with the task and its page link",
+	Step: "build", Slice: 3, Slices: 4, Attempt: 1,
+	Asked: "make the Artisan's thinking the main thing on its Workbench pane, and add a status bar \x1b[31mpinned\x1b[0m at the top.",
+	URL:   "http://andrew-lap-wsl.tail5da40a.ts.net:4388/guildhall/d169", Start: at}
 
 // visible shows ESC as \e, so a golden file stays readable.
 func visible(s string) string { return strings.ReplaceAll(s, "\x1b", `\e`) }
@@ -128,7 +137,8 @@ func checkRendered(t *testing.T, got string, width int, color bool) {
 		"┃\n┃ A second paragraph [31mwith[0m an",
 		"escape.\n\n┃ Two pieces of thinking in a row stay",
 		"apart.\n· thinking not shown by the model\n",
-		"guildhall guildhall · d36 · build · 1",
+		"http://andrew-lap-wsl.tail5da40a.ts.net:4388/guildhall/d169\n",
+		"✓ succeeded · 6m09s · $1.84",
 		"14:03:14 ✗ Bash go test ./... · error, 3",
 		"14:03:40 ▸ read 1 file,",
 		"ran git 3 times",
@@ -151,7 +161,7 @@ func checkRendered(t *testing.T, got string, width int, color bool) {
 		t.Error("output holds a per-call or per-result line")
 	}
 	for _, l := range strings.Split(plainText, "\n") {
-		if n := len([]rune(l)); n > width && !strings.Contains(l, "never wrapped") && !strings.HasPrefix(l, "guildhall: claude-artisan") && !strings.HasPrefix(l, "guildhall: advance: build") {
+		if n := len([]rune(l)); n > width && !strings.Contains(l, "never wrapped") && !strings.HasPrefix(l, "http://") && !strings.HasPrefix(l, "guildhall: claude-artisan") && !strings.HasPrefix(l, "guildhall: advance: build") {
 			t.Errorf("line of %d runes is wider than %d: %q", n, width, l)
 		}
 	}
@@ -208,19 +218,24 @@ func TestThinking(t *testing.T) {
 
 // TestBanner: the closing banner states success, failure or that no result was written, with the summary wrapped.
 func TestBanner(t *testing.T) {
+	cost := 0.5
 	for _, tc := range []struct {
-		name string
-		res  *Result
-		want []string
+		name    string
+		res     *Result
+		closing Closing
+		want    []string
 	}{
-		{"succeeded", &Result{Status: "succeeded", Summary: "All done."}, []string{"✓ succeeded", "  All done."}},
-		{"failed", &Result{Status: "failed", Summary: "The tests would not pass on Windows, so the work stops here for a decision."},
+		{"succeeded", &Result{Status: "succeeded", Summary: "All done."}, Closing{}, []string{"✓ succeeded", "  All done."}},
+		{"failed", &Result{Status: "failed", Summary: "The tests would not pass on Windows, so the work stops here for a decision."}, Closing{},
 			[]string{"✗ failed", "  The tests would not pass on Windows, so", "  the work stops here for a decision."}},
-		{"missing", nil, []string{"✗ no result written"}},
+		{"missing", nil, Closing{}, []string{"✗ no result written"}},
+		{"closing", &Result{Status: "succeeded", Summary: "All done."}, Closing{Elapsed: 75 * time.Minute, CostUSD: &cost, Tokens: 1234, URL: "http://h:1/guildhall/d169-with-a-long-name-past-the-width"},
+			[]string{"✓ succeeded · 1h15m · $0.50 · 1.2k tokens", "  All done.", "http://h:1/guildhall/d169-with-a-long-name-past-the-width"}},
+		{"missing with time", nil, Closing{Elapsed: 9 * time.Second, URL: "http://h:1/r/t"}, []string{"✗ no result written · 9s", "http://h:1/r/t"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
-			NewRenderer(&out, Options{Width: 42}).Banner(tc.res)
+			NewRenderer(&out, Options{Width: 42}).Banner(tc.res, tc.closing)
 			lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
 			if lines[0] != "" || lines[1] != strings.Repeat("─", 42) {
 				t.Errorf("banner does not open with a blank line and a rule: %q", lines)

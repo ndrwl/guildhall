@@ -1,5 +1,6 @@
-\e[0;1mguildhall guildhall · d36 · build · 1\e[0m
+\e[0;1md169 build · attempt 1 · 6m09s\e[0m
 \e[0;2m────────────────────────────────────────\e[0m
+\e[0;36mhttp://andrew-lap-wsl.tail5da40a.ts.net:4388/guildhall/d169\e[0m
 \e[0;35m┃ \e[0;3mThe spec asks for **thinking** first.\e[0m
 \e[0;35m┃ \e[0;3mI should read it, then run the tests\e[0m
 \e[0;35m┃ \e[0;3macross every package to see where the\e[0m
@@ -57,9 +58,10 @@ hewidth.
 \e[0;2m14:04:09 · exited with status 0\e[0m
 
 \e[0;2m────────────────────────────────────────\e[0m
-\e[0;1;32m✓ succeeded\e[0m
+\e[0;1;32m✓ succeeded\e[0;2m · 6m09s · $1.84\e[0m
   Built the Workbench: a formatted
   Artisan stream in the pane, with tests
   for the renderer, the merge and the
   quiet line.
+\e[0;36mhttp://andrew-lap-wsl.tail5da40a.ts.net:4388/guildhall/d169\e[0m
 \e[0m

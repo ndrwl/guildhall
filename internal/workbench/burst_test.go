@@ -119,7 +119,7 @@ func TestBurstClosedByOtherOutput(t *testing.T) {
 	r.Other("stderr")
 	r.Event(stamped(End(1), 2*time.Second))
 	r.Event(callAt("b", "Grep", "", 3*time.Second))
-	r.Banner(nil)
+	r.Banner(nil, Closing{})
 	want := "stderr\n14:03:11 ▸ searched once\n14:03:11 · exited with status 1\n14:03:12 ▸ searched once\n\n" +
 		strings.Repeat("─", 80) + "\n✗ no result written\n"
 	if out.String() != want {
