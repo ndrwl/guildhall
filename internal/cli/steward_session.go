@@ -256,6 +256,7 @@ func ensureStewardRecords(storePath string) error {
 		for _, t := range []store.Task{
 			{ID: stewardRolloutsTask, Title: "Rollout approvals", Detail: "The Guildmaster's approvals of rollout plan digests, one decision per plan."},
 			{ID: stewardSetupTask, Title: "Setup plan approvals", Detail: "The Guildmaster's approvals of setup plan digests, such as a Director copy's takeover, one decision per plan."},
+			{ID: stewardSecretsTask, Title: "Secrets plan approvals", Detail: "The Guildmaster's approvals of secrets plan digests, each pushing machines' secrets ciphertext, one decision per plan."},
 			{ID: stewardGuildmasterTk, Title: "Messages from the Guildmaster", Detail: "The task the Guildmaster's messages to the Steward name."},
 			{ID: stewardIncidentsTask, Title: "Incident triage", Detail: "The Guildmaster's triage of collected incidents, one decision per incident: accept, defer or decline."},
 			{ID: stewardLessonsTask, Title: "Lesson triage", Detail: "The Guildmaster's triage of collected lessons, one decision per lesson: adopt or decline."},
@@ -305,12 +306,17 @@ func (a *App) stewardSessionStart(p startPlan, copyDir, storePath, state string)
 			plan = d.Subject.Digest
 		}
 		kind := "rollout"
-		if d.TaskID == stewardSetupTask {
+		switch d.TaskID {
+		case stewardSetupTask:
 			kind = "setup"
+		case stewardSecretsTask:
+			kind = "secrets"
 		}
 		switch {
 		case d.Open():
 			out.inFlight = append(out.inFlight, fmt.Sprintf("%s approval %s: plan %s waits for the Guildmaster's answer; show them the plan", kind, d.ID, plan))
+		case d.Answered && d.Choice == stewardApprove && kind == "secrets":
+			out.inFlight = append(out.inFlight, fmt.Sprintf("secrets approval %s: the Guildmaster approved plan %s; apply it with guildhall steward secrets apply --approve %s unless its plan directory holds a receipt", d.ID, plan, plan))
 		case d.Answered && d.Choice == stewardApprove && kind == "setup":
 			out.inFlight = append(out.inFlight, fmt.Sprintf("setup approval %s: the Guildmaster approved plan %s; apply it with guildhall steward takeover --apply --approve %s unless its step log shows it done", d.ID, plan, plan))
 		case d.Answered && d.Choice == stewardApprove:
@@ -323,7 +329,7 @@ func (a *App) stewardSessionStart(p startPlan, copyDir, storePath, state string)
 // stewardApprovalDecisions are the Steward store's plan approval decisions: the rollouts', then the setup plans'.
 func stewardApprovalDecisions(s *store.Store) ([]store.Decision, error) {
 	var out []store.Decision
-	for _, task := range []string{stewardRolloutsTask, stewardSetupTask} {
+	for _, task := range []string{stewardRolloutsTask, stewardSetupTask, stewardSecretsTask} {
 		ds, err := s.Decisions(stewardRepository, task)
 		if err != nil {
 			return nil, err
@@ -666,6 +672,9 @@ func (a *App) stewardApprovalCmd(args []string) int {
 	}
 	if steward.IsSetupPlan(*planDir) {
 		return a.setupApprovalRequest(cp.dir, storePath, *planDir)
+	}
+	if steward.IsSecretsPlan(*planDir) {
+		return a.secretsApprovalRequest(cp.dir, storePath, *planDir)
 	}
 	plan, err := steward.ReadPlan(*planDir)
 	if err != nil {

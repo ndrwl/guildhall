@@ -32,13 +32,9 @@ func Init(ctx context.Context, p Paths, run Runner) (string, bool, error) {
 		return "", false, fmt.Errorf("secrets init: %s is not on PATH: %w", KeygenProgram, err)
 	}
 	if _, err := os.Lstat(p.Key); err == nil {
-		out, _, err := run(ctx, nil, path, "-y", p.Key)
+		pub, err := publicKeyOf(ctx, path, p.Key, run)
 		if err != nil {
-			return "", false, fmt.Errorf("secrets init: %s exists but %s -y cannot read its public key: %v", p.Key, KeygenProgram, err)
-		}
-		pub := strings.TrimSpace(string(out))
-		if !publicKey(pub) {
-			return "", false, fmt.Errorf("secrets init: %s -y %s printed no age public key", KeygenProgram, p.Key)
+			return "", false, fmt.Errorf("secrets init: %w", err)
 		}
 		return pub, false, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -77,14 +73,39 @@ func Init(ctx context.Context, p Paths, run Runner) (string, bool, error) {
 func keyPublic(out []byte) (string, bool) {
 	sc := bufio.NewScanner(bytes.NewReader(out))
 	for sc.Scan() {
-		if pub, ok := strings.CutPrefix(strings.TrimSpace(sc.Text()), "# public key: "); ok && publicKey(pub) {
+		if pub, ok := strings.CutPrefix(strings.TrimSpace(sc.Text()), "# public key: "); ok && ValidRecipient(pub) {
 			return pub, true
 		}
 	}
 	return "", false
 }
 
-// publicKey reports whether s has the shape of one age X25519 recipient.
-func publicKey(s string) bool {
+// PublicKey is the public key of the age key file key, the recipient a secrets file for it is encrypted to, read
+// with age-keygen -y. The secret key is never returned.
+func PublicKey(ctx context.Context, key string, run Runner) (string, error) {
+	if run == nil {
+		run = Exec
+	}
+	path, err := exec.LookPath(KeygenProgram)
+	if err != nil {
+		return "", fmt.Errorf("%s is not on PATH: %w", KeygenProgram, err)
+	}
+	return publicKeyOf(ctx, path, key, run)
+}
+
+func publicKeyOf(ctx context.Context, keygen, key string, run Runner) (string, error) {
+	out, _, err := run(ctx, nil, keygen, "-y", key)
+	if err != nil {
+		return "", fmt.Errorf("%s exists but %s -y cannot read its public key: %v", key, KeygenProgram, err)
+	}
+	pub := strings.TrimSpace(string(out))
+	if !ValidRecipient(pub) {
+		return "", fmt.Errorf("%s -y %s printed no age public key", KeygenProgram, key)
+	}
+	return pub, nil
+}
+
+// ValidRecipient reports whether s has the shape of one age X25519 recipient, an age1... public key.
+func ValidRecipient(s string) bool {
 	return strings.HasPrefix(s, "age1") && !strings.ContainsAny(s, " \t\r\n") && len(s) < 200
 }

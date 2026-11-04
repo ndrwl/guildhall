@@ -14,8 +14,8 @@ import (
 	"github.com/ndrwl/guildhall/internal/artisan"
 )
 
-// lockName is the private config directory's writer lock, which a rollout apply, a collection round and a takeover
-// apply or abandon take, and privateLock alone names.
+// lockName is the private config directory's writer lock, which a rollout apply, a collection round, a takeover
+// apply or abandon, and a secrets set or apply take, and privateLock alone names.
 const lockName = ".rollout.lock"
 
 // maxLockRecord bounds how much of a lock file readLockOwner reads.

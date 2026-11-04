@@ -116,6 +116,8 @@ func (a *App) decide(args []string) int {
 				return fail(fmt.Errorf("decision %s/%s/%s approves a rollout, and only the Guildmaster answers it, outside any Guildhall session", *repo, *task, *id))
 			case stewardSetupTask:
 				return fail(fmt.Errorf("decision %s/%s/%s approves a setup plan, and only the Guildmaster answers it, outside any Guildhall session", *repo, *task, *id))
+			case stewardSecretsTask:
+				return fail(fmt.Errorf("decision %s/%s/%s approves a secrets plan, and only the Guildmaster answers it, outside any Guildhall session", *repo, *task, *id))
 			case stewardIncidentsTask, stewardLessonsTask:
 				return fail(fmt.Errorf("decision %s/%s/%s is the Guildmaster's triage, and only the Guildmaster answers it, outside any Guildhall session", *repo, *task, *id))
 			}
