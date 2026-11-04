@@ -71,9 +71,19 @@ func (g guard) fileName() string {
 	return g.program
 }
 
+// AttemptEnv is artisan.AttemptEnv, the attempt marker the launcher sets, which RunWithGuards clears; testenv imports
+// no Guildhall package, so it is repeated here and a cli test pins the two equal.
+const AttemptEnv = "GUILDHALL_ATTEMPT"
+
 // RunWithGuards runs m with the claude and codex guards installed (InstallClaudeGuard, InstallCodexGuard), removes
 // them, and returns m's exit code, or 2 when a guard cannot be installed; TestMain passes the code to os.Exit.
 func RunWithGuards(m *testing.M) int {
+	// An Artisan running the checks inside its attempt passes its attempt marker on; the tests run as outside any
+	// attempt, as on CI, so a guildhall they start never takes its Artisan forms, and those that need one set it.
+	if err := os.Unsetenv(AttemptEnv); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
 	for _, install := range []func() (func(), error){InstallClaudeGuard, InstallCodexGuard} {
 		remove, err := install()
 		if err != nil {

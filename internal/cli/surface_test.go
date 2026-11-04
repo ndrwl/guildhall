@@ -51,7 +51,6 @@ func TestMessagesSendRecordsTheSenderFromWhereItRuns(t *testing.T) {
 		wd   string
 		want string
 	}{
-		{"artisan in a director session", map[string]string{"GUILDHALL_ATTEMPT": "app/t-1/build/1", "GUILDHALL_SESSION": "1"}, copyDir, store.SenderArtisan},
 		{"director", session, filepath.Join(copyDir, "director"), store.SenderDirector},
 		{"other director", map[string]string{"GUILDHALL_SESSION": "2"}, other, store.SenderOtherDirector},
 		{"guildmaster", nil, t.TempDir(), store.SenderGuildmaster},
@@ -77,6 +76,22 @@ func TestMessagesSendRecordsTheSenderFromWhereItRuns(t *testing.T) {
 				t.Fatalf("read: exit %d, %s", code, stdout)
 			}
 		})
+	}
+	// The attempt marker wins over an inherited Director session, and inside an attempt messages send is refused
+	// outright (d173), so no message is ever recorded from the artisan sender.
+	if messageSender(func(k string) string {
+		return map[string]string{"GUILDHALL_ATTEMPT": "app/t-1/build/1", "GUILDHALL_SESSION": "1"}[k]
+	}, func() (string, error) { return copyDir, nil }, path) != store.SenderArtisan {
+		t.Error("an attempt in a Director session is not the artisan sender")
+	}
+	app, stdout, stderr := newTestApp(nil, nil)
+	app.Getenv = func(k string) string {
+		return map[string]string{"GUILDHALL_ATTEMPT": "app/t-1/build/1", "GUILDHALL_SESSION": "1"}[k]
+	}
+	app.Getwd = func() (string, error) { return copyDir, nil }
+	app.Stdin = strings.NewReader(envelope("n-artisan", "director"))
+	if code := app.Run([]string{"messages", "send", "--store", path, "director", "-"}); code != 2 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "not available inside an attempt") {
+		t.Fatalf("send inside an attempt: exit %d, %q, %s", code, stdout, stderr)
 	}
 }
 

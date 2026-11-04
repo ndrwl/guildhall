@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/adapter/claude"
 	"github.com/ndrwl/guildhall/internal/atomicfile"
+	"github.com/ndrwl/guildhall/internal/store"
 )
 
 // Subcommand is the guildhall subcommand that runs the fake Artisan.
@@ -210,7 +212,12 @@ type directives struct {
 	inventory       string
 	// output is one file to write into the working directory and list as the result's output.
 	output, text string
+	// ack are the steering messages the fake acknowledges, with guildhall messages ack, before it writes its result.
+	ack []string
 }
+
+// MaxAcks bounds the ack directive.
+const MaxAcks = 8
 
 var faults = map[string]bool{"none": true, "no-result": true, "malformed": true, "wrong-identity": true, "exit-error": true}
 
@@ -296,6 +303,17 @@ func parseDirectives(prompt []byte) (directives, error) {
 			}
 			// A directive is one line, so `\n` in text writes a line break, as a Markdown document needs.
 			d.output, d.text = path, strings.ReplaceAll(text, `\n`, "\n")
+		case "ack":
+			ids := strings.Split(value, ",")
+			if len(ids) > MaxAcks {
+				return d, fmt.Errorf("ack %q names more than %d messages", value, MaxAcks)
+			}
+			for _, id := range ids {
+				if store.ValidateMessageID(id) != nil {
+					return d, fmt.Errorf("ack %q must be message ids separated by commas", value)
+				}
+			}
+			d.ack = ids
 		default:
 			return d, fmt.Errorf("unknown directive %q", key)
 		}
@@ -422,6 +440,15 @@ func Run(ctx context.Context, a Args, out io.Writer, sleep func(context.Context,
 		say("lifetime %s over without a result", d.lifetime)
 		return nil
 	}
+	// Acknowledging is the Artisan's own act, as a model's would be: a failed ack is reported, and intake then refuses
+	// the result for the message left unacknowledged.
+	for _, id := range d.ack {
+		if err := AckMessage(ctx, id, out); err != nil {
+			say("guildhall messages ack %s: %v", id, err)
+		} else {
+			say("acknowledged steering message %s", id)
+		}
+	}
 	result, err := newResult(a, d, prompt, play)
 	if errors.As(err, new(errScenario)) {
 		say("%v", err)
@@ -450,6 +477,19 @@ func Run(ctx context.Context, a Args, out io.Writer, sleep func(context.Context,
 		return ErrSimulatedExit
 	}
 	return nil
+}
+
+// AckMessage runs `guildhall messages ack <id>`, the guildhall on PATH, in the fake's working directory and
+// environment, so GUILDHALL_ATTEMPT scopes it to the attempt's own inbox as it does a model's command. Its stdout and
+// stderr, the receipt and any steering frames, go to out.
+func AckMessage(ctx context.Context, id string, out io.Writer) error {
+	prog, err := exec.LookPath("guildhall")
+	if err != nil {
+		return err
+	}
+	cmd := exec.CommandContext(ctx, prog, "messages", "ack", id)
+	cmd.Stdout, cmd.Stderr = out, out
+	return cmd.Run()
 }
 
 // newResult is the result the prompt asks for, or the scenario's when play is not nil.

@@ -761,6 +761,18 @@ func (p storeRecords) BindTaskGrant(m, repo, id, grant, step string, n int) (sto
 	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.BindTaskGrant(m, repo, id, grant, step, n) })
 }
 
+func (p storeRecords) Inbox(to store.Recipient, after uint64, limit int) ([]store.Message, bool, error) {
+	type page struct {
+		msgs []store.Message
+		more bool
+	}
+	pg, err := withRecords(p, true, nil, func(s *store.Store) (page, error) {
+		msgs, more, err := s.Inbox(to, after, limit)
+		return page{msgs, more}, err
+	})
+	return pg.msgs, pg.more, err
+}
+
 func (p storeRecords) StartAttempt(m, repo, id, step string) (store.Receipt, error) {
 	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.StartAttempt(m, repo, id, step) })
 }

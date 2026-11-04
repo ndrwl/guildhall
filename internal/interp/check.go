@@ -21,7 +21,12 @@ var ErrReadOnly = errors.New("a result check writes nothing")
 
 // Rejection is a result intake would refuse: Reason is exactly the text it would record as the attempt's
 // IntakeRejection.
-type Rejection struct{ Reason string }
+type Rejection struct {
+	Reason string
+	// Unacknowledged reports a rejection for unacknowledged steering messages to the attempt alone, which the
+	// Artisan clears by acknowledging them; `guildhall result submit` spends no resubmission on it.
+	Unacknowledged bool
+}
 
 func (e *Rejection) Error() string { return e.Reason }
 
@@ -58,7 +63,8 @@ func (e *Engine) CheckResult(ctx context.Context, key artisan.AttemptKey, data [
 	}
 	if err := r.checkResult(s, key.Attempt, res); err != nil {
 		if rejection := (*resultRejection)(nil); errors.As(err, &rejection) {
-			return &Rejection{Reason: err.Error()}
+			var u *unacknowledged
+			return &Rejection{Reason: err.Error(), Unacknowledged: errors.As(err, &u)}
 		}
 		return err
 	}

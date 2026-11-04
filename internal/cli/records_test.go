@@ -95,6 +95,12 @@ func newStoreRecordsHarness(t *testing.T) interptest.RecordsHarness {
 			_, err := write(func(s *store.Store) (store.Receipt, error) { return store.Receipt{}, interptest.PauseStoreDirector(s) })
 			return err
 		},
+		SendMessage: func(m store.Message) (store.Receipt, error) {
+			return write(func(s *store.Store) (store.Receipt, error) { return s.SendMessage(m) })
+		},
+		AckMessage: func(to store.Recipient, id string) (store.Receipt, error) {
+			return write(func(s *store.Store) (store.Receipt, error) { return s.AckMessage(to, id) })
+		},
 	}
 }
 

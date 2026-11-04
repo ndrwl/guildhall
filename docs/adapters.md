@@ -114,6 +114,7 @@ Prompt lines of the form `guildhall-fake: <key>=<value>` choose its behaviour; e
 | `interactive=true` | The worker echoes each line of its standard input |
 | `inventory=<absolute dir>` | Every fake process records its identity there with `artisan.RecordProcess` ([inventory](artisan.md#harness)), and the worker records each native grandchild |
 | `output=<path>:<text>` | Before the result, write `<text>`, each `\n` in it read as a line break, and a newline to `<path>`, a relative slash-separated path in the working directory, and list it as the result's one output, as a stage's output port needs |
+| `ack=<id>[,<id>...]` | Before the result, run `guildhall messages ack <id>`, the `guildhall` on `PATH`, for each of up to 8 [steering messages](messaging.md#steering-an-attempt), in order, as a model would; a failed ack is reported and the result still written, for intake to refuse |
 
 Unless `ignore-cancel` is set, the cancel marker (the result file's `.cancelled` sidecar) ends a fake process's work without a result, except that `result=after-cancel` makes the worker publish a late result even with `ignore-cancel=true`.
 
@@ -224,8 +225,9 @@ The session's **effective grant** is, in order and with a repeated rule kept onc
 
 1. the profile's [`allowed_tools`](configuration.md#profiles) when it sets them, even to `[]`; otherwise the **shipped default grant** for its name, which only a `claude` profile gets;
 2. then the **repository grant** of the task's repository for that profile, `[repository.profiles.<name>]` ([repositories](configuration.md#repositories)), if any;
-3. then, for every `claude` profile, the **`guildhall` grant** (`claude.GuildhallRules`): `Bash(guildhall ci log:*)` (`claude.CILogRule`), which lets the Artisan read its task's [failed CI job logs](ci-logs.md) ([decision](decisions/failed-job-logs.md)), and `Bash(guildhall result submit:*)` and `Bash(guildhall result check:*)` (`claude.ResultRules`), which let it check its result with intake's checks and fix a rejection while its session is live ([CLI contract](contracts/cli.md)).
-   They are added even when the copy sets the profile's own `allowed_tools`, which replace the shipped default and would otherwise drop them, because the commands read only the Artisan's own task, and `result submit` writes only its own attempt's draft and submission count.
+3. then, for every `claude` profile, the **`guildhall` grant** (`claude.GuildhallRules`): `Bash(guildhall ci log:*)` (`claude.CILogRule`), which lets the Artisan read its task's [failed CI job logs](ci-logs.md) ([decision](decisions/failed-job-logs.md)), and `Bash(guildhall result submit:*)` and `Bash(guildhall result check:*)` (`claude.ResultRules`), which let it check its result with intake's checks and fix a rejection while its session is live ([CLI contract](contracts/cli.md)), and `Bash(guildhall messages:*)` (`claude.MessagesRule`), which lets it list and acknowledge the [steering messages](messaging.md#steering-an-attempt) to its attempt.
+   They are added even when the copy sets the profile's own `allowed_tools`, which replace the shipped default and would otherwise drop them, because the commands read only the Artisan's own task, `result submit` writes only its own attempt's draft and submission count, and `messages`, with `GUILDHALL_ATTEMPT` set, reads and acknowledges only the attempt's own inbox and refuses `--store`, a recipient, `read` and `send`.
+   A `codex` or `fake` profile gets none of them; Codex runs no stage step, so it has no steering.
    No `gh`, `curl` or GitHub API rule is granted: Guildhall's own gh fetches the logs.
 4. then the **task grant** the attempt's binding records, if any, while the store does not record it revoked ([task grants](tasks.md#task-grants), [decision](decisions/task-grants.md)).
 

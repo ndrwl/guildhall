@@ -15,13 +15,14 @@ Supported today, on a local store file named on the command line:
 - reading one message;
 - acknowledging a consumed message;
 - [waking the Director](#waking-the-director) when a message to it is stored;
-- [Steward messages](#steward-messages): the Steward telling an enrolled Director about an issue it found, which the Director's external inbox receives from the `steward` sender.
+- [Steward messages](#steward-messages): the Steward telling an enrolled Director about an issue it found, which the Director's external inbox receives from the `steward` sender;
+- [steering a running attempt](#steering-an-attempt): every `guildhall` command the Artisan runs shows its unacknowledged messages, and intake refuses a succeeded result until each is acknowledged.
 
 Not provided yet:
 
-- telling a running Artisan that a message arrived.
-  A stored message is not proof that any agent has seen it;
-- finding the store from a Director's runtime context: every command takes `--store <path>`;
+- showing a running Artisan a message between its `guildhall` commands, such as with a hook after each tool call.
+  An Artisan that runs no `guildhall` command for a long stretch sees a message at its next one, or when its result is refused;
+- finding the store from a Director's runtime context: every Director command takes `--store <path>` or a copy;
 - messaging another Director, on this machine or another.
   Work still moves between Directors only by manual handoff (R1.15); [Director messaging](#director-messaging-designed-not-built) is designed, not built;
 - authentication of the sender: anyone who can write the store file can send a message.
@@ -47,6 +48,8 @@ There are three recipient forms:
 The store takes a `steward` message from `guildmaster` and `director` only (`store.StewardSenders`); the `director` tag is the Steward supervisor's own, for the `triage-opened` report of its [scheduled collection](steward.md#scheduled-collection) about items Directors filed.
 A message to `steward` is woken for as a message to `director` is, and both are the store's session inbox.
 None of this changes for [Steward messages](#steward-messages), which go the other way, from the Steward to a Director's external inbox.
+
+An `artisan:` inbox takes messages from the `director` and `guildhall` senders only (`store.ArtisanSenders`): `messages send` to it must run in the session of the Director whose copy runs the attempt, and the store refuses any other sender, so the Guildmaster steers an attempt through the Director, and no Artisan, Steward or other Director reaches one.
 
 There is no Director or Artisan registry yet, so an Artisan is identified by the stage attempt it runs.
 The repository, task, step and attempt must already exist in the store; a message to an Artisan needs that attempt to be running, while a message to the Director may concern a finished attempt or only a task.
@@ -112,6 +115,13 @@ No messages command creates a store; [`store init`](store.md#guildhall-store-ini
 - `guildhall messages read --store <path> <message-id>` prints one message, acknowledged or not, without acknowledging it.
 - `guildhall messages ack --store <path> <recipient> <message-id>` acknowledges a message addressed to that recipient and prints the acknowledgement's receipt.
 
+Inside an attempt, where `GUILDHALL_ATTEMPT` is set, only the Artisan forms exist, on the attempt's own inbox in the store of the copy that runs it, found from the working directory as `guildhall result` finds it:
+
+- `guildhall messages [list] [--after <sequence>] [--limit <n>]` lists the attempt's unacknowledged messages, printing what `messages list --store <path> artisan:<attempt>` prints.
+- `guildhall messages ack <message-id>` acknowledges one of them and prints the receipt; acknowledging it again prints the same receipt.
+
+They refuse `--store`, `--copy`, `--config`, a recipient, `read` and `send` with exit 2, so an Artisan reads and acknowledges only its own messages and sends none.
+
 A listed or read message is its envelope plus `sender`, `sequence`, its store-wide order, and `acknowledged`:
 
 | Field | Contract |
@@ -128,7 +138,7 @@ An envelope cannot declare its own sender: `sender` is not an envelope field, so
 | Sender | Set when |
 |---|---|
 | `guildhall` | Guildhall sends in process: the engine's outbox, an attempt's launcher, a quality judge and the workspace close sweep. |
-| `artisan` | `messages send` runs with `GUILDHALL_ATTEMPT` set, which the launcher sets to `<repository>/<task>/<step>/<n>` for an attempt's launcher and worker. This takes precedence over every row below, since a worker started from a Director session inherits its session variables. |
+| `artisan` | A command runs with `GUILDHALL_ATTEMPT` set, which the launcher sets to `<repository>/<task>/<step>/<n>` for an attempt's launcher and worker. This takes precedence over every row below, since a worker started from a Director session inherits its session variables. `messages send` is refused there, so no new message records it; older messages may carry it. |
 | `director` | `GUILDHALL_SESSION` is set and [copy discovery](running.md#copies) from where `messages send` runs finds the copy whose store the message is sent to. A Director session runs inside its copy; `--copy` does not choose the sender's copy. A Steward session sending to its own `steward.store` is `director` too. In a Steward store it is also the tag of the scheduled collection's `triage-opened` report, which the Steward's supervisor sends in process. |
 | `other-director` | `GUILDHALL_SESSION` is set and copy discovery finds a different copy. |
 | `guildmaster` | Neither `GUILDHALL_SESSION` nor `GUILDHALL_ATTEMPT` is set, wherever it runs. |
@@ -158,6 +168,36 @@ A sender is asserted by the sending process's environment, not authenticated: an
 
 The store has one writer at a time (see [the store](store.md#one-writer)).
 Each command holds the store only for its own operation and waits up to two seconds for another holder, so concurrent sends are serialized rather than lost; a process that keeps the store open blocks them until it closes it.
+
+## Steering an attempt
+
+The Director steers a running stage attempt by sending a message to its `artisan:<repository>/<task>/<step>/<attempt>` inbox, for example "the base moved, rebase first".
+The message carries text only, as every message does: stopping an attempt stays with `artisan stop`, and changing its brief with send-back or retry.
+Delivery does not depend on the agent, a hook or a plugin; it rides on the `guildhall` commands every Artisan already runs, and intake enforces it.
+
+- **Shown on every command.**
+  `guildhall ci log`, `guildhall result check`, `guildhall result submit` and `guildhall messages`, run with `GUILDHALL_ATTEMPT` set, first print each unacknowledged message to the attempt on standard error, in a frame:
+
+  ```text
+  ==== guildhall: steering message steer-1 from director (note) ====
+  | The base moved; rebase onto main first.
+  ==== act on it, then acknowledge it: guildhall messages ack steer-1 ====
+  ```
+
+  Every text line is prefixed `| `, so no text can close the frame, and terminal control characters other than tab and newline are stripped; the text is already bounded at 16 KiB.
+  Standard output is untouched, so each command's own output contract holds byte for byte.
+  A store the command cannot read within the copy's [`lock_wait`](configuration.md#settings), or no copy found that runs the attempt, prints one `guildhall: warning: steering messages to attempt <attempt> not read: <reason>` line instead, and the command runs as normal: the read never fails the command it precedes.
+- **Acknowledged by the Artisan.**
+  The Artisan acts on a message and runs `guildhall messages ack <id>`.
+  The Claude adapter's instruction says so, and grants `Bash(guildhall messages:*)`, which the [Artisan forms](#commands) confine to the attempt's own inbox ([adapters](adapters.md#artisan-permissions)).
+- **Enforced at intake.**
+  Intake refuses a succeeded result while any message to the attempt is unacknowledged, with the reason `unacknowledged steering message(s) to this attempt: <ids>; read each with guildhall messages, acknowledge it with guildhall messages ack <id>, then submit again`, naming up to ten ids.
+  The check is in intake's shared check half, so `guildhall result check`, `guildhall result submit` and intake give the same reason, and a result written directly, without `submit`, is refused too.
+  `result submit` spends none of its resubmissions on this rejection, since acknowledging clears it.
+  A failed result is not refused for unread messages, and a message sent after the result is written but before intake is refused like any other unread message: the attempt fails, and the Director sees why.
+
+Steering covers stage attempts on the `claude` and `fake` runtimes; the fake's `ack` [directive](adapters.md#scenarios) acknowledges as a model would.
+Codex runs no stage step, so it has no steering, and a quality judge has no steering inbox.
 
 ## Waking the Director
 

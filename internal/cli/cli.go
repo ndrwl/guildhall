@@ -379,6 +379,9 @@ func (a *App) Run(args []string) int {
 	if cmd == "steward" {
 		return a.steward(rest)
 	}
+	if a.steers(cmd, rest) {
+		a.showSteering()
+	}
 	var out string
 	switch cmd {
 	case "help", "-h", "--help":

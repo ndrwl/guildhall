@@ -107,10 +107,18 @@ func TestMessagesSendQueuesTheWakeWithoutASession(t *testing.T) {
 }
 
 func TestMessagesSendToAnArtisanWakesNoDirector(t *testing.T) {
-	path := messagingStorePath(t)
+	copyDir, path := copyStorePath(t)
+	markCopy(t, copyDir)
 	startSession(t, path, store.DirectorPane{Session: "lab", Workspace: "w1", Tab: "w1:t2", Pane: "w1:p2"})
 	panes := &typedPanes{}
 	app, _, stderr := newTestApp(nil, nil)
+	app.Getenv = func(k string) string {
+		if k == "GUILDHALL_SESSION" {
+			return "1"
+		}
+		return ""
+	}
+	app.Getwd = func() (string, error) { return copyDir, nil }
 	app.Stdin = strings.NewReader(envelope("n-1", "artisan"))
 	app.DirectorPane = panes
 	if code := app.Run([]string{"messages", "send", "--store", path, "artisan:app/t-1/build/1", "-"}); code != 0 {

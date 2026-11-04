@@ -22,7 +22,7 @@ func messagingStore(t *testing.T) (*Store, string) {
 var artisanInbox = Recipient{Role: RecipientArtisan, Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}
 
 func toArtisan(id string) Message {
-	return Message{ID: id, Recipient: RecipientArtisan, Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1, Type: "note", Text: "Rebase onto main first."}
+	return Message{ID: id, Recipient: RecipientArtisan, Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1, Type: "note", Text: "Rebase onto main first.", Sender: SenderDirector}
 }
 
 func toDirector(id string) Message {

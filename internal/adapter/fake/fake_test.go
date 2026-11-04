@@ -196,6 +196,10 @@ func TestRunRefusesBadDirectivesBeforeActing(t *testing.T) {
 		"guildhall-fake: color=red\n",
 		"guildhall-fake: outcome\n",
 		"guildhall-fake: outcome=failed\nguildhall-fake: outcome=succeeded\n",
+		"guildhall-fake: ack=\n",
+		"guildhall-fake: ack=a,,b\n",
+		"guildhall-fake: ack=../x\n",
+		"guildhall-fake: ack=1,2,3,4,5,6,7,8,9\n",
 	} {
 		args := setup(t, prompt)
 		if _, err := run(t, args); err == nil {
