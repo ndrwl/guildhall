@@ -147,6 +147,10 @@ func (r *run) designRequested(ev Event) error {
 	builds := func(step string) bool {
 		return slices.ContainsFunc(r.def.Steps, func(s workflow.Step) bool { return s.ID == step && s.Type == "build" })
 	}
+	if !ok && r.grill.applied {
+		return refuse("the task's grill is unattended, and a design round follows a live grill; switch it to live first with guildhall task grill %s/%s live --reason <text>",
+			r.task.Repository, r.task.ID)
+	}
 	if !ok || !slices.ContainsFunc(r.def.Steps, func(s workflow.Step) bool { return s.Type == "build" }) {
 		return refuse("bugs have no design round: workflow %s has no Director grill step and build step", r.def.Name)
 	}

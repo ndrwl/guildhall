@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/ndrwl/guildhall/internal/config"
@@ -22,7 +23,7 @@ import (
 )
 
 var taskUsage = `usage:
-  guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--detail <text> | --detail-file <file|->] [--kind feature|bug|hallmark] [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] [--override <key>=<value>... --override-quote <text>] <task>
+  guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--detail <text> | --detail-file <file|->] [--kind feature|bug|hallmark] [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] [--override <key>=<value>... --override-quote <text>] [--grill live|unattended --grill-reason <text>] <task>
   guildhall task priority --store <path> --repo <id> <task> <level>
   guildhall task hold-merge --store <path> --repo <id> <task>
   guildhall task show --store <path> [--config <director.toml>] --repo <id> <task> --json
@@ -39,12 +40,16 @@ var taskUsage = `usage:
   guildhall task link add|remove|list ... (guildhall task link for its usage)
   guildhall task depends add|remove ... (guildhall task depends for its usage)
   guildhall task override set|unset|list ... (guildhall task override for its usage)
+  guildhall task grill <repo>/<task> live|unattended --reason <text> [--by director|guildmaster] ... (guildhall task grill --help for its usage)
   guildhall task design --repo <id> --task <id> --surface <surface> --brief <file|-> ... (guildhall task design --help for its usage)
   guildhall task say --store <path> --repo <id> --task <id> --tag <attempt|decision> --text-file <path|-> ... (guildhall task say --help for its usage)
 --copy <dir>, or the copy found from the current directory, may stand in for --store, --config and --state:
 the copy's director.store, config.toml and state
 --title is a short name of at most 100 characters; the full statement goes in --detail, or --detail-file reads it
 from a file or - for standard input
+--grill records the task's grill mode with --grill-reason, a one-line reason, which unattended requires: live, the
+Director interviewing the Guildmaster, or unattended, an Artisan writing the open decisions; without it the grill is
+live. It applies only to a workflow with a Director grill, so not to a bug
 --kind chooses what the task is created as, which chooses its workflow; --fixes without --kind means bug:
 ` + taskKindHelp
 
@@ -142,6 +147,28 @@ type taskDetail struct {
 	AlsoRequires []string `json:"also_requires"`
 	// DesignRounds is how many design rounds the task has used, counted from their briefs; absent when none.
 	DesignRounds int `json:"design_rounds,omitempty"`
+	// Grill is the task's grill mode in effect (docs/tasks.md#grill-mode).
+	Grill grillView `json:"grill"`
+}
+
+// grillView is a task's grill mode in effect as task show prints it: the latest grill-mode record, or live for a task
+// with none, and Line, its one-line form, "grill: unattended (director): <reason>" or "grill: live".
+type grillView struct {
+	Mode   workflow.GrillMode `json:"mode"`
+	Reason string             `json:"reason,omitempty"`
+	By     string             `json:"by,omitempty"`
+	Number int                `json:"number,omitempty"`
+	SetAt  *time.Time         `json:"set_at,omitempty"`
+	Line   string             `json:"line"`
+}
+
+func newGrillView(records []store.GrillMode) grillView {
+	g := store.CurrentGrillMode(records)
+	v := grillView{Mode: g.Mode, Reason: g.Reason, By: g.By, Number: g.Number, Line: g.Line()}
+	if g.Number > 0 {
+		v.SetAt = &g.AddedAt
+	}
+	return v
 }
 
 // task runs a task subcommand against an existing store and prints its result as one JSON document (docs/tasks.md).
@@ -178,6 +205,9 @@ func (a *App) task(args []string) int {
 	if sub == "design" {
 		return a.taskDesign(args[1:])
 	}
+	if sub == "grill" {
+		return a.taskGrill(args[1:])
+	}
 	if sub == "say" {
 		return a.taskSay(args[1:])
 	}
@@ -213,6 +243,8 @@ func (a *App) task(args []string) int {
 	var overrides taskOverrideFlags
 	flags.Var(&overrides, "override", "task override key=value, repeatable")
 	overrideQuote := flags.String("override-quote", "", "the Guildmaster's words for the task's overrides")
+	grill := flags.String("grill", "", "the task's grill mode: live or unattended")
+	grillReason := flags.String("grill-reason", "", "the one-line reason for the task's grill mode")
 	var cp copyFlags
 	cp.register(flags)
 	var want int
@@ -220,7 +252,7 @@ func (a *App) task(args []string) int {
 	switch sub {
 	case "new":
 		want, allowed = 1, map[string]bool{"store": true, "config": true, "repo": true, "title": true, "detail": true, "detail-file": true, "kind": true, "depends-on": true, "fixes": true, "priority": true,
-			"override": true, "override-quote": true}
+			"override": true, "override-quote": true, "grill": true, "grill-reason": true}
 	case "priority":
 		want, allowed = 2, map[string]bool{"store": true, "repo": true}
 	case "hold-merge":
@@ -294,6 +326,14 @@ func (a *App) task(args []string) int {
 		return a.taskUsage("--override requires --override-quote, the Guildmaster's words")
 	case len(overrides) == 0 && *overrideQuote != "":
 		return a.taskUsage("--override-quote requires --override")
+	case *grill != "" && !slices.Contains(workflow.GrillModes, workflow.GrillMode(*grill)):
+		return a.taskUsage(fmt.Sprintf("--grill %q must be live or unattended", *grill))
+	case *grill == "" && *grillReason != "":
+		return a.taskUsage("--grill-reason requires --grill")
+	case *grill == string(workflow.GrillUnattended) && strings.TrimSpace(*grillReason) == "":
+		return a.taskUsage("--grill unattended requires --grill-reason, the one-line reason")
+	case strings.ContainsAny(*grillReason, "\r\n"):
+		return a.taskUsage("--grill-reason is one line")
 	case sub != "new" && sub != "list" && *repo == "":
 		return a.taskUsage(fmt.Sprintf("task %s requires --repo", sub))
 	case sub == "finding rule" && (*outcome == "" || *finding == "" || *move == "" || *reason == ""):
@@ -340,6 +380,13 @@ func (a *App) task(args []string) int {
 			return fail(err)
 		}
 		task.ID, task.Title, task.Detail, task.DependsOn, task.Fixes = positional[0], *title, *detail, deps, fixed.ref
+		// The grill mode is judged before the store opens too: only a workflow with a Director grill takes one, and
+		// an unattended grill needs an Artisan adapter for its profile.
+		if *grill != "" {
+			if err := checkGrillMode(*cfgPath, accepted.effective, workflow.GrillMode(*grill)); err != nil {
+				return fail(fmt.Errorf("--grill %s: %w", *grill, err))
+			}
+		}
 		// Every override is judged before the store opens, as the workflow is, so a refused one creates no task.
 		if len(overrides) > 0 {
 			cfg, err := admitDirector(*cfgPath)
@@ -395,6 +442,9 @@ func (a *App) task(args []string) int {
 		}
 		if err == nil && *priority != "" {
 			_, err = s.SetTaskPriority(mutationID("priority", task.Repository, task.ID, "1"), task.Repository, task.ID, level)
+		}
+		if err == nil && *grill != "" {
+			_, err = setGrillMode(s, task.Repository, task.ID, workflow.GrillMode(*grill), *grillReason, store.GrillModeByDirector)
 		}
 		// Each override is its own record with its own mutation, as task override set records it, so a rerun replays it.
 		for _, o := range overrides {
@@ -705,6 +755,11 @@ func showTask(s *store.Store, cfg *config.Config, repo, id string) (taskDetail, 
 		return taskDetail{}, err
 	}
 	d.Overrides = append(d.Overrides, store.ActiveTaskOverrides(overrides)...)
+	grills, err := s.GrillModes(repo, id)
+	if err != nil {
+		return taskDetail{}, err
+	}
+	d.Grill = newGrillView(grills)
 	if cfg != nil {
 		_, skipped, added, err := interp.EffectiveOverrides(cfg, repo, d.Overrides)
 		if err != nil {

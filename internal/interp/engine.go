@@ -408,10 +408,24 @@ func (e *Engine) begin(ctx context.Context, ev Event) (*run, error) {
 	if err := workflow.Validate(def); err != nil {
 		return nil, fmt.Errorf("interp: %w", err)
 	}
+	// The task's grill mode applies to the bound definition after its digest is checked, so a task binds the same
+	// revision whichever mode it runs (docs/tasks.md#grill-mode).
+	g, err := e.grillMode(t)
+	if err != nil {
+		return nil, err
+	}
+	if i := workflow.DirectorGrill(def); i >= 0 {
+		g.step = def.Steps[i].ID
+	}
+	if def, g.applied = workflow.ApplyGrillMode(def, g.Mode); g.applied {
+		if err := workflow.Validate(def); err != nil {
+			return nil, fmt.Errorf("interp: grill mode: %w", err)
+		}
+	}
 	if err := e.Config.CheckArtisanAdapters(def); err != nil {
 		return nil, fmt.Errorf("interp: %w", err)
 	}
-	r := &run{e: e, ctx: ctx, task: t, def: def, event: ev}
+	r := &run{e: e, ctx: ctx, task: t, def: def, event: ev, grill: g}
 	if err := r.load(); err != nil {
 		return nil, err
 	}
@@ -439,6 +453,8 @@ type run struct {
 	// the last, so the advance goes on with the next.
 	slice       sliceState
 	sliceMerged bool
+	// grill is the task's grill mode in effect as the advance began, and whether it changed the bound definition.
+	grill taskGrill
 	*history
 }
 
@@ -693,7 +709,8 @@ func (r *run) attempted(s workflow.Step) (bool, Next, error) {
 		err := r.notify(fmt.Sprintf("attempt-failed.%s-%d", s.ID, a.Number), store.MessageAttemptFailed, text)
 		return false, Next{Wait: WaitDirector, Step: s.ID, Attempt: a.Number}, err
 	}
-	// The latest attempt succeeded: it stands unless a loop sent the task back here or its inputs moved.
+	// The latest attempt succeeded: it stands unless a loop sent the task back here, its inputs moved or, for the
+	// grill, the task's grill mode changed since it ran.
 	pending, err := r.pending(s)
 	if err != nil {
 		return false, Next{}, err
@@ -702,7 +719,11 @@ func (r *run) attempted(s workflow.Step) (bool, Next, error) {
 	if err != nil {
 		return false, Next{}, err
 	}
-	if len(pending) > 0 || stale {
+	reopened, err := r.grillReopened(s, a.Number)
+	if err != nil {
+		return false, Next{}, err
+	}
+	if len(pending) > 0 || stale || reopened {
 		next, err := r.start(s)
 		return false, next, err
 	}
@@ -854,6 +875,7 @@ func (r *run) start(s workflow.Step) (Next, error) {
 			return Next{}, err
 		}
 		r.bindOverrides(&b)
+		r.bindGrillMode(s, &b)
 		if err := r.bind(s, n, inputs, b); err != nil {
 			return Next{}, err
 		}

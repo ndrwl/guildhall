@@ -145,7 +145,7 @@ func (a *App) taskDepends(args []string) int {
 // addTaskDependency records op on dep for the task. prior is the number of records the task has for dep, unless the
 // latest of them is this very command's, op and reason alike, when it is one fewer, so the store replays the original
 // receipt. An add is noted when it holds nothing: the task has a dependency override, or is past the dependency gate
-// of its bound workflow, which workflows resolves.
+// of its bound workflow, which workflows resolves, with the task's grill mode applied.
 func addTaskDependency(s *store.Store, workflows func(repo string) func(workflow.Revision) (*workflow.Definition, error), repo, task string, op store.TaskDependencyOp, dep store.TaskRef, reason string) (dependsReceipt, error) {
 	all, err := s.TaskDependencies(repo, task)
 	if err != nil {
@@ -184,6 +184,10 @@ func addTaskDependency(s *store.Store, workflows func(repo string) func(workflow
 	if err != nil {
 		out.Note = fmt.Sprintf("workflow %s does not resolve (%v); if the task is %s", t.Workflow.Name, err, dependsNotePastGate)
 		return out, nil
+	}
+	// An unattended grill runs as an Artisan, so its attempt puts the task past the gate, as the engine judges it.
+	if def, err = withGrillMode(s, repo, task, def); err != nil {
+		return out, err
 	}
 	if interp.PastDependencyGate(def, attempts) {
 		out.Note = dependsNotePastGate

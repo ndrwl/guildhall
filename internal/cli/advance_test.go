@@ -84,6 +84,14 @@ var appRepo = func() string {
 // newRunDirectorAt is newRunDirector over the absolute config file cfg, with its baseline and workflows beside it.
 func newRunDirectorAt(t *testing.T, cfg string) runDirector {
 	t.Helper()
+	d := newRunDirectorBare(t, cfg)
+	newTask(t, d.store, d.config, "app", "Sort the task list", "t-1")
+	return d
+}
+
+// newRunDirectorBare is newRunDirectorAt without task app/t-1, which the test creates itself.
+func newRunDirectorBare(t *testing.T, cfg string) runDirector {
+	t.Helper()
 	// A managed run copies the fixture too, since it writes managed.toml and the copy's store beside the config.
 	if appRepo != "/srv/app" || managedRun() {
 		dir := t.TempDir()
@@ -116,7 +124,6 @@ func newRunDirectorAt(t *testing.T, cfg string) runDirector {
 	})
 	// The Director-local workflow has no validate step, so it is below the review floor and needs its approval.
 	approveRepo(t, d.store, cfg, "app")
-	newTask(t, d.store, cfg, "app", "Sort the task list", "t-1")
 	return d
 }
 

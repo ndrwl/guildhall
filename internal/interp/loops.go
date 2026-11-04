@@ -70,6 +70,9 @@ type binding struct {
 	// override never re-runs a finished stage.
 	Overrides        []boundOverride  `json:"overrides,omitempty"`
 	SkippedOverrides []config.Skipped `json:"skipped_overrides,omitempty"`
+	// GrillMode is the task's grill mode a grill attempt was bound under, when the task has a grill-mode record; a
+	// grill attempt without it ran live. A change of mode reopens a succeeded grill (grillReopened).
+	GrillMode *boundGrillMode `json:"grill_mode,omitempty"`
 }
 
 // retryContext is a Director retry of attempt Attempt, which ended Outcome, as the next attempt's prompt quotes it:

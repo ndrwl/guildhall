@@ -729,6 +729,10 @@ func (p storeRecords) TaskOverrides(repo, id string) ([]store.TaskOverride, erro
 	return withRecords(p, true, nil, func(s *store.Store) ([]store.TaskOverride, error) { return s.TaskOverrides(repo, id) })
 }
 
+func (p storeRecords) GrillModes(repo, id string) ([]store.GrillMode, error) {
+	return withRecords(p, true, nil, func(s *store.Store) ([]store.GrillMode, error) { return s.GrillModes(repo, id) })
+}
+
 func (p storeRecords) TaskDependencies(repo, id string) ([]store.TaskDependency, error) {
 	return withRecords(p, true, nil, func(s *store.Store) ([]store.TaskDependency, error) { return s.TaskDependencies(repo, id) })
 }
