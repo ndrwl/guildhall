@@ -17,6 +17,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/git"
+	"github.com/ndrwl/guildhall/internal/setup"
 	"github.com/ndrwl/guildhall/internal/strictjson"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
@@ -34,8 +35,16 @@ const (
 )
 
 // SetupKindTakeover is a setup plan that adopts an existing Director copy into the roster as managed, keeping its
-// store. Provisioning a new copy is a later slice of guildhall/d128.
+// store; SetupKindProvision makes a new one.
 const SetupKindTakeover = "takeover"
+
+// remotePane is the Herdr pane director status --json records for a session.
+type remotePane struct {
+	Session   string `json:"session"`
+	Workspace string `json:"workspace"`
+	Tab       string `json:"tab"`
+	Pane      string `json:"pane"`
+}
 
 // The steps of a takeover, in the order they run.
 const (
@@ -122,6 +131,16 @@ type SetupPlan struct {
 	// Files are the files the plan copies to the machine, kept under the plan directory.
 	Files []PlannedFile `json:"files"`
 	Steps []SetupStep   `json:"steps"`
+	// A provisioning plan also has the request it was made from, the setup directory on the machine, the step files
+	// the doctor checks it against and the doctor's report for each built-in among them. They are empty in a
+	// takeover plan, so its digest is what it was before provisioning was built.
+	SetupDir  string            `json:"setup_dir,omitempty"`
+	Request   *ProvisionRequest `json:"request,omitempty"`
+	StepFiles []StepFile        `json:"step_files,omitempty"`
+	// Preflight is the new-copy step file whose doctor, run before the plan acts and before each clone, refuses
+	// with ErrCopyExists a copy directory with a config or store and a clone path that is not empty.
+	Preflight *StepFile      `json:"preflight,omitempty"`
+	Doctor    []setup.Report `json:"doctor,omitempty"`
 
 	// session is the copy's session state the dry run saw, shown but not bound: it moves on its own.
 	session string
@@ -158,13 +177,17 @@ type PlannedFile struct {
 	SHA256 string `json:"sha256"`
 }
 
-// SetupStep is one step of a setup plan. Argv is the fixed remote command a remote step runs, or the scp command a
-// copy step runs; Expect says what the step checks before it acts and verifies after.
+// SetupStep is one step of a setup plan. Argv is the fixed remote command a remote or fix step runs, the scp command
+// a copy step runs, or the wizard command the Guildmaster runs on the machine for a wizard step; Expect says what
+// the step checks before it acts and verifies after. A fix or wizard step names its step file and the doctor's gap
+// ids it closes.
 type SetupStep struct {
-	ID     string   `json:"id"`
-	Kind   string   `json:"kind"`
-	Argv   []string `json:"argv,omitempty"`
-	Expect string   `json:"expect"`
+	ID       string   `json:"id"`
+	Kind     string   `json:"kind"`
+	Argv     []string `json:"argv,omitempty"`
+	StepFile string   `json:"step_file,omitempty"`
+	GapIDs   []string `json:"gap_ids,omitempty"`
+	Expect   string   `json:"expect"`
 }
 
 // Session is the copy's session state as the dry run saw it.
@@ -180,6 +203,10 @@ type Setup struct {
 	// Steward is the label copies are enrolled with: the Steward config's [steward] name.
 	Steward string
 	Now     func() time.Time
+	// StartWait bounds how long a provisioning's start step waits, after director start --tab returns, for director
+	// status to report the session started with its tab, checking every PollEvery; zero means 2 minutes and 2
+	// seconds.
+	StartWait, PollEvery time.Duration
 }
 
 func (s *Setup) signature() git.Signature {
@@ -388,8 +415,14 @@ type remoteMode struct {
 // remoteStatus is what director status --json prints, as a takeover reads it.
 type remoteStatus struct {
 	Session struct {
-		State string `json:"state"`
+		State   string     `json:"state"`
+		Pane    remotePane `json:"pane"`
+		ReadyAt time.Time  `json:"ready_at"`
 	} `json:"session"`
+	Health struct {
+		Release string `json:"release"`
+		Pin     string `json:"pin"`
+	} `json:"health"`
 	Running []struct {
 		Repository string `json:"repository"`
 		TaskID     string `json:"task_id"`
@@ -463,7 +496,10 @@ func ReadSetupPlan(planDir string) (*SetupPlan, error) {
 	if err := strictjson.Decode(data, &p, strictjson.Options{Schema: setupPlanSchemaPrefix, Version: setupPlanSchemaVersion}); err != nil {
 		return nil, fmt.Errorf("setup plan: %w", err)
 	}
-	if p.Kind != SetupKindTakeover {
+	switch {
+	case p.Kind == SetupKindProvision && p.Request != nil:
+		return &p, nil
+	case p.Kind != SetupKindTakeover:
 		return nil, fmt.Errorf("setup plan: kind %q is not built yet", p.Kind)
 	}
 	p.input = TakeoverInput{Machine: p.Machine, Director: p.Director, CopyDir: p.CopyDir, PlanDir: p.PlanDir}

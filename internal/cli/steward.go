@@ -31,6 +31,8 @@ const stewardUsage = `Usage:
   guildhall steward takeover --config <steward.toml> --plan <dir> --abandon
   guildhall steward secrets set --config <steward.toml> <machine> <NAME>
   guildhall steward secrets plan|apply --config <steward.toml> --machine <label>... --plan <dir> [--approve <plan digest>]
+  guildhall steward provision --config <steward.toml> --request <file> --plan <dir> --dry-run
+  guildhall steward provision --config <steward.toml> --plan <dir> --apply --approve <plan digest>
 
 start runs the Steward session supervisor, as director start does for a Director; the other lifecycle commands
 mirror the Director's on the Steward copy's steward.store. status prints the session, the roster and each copy's
@@ -43,7 +45,10 @@ decision for each. takeover adopts an existing standalone Director copy into the
 store: the dry run writes the plan, --apply runs it once the Guildmaster approved its digest, resuming at its first
 step not done, and --abandon gives it up before the copy is changed. secrets set encrypts a value read from the
 terminal or standard input to a machine's age key and commits the ciphertext; secrets plan and apply push a
-machine's committed ciphertext to it once the Guildmaster approved the plan's digest.
+machine's committed ciphertext to it once the Guildmaster approved the plan's digest. provision makes a new managed
+Director copy on a roster machine that has Guildhall, from a request file: the dry run runs the machine's doctor and
+writes the plan, and --apply runs it once approved, stopping at each human step with the wizard command the
+Guildmaster runs there.
 `
 
 // scpTimeout bounds each scp run during a rollout.
@@ -75,10 +80,12 @@ func (a *App) steward(args []string) int {
 			return a.stewardTakeoverCmd(args[1:])
 		case "secrets":
 			return a.stewardSecretsCmd(args[1:])
+		case "provision":
+			return a.stewardProvisionCmd(args[1:])
 		}
 	}
 	if len(args) == 0 || args[0] != "rollout" {
-		_, _ = fmt.Fprintf(a.Stderr, "guildhall: steward: the commands are start, ready, pause, resume, stop, reload, handoff, status, approval, collect, rollout, takeover and secrets\n\n%s", stewardUsage)
+		_, _ = fmt.Fprintf(a.Stderr, "guildhall: steward: the commands are start, ready, pause, resume, stop, reload, handoff, status, approval, collect, rollout, takeover, secrets and provision\n\n%s", stewardUsage)
 		return 2
 	}
 	fs := flag.NewFlagSet("steward rollout", flag.ContinueOnError)

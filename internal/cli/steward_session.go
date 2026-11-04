@@ -318,7 +318,7 @@ func (a *App) stewardSessionStart(p startPlan, copyDir, storePath, state string)
 		case d.Answered && d.Choice == stewardApprove && kind == "secrets":
 			out.inFlight = append(out.inFlight, fmt.Sprintf("secrets approval %s: the Guildmaster approved plan %s; apply it with guildhall steward secrets apply --approve %s unless its plan directory holds a receipt", d.ID, plan, plan))
 		case d.Answered && d.Choice == stewardApprove && kind == "setup":
-			out.inFlight = append(out.inFlight, fmt.Sprintf("setup approval %s: the Guildmaster approved plan %s; apply it with guildhall steward takeover --apply --approve %s unless its step log shows it done", d.ID, plan, plan))
+			out.inFlight = append(out.inFlight, fmt.Sprintf("setup approval %s: the Guildmaster approved plan %s; apply it with guildhall steward takeover or provision --apply --approve %s, as its plan's kind says, unless its step log shows it done", d.ID, plan, plan))
 		case d.Answered && d.Choice == stewardApprove:
 			out.inFlight = append(out.inFlight, fmt.Sprintf("rollout approval %s: the Guildmaster approved plan %s; apply it with --approve %s unless `guildhall steward status` shows it applied", d.ID, plan, plan))
 		}

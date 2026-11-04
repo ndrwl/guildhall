@@ -18,7 +18,7 @@ const setupUsage = `Usage:
   guildhall setup wizard --steps <file|built-in> [--digest <hex>] [--only <ids>] [--set <name>=<value>]... [--setup-dir <dir>] [--dry-run]
   guildhall setup run --steps <file|built-in> [--digest <hex>] [--only <ids>] [--set <name>=<value>]... [--setup-dir <dir>]
 
---steps names a built-in step file (` + "herdr, go, git-and-claude, sign-in, wsl-settings" + `) or a step file's path, which needs
+--steps names a built-in step file (` + "director, herdr, go, git-and-claude, sign-in, wsl-settings" + `) or a step file's path, which needs
 --digest, its sha256. Without --steps the doctor checks every built-in. --only takes comma-separated step ids.
 `
 

@@ -1,7 +1,6 @@
 package steward
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -193,14 +192,19 @@ func (s *Setup) ApplySetup(ctx context.Context, planDir, approve string) (*Outco
 		return nil, ErrAbandoned
 	}
 	if !log.started() {
-		again, err := s.PlanTakeover(ctx, p.input)
+		var again *SetupPlan
+		if p.Kind == SetupKindProvision {
+			again, err = s.PlanProvision(ctx, p.Request, p.PlanDir)
+		} else {
+			again, err = s.PlanTakeover(ctx, p.input)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrPlanChanged, err)
 		}
 		if again.Digest != p.Digest {
 			return nil, ErrPlanChanged
 		}
-	} else {
+	} else if p.Kind == SetupKindTakeover {
 		local, err := s.fetch(ctx, Remote{p.SSHAlias, p.CopyDir + "/config.toml"})
 		if err != nil {
 			return nil, fmt.Errorf("reading the copy's config.toml: %w", err)
@@ -269,6 +273,11 @@ func (s *Setup) run(ctx context.Context, p *SetupPlan, argv []string) (string, e
 
 // runStep checks, acts and verifies one step.
 func (s *Setup) runStep(ctx context.Context, p *SetupPlan, st SetupStep, log *StepLog) stepResult {
+	if p.Kind == SetupKindProvision {
+		if r, ok := s.runProvisionStep(ctx, p, st, log); ok {
+			return r
+		}
+	}
 	switch st.ID {
 	case StepPause:
 		status, err := s.status(ctx, p)
@@ -328,7 +337,8 @@ func (s *Setup) runStep(ctx context.Context, p *SetupPlan, st SetupStep, log *St
 		}
 		return stepResult{output: output}
 	case StepManaged:
-		want := string(digest.Of(p.files[p.Files[0].Name]))
+		managed := p.managedFile()
+		want := string(digest.Of(p.files[managed.Name]))
 		mode, err := s.mode(ctx, p)
 		if err != nil {
 			return failed("%v", err)
@@ -340,25 +350,8 @@ func (s *Setup) runStep(ctx context.Context, p *SetupPlan, st SetupStep, log *St
 		default:
 			return failed("%v: the copy has a managed.toml with digest %s that this plan did not publish; it is left as it is", ErrPlanChanged, mode.ManagedDigest)
 		}
-		target := Remote{p.SSHAlias, p.Files[0].Target}
-		inputs, err := os.MkdirTemp("", "guildhall-setup-")
-		if err != nil {
-			return failed("%v", err)
-		}
-		defer func() { _ = os.RemoveAll(inputs) }()
-		local := filepath.Join(inputs, "managed.toml")
-		if err := os.WriteFile(local, p.files[p.Files[0].Name], 0o600); err != nil {
-			return failed("%v", err)
-		}
-		if err := s.Transport.Put(ctx, local, target); err != nil {
-			return failed("copying managed.toml to %s: %v", target, err)
-		}
-		back, err := s.fetch(ctx, target)
-		if err != nil {
-			return failed("reading managed.toml back from %s: %v", target, err)
-		}
-		if !bytes.Equal(back, p.files[p.Files[0].Name]) {
-			return failed("managed.toml read back from %s does not match the plan; apply again to copy it again", target)
+		if r := s.putFile(ctx, p, managed); r.diagnosis != "" {
+			return r
 		}
 		return stepResult{note: "published and read back with digest " + want}
 	case StepEnrol:
@@ -444,7 +437,7 @@ func (s *Setup) managedAuthorized(ctx context.Context, p *SetupPlan) string {
 	if err != nil {
 		return err.Error()
 	}
-	want := string(digest.Of(p.files[p.Files[0].Name]))
+	want := string(digest.Of(p.files[p.managedFile().Name]))
 	if mode.Mode != "managed" || !mode.Authorized || mode.ManagedDigest != want || mode.Steward != p.Steward {
 		return fmt.Sprintf("director mode reports %s, Steward %q, managed.toml %s, authorized %v; want managed by %q with %s authorized: %s",
 			mode.Mode, mode.Steward, mode.ManagedDigest, mode.Authorized, p.Steward, want, mode.Refusal)
@@ -466,6 +459,9 @@ func (s *Setup) commitRoster(ctx context.Context, p *SetupPlan) stepResult {
 			return failed("%v", err)
 		}
 		msg := fmt.Sprintf("Take over Director %s on %s", p.Director, p.Machine)
+		if p.Kind == SetupKindProvision {
+			msg = fmt.Sprintf("Provision Director %s on %s", p.Director, p.Machine)
+		}
 		if _, err := s.Private.CommitFiles(ctx, map[string][]byte{"roster.toml": next}, msg, s.signature()); err != nil {
 			return failed("committing roster.toml: %v", err)
 		}
@@ -485,6 +481,9 @@ func (s *Setup) Abandon(ctx context.Context, planDir string) (*Outcome, error) {
 	p, err := openSetupPlan(planDir)
 	if err != nil {
 		return nil, err
+	}
+	if p.Kind != SetupKindTakeover {
+		return nil, fmt.Errorf("only a takeover plan is abandoned; a %s plan resumes with --apply", p.Kind)
 	}
 	unlock, err := s.lock()
 	if err != nil {

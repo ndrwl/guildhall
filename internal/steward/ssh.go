@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
@@ -20,48 +21,103 @@ const DefaultGuildhall = "guildhall"
 var ErrNotAllowed = errors.New("not one of the fixed remote commands a Steward may run")
 
 // The fixed remote commands a Steward may run on an enrolled machine (docs/steward.md#remote-commands), as their
-// arguments after the Guildhall program and before the copy directory, which every one of them ends with.
-// An argument written argDir is a value: an absolute path in the restricted character set; one written argLabel is
-// a lowercase id (workflow.ValidID). Only these run: no other command, flag or argument can be passed.
+// arguments after the program: guildhall, or an absolute guildhall_path, unless program names another.
+// An argument written argDir is a value: an absolute path in the restricted character set, such as the copy directory
+// most commands end with; argLabel is a lowercase id (workflow.ValidID); argHex a lowercase hex sha256; argIDs
+// comma-separated step ids; argSteps a built-in step file's name or a step file's absolute path; argRemote a git
+// remote (ValidRemote); and argSets, only last, zero or more `--set <name>=<value>` pairs (SetPattern).
+// Only these run: no other command, flag or argument can be passed.
 var allowedCommands = []struct {
-	args []string
+	program string
+	args    []string
 	// reserved names the follow-up that builds a command, which is refused until it is built.
 	reserved string
+	// long marks a command that may take minutes, such as a clone or a session start, which SSH bounds with its
+	// LongTimeout.
+	long bool
 }{
 	// config reload authorizes the published managed.toml in the copy's own store.
-	{args: []string{"config", "reload", "--copy"}},
+	{args: []string{"config", "reload", "--copy", argDir}},
 	// director mode --json reads the copy's mode and managed digest, changing nothing.
-	{args: []string{"director", "mode", "--json", "--copy"}},
+	{args: []string{"director", "mode", "--json", "--copy", argDir}},
 	// director reload restarts the copy's session on a new release (docs/releases.md); built by guildhall/d98.
-	{args: []string{"director", "reload", "--copy"}, reserved: "guildhall/d98"},
+	{args: []string{"director", "reload", "--copy", argDir}, reserved: "guildhall/d98"},
 	// lesson list and incident list --json --pending read the copy's lessons and incidents not yet collected,
 	// changing nothing (docs/decisions/steward-collection-commands.md).
-	{args: []string{"lesson", "list", "--json", "--pending", "--copy"}},
-	{args: []string{"incident", "list", "--json", "--pending", "--copy"}},
+	{args: []string{"lesson", "list", "--json", "--pending", "--copy", argDir}},
+	{args: []string{"incident", "list", "--json", "--pending", "--copy", argDir}},
 	// director collected marks the items of the receipt the Steward copied to CollectReceiptPath as collected.
-	{args: []string{"director", "collected", "--copy"}},
+	{args: []string{"director", "collected", "--copy", argDir}},
 	// messages receive takes the Steward message the Steward copied to MessageDropPath into the copy's inbox
 	// (docs/decisions/steward-messages-directors.md).
-	{args: []string{"messages", "receive", "--copy"}},
+	{args: []string{"messages", "receive", "--copy", argDir}},
 	// The takeover commands of an approved setup plan (docs/decisions/steward-setup-plans.md): director status
-	// --json only reads, and the Director health checks read it too (docs/decisions/steward-reads-director-status.md); pause and resume move the copy's session; backup now and store export back its store up;
-	// director enrol records the copy's enrolment with this Steward.
-	{args: []string{"director", "status", "--json", "--copy"}},
-	{args: []string{"director", "pause", "--copy"}},
-	{args: []string{"director", "resume", "--copy"}},
-	{args: []string{"backup", "now", "--copy"}},
-	{args: []string{"store", "export", "--out", argDir, "--copy"}},
-	{args: []string{"director", "enrol", "--steward", argLabel, "--copy"}},
+	// --json only reads, and the Director health checks read it too (docs/decisions/steward-reads-director-status.md);
+	// pause and resume move the copy's session; backup now and store export back its store up; director enrol
+	// records the copy's enrolment with this Steward.
+	{args: []string{"director", "status", "--json", "--copy", argDir}},
+	{args: []string{"director", "pause", "--copy", argDir}},
+	{args: []string{"director", "resume", "--copy", argDir}},
+	{args: []string{"backup", "now", "--copy", argDir}},
+	{args: []string{"store", "export", "--out", argDir, "--copy", argDir}},
+	{args: []string{"director", "enrol", "--steward", argLabel, "--copy", argDir}},
 	// secrets check --json reports whether the machine's secrets file decrypts with its key and which names it holds,
 	// never a value, changing nothing (docs/decisions/steward-secrets-push.md).
-	{args: []string{"secrets", "check", "--json", "--copy"}},
+	{args: []string{"secrets", "check", "--json", "--copy", argDir}},
+	// The provisioning commands of an approved setup plan (docs/steward.md#provisioning): setup doctor --json reads
+	// a step file's gaps, and with --fix --only closes only the fixable gaps the plan names, from a built-in or a
+	// plan-bound step file whose digest it checks; store init makes the new copy's store; git clone clones a
+	// repository into an empty path; release adopt gives the copy its first release pin; and director start --tab
+	// opens the Director's Herdr tab.
+	{args: []string{"setup", "doctor", "--json", "--steps", argSteps, "--digest", argHex, "--setup-dir", argDir, argSets}},
+	{args: []string{"setup", "doctor", "--json", "--fix", "--only", argIDs, "--steps", argSteps, "--digest", argHex, "--setup-dir", argDir, argSets}, long: true},
+	{args: []string{"store", "init", "--copy", argDir}},
+	{args: []string{"release", "adopt", "--copy", argDir}, long: true},
+	{args: []string{"director", "start", "--tab", "--copy", argDir}, long: true},
+	{program: "git", args: []string{"clone", "--", argRemote, argDir}, long: true},
 }
 
 // Value placeholders of allowedCommands.
 const (
-	argDir   = "<dir>"
-	argLabel = "<label>"
+	argDir    = "<dir>"
+	argLabel  = "<label>"
+	argHex    = "<hex>"
+	argIDs    = "<ids>"
+	argSteps  = "<steps>"
+	argRemote = "<remote>"
+	argSets   = "<sets>"
 )
+
+var (
+	// remotePattern is the shape of a git remote a provisioning plan may clone: an https:// URL or git@host:path,
+	// in a character set no remote shell interprets.
+	remotePattern = regexp.MustCompile(`^(https://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~-]+)+|git@[A-Za-z0-9.-]+:[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*)$`)
+	// SetPattern is a step file param a remote setup doctor is given: a lowercase identifier, then a value of
+	// letters, digits and '.', '_', '~', '+', ':', '/' and '-', or none.
+	SetPattern    = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}=[A-Za-z0-9._~+:/-]*$`)
+	hexPattern    = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	stepIDPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
+)
+
+// ValidRemote reports whether remote is a git remote a provisioning plan may clone: an https:// URL or
+// git@host:path of letters, digits, '.', '_', '~' and '-', with no "." or ".." path segment.
+func ValidRemote(remote string) bool {
+	if !remotePattern.MatchString(remote) {
+		return false
+	}
+	var rest string
+	if strings.HasPrefix(remote, "git@") {
+		_, rest, _ = strings.Cut(remote, ":")
+	} else {
+		_, rest, _ = strings.Cut(strings.TrimPrefix(remote, "https://"), "/")
+	}
+	for seg := range strings.SplitSeq(rest, "/") {
+		if seg == "." || seg == ".." {
+			return false
+		}
+	}
+	return true
+}
 
 // StatusCommand is the read-only remote command that prints the copy's status feed as JSON:
 // `<guildhall> director status --json --copy <copyDir>`.
@@ -102,6 +158,49 @@ func SecretsCheckCommand(guildhall, copyDir string) []string {
 	return []string{guildhall, "secrets", "check", "--json", "--copy", copyDir}
 }
 
+// DoctorCommand is `<guildhall> setup doctor --json --steps <steps> --digest <hex> --setup-dir <dir>` with a
+// `--set <name>=<value>` for each of sets: the machine's gaps against one step file, changing nothing.
+func DoctorCommand(guildhall, steps, digest, setupDir string, sets []string) []string {
+	argv := []string{guildhall, "setup", "doctor", "--json", "--steps", steps, "--digest", digest, "--setup-dir", setupDir}
+	for _, kv := range sets {
+		argv = append(argv, "--set", kv)
+	}
+	return argv
+}
+
+// FixCommand is DoctorCommand with `--fix --only <ids>`: it closes only the fixable gaps ids names, checking each
+// first, and prints the report the doctor derives afresh.
+func FixCommand(guildhall, ids, steps, digest, setupDir string, sets []string) []string {
+	argv := []string{guildhall, "setup", "doctor", "--json", "--fix", "--only", ids, "--steps", steps, "--digest", digest, "--setup-dir", setupDir}
+	for _, kv := range sets {
+		argv = append(argv, "--set", kv)
+	}
+	return argv
+}
+
+// StoreInitCommand is `<guildhall> store init --copy <copyDir>`, which makes the copy's store and refuses one that
+// exists.
+func StoreInitCommand(guildhall, copyDir string) []string {
+	return []string{guildhall, "store", "init", "--copy", copyDir}
+}
+
+// AdoptCommand is `<guildhall> release adopt --copy <copyDir>`: the guildhall on the machine's PATH becomes the
+// copy's first release pin; run again, it reports what is in place.
+func AdoptCommand(guildhall, copyDir string) []string {
+	return []string{guildhall, "release", "adopt", "--copy", copyDir}
+}
+
+// StartTabCommand is `<guildhall> director start --tab --copy <copyDir>`, which opens the Director's Herdr tab and
+// runs its session there.
+func StartTabCommand(guildhall, copyDir string) []string {
+	return []string{guildhall, "director", "start", "--tab", "--copy", copyDir}
+}
+
+// CloneCommand is `git clone -- <remote> <path>`, which refuses a path that is not empty.
+func CloneCommand(remote, path string) []string {
+	return []string{"git", "clone", "--", remote, path}
+}
+
 // CollectReceiptPath is where, relative to a Director copy's directory, the Steward copies the receipt that
 // `director collected` reads, marks and deletes.
 const CollectReceiptPath = "state/steward/collect-receipt.json"
@@ -136,53 +235,89 @@ func ModeCommand(guildhall, copyDir string) []string {
 }
 
 // CheckCommand refuses argv, with an error wrapping ErrNotAllowed, unless it is one of the fixed remote commands:
-// guildhall, or an absolute guildhall_path, then one allowed command and an absolute copy directory, every value in
-// the restricted character set no remote shell interprets. A reserved command not yet built is refused too.
+// its program, guildhall or an absolute guildhall_path for a Guildhall command, then the command's words and values,
+// every value in the restricted character set no remote shell interprets. A reserved command not yet built is
+// refused too.
 func CheckCommand(argv []string) error {
-	if len(argv) < 2 {
-		return fmt.Errorf("%w: %q", ErrNotAllowed, argv)
-	}
-	if argv[0] != DefaultGuildhall && !validFile(argv[0]) {
-		return fmt.Errorf("%w: program %q must be %s or an absolute guildhall_path", ErrNotAllowed, argv[0], DefaultGuildhall)
-	}
-	for _, c := range allowedCommands {
-		if len(argv) != len(c.args)+2 || !matchArgs(c.args, argv[1:len(argv)-1]) {
-			continue
-		}
-		if c.reserved != "" {
-			return fmt.Errorf("%w: %s is reserved for %s and not built yet", ErrNotAllowed, strings.Join(c.args[:2], " "), c.reserved)
-		}
-		if dir := argv[len(argv)-1]; !validDir(posixDirPattern, dir) && !validDir(windowsDirPattern, dir) {
-			return fmt.Errorf("%w: copy directory %q must be an absolute path of letters, digits, '.', '_', '-' and '/'", ErrNotAllowed, dir)
-		}
-		return nil
-	}
-	return fmt.Errorf("%w: %q", ErrNotAllowed, argv[1:])
+	_, err := allowed(argv)
+	return err
 }
 
-// matchArgs reports whether args fit pattern: each fixed word equal, each argDir an absolute file path and each
-// argLabel a lowercase id, all in the restricted character set.
-func matchArgs(pattern, args []string) bool {
-	if len(pattern) != len(args) {
-		return false
+// LongCommand reports whether argv is an allowed command that may take minutes, such as a clone or a session
+// start, which SSH bounds with its LongTimeout.
+func LongCommand(argv []string) bool {
+	long, err := allowed(argv)
+	return err == nil && long
+}
+
+func allowed(argv []string) (long bool, err error) {
+	if len(argv) < 2 {
+		return false, fmt.Errorf("%w: %q", ErrNotAllowed, argv)
 	}
+	guildhallProgram := argv[0] == DefaultGuildhall || validFile(argv[0])
+	for _, c := range allowedCommands {
+		switch {
+		case c.program == "" && !guildhallProgram, c.program != "" && argv[0] != c.program:
+			continue
+		case !matchArgs(c.args, argv[1:]):
+			continue
+		case c.reserved != "":
+			return false, fmt.Errorf("%w: %s is reserved for %s and not built yet", ErrNotAllowed, strings.Join(c.args[:2], " "), c.reserved)
+		}
+		return c.long, nil
+	}
+	if argv[0] != "git" && !guildhallProgram {
+		return false, fmt.Errorf("%w: program %q must be %s or an absolute guildhall_path", ErrNotAllowed, argv[0], DefaultGuildhall)
+	}
+	return false, fmt.Errorf("%w: %q", ErrNotAllowed, argv[1:])
+}
+
+// matchArgs reports whether args fit pattern: each fixed word equal and each value of the kind its placeholder
+// names, in the restricted character set; argSets, only last in a pattern, takes zero or more
+// `--set <name>=<value>` pairs.
+func matchArgs(pattern, args []string) bool {
 	for i, p := range pattern {
+		if p == argSets {
+			rest := args[min(i, len(args)):]
+			if len(rest)%2 != 0 {
+				return false
+			}
+			for j := 0; j < len(rest); j += 2 {
+				if rest[j] != "--set" || !SetPattern.MatchString(rest[j+1]) {
+					return false
+				}
+			}
+			return true
+		}
+		if i >= len(args) {
+			return false
+		}
+		a := args[i]
+		var ok bool
 		switch p {
 		case argDir:
-			if !validFile(args[i]) {
-				return false
-			}
+			ok = validFile(a)
 		case argLabel:
-			if !workflow.ValidID(args[i]) {
-				return false
+			ok = workflow.ValidID(a)
+		case argHex:
+			ok = hexPattern.MatchString(a)
+		case argIDs:
+			ok = a != ""
+			for id := range strings.SplitSeq(a, ",") {
+				ok = ok && stepIDPattern.MatchString(id)
 			}
+		case argSteps:
+			ok = stepIDPattern.MatchString(a) || validFile(a)
+		case argRemote:
+			ok = ValidRemote(a)
 		default:
-			if args[i] != p {
-				return false
-			}
+			ok = a == p
+		}
+		if !ok {
+			return false
 		}
 	}
-	return true
+	return len(pattern) == len(args)
 }
 
 // validFile reports whether path is an absolute file path, POSIX or Windows, in the restricted character set.
@@ -193,9 +328,10 @@ func validFile(path string) bool {
 // Runner runs the fixed remote commands on enrolled machines: `config reload` after a rollout publishes a copy's
 // managed.toml, the read-only `director mode --json`, collection's read-only pending lists and
 // `director collected`, `messages receive` after Deliver copies a Steward message, the read-only
-// `director status --json` of the Director health checks, and an approved takeover's status, pause, resume,
-// backup, export and enrol. SSH is the ssh implementation and stewardtest.Fleet an
-// in-memory one; both pass stewardtest.RunRunnerContract.
+// `director status --json` of the Director health checks, an approved takeover's status, pause, resume, backup,
+// export and enrol, and an approved provisioning's setup doctor, store init, git clone, release adopt and
+// director start --tab. SSH is the ssh implementation and stewardtest.Fleet an in-memory one; both pass
+// stewardtest.RunRunnerContract.
 //
 // Run refuses an alias and argv that CheckRun refuses, with an error wrapping ErrNotAllowed, and runs nothing. Otherwise it runs argv as one fixed command on the machine
 // with alias and returns what the command printed on standard output. It fails, with an error carrying the
@@ -211,8 +347,10 @@ type Runner interface {
 type SSH struct {
 	// Path is the resolved ssh executable.
 	Path string
-	// Timeout bounds each ssh run.
-	Timeout time.Duration
+	// Timeout bounds each ssh run, and LongTimeout, when set, each run of a LongCommand, such as a clone or a
+	// session start, in its place.
+	Timeout     time.Duration
+	LongTimeout time.Duration
 }
 
 var _ Runner = SSH{}
@@ -238,7 +376,11 @@ func (s SSH) Run(ctx context.Context, alias string, argv []string) ([]byte, erro
 	if err := CheckRun(alias, argv); err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	timeout := s.Timeout
+	if s.LongTimeout > 0 && LongCommand(argv) {
+		timeout = s.LongTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	full := sshCommand(alias, argv)
 	cmd := exec.CommandContext(ctx, s.Path, full[1:]...)

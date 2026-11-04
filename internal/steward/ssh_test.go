@@ -61,6 +61,21 @@ func TestCheckCommand(t *testing.T) {
 			t.Errorf("CheckCommand %q: %v", argv, err)
 		}
 	}
+	// A clone, a fix, an adopt and a session start get SSH's longer timeout; the reads and other commands do not.
+	for argv, long := range map[string]bool{
+		"guildhall director start --tab --copy /home/guild/directors/tools":                                                                     true,
+		"git clone -- git@github.com:guild/infra.git /home/guild/src/infra":                                                                     true,
+		"guildhall release adopt --copy /home/guild/directors/tools":                                                                            true,
+		"guildhall setup doctor --json --fix --only herdr --steps herdr --digest " + strings.Repeat("a", 64) + " --setup-dir /home/guild/setup": true,
+		"guildhall setup doctor --json --steps herdr --digest " + strings.Repeat("a", 64) + " --setup-dir /home/guild/setup":                    false,
+		"guildhall director status --json --copy /home/guild/directors/tools":                                                                   false,
+		"guildhall store init --copy /home/guild/directors/tools":                                                                               false,
+		"git pull": false,
+	} {
+		if got := steward.LongCommand(strings.Fields(argv)); got != long {
+			t.Errorf("LongCommand %q = %v, want %v", argv, got, long)
+		}
+	}
 	err := steward.CheckCommand([]string{steward.DefaultGuildhall, "director", "reload", "--copy", "/home/guild/directors/tools"})
 	if !errors.Is(err, steward.ErrNotAllowed) || !strings.Contains(err.Error(), "guildhall/d98") {
 		t.Errorf("reserved director reload: %v, want a refusal naming guildhall/d98", err)

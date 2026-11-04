@@ -34,6 +34,14 @@ On a failure the Steward reads the step log, tells the Guildmaster the diagnosis
 
 The Steward still writes no copy's `config.toml` in a takeover, and never edits one: the copy's local settings are kept, and the roster is made to agree with the copy, not the other way round.
 
+The second kind is **provisioning** a new Director on a roster machine that already has Guildhall ([provisioning](../steward.md#provisioning)).
+It is derived from the machine's own `setup doctor --json`: each fixable gap is a step the Steward closes with `setup doctor --fix --only <id>`, and each human gap a wizard step the Guildmaster closes on the machine, whose completion record the Steward reads back while the doctor decides.
+A step file the Steward writes for an install no built-in covers is **plan-bound**: the dry-run plan lists it in full with its digest, the apply copies it with `scp`, and the engine runs it only under that digest, so a file changed after approval stops the apply with `ErrPlanChanged`.
+This is the one case where the Steward writes a copy's `config.toml`: for a copy it provisions, rendered in the plan and checked to load before approval.
+For it the allow-list gains `setup doctor --json` with `--steps`, `--digest`, `--setup-dir` and `--set` values (and `--fix --only <ids>`), `store init`, `release adopt`, `director start --tab`, and `git clone -- <remote> <path>`, whose remote is an `https://` or `git@` URL in the restricted character set; the longer commands get their own longer timeout.
+Step file contents never travel on a command line, only their path and digest.
+The Steward never runs a wizard, `sudo` or a human step, and never holds a secret.
+
 ## Alternatives rejected
 
 - A general remote shell for the agent to diagnose and fix with: it would undo the [fixed remote commands](steward-fixed-remote-commands.md) record's reason, since quoting differs between servers and roster values are not fully trusted.
@@ -46,4 +54,4 @@ The Steward still writes no copy's `config.toml` in a takeover, and never edits 
 Rollout plans and digests are unchanged.
 A machine whose `guildhall` predates a takeover command fails that step with its diagnostic, and the plan resumes there once it is upgraded.
 A takeover that is abandoned before the copy is changed resumes the session it paused; once `managed.toml` is published it can only be finished.
-Later slices of d128 add provisioning and a setup engine whose steps run as approved step files under the same approval and plan kind.
+Provisioning runs every install as an approved step file on the [setup engine](setup-engine-from-firstmate.md) under the same approval and plan kind; later slices of d128 add a bare machine and native Windows.
