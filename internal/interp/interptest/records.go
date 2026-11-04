@@ -47,6 +47,8 @@ type Records struct {
 	queue      map[[3]string]store.StartQueueEntry
 	// held is the Director's hold PauseDirector sets.
 	held bool
+	// messages are the messages SendMessage stored, which Inbox lists until AckMessage acknowledges them.
+	messages []store.Message
 }
 
 type receipt struct {
@@ -1103,6 +1105,86 @@ func (r *Records) BindTaskGrant(mutationID, repository, taskID, id, step string,
 	})
 }
 
+// SendMessage stores a message in its recipient's inbox, as store.SendMessage does: the task must exist, and an
+// Artisan message needs its attempt running. A resend returns the original receipt.
+func (r *Records) SendMessage(m store.Message) (store.Receipt, error) {
+	if err := store.ValidateMessage(m); err != nil {
+		return store.Receipt{}, err
+	}
+	req := m
+	req.Sender = ""
+	return r.mutate("message:"+m.ID, "send-message", req, func(rc *store.Receipt) error {
+		rc.Repository, rc.TaskID, rc.Attempt, rc.Record = m.Repository, m.TaskID, m.Attempt, "message/"+m.ID
+		if _, ok := r.tasks[[2]string{m.Repository, m.TaskID}]; !ok {
+			return fmt.Errorf("task %s/%s: %w", m.Repository, m.TaskID, store.ErrNotFound)
+		}
+		if m.Attempt > 0 {
+			i := slices.IndexFunc(r.attempts, func(a store.StageAttempt) bool {
+				return a.Repository == m.Repository && a.TaskID == m.TaskID && a.Step == m.Step && a.Number == m.Attempt
+			})
+			if i < 0 {
+				return fmt.Errorf("attempt %d of %s/%s step %q: %w", m.Attempt, m.Repository, m.TaskID, m.Step, store.ErrNotFound)
+			}
+			if m.Recipient == store.RecipientArtisan && r.attempts[i].Outcome != "" {
+				return fmt.Errorf("%w: attempt %d of step %q already finished: %s", store.ErrInvalid, m.Attempt, m.Step, r.attempts[i].Outcome)
+			}
+		}
+		if slices.ContainsFunc(r.messages, func(o store.Message) bool { return o.ID == m.ID }) {
+			return fmt.Errorf("%w: message %q", store.ErrExists, m.ID)
+		}
+		m.Sequence = rc.Sequence
+		r.messages = append(r.messages, m)
+		return nil
+	})
+}
+
+// AckMessage acknowledges a message addressed to to, as store.AckMessage does; a retry returns the original receipt.
+func (r *Records) AckMessage(to store.Recipient, id string) (store.Receipt, error) {
+	req := struct {
+		To store.Recipient `json:"to"`
+		ID string          `json:"id"`
+	}{to, id}
+	return r.mutate("message-ack:"+id, "ack-message", req, func(rc *store.Receipt) error {
+		i := slices.IndexFunc(r.messages, func(m store.Message) bool { return m.ID == id })
+		if i < 0 {
+			return fmt.Errorf("%w: message %q", store.ErrNotFound, id)
+		}
+		m := &r.messages[i]
+		rc.Repository, rc.TaskID, rc.Attempt, rc.Record = m.Repository, m.TaskID, m.Attempt, "message/"+m.ID
+		switch {
+		case m.To() != to:
+			return fmt.Errorf("%w: message %q is addressed elsewhere", store.ErrInvalid, id)
+		case m.Acknowledged:
+			return fmt.Errorf("%w: message %q is already acknowledged", store.ErrInvalid, id)
+		}
+		m.Acknowledged = true
+		return nil
+	})
+}
+
+// Inbox implements interp.Records, as store.Store.Inbox does.
+func (r *Records) Inbox(to store.Recipient, after uint64, limit int) ([]store.Message, bool, error) {
+	if err := store.ValidateRecipient(to); err != nil {
+		return nil, false, err
+	}
+	if limit < 1 || limit > store.MaxInboxLimit {
+		return nil, false, fmt.Errorf("%w: inbox limit %d must be between 1 and %d", store.ErrInvalid, limit, store.MaxInboxLimit)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []store.Message
+	for _, m := range r.messages {
+		if m.To() == to && !m.Acknowledged && m.Sequence > after {
+			out = append(out, m)
+		}
+	}
+	slices.SortFunc(out, func(x, y store.Message) int { return cmp.Compare(x.Sequence, y.Sequence) })
+	if len(out) > limit {
+		return out[:limit], true, nil
+	}
+	return out, false, nil
+}
+
 // mutate applies a write once per mutation id, replaying the original receipt for the same request.
 func (r *Records) mutate(mutationID, op string, req any, apply func(rc *store.Receipt) error) (store.Receipt, error) {
 	body, err := json.Marshal(req)
@@ -1171,6 +1253,10 @@ type RecordsHarness struct {
 	// make them; nil skips the cancel cases.
 	CancelTask   func(mutationID, repository, taskID, reason string) (store.Receipt, error)
 	VoidDecision func(mutationID, repository, taskID, id, reason string) (store.Receipt, error)
+	// SendMessage and AckMessage are messaging's writes, as store.SendMessage and store.AckMessage make them, which
+	// Records.Inbox reads; nil skips the inbox cases.
+	SendMessage func(m store.Message) (store.Receipt, error)
+	AckMessage  func(to store.Recipient, id string) (store.Receipt, error)
 	// Clock stamps the receipts Records writes, so it decides the day the daily cap counts.
 	Clock *Clock
 	// Writers and Operations size the concurrent case, defaulting to 4 writers of 30 operations each;
@@ -1184,7 +1270,8 @@ func NewRecordsHarness(*testing.T) RecordsHarness {
 	r.Now = clock.Now
 	return RecordsHarness{Records: r, CreateTask: r.CreateTask, AnswerDecision: r.AnswerDecision, RuleFinding: r.RuleFinding,
 		RequestFullReview: r.RequestFullReview, AddTaskContext: r.AddTaskContext, AddTaskLink: r.AddTaskLink, AddTaskOverride: r.AddTaskOverride, SetGrillMode: r.SetGrillMode, AddTaskDependency: r.AddTaskDependency, OverrideDependencies: r.OverrideDependencies,
-		SetTaskPriority: r.SetTaskPriority, PauseDirector: r.PauseDirector, CancelTask: r.CancelTask, VoidDecision: r.VoidDecision, Clock: clock}
+		SetTaskPriority: r.SetTaskPriority, PauseDirector: r.PauseDirector, CancelTask: r.CancelTask, VoidDecision: r.VoidDecision,
+		SendMessage: r.SendMessage, AckMessage: r.AckMessage, Clock: clock}
 }
 
 // Clock is a settable clock for a RecordsHarness; until Set it reads wall time.
@@ -2060,6 +2147,60 @@ func RunRecordsContract(t *testing.T, newHarness func(t *testing.T) RecordsHarne
 		want(t, "SetTaskState of a closed task", err, store.ErrInvalid)
 		_, err = h.Records.StartAttempt("start-closed", "app", "t7", "plan")
 		want(t, "StartAttempt on a closed task", err, store.ErrInvalid)
+	})
+
+	t.Run("lists an attempt's unacknowledged messages in send order until each is acknowledged", func(t *testing.T) {
+		h := setup(t)
+		if h.SendMessage == nil || h.AckMessage == nil {
+			t.Skip("the harness sends no messages")
+		}
+		if _, err := h.Records.StartAttempt("start-plan", "app", "t7", "plan"); err != nil {
+			t.Fatal(err)
+		}
+		to := store.Recipient{Role: store.RecipientArtisan, Repository: "app", TaskID: "t7", Step: "plan", Attempt: 1}
+		send := func(id string) store.Receipt {
+			t.Helper()
+			r, err := h.SendMessage(store.Message{ID: id, Recipient: store.RecipientArtisan, Repository: "app", TaskID: "t7", Step: "plan",
+				Attempt: 1, Type: "note", Text: "Rebase first.", Sender: store.SenderDirector})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return r
+		}
+		inbox := func() ([]string, bool) {
+			t.Helper()
+			msgs, more, err := h.Records.Inbox(to, 0, 2)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var ids []string
+			for _, m := range msgs {
+				ids = append(ids, m.ID)
+			}
+			return ids, more
+		}
+		if ids, more := inbox(); len(ids) != 0 || more {
+			t.Fatalf("empty inbox = %v, %v", ids, more)
+		}
+		send("n-1")
+		send("n-2")
+		send("n-3")
+		if ids, more := inbox(); fmt.Sprint(ids) != "[n-1 n-2]" || !more {
+			t.Fatalf("inbox = %v, more %v; want [n-1 n-2], more", ids, more)
+		}
+		ack, err := h.AckMessage(to, "n-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if again, err := h.AckMessage(to, "n-1"); err != nil || again != ack {
+			t.Fatalf("repeated ack = %+v, %v; want %+v", again, err, ack)
+		}
+		if ids, more := inbox(); fmt.Sprint(ids) != "[n-2 n-3]" || more {
+			t.Fatalf("inbox after an ack = %v, more %v", ids, more)
+		}
+		if _, _, err := h.Records.Inbox(to, 0, 0); !errors.Is(err, store.ErrInvalid) {
+			t.Errorf("Inbox with limit 0 = %v, want store.ErrInvalid", err)
+		}
 	})
 
 	t.Run("cancels an open task once with its reason and time", func(t *testing.T) {

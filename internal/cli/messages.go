@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/store"
 )
@@ -36,6 +37,10 @@ an external sender is "steward": --from and --sender select external messages, w
 // messages runs a messages subcommand against an existing store and prints its result as one JSON document.
 // It exits 0 on success, 1 when the store refuses or fails and 2 on a usage error.
 func (a *App) messages(args []string) int {
+	// Inside an attempt, only the attempt's own inbox is reachable (docs/messaging.md#steering-an-attempt).
+	if env := a.getenv(artisan.AttemptEnv); env != "" {
+		return a.artisanMessages(env, args)
+	}
 	if len(args) == 0 {
 		return a.messagesUsage("missing messages subcommand")
 	}
@@ -158,6 +163,12 @@ func (a *App) messages(args []string) int {
 		// send, only the Guildmaster reaches it.
 		if to.Role == store.RecipientSteward && sender != store.SenderGuildmaster {
 			err = fmt.Errorf("%w: the steward's inbox takes messages send from %s only, not from %s", store.ErrInvalid, store.SenderGuildmaster, sender)
+			break
+		}
+		// An Artisan's inbox takes steering from its Director (and from Guildhall in process, store.ArtisanSenders);
+		// the Guildmaster steers an attempt through the Director.
+		if to.Role == store.RecipientArtisan && env.Recipient == store.RecipientArtisan && sender != store.SenderDirector {
+			err = fmt.Errorf("%w: an artisan's inbox takes messages send from %s only, run in its copy's Director session, not from %s; the Guildmaster steers an attempt through the Director", store.ErrInvalid, store.SenderDirector, sender)
 			break
 		}
 		out, err = box.Send(to, sender, env)

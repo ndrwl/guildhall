@@ -60,6 +60,11 @@ func (r RecipientRole) SessionInbox() bool { return r == RecipientDirector || r 
 // to a Director's external inbox (ExternalMessage), and add no sender here.
 var StewardSenders = []string{SenderGuildmaster, SenderDirector}
 
+// ArtisanSenders are the senders an Artisan's inbox takes: the Director steering its attempt, and Guildhall itself
+// (docs/messaging.md#senders). The Guildmaster reaches an attempt through the Director; no Artisan, Steward or other
+// Director does.
+var ArtisanSenders = []string{SenderDirector, SenderGuildhall}
+
 // Recipient names one inbox.
 // The Director has one inbox per store, so its other fields are empty.
 // There is no Artisan registry yet: an Artisan is identified by the running
@@ -404,6 +409,9 @@ func ValidateMessage(m Message) error {
 	}
 	if m.Recipient == RecipientSteward && !slices.Contains(StewardSenders, m.Sender) {
 		return invalid("the steward's inbox takes messages from %s only, not from %s", strings.Join(StewardSenders, ", "), MessageSender(m))
+	}
+	if m.Recipient == RecipientArtisan && !slices.Contains(ArtisanSenders, m.Sender) {
+		return invalid("an artisan's inbox takes messages from %s only, not from %s", strings.Join(ArtisanSenders, ", "), MessageSender(m))
 	}
 	if err := validateIDs(m.Repository, m.TaskID, m.Type); err != nil {
 		return err

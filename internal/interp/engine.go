@@ -1153,10 +1153,17 @@ func (r *run) checkOutputs(s workflow.Step, n int, outputs []adapter.Output) (*c
 		return nil, fmt.Errorf("%w: %s has %d output ports", ErrUnsupported, s.Type, len(kind.Outputs))
 	}
 	port := kind.Outputs[0]
+	recorded := r.document(documentName(place{step: s.ID, round: n, part: port.Name})) != nil
+	// Steering messages are checked first, so a result is refused for them alone until each is acknowledged. Once the
+	// port's document is recorded, intake is replaying and its first check stands.
+	if !recorded {
+		if err := r.checkMessages(s, n); err != nil {
+			return nil, err
+		}
+	}
 	if s.Type == rebaseKindType {
 		return r.checkRebaseOutputs(s, n, port.Name, outputs)
 	}
-	recorded := r.document(documentName(place{step: s.ID, round: n, part: port.Name})) != nil
 	// A report already recorded stands on replay, even after the worktree moved on.
 	if readOnlyKind(s.Type) && !recorded {
 		if err := r.checkReadOnly(s, n); err != nil {

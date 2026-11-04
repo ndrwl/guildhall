@@ -109,6 +109,54 @@ func TestCheckResultMatchesIntake(t *testing.T) {
 	}
 }
 
+// TestCheckResultRefusesUnacknowledgedMessages: while a steering message to the running attempt is unacknowledged,
+// CheckResult refuses a succeeded result naming it, and intake records the same reason; once it is acknowledged the
+// same result is accepted. A message to another attempt does not count.
+func TestCheckResultRefusesUnacknowledgedMessages(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			for _, ack := range []bool{false, true} {
+				t.Run(map[bool]string{false: "unacknowledged", true: "acknowledged"}[ack], func(t *testing.T) {
+					e, _, _ := newSliceEnv(t, b, true, sliceScript(t, summarisedSpec)...)
+					e.advance(t, interp.Event{Kind: interp.TaskCreated})
+					to := store.Recipient{Role: store.RecipientArtisan, Repository: "app", TaskID: "t7", Step: "plan", Attempt: 1}
+					for _, id := range []string{"steer-1", "steer-2"} {
+						if _, err := e.h.SendMessage(store.Message{ID: id, Recipient: store.RecipientArtisan, Repository: "app", TaskID: "t7",
+							Step: "plan", Attempt: 1, Type: "note", Text: "The base moved; rebase first.", Sender: store.SenderDirector}); err != nil {
+							t.Fatal(err)
+						}
+					}
+					want := "unacknowledged steering messages to this attempt: steer-1, steer-2; read each with guildhall messages, acknowledge it with guildhall messages ack <id>, then submit again"
+					if ack {
+						for _, id := range []string{"steer-1", "steer-2"} {
+							if _, err := e.h.AckMessage(to, id); err != nil {
+								t.Fatal(err)
+							}
+						}
+						want = ""
+					}
+					key := artisan.AttemptKey{Repository: "app", TaskID: "t7", Step: "plan", Attempt: 1}
+					data, err := os.ReadFile(filepath.Join(e.eng.StateDir, "app", "t7", "plan-1", artisan.ResultFile))
+					if err != nil {
+						t.Fatal(err)
+					}
+					var rejection *interp.Rejection
+					if err := e.eng.CheckResult(context.Background(), key, data); errors.As(err, &rejection) {
+						if rejection.Reason != want || !rejection.Unacknowledged {
+							t.Fatalf("CheckResult = %+v, want reason %q, unacknowledged", rejection, want)
+						}
+					} else if err != nil || want != "" {
+						t.Fatalf("CheckResult = %v, want reason %q", err, want)
+					}
+					said := checkBefore(t, e, "plan", 1)
+					e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1})
+					said.agrees(t, e, "plan", 1)
+				})
+			}
+		})
+	}
+}
+
 // TestCheckResultRefusesAnAttemptNotRunning: a finished attempt, an unknown one and one on an unknown step are
 // ErrAttemptNotRunning, never a rejection.
 func TestCheckResultRefusesAnAttemptNotRunning(t *testing.T) {

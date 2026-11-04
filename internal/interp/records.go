@@ -92,6 +92,10 @@ type Records interface {
 	TaskGrants(repository, taskID string) ([]store.TaskGrant, error)
 	// BindTaskGrant records that an attempt's binding took an active task grant (docs/decisions/task-grants.md).
 	BindTaskGrant(mutationID, repository, taskID, id, step string, number int) (store.Receipt, error)
+	// Inbox returns at most limit unacknowledged messages addressed to to with a sequence after after, in send
+	// order, and whether more remain, as store.Store.Inbox does. Intake reads an attempt's own inbox with it, and
+	// refuses a succeeded result while a steering message to the attempt is unacknowledged (docs/messaging.md).
+	Inbox(to store.Recipient, after uint64, limit int) ([]store.Message, bool, error)
 }
 
 var _ Records = (*store.Store)(nil)

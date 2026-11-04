@@ -92,13 +92,15 @@ func TestEffectiveGrant(t *testing.T) {
 		"copy empty grants nothing":  {"[profile.builder]\nadapter = \"claude\"\nallowed_tools = []\n[profile.worker]\nadapter = \"claude\"\n", "builder", "", nil},
 		"copy empty with repository": {"[profile.builder]\nadapter = \"claude\"\nallowed_tools = []\n[profile.worker]\nadapter = \"claude\"\n", "builder", "site", grants(claude.SourceRepository, "Bash(npm test:*)")},
 		"fake builder":               {"[profile.builder]\nadapter = \"claude\"\n[profile.worker]\nadapter = \"claude\"\n[profile.planner]\nadapter = \"fake\"\n", "planner", "app", nil},
+		"codex judge":                {"[profile.builder]\nadapter = \"claude\"\n[profile.worker]\nadapter = \"claude\"\n[profile.judge]\nadapter = \"codex\"\n", "judge", "app", nil},
 	} {
 		t.Run(name, func(t *testing.T) {
-			// Every claude profile, even one whose copy list is empty, is granted guildhall ci log, result submit and
-			// result check last.
+			// Every claude profile, even one whose copy list is empty, is granted guildhall ci log, result submit,
+			// result check and messages last; a profile of another adapter, fake or codex, gets none of them.
 			want := c.want
-			if name != "fake builder" {
-				want = append(slices.Clone(want), grants(claude.SourceGuildhall, "Bash(guildhall ci log:*)", "Bash(guildhall result submit:*)", "Bash(guildhall result check:*)")...)
+			if name != "fake builder" && name != "codex judge" {
+				want = append(slices.Clone(want), grants(claude.SourceGuildhall, "Bash(guildhall ci log:*)", "Bash(guildhall result submit:*)",
+					"Bash(guildhall result check:*)", "Bash(guildhall messages:*)")...)
 			}
 			got, err := claude.EffectiveGrant(grantConfig(t, c.extra), c.profile, c.repository)
 			if err != nil || !slices.Equal(got, want) {

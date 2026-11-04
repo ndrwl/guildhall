@@ -306,6 +306,10 @@ func Instruction(a Args) string {
 		`For a build or other stage whose output is a code head, commit all tracked work and use outputs: []; Guildhall records your final Git HEAD directly, with no head file needed. Uncommitted tracked changes are refused; untracked notes alone are allowed.`,
 		"Use no other fields, and do not change task_id, attempt_id, schema or version.",
 		"",
+		"The Director may steer this attempt with steering messages: short texts, such as \"the base moved, rebase first\", that carry information only.",
+		"Any guildhall command you run prints this attempt's unacknowledged steering messages on stderr first; on long work, run guildhall messages now and then to list them.",
+		"Act on each message, then acknowledge it with guildhall messages ack <id>. A succeeded result is refused while any steering message is unacknowledged.",
+		"",
 	}, "\n")
 }
 

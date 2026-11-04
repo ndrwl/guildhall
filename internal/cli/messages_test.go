@@ -66,6 +66,24 @@ func runMessages(t *testing.T, stdin string, args ...string) (int, string, strin
 	return code, stdout.String(), stderr.String()
 }
 
+// runMessagesAsDirector is runMessages in a session of the Director of the copy in dir, so a send records the
+// director sender an Artisan's inbox takes (store.ArtisanSenders).
+func runMessagesAsDirector(t *testing.T, dir, stdin string, args ...string) (int, string, string) {
+	t.Helper()
+	app, stdout, stderr := newTestApp(nil, nil)
+	app.Stdin = strings.NewReader(stdin)
+	app.Getenv = func(k string) string {
+		if k == "GUILDHALL_SESSION" {
+			return "1"
+		}
+		return ""
+	}
+	app.Getwd = func() (string, error) { return dir, nil }
+	app.DirectorPane = &typedPanes{}
+	code := app.Run(append([]string{"messages"}, args...))
+	return code, stdout.String(), stderr.String()
+}
+
 func decodeJSON[T any](t *testing.T, out string) T {
 	t.Helper()
 	var v T
@@ -106,7 +124,8 @@ func TestMessagesRefuseEmptyStore(t *testing.T) {
 }
 
 func TestMessagesSendFromFileAndStdin(t *testing.T) {
-	path := messagingStorePath(t)
+	copyDir, path := copyStorePath(t)
+	markCopy(t, copyDir)
 	body := writeEnvelope(t, envelope("q-1", "director"))
 
 	code, out, stderr := runMessages(t, "", "send", "--store", path, "director", body)
@@ -123,7 +142,7 @@ func TestMessagesSendFromFileAndStdin(t *testing.T) {
 		t.Fatalf("retry: exit %d, output %q, want %q", code, again, out)
 	}
 
-	code, out, stderr = runMessages(t, envelope("n-1", "artisan"), "send", "--store", path, "artisan:app/t-1/build/1", "-")
+	code, out, stderr = runMessagesAsDirector(t, copyDir, envelope("n-1", "artisan"), "send", "--store", path, "artisan:app/t-1/build/1", "-")
 	if code != 0 {
 		t.Fatalf("send from stdin: exit %d, stderr %s", code, stderr)
 	}
@@ -150,19 +169,19 @@ func TestMessagesSendRefusals(t *testing.T) {
 		code  int
 		want  string
 	}{
-		"conflicting reuse":           {strings.Replace(envelope("q-1", "director"), "Tests pass", "Tests fail", 1), []string{"--store", path, "director", "-"}, 1, "already used"},
-		"recipient mismatch":          {envelope("q-2", "director"), []string{"--store", path, "artisan:app/t-1/build/1", "-"}, 1, "addressed to"},
-		"wrong attempt":               {strings.Replace(envelope("n-2", "artisan"), `"attempt": 1`, `"attempt": 2`, 1), []string{"--store", path, "artisan:app/t-1/build/2", "-"}, 1, "not found"},
-		"unknown field":               {strings.Replace(envelope("q-3", "director"), `"type"`, `"approve": true, "type"`, 1), []string{"--store", path, "director", "-"}, 1, "unknown field"},
-		"missing body file":           {"", []string{"--store", path, "director", filepath.Join(t.TempDir(), "none.json")}, 1, "body"},
-		"missing store":               {envelope("q-4", "director"), []string{"--store", missing, "director", "-"}, 1, "no store at"},
-		"no store flag":               {envelope("q-5", "director"), []string{"director", "-"}, 2, "--store"},
-		"unknown recipient":           {envelope("q-6", "director"), []string{"--store", path, "guildmaster", "-"}, 2, "recipient"},
-		"steward in a director store": {envelope("q-8", "steward"), []string{"--store", path, "steward", "-"}, 2, "steward.store"},
-		"too few arguments":           {"", []string{"--store", path, "director"}, 2, "usage"},
-		"too many arguments":          {"", []string{"--store", path, "director", "-", "extra"}, 2, "usage"},
-		"utf-16 body":                 {"", []string{"--store", path, "director", utf16}, 1, "UTF-16"},
-		"inline JSON as body":         {"", []string{"--store", path, "director", `{"id":"q-7"}`}, 1, "body"},
+		"conflicting reuse":            {strings.Replace(envelope("q-1", "director"), "Tests pass", "Tests fail", 1), []string{"--store", path, "director", "-"}, 1, "already used"},
+		"recipient mismatch":           {envelope("q-2", "director"), []string{"--store", path, "artisan:app/t-1/build/1", "-"}, 1, "addressed to"},
+		"artisan from the guildmaster": {envelope("n-2", "artisan"), []string{"--store", path, "artisan:app/t-1/build/1", "-"}, 1, "takes messages send from director only"},
+		"unknown field":                {strings.Replace(envelope("q-3", "director"), `"type"`, `"approve": true, "type"`, 1), []string{"--store", path, "director", "-"}, 1, "unknown field"},
+		"missing body file":            {"", []string{"--store", path, "director", filepath.Join(t.TempDir(), "none.json")}, 1, "body"},
+		"missing store":                {envelope("q-4", "director"), []string{"--store", missing, "director", "-"}, 1, "no store at"},
+		"no store flag":                {envelope("q-5", "director"), []string{"director", "-"}, 2, "--store"},
+		"unknown recipient":            {envelope("q-6", "director"), []string{"--store", path, "guildmaster", "-"}, 2, "recipient"},
+		"steward in a director store":  {envelope("q-8", "steward"), []string{"--store", path, "steward", "-"}, 2, "steward.store"},
+		"too few arguments":            {"", []string{"--store", path, "director"}, 2, "usage"},
+		"too many arguments":           {"", []string{"--store", path, "director", "-", "extra"}, 2, "usage"},
+		"utf-16 body":                  {"", []string{"--store", path, "director", utf16}, 1, "UTF-16"},
+		"inline JSON as body":          {"", []string{"--store", path, "director", `{"id":"q-7"}`}, 1, "body"},
 	} {
 		code, out, stderr := runMessages(t, tc.stdin, append([]string{"send"}, tc.args...)...)
 		if code != tc.code || out != "" || !strings.Contains(stderr, tc.want) {
@@ -299,10 +318,11 @@ func TestMessagesConcurrentSends(t *testing.T) {
 // TestMessagesListShowsWake shows each listed Director message carries its recorded wake decision and reason,
 // and a message to an Artisan, which nothing wakes, carries none.
 func TestMessagesListShowsWake(t *testing.T) {
-	path := messagingStorePath(t)
+	copyDir, path := copyStorePath(t)
+	markCopy(t, copyDir)
 	for _, to := range []string{"director", "artisan:app/t-1/build/1"} {
 		role, _, _ := strings.Cut(to, ":")
-		if code, _, stderr := runMessages(t, envelope("m-"+role, role), "send", "--store", path, to, "-"); code != 0 {
+		if code, _, stderr := runMessagesAsDirector(t, copyDir, envelope("m-"+role, role), "send", "--store", path, to, "-"); code != 0 {
 			t.Fatalf("send to %s: %s", to, stderr)
 		}
 	}

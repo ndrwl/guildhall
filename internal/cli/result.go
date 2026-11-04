@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -31,7 +32,8 @@ the attempt's own records and git state.
   check   prints ok, or rejected: <reason> with the reason intake would record, and changes nothing.
   submit  checks the same way; an accepted result becomes the attempt's draft result, model/result.json. A rejected
           one leaves the draft untouched and uses one of 2 resubmissions; the 3rd rejection becomes the draft, so
-          intake fails the attempt with its reason.
+          intake fails the attempt with its reason. A rejection for unacknowledged steering messages uses none:
+          acknowledge each with guildhall messages ack <id> and submit again.
 Exit 0: ok; 1: rejected; 2: the file was not checked (no copy, no attempt, attempt not running, unreadable file).
 Examples:
   guildhall result check model/draft.json
@@ -132,7 +134,21 @@ func (a *App) resultCmd(args []string) int {
 		}
 		return a.printResult(nil)
 	}
-	k, err := countRejection(filepath.Join(attemptDir, artisan.SubmissionsFile), rejection.Reason, data)
+	submissions := filepath.Join(attemptDir, artisan.SubmissionsFile)
+	if rejection.Unacknowledged {
+		// Acknowledging the messages clears this rejection, so it spends no resubmission and leaves the draft as it is.
+		k, err := countedRejections(submissions)
+		if err != nil {
+			return a.notChecked(fmt.Errorf("result submit: %w", err))
+		}
+		code := a.printResult(rejection)
+		line := fmt.Sprintf("%d of %d resubmissions used, none for this; acknowledge the messages and submit again\n", k, Resubmissions)
+		if _, err := io.WriteString(a.Stdout, line); err != nil {
+			return 1
+		}
+		return code
+	}
+	k, err := countRejection(submissions, rejection.Reason, data)
 	if err != nil {
 		return a.notChecked(fmt.Errorf("result submit: %w", err))
 	}
@@ -290,7 +306,15 @@ func countRejection(path, reason string, data []byte) (int, error) {
 	if err := errors.Join(werr, f.Close()); err != nil {
 		return 0, err
 	}
+	return countedRejections(path)
+}
+
+// countedRejections is how many rejected submissions the submissions file at path holds; none when it is absent.
+func countedRejections(path string) (int, error) {
 	all, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, nil
+	}
 	if err != nil {
 		return 0, err
 	}

@@ -56,8 +56,14 @@ const CILogRule = "Bash(guildhall ci log:*)"
 // intake's checks while its session is live, so it fixes a rejection in the same attempt (docs/contracts/cli.md).
 var ResultRules = []string{"Bash(guildhall result submit:*)", "Bash(guildhall result check:*)"}
 
-// GuildhallRules are the SourceGuildhall rules every claude profile gets, in order: CILogRule, then ResultRules.
-var GuildhallRules = append([]string{CILogRule}, ResultRules...)
+// MessagesRule lets an Artisan run guildhall messages, which inside an attempt lists and acknowledges the steering
+// messages to the attempt's own inbox and nothing else: with GUILDHALL_ATTEMPT set it refuses --store, a recipient,
+// read and send (docs/messaging.md#steering-an-attempt).
+const MessagesRule = "Bash(guildhall messages:*)"
+
+// GuildhallRules are the SourceGuildhall rules every claude profile gets, in order: CILogRule, ResultRules, then
+// MessagesRule.
+var GuildhallRules = append(append([]string{CILogRule}, ResultRules...), MessagesRule)
 
 // Grant is one rule of an effective grant and its source.
 type Grant struct {

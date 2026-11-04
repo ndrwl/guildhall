@@ -73,6 +73,7 @@ func RunMailboxContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 		{"ListIsBoundedOrderedAndSeparated", contractList},
 		{"AckConsumesAddressedMessages", contractAck},
 		{"StewardTakesTheGuildmasterOnly", contractSteward},
+		{"ArtisanTakesTheDirectorAndGuildhallOnly", contractArtisanSenders},
 	} {
 		t.Run(c.name, func(t *testing.T) { c.run(t, setup(t)) })
 	}
@@ -80,11 +81,20 @@ func RunMailboxContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 
 func mustSend(t *testing.T, b messaging.Mailbox, to store.Recipient, e messaging.Envelope) store.Receipt {
 	t.Helper()
-	r, err := b.Send(to, store.SenderGuildmaster, e)
+	r, err := b.Send(to, senderTo(to), e)
 	if err != nil {
 		t.Fatalf("Send(%s): %v", e.ID, err)
 	}
 	return r
+}
+
+// senderTo is a sender the inbox of to takes: the Director for an Artisan's (store.ArtisanSenders), the Guildmaster
+// for any other.
+func senderTo(to store.Recipient) string {
+	if to.Role == store.RecipientArtisan {
+		return store.SenderDirector
+	}
+	return store.SenderGuildmaster
 }
 
 func ids(t *testing.T, b messaging.Mailbox, to store.Recipient, after uint64, limit int) (string, bool) {
@@ -210,7 +220,7 @@ func contractTaskAndAttempt(t *testing.T, h Harness) {
 			if role == store.RecipientArtisan {
 				to = store.Recipient{Role: role, Repository: e.Repository, TaskID: e.Task, Step: e.Step, Attempt: e.Attempt}
 			}
-			if _, err := b.Send(to, store.SenderGuildmaster, e); !errors.Is(err, store.ErrNotFound) {
+			if _, err := b.Send(to, senderTo(to), e); !errors.Is(err, store.ErrNotFound) {
 				t.Errorf("%s to %s: err = %v, want store.ErrNotFound", name, role, err)
 			}
 		}
@@ -223,7 +233,7 @@ func contractTaskAndAttempt(t *testing.T, h Harness) {
 
 	// An Artisan inbox takes messages only while its attempt runs; the Director may still hear about a finished attempt.
 	h.FinishAttempt(t, "app", "t-1", "build", 1)
-	if _, err := b.Send(BuildArtisan, store.SenderGuildmaster, Envelope("n-late", store.RecipientArtisan)); !errors.Is(err, store.ErrInvalid) {
+	if _, err := b.Send(BuildArtisan, store.SenderDirector, Envelope("n-late", store.RecipientArtisan)); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("send to finished attempt: err = %v, want store.ErrInvalid", err)
 	}
 	mustSend(t, b, Director, Envelope("q-late", store.RecipientDirector))
@@ -265,7 +275,7 @@ func contractRetryAndConflict(t *testing.T, h Harness) {
 
 	// An exact retry after restart, acknowledgement and the attempt finishing returns the original receipt and resends nothing.
 	b := h.Mailbox()
-	again, err := b.Send(BuildArtisan, store.SenderGuildmaster, Envelope("n-1", store.RecipientArtisan))
+	again, err := b.Send(BuildArtisan, store.SenderGuildhall, Envelope("n-1", store.RecipientArtisan))
 	if err != nil || again != first {
 		t.Fatalf("retry = %+v, %v; want %+v", again, err, first)
 	}
@@ -274,7 +284,7 @@ func contractRetryAndConflict(t *testing.T, h Harness) {
 	}
 	changed := Envelope("n-1", store.RecipientArtisan)
 	changed.Text = "Something else."
-	if _, err := b.Send(BuildArtisan, store.SenderGuildmaster, changed); !errors.Is(err, store.ErrMutationConflict) {
+	if _, err := b.Send(BuildArtisan, store.SenderDirector, changed); !errors.Is(err, store.ErrMutationConflict) {
 		t.Fatalf("reused id: err = %v, want store.ErrMutationConflict", err)
 	}
 	if m, _ := b.Read("n-1"); m.Text != Envelope("n-1", "").Text {
@@ -335,7 +345,7 @@ func contractConcurrentSends(t *testing.T, h Harness) {
 			_, errs[i] = b.Send(Director, store.SenderGuildmaster, Envelope(fmt.Sprintf("q-%02d", i), store.RecipientDirector))
 		})
 		wg.Go(func() {
-			receipts[n+i], errs[n+i] = b.Send(BuildArtisan, store.SenderGuildmaster, Envelope("n-same", store.RecipientArtisan))
+			receipts[n+i], errs[n+i] = b.Send(BuildArtisan, store.SenderDirector, Envelope("n-same", store.RecipientArtisan))
 		})
 	}
 	wg.Wait()
@@ -496,5 +506,28 @@ func contractAck(t *testing.T, h Harness) {
 	}
 	if s, _ := ids(t, b, Director, 0, 10); s != "q-1" {
 		t.Fatalf("director inbox = %q", s)
+	}
+}
+
+// contractArtisanSenders: an Artisan's inbox takes a message from the Director and from Guildhall only
+// (store.ArtisanSenders, d173); the Guildmaster reaches an attempt through the Director.
+func contractArtisanSenders(t *testing.T, h Harness) {
+	b := h.Mailbox()
+	for _, sender := range []string{store.SenderArtisan, store.SenderGuildmaster, store.SenderOtherDirector, store.SenderUnknown, ""} {
+		if _, err := b.Send(BuildArtisan, sender, Envelope("n-refused", store.RecipientArtisan)); !errors.Is(err, store.ErrInvalid) {
+			t.Errorf("artisan message from %q: err = %v, want store.ErrInvalid", sender, err)
+		}
+	}
+	if _, err := b.Read("n-refused"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("a refused artisan message was stored: %v", err)
+	}
+	if _, err := b.Send(BuildArtisan, store.SenderDirector, Envelope("n-1", store.RecipientArtisan)); err != nil {
+		t.Fatalf("artisan message from the Director: %v", err)
+	}
+	if _, err := b.Send(BuildArtisan, store.SenderGuildhall, Envelope("n-2", store.RecipientArtisan)); err != nil {
+		t.Fatalf("artisan message from Guildhall: %v", err)
+	}
+	if s, _ := ids(t, b, BuildArtisan, 0, 10); s != "n-1 n-2" {
+		t.Fatalf("artisan inbox = %q", s)
 	}
 }
