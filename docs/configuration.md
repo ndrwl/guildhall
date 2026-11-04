@@ -315,6 +315,7 @@ Profiles keep role names, and each step type with a role has a **role profile**:
 | Step type | Role profile |
 |---|---|
 | `research` | `researcher` |
+| `grill` run by an Artisan, such as an [unattended grill](tasks.md#grill-mode) | `researcher` |
 | `plan` | `planner` |
 | `build` | `builder` |
 | `review` | `reviewer` |
@@ -470,7 +471,7 @@ Each kind declares who may fulfil it, and `Step.Actor` reports who fulfils a ste
 
 | Kind | Actors | Produces |
 |---|---|---|
-| `grill` | `director` or `artisan` | notes: the Director interviews the Guildmaster live with `guildhall-grill` and `guildhall-domain-model`; an Artisan grills unattended with `guildhall-grill-unattended` |
+| `grill` | `director` or `artisan` | notes: the Director interviews the Guildmaster live with `guildhall-grill` and `guildhall-domain-model`; an Artisan grills unattended with `guildhall-grill-unattended`, under the `researcher` role profile |
 | `research`, `plan`, `build` | `artisan` | notes, a spec document, a code head |
 | `refute` | `artisan` | a findings document attacking the proposed spec, not a review verdict |
 | `hallmark` | `artisan` | a ranked report of the whole repository, written without changing it, given the repository's previous hallmark report as `previous` |
@@ -483,7 +484,9 @@ Each kind declares who may fulfil it, and `Step.Actor` reports who fulfils a ste
 | `handoff-wait` | `guildmaster` | a handoff document |
 
 The director actor on `grill` is part of the accepted workflow design's stage table (design report section 4.1: grill produces notes, with actor director, a conversation with the Guildmaster, or artisan) and does not conflict with R1.5, because a grill is the Director clarifying requirements with the Guildmaster, not doing the work.
-The director grill is a live interview in rounds of numbered questions until the Director and the Guildmaster share an understanding, recorded as the stage's notes (R1.13); the `artisan` actor is the opt-in for a repository meant to run unattended; with `guildhall-grill-unattended` listed in the grill step's `skills`, its Artisan answers its own questions with recommendations the Guildmaster reviews at acceptance ([decision](decisions/grill-live-interview.md)).
+The director grill is a live interview in rounds of numbered questions until the Director and the Guildmaster share an understanding, recorded as the stage's notes (R1.13); the Director chooses for each feature task whether its grill is live or unattended, with a one-line reason, and every advance applies an unattended task's [grill mode](tasks.md#grill-mode) to the bound workflow after its digest check, running the Director grill as an Artisan step with `guildhall-grill-unattended` and `guildhall-domain-model`, so no workflow bytes or digests change ([decision](decisions/grill-mode-per-task.md)).
+The Artisan answers its own questions with recommendations, which plan carries into the spec's open questions for the Guildmaster to answer at acceptance, and fails its attempt with any question that would change the task's goal or repository, so the Director can switch the task to live.
+The `artisan` actor in a repository's `workflow_overrides` still makes every grill in that repository unattended, with `guildhall-grill-unattended` listed in the step's `skills`; grill mode does not apply there, since its workflow has no Director grill ([decision](decisions/grill-live-interview.md)).
 A kind with more than one actor requires the `actor` setting; a kind with one actor refuses it.
 `publish` comes before `validate` so forge checks have a pushed head to read; it never merges.
 `publish` and `deliver` have no settings: the repository's configuration and merge requirements decide where work goes and how it lands.

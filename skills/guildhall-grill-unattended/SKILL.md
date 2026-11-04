@@ -1,6 +1,6 @@
 ---
 name: guildhall-grill-unattended
-description: Use in a grill stage run by an Artisan, where a repository runs unattended, to write its notes as one numbered round of open decisions, each with the recommended answer you proceed on.
+description: Use in an unattended grill run by an Artisan to write its notes as one numbered round of open decisions, each with the answer you proceed on, and to fail with any question that would change the task's goal or repository.
 ---
 
 Adapted from `grilling` in mattpocock/skills (MIT, commit 5beb35b); see CREDITS.md.
@@ -8,9 +8,9 @@ Adapted from `grilling` in mattpocock/skills (MIT, commit 5beb35b); see CREDITS.
 # Unattended grill
 
 A grill stage stress-tests a task before anyone plans it.
-The Director normally grills the Guildmaster live; this skill is for a repository that overrides the grill actor to `artisan` so it can run unattended.
+The Director grills the Guildmaster live when a task needs their input; for a task it judged does not, such as delegated work or a follow-up whose contracts are already written, it made the grill unattended and an Artisan runs it.
 Nobody answers you during the stage: you write the questions, recommend an answer to each, and proceed on your recommendations.
-The Director shows your notes to the Guildmaster at the next approval, and a "no" to any question sends the plan back with that answer.
+Plan carries each question it does not settle into its spec's open questions, with your recommendation, and the Guildmaster answers them at plan approval.
 
 ## Steps
 
@@ -21,6 +21,12 @@ The Director shows your notes to the Guildmaster at the next approval, and a "no
    Word each question so that "yes" accepts your recommendation.
    Ask only what can be answered now, and put a question that depends on another after it, naming the question it depends on and assuming that question's recommendation is accepted.
 5. Finish when every branch of the tree is either settled with evidence or written as a question, so nothing is silently assumed.
+
+## Escalation
+
+A question whose answer would change the task's goal, or which repository it touches, is not yours to recommend.
+When you find one, fail the attempt with that question in your summary, and write no notes.
+The Director then switches the task's grill to live and grills the Guildmaster.
 
 ## Format
 
