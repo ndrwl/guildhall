@@ -128,6 +128,7 @@ Regenerate it with `go test ./internal/doccheck -run TestDecisionIndex -update`,
 
 - [CI pins actions by commit, runs a Linux race step and runs the release test](decisions/ci-action-pins-and-race.md)
 - [CI builds, vets, tests and lints on Linux, Windows and macOS with a pinned golangci-lint](decisions/ci-matrix-and-lint.md)
+- [CI tests platform-neutral packages on Linux only](decisions/ci-neutral-packages-ubuntu-only.md)
 - [CI runs the race detector as three parallel shard jobs, `race (1)`–`race (3)`](decisions/ci-race-shards.md)
 - [A CI runner's required tools turn their skips into failures](decisions/ci-required-skips.md)
 - [Guildhall fetches failed CI job logs for Artisans, who get no `gh`](decisions/failed-job-logs.md)
