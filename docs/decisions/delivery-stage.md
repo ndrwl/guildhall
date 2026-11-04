@@ -25,7 +25,7 @@ Validation was left out of that first change and defined by a follow-up; d13 the
   Squash, fixed, bound to the head with `--match-head-commit`, never with `--admin` or `--auto`.
   A forge refusal is recorded once per reason as `<merge>-refused`, the Director is told the forge's reason, and the merge is not retried automatically; a later advance asks again.
 - **Validate** reads the checks of the head commit, never of whatever the pull request is at now.
-  Every reported check counts; no checks is pending unless the repository sets `no_ci`; any failed check is red at once, even while others are pending; a state Guildhall does not know fails the read.
+  Every reported check counts; no checks waits as pending unless the repository sets `no_ci`, and is reported to the Director as no CI run, with the pull request's CI re-triggered by closing and reopening it where the repository opts in with `ci_retrigger = "reopen"`, once `ci_start_grace` has passed ([absent checks](../interpreter.md#absent-checks)), but never passes; any failed check is red at once, even while others are pending; a state Guildhall does not know fails the read.
   Red takes the workflow's `failed` loop back to build with the failing checks as feedback, and the loop's exit offers `continue` and `reject`, never `accept`.
   A waiting failed head is read again, so a re-run check counts, and a round of `max` is spent only on new evidence: a failed run, by check name and run id, that the latest result does not already hold.
   Reads are paced by [`checks_refresh`](../configuration.md#settings).

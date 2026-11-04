@@ -220,13 +220,16 @@ func clerkResolvers(byRepo func(repo string) func(workflow.Revision) (*workflow.
 // clerkTask is one task's facts: its view and status, its latest recorded pull request, whether it merged or is
 // merging, the type of its newest checks message, when it closed and when anything of it was last committed.
 type clerkTask struct {
-	view      taskView
-	status    statusTask
-	pr        *interp.RecordedPullRequest
-	merging   bool
-	checks    string
-	closedAt  time.Time
-	changedAt time.Time
+	view    taskView
+	status  statusTask
+	pr      *interp.RecordedPullRequest
+	merging bool
+	checks  string
+	// missingHead is the head, its first 12 characters, a newest checks-missing message names; "" when the newest
+	// checks message is another, or its id was hashed.
+	missingHead string
+	closedAt    time.Time
+	changedAt   time.Time
 }
 
 func (a *App) clerkRead(ctx context.Context, c clerkPaths) (clerkData, error) {
@@ -294,6 +297,8 @@ func (a *App) clerkReadWait(ctx context.Context, c clerkPaths, wait time.Duratio
 			}
 			d.byKey[key] = ct
 		}
+		// The store scans receipts by mutation id; the newest of each kind is the one committed last.
+		slices.SortStableFunc(receipts, func(a, b store.Receipt) int { return cmp.Compare(a.Sequence, b.Sequence) })
 		for _, r := range receipts {
 			key := r.Repository + "/" + r.TaskID
 			ct, ok := d.byKey[key]
@@ -314,8 +319,12 @@ func (a *App) clerkReadWait(ctx context.Context, c clerkPaths, wait time.Duratio
 				if err != nil {
 					return struct{}{}, err
 				}
-				if m.Type == store.MessageChecksPassed || m.Type == store.MessageChecksFailed || m.Type == store.MessageChecksPending {
-					ct.checks = m.Type
+				switch m.Type {
+				case store.MessageChecksPassed, store.MessageChecksFailed, store.MessageChecksPending:
+					ct.checks, ct.missingHead = m.Type, ""
+				case store.MessageChecksMissing:
+					// A new head's read sends its checks-pending first, so a newest checks-missing is the current head's.
+					ct.checks, ct.missingHead = m.Type, missingHead(id)
 				}
 			}
 			d.byKey[key] = ct
@@ -449,10 +458,14 @@ func (d clerkData) stands(ct clerkTask) string {
 	case interp.WaitDirector, interp.WaitDirectorStage:
 		return "waiting for the Director"
 	case interp.WaitChecks:
-		if ct.pr != nil {
-			return fmt.Sprintf("CI pending, PR #%d", ct.pr.Number)
+		state := "CI pending"
+		if ct.checks == store.MessageChecksMissing {
+			state = strings.TrimSpace("no CI run for " + ct.missingHead)
 		}
-		return "CI pending"
+		if ct.pr != nil {
+			return fmt.Sprintf("%s, PR #%d", state, ct.pr.Number)
+		}
+		return state
 	case interp.WaitMergeQueue:
 		e := t.MergeQueue
 		if e == nil {
@@ -460,7 +473,7 @@ func (d clerkData) stands(ct clerkTask) string {
 		}
 		out := fmt.Sprintf("in merge queue %d/%d", e.Position, d.queueLength(t.Repository))
 		if e.WaitingOn != "queue" {
-			out += ", " + clerkWaitingOn(e.WaitingOn)
+			out += ", " + ct.waitingOn(e.WaitingOn)
 		}
 		return out
 	case interp.WaitQueued:
@@ -517,10 +530,36 @@ func clerkWaitingOn(w string) string {
 	return "waiting (" + w + ")"
 }
 
+// waitingOn is clerkWaitingOn for task ct's merge-queue entry: a front waiting on CI whose head reported none for
+// ci_start_grace has no CI run.
+func (ct clerkTask) waitingOn(w string) string {
+	if w == "ci" && ct.checks == store.MessageChecksMissing {
+		return "no CI run"
+	}
+	return clerkWaitingOn(w)
+}
+
+// missingHead is the 12-character head a checks-missing message id, <repo>.<task>.checks-missing.<step>.<head12>
+// with an optional .after-start, names; "" for a hashed id.
+func missingHead(id string) string {
+	_, rest, ok := strings.Cut(id, ".checks-missing.")
+	if !ok {
+		return ""
+	}
+	parts := strings.Split(rest, ".")
+	if len(parts) < 2 || len(parts[1]) != 12 || strings.Trim(parts[1], "0123456789abcdef") != "" {
+		return ""
+	}
+	return parts[1]
+}
+
 // checks is the pull request's checks state as the store holds it.
 func (ct clerkTask) checksState() string {
 	var n clerkNext
 	if ct.status.Next != nil && json.Unmarshal(ct.status.Next, &n) == nil && interp.Wait(n.Wait) == interp.WaitChecks {
+		if ct.checks == store.MessageChecksMissing {
+			return "no CI run"
+		}
 		return "CI pending"
 	}
 	switch ct.checks {
@@ -632,7 +671,7 @@ func (d clerkData) guild(all bool) string {
 		if !f.Front {
 			where = "next"
 		}
-		line := fmt.Sprintf("%s: %d queued, %s %s %s", q.Repository, len(q.Entries), where, f.Task, clerkWaitingOn(f.WaitingOn))
+		line := fmt.Sprintf("%s: %d queued, %s %s %s", q.Repository, len(q.Entries), where, f.Task, d.byKey[q.Repository+"/"+f.Task].waitingOn(f.WaitingOn))
 		if f.Held {
 			line += ", held"
 		}
@@ -716,7 +755,7 @@ func (d clerkData) queue() string {
 				held = "held"
 			}
 			rows = append(rows, []string{strconv.Itoa(e.Position), e.Task, e.Priority.String(), oneLine(ct.view.Title), pr,
-				clerkSince(d.now, e.ReadyAt), held, clerkWaitingOn(e.WaitingOn)})
+				clerkSince(d.now, e.ReadyAt), held, ct.waitingOn(e.WaitingOn)})
 		}
 		clerkTable(&b, []string{"POS", "TASK", "PRI", "TITLE", "PR", "READY FOR", "HELD", "WAITING ON"}, rows, 3)
 	}

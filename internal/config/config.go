@@ -329,6 +329,14 @@ const ChecksRefreshKey = "checks_refresh"
 // DefaultChecksRefresh is the checks refresh of a config that does not set ChecksRefreshKey.
 const DefaultChecksRefresh = time.Minute
 
+// CIStartGraceKey is the setting that sets how long a validate step or merge-queue front waits on a head its forge
+// reports no check for, from the first read that saw none, before it tells the Director no CI run exists for it and
+// re-triggers the pull request's CI where the forge can (docs/configuration.md#settings).
+const CIStartGraceKey = "ci_start_grace"
+
+// DefaultCIStartGrace is the CI start grace of a config that does not set CIStartGraceKey.
+const DefaultCIStartGrace = 10 * time.Minute
+
 // CILogLimitKey is the setting that caps the bytes of one failed job log Guildhall fetches and caches
 // (docs/configuration.md#settings).
 const CILogLimitKey = "ci_log_limit"
@@ -599,6 +607,11 @@ type Repository struct {
 	// (docs/configuration.md#repositories); empty is DefaultFlakyChecks. Read it through FlakyChecksPolicy. It is
 	// omitted from JSON when unset, so the config digest of a config without it is unchanged.
 	FlakyChecks FlakyChecks `toml:"flaky_checks" json:",omitempty"`
+	// CIRetrigger is how Guildhall re-triggers the pull request CI of a published head that still reports no check
+	// once ci_start_grace has passed (docs/configuration.md#repositories): off, the default, starts nothing, and
+	// reopen closes and reopens the pull request once per head. Read it through CIRetriggerPolicy. It is omitted
+	// from JSON when unset, so the config digest of a config without it is unchanged.
+	CIRetrigger CIRetrigger `toml:"ci_retrigger" json:",omitempty"`
 	// Profiles are this repository's grants, keyed by a declared claude profile's name: each adds its rules to that
 	// profile's effective grant for this repository's tasks only (docs/adapters.md#artisan-permissions).
 	// It is omitted from JSON when unset, so the config digest of a config without it is unchanged.
@@ -626,6 +639,27 @@ func (p FlakyChecks) Valid() bool {
 // FlakyChecksPolicy is the effective flaky_checks.
 func (r Repository) FlakyChecksPolicy() FlakyChecks {
 	return cmp.Or(r.FlakyChecks, DefaultFlakyChecks)
+}
+
+// CIRetrigger is a repository's missing-run policy, ci_retrigger.
+type CIRetrigger string
+
+// The missing-run policies: off starts no run, so a head with no check is only reported; reopen closes and reopens
+// the pull request once per head, whose pull_request reopened event runs its CI on the same head.
+const (
+	CIRetriggerOff     CIRetrigger = "off"
+	CIRetriggerReopen  CIRetrigger = "reopen"
+	DefaultCIRetrigger             = CIRetriggerOff
+)
+
+// Valid reports whether p is empty or one of the policies.
+func (p CIRetrigger) Valid() bool {
+	return p == "" || p == CIRetriggerOff || p == CIRetriggerReopen
+}
+
+// CIRetriggerPolicy is the effective ci_retrigger.
+func (r Repository) CIRetriggerPolicy() CIRetrigger {
+	return cmp.Or(r.CIRetrigger, DefaultCIRetrigger)
 }
 
 // RepositoryProfile is a repository grant: the rules one repository adds to one profile.
@@ -951,6 +985,9 @@ func (c *Config) validate() []string {
 		if !r.FlakyChecks.Valid() {
 			add("%s: flaky_checks %q must be off, rerun or rerun-and-file", name, r.FlakyChecks)
 		}
+		if !r.CIRetrigger.Valid() {
+			add("%s: ci_retrigger %q must be off or reopen", name, r.CIRetrigger)
+		}
 		m := r.Merge
 		switch k := m.ReapproveAfterRebase; {
 		case k != "" && k.Rank() < 0:
@@ -1142,6 +1179,25 @@ func parseChecksRefresh(v string) (time.Duration, error) {
 	d, err := time.ParseDuration(v)
 	if err != nil || d < 0 {
 		return 0, fmt.Errorf("%s %q must be a nonnegative duration such as \"1m\", or \"0s\" to read at every advance", ChecksRefreshKey, v)
+	}
+	return d, nil
+}
+
+// CIStartGrace returns the effective CIStartGraceKey setting as a duration: DefaultCIStartGrace when it is not
+// set, and zero, which reports a head with no checks at the first read that sees none, for "0s". A value that is
+// not a nonnegative Go duration is an error; Parse refuses one already.
+func (c *Config) CIStartGrace() (time.Duration, error) {
+	v, ok := c.Setting(CIStartGraceKey)
+	if !ok {
+		return DefaultCIStartGrace, nil
+	}
+	return parseCIStartGrace(v)
+}
+
+func parseCIStartGrace(v string) (time.Duration, error) {
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		return 0, fmt.Errorf("%s %q must be a nonnegative duration such as \"10m\"", CIStartGraceKey, v)
 	}
 	return d, nil
 }

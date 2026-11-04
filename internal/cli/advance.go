@@ -533,6 +533,14 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 	if err != nil {
 		return interp.Next{}, fmt.Errorf("config: %w", err)
 	}
+	grace, err := eff.CIStartGrace()
+	if err != nil {
+		return interp.Next{}, fmt.Errorf("config: %w", err)
+	}
+	if grace == 0 {
+		// The engine reads zero as the default; ci_start_grace = "0s" reports absent checks at the first read.
+		grace = -1
+	}
 	skills, err := os.MkdirTemp("", "guildhall-release-*")
 	if err != nil {
 		return interp.Next{}, err
@@ -579,7 +587,7 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 			return boundWorkflow(filepath.Join(cfgDir, "workflows"), cfg, r, rev)
 		},
 		Config: eff, Overrides: &overrides, StandardsRevision: standards, CheckSettings: runtimeSettings,
-		DocumentDir: filepath.Join(state, "documents"), StateDir: state, StallInterval: stall, ChecksRefresh: refresh, CILogLimit: logLimit,
+		DocumentDir: filepath.Join(state, "documents"), StateDir: state, StallInterval: stall, ChecksRefresh: refresh, CIStartGrace: grace, CILogLimit: logLimit,
 		Forge: fg, Workspaces: ws,
 		// The task's base is read from the repository's own refs, which the worktree custody fetched, and the
 		// classifier runs over the same repository.

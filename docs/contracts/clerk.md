@@ -48,7 +48,8 @@ The answers are made from the existing reads, called directly: `readDirectorStat
 
 **Kind** is `interp.TaskKindOf` ([task kinds](../decisions/task-kinds.md)) with the repository's config and its bound-workflow resolver, memoised per revision for one Clerk read: `hallmark` when the bound workflow resolves and has a hallmark step, then `bug` by the repository's bug workflow name, else `feature`; a repository the config does not list, or a config that cannot be read, uses a zero repository and so the shipped names. `TestClerkKindRenamedHallmark` pins a hallmark task under a renamed `kinds.hallmark`.
 
-**Checks** are local only: `CI pending` while the task waits on checks, else its newest checks message, `CI passed`, `CI failed` or `CI pending`, else `no checks recorded`.
+**Checks** are local only: `CI pending` while the task waits on checks, or `no CI run` when its newest checks message, by receipt sequence, is `checks-missing`, else its newest checks message, `CI passed`, `CI failed` or `CI pending`, else `no checks recorded`.
+A task waiting on checks in the `checks-missing` state reads `no CI run for <head12>`, the head its message id names, and a merge-queue entry's `waiting_on: ci` reads `no CI run` for it; a newer `checks-pending`, as a new head's read sends first, returns it to `CI pending`. `TestClerkNoCIRun` pins these.
 Clerk makes no forge, `gh` or network call.
 
 **Task ids**: `<repo>/<id>` names one task; an `<id>` alone is accepted when exactly one repository has it.

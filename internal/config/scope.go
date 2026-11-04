@@ -98,6 +98,7 @@ var settingRegistry = []settingEntry{
 	{key: WakeMaxDelayKey, scope: ScopeMachine, check: func(v string) error { _, err := parseWakeMaxDelay(v); return err }},
 	{key: MailboxMaxKey, scope: ScopeMachine, check: func(v string) error { _, err := parseMailboxMax(v); return err }},
 	{key: ChecksRefreshKey, scope: ScopeTask, check: func(v string) error { _, err := parseChecksRefresh(v); return err }},
+	{key: CIStartGraceKey, scope: ScopeTask, check: func(v string) error { _, err := parseCIStartGrace(v); return err }},
 	{key: CILogLimitKey, scope: ScopeTask, check: func(v string) error { _, err := parseCILogLimit(v); return err }},
 	{key: ArtisanWorkspaceCloseAfterKey, scope: ScopeMachine, check: func(v string) error { _, err := parseArtisanWorkspaceCloseAfter(v); return err }},
 	{key: ArtisanPaneOutputKey, scope: ScopeMachine, check: checkArtisanPaneOutput},

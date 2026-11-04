@@ -469,7 +469,7 @@ func (b webBuilder) status() web.Status {
 			st.CI = web.CIPassed
 		case "CI failed":
 			st.CI = web.CIFailed
-		case "CI pending":
+		case "CI pending", "no CI run":
 			st.CI = web.CIPending
 		}
 	}

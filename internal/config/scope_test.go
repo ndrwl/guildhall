@@ -67,7 +67,7 @@ func TestEveryKeyIsRegistered(t *testing.T) {
 }
 
 func TestSettingScopes(t *testing.T) {
-	task := []string{"default_effort", "stall_interval", "checks_refresh", "ci_log_limit",
+	task := []string{"default_effort", "stall_interval", "checks_refresh", "ci_start_grace", "ci_log_limit",
 		"quality_self_review", "quality_size_budget_lines", "quality_size_budget_files", "quality_audit_sample",
 		"quality_reference_runs", "quality_reference_runs_per_task", "quality_reference_cost_cap_usd",
 		"quality_judge_profiles", "quality_judge_separate_family", "quality_skill_edits_need_approval"}
@@ -89,8 +89,8 @@ func TestSettingScopes(t *testing.T) {
 			t.Errorf("SettingScope(%q) = %q, true; want unknown", key, got)
 		}
 	}
-	if n := len(settingRegistry); n != 32 {
-		t.Errorf("the registry has %d entries, want 32: 31 settings and the profile skill policy prefix", n)
+	if n := len(settingRegistry); n != 33 {
+		t.Errorf("the registry has %d entries, want 33: 32 settings and the profile skill policy prefix", n)
 	}
 }
 

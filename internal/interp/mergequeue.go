@@ -356,7 +356,8 @@ func (r *run) headChecks(s workflow.Step, k int, repo config.Repository, x strin
 	if due, _, err := r.checksDue(s, x); err != nil || !due {
 		return nil, wait, err
 	}
-	checks, err := r.e.Forge.Checks(r.ctx, forge.Commit{Repository: repo.Path, Remote: pr.Remote, Head: x})
+	// The read is bound to the pull request, whose own checks are the ones its required checks count.
+	checks, err := r.e.Forge.Checks(r.ctx, forge.Commit{Repository: repo.Path, Remote: pr.Remote, Head: x, PullRequest: pr.Number})
 	if err != nil {
 		return nil, Next{}, err
 	}
@@ -364,22 +365,9 @@ func (r *run) headChecks(s workflow.Step, k int, repo config.Repository, x strin
 		return nil, Next{}, err
 	}
 	v = validationDoc{Schema: validationSchema, Remote: pr.Remote, Number: pr.Number, URL: pr.URL, Head: x, Verdict: validationPassed, Checks: checks}
-	if v.Checks == nil {
-		v.Checks = []forge.Check{}
-	}
-	finished := len(checks) > 0 || repo.NoCI
-	v.NoCI = len(checks) == 0 && repo.NoCI
-	for _, c := range checks {
-		switch c.State {
-		case forge.CheckFailed:
-			v.Verdict, v.Failing = validationFailed, append(v.Failing, c.Name)
-		case forge.CheckPending:
-			finished = false
-		}
-	}
 	pending := fmt.Sprintf("Step %s waits for the checks of rebased head %s on pull request %s to finish.", s.ID, x, pr.URL)
-	if v.Verdict == validationPassed && !finished {
-		return nil, wait, r.notify(fmt.Sprintf("checks-pending.%s.%s", s.ID, x[:12]), store.MessageChecksPending, pending)
+	if waits, next, err := r.awaitChecks(s, repo, pr, x, checkWait(&v, repo.NoCI), pending); err != nil || waits {
+		return nil, next, err
 	}
 	if v.Verdict == validationFailed {
 		// Under flaky_checks, the front's failed jobs get their one rerun on this head, as validate's do.

@@ -399,6 +399,120 @@ func RunForgeContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 		}
 	})
 
+	starter := func(t *testing.T, h Harness) forge.CIStarter {
+		t.Helper()
+		s, ok := h.Forge.(forge.CIStarter)
+		if !ok {
+			t.Skip("this forge cannot start a CI run")
+		}
+		return s
+	}
+
+	retrigger := func(h Harness, pr forge.PullRequest, head string) forge.Retrigger {
+		return forge.Retrigger{Repository: h.Repository, Remote: h.Remote, Number: pr.Number, Head: head, Comment: "Guildhall: contract re-trigger"}
+	}
+	view := func(t *testing.T, h Harness, pr forge.PullRequest) forge.PullRequest {
+		t.Helper()
+		reader, ok := h.Forge.(PullRequestReader)
+		if !ok {
+			t.Skip("this forge cannot read a pull request")
+		}
+		got, err := reader.PullRequest(ctx, forge.View{Repository: h.Repository, Remote: h.Remote, Number: pr.Number})
+		if err != nil {
+			t.Fatalf("PullRequest(%d) = %v", pr.Number, err)
+		}
+		return got
+	}
+
+	t.Run("re-triggers an open pull request at its head and leaves it open there", func(t *testing.T) {
+		h := newHarness(t)
+		s := starter(t, h)
+		pr := publish(t, h, h.Heads[0])
+		if got, err := s.StartCI(ctx, retrigger(h, pr, h.Heads[0])); got != forge.Started || err != nil {
+			t.Fatalf("StartCI = %q, %v, want started", got, err)
+		}
+		if got := view(t, h, pr); got.State != forge.Open || got.Head != h.Heads[0] || got.Number != pr.Number {
+			t.Errorf("pull request after StartCI = %+v, want %d open at %s", got, pr.Number, h.Heads[0])
+		}
+		if got := h.Branch(t, pr.Branch); got != h.Heads[0] {
+			t.Errorf("branch after StartCI = %s, want %s", got, h.Heads[0])
+		}
+	})
+
+	t.Run("changes nothing when the pull request moved", func(t *testing.T) {
+		h := newHarness(t)
+		s := starter(t, h)
+		pr := publish(t, h, h.Heads[0])
+		publish(t, h, h.Heads[1])
+		if got, err := s.StartCI(ctx, retrigger(h, pr, h.Heads[0])); got != forge.HeadMoved || err != nil {
+			t.Errorf("StartCI of a head the pull request left = %q, %v, want head-moved", got, err)
+		}
+		if got := view(t, h, pr); got.State != forge.Open || got.Head != h.Heads[1] {
+			t.Errorf("pull request after StartCI = %+v, want open at %s", got, h.Heads[1])
+		}
+	})
+
+	t.Run("refuses a pull request that is not open", func(t *testing.T) {
+		h := newHarness(t)
+		s := starter(t, h)
+		pr := publish(t, h, h.Heads[0])
+		if _, err := h.Forge.Close(ctx, forge.Close{Repository: h.Repository, Remote: h.Remote, Number: pr.Number, Comment: "Cancelled by Guildhall: contract"}); err != nil {
+			t.Fatalf("Close = %v", err)
+		}
+		if _, err := s.StartCI(ctx, retrigger(h, pr, h.Heads[0])); !errors.Is(err, forge.ErrRefused) {
+			t.Errorf("StartCI of a closed pull request = %v, want ErrRefused", err)
+		}
+		if got := view(t, h, pr); got.State != forge.Closed {
+			t.Errorf("pull request after a refused StartCI = %+v, want it still closed", got)
+		}
+	})
+
+	t.Run("refuses an invalid retrigger", func(t *testing.T) {
+		h := newHarness(t)
+		s := starter(t, h)
+		pr := publish(t, h, h.Heads[0])
+		for _, r := range []forge.Retrigger{
+			{Repository: h.Repository, Remote: h.Remote, Number: 0, Head: h.Heads[0], Comment: "c"},
+			{Repository: h.Repository, Remote: h.Remote, Number: pr.Number, Head: "HEAD", Comment: "c"},
+			{Repository: h.Repository, Remote: h.Remote, Number: pr.Number, Head: h.Heads[0]},
+			{Remote: h.Remote, Number: pr.Number, Head: h.Heads[0], Comment: "c"},
+		} {
+			if _, err := s.StartCI(ctx, r); !errors.Is(err, forge.ErrInvalid) {
+				t.Errorf("StartCI(%+v) = %v, want ErrInvalid", r, err)
+			}
+		}
+		if got, err := s.StartCI(ctx, retrigger(h, pr, h.Heads[0])); got != forge.Started || err != nil {
+			t.Errorf("StartCI after refusals = %q, %v, want started", got, err)
+		}
+	})
+
+	t.Run("a read bound to the pull request reports its checks for its head only", func(t *testing.T) {
+		h := newHarness(t)
+		if h.SetChecks == nil {
+			t.Skip("this forge cannot be given checks")
+		}
+		pr := publish(t, h, h.Heads[0])
+		want := []forge.Check{{Name: "test", State: forge.CheckPending, ID: "run-1", Job: "101"}}
+		h.SetChecks(t, h.Heads[0], want)
+		bound := commit(h, h.Heads[0])
+		bound.PullRequest = pr.Number
+		got, err := h.Forge.Checks(ctx, bound)
+		if err != nil || !slices.Equal(got, want) {
+			t.Fatalf("Checks bound to %d = %+v, %v; want %+v", pr.Number, got, err, want)
+		}
+		publish(t, h, h.Heads[1])
+		if got, err := h.Forge.Checks(ctx, bound); err != nil || len(got) != 0 {
+			t.Errorf("Checks bound to %d after it moved = %+v, %v; want none", pr.Number, got, err)
+		}
+		if got := checks(t, h, h.Heads[0]); !slices.Equal(got, want) {
+			t.Errorf("unbound Checks after the pull request moved = %+v, want %+v", got, want)
+		}
+		bound.PullRequest = -1
+		if _, err := h.Forge.Checks(ctx, bound); !errors.Is(err, forge.ErrInvalid) {
+			t.Errorf("Checks bound to pull request -1 = %v, want ErrInvalid", err)
+		}
+	})
+
 	closePR := func(h Harness, pr forge.PullRequest) (forge.PullRequest, error) {
 		return h.Forge.Close(ctx, forge.Close{Repository: h.Repository, Remote: h.Remote, Number: pr.Number, Comment: "Cancelled by Guildhall: contract"})
 	}

@@ -555,6 +555,10 @@ const (
 	MessageChecksFailed     = "checks-failed"
 	MessageChecksPassed     = "checks-passed"
 	MessageChecksPending    = "checks-pending"
+	// MessageChecksMissing: a head validate or the merge-queue front waits on has reported no check for
+	// ci_start_grace, so no CI run exists for it; the text says whether Guildhall started one
+	// (docs/interpreter.md#absent-checks).
+	MessageChecksMissing = "checks-missing"
 	// MessageFlake: a failed GitHub Actions check passed on the one rerun validate gave it under flaky_checks =
 	// "rerun-and-file"; its text carries the policy and the evidence, and the Director files or updates a bug.
 	MessageFlake     = "flake"
@@ -621,7 +625,7 @@ const (
 var MessageTypes = map[string]string{
 	MessageAdvanceFailed: "launcher", MessageAttemptFailed: "engine", MessageAttemptRetried: "engine",
 	MessageBudgetRefused: "engine", MessageChangesRequested: "engine", MessageChecksFailed: "engine",
-	MessageChecksPassed: "engine", MessageChecksPending: "engine", MessageFlake: "engine", MessagePRBlocked: "engine", MessageDecision: "engine",
+	MessageChecksPassed: "engine", MessageChecksPending: "engine", MessageChecksMissing: "engine", MessageFlake: "engine", MessagePRBlocked: "engine", MessageDecision: "engine",
 	MessageDependencyHeld: "engine", MessageBranchKept: "engine",
 	MessageDirectorStage: "engine", MessageLoopExitRejected: "engine", MessageMergeHeld: "engine",
 	MessageMergeRefused: "engine", MessageMerged: "engine", MessageSliceDelivered: "engine", MessageFinished: "engine", MessagePublished: "engine", MessageStall: "engine",

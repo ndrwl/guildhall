@@ -276,7 +276,8 @@ func (r *run) validate(s workflow.Step) (bool, Next, error) {
 		}
 		return false, Next{Wait: WaitDirector, Step: s.ID}, nil
 	}
-	checks, err := r.e.Forge.Checks(r.ctx, forge.Commit{Repository: repo.Path, Remote: pr.Remote, Head: h})
+	// The read is bound to the pull request, whose own checks are the ones its required checks count.
+	checks, err := r.e.Forge.Checks(r.ctx, forge.Commit{Repository: repo.Path, Remote: pr.Remote, Head: h, PullRequest: pr.Number})
 	if err != nil {
 		return false, Next{}, err
 	}
@@ -291,30 +292,15 @@ func (r *run) validate(s workflow.Step) (bool, Next, error) {
 		}
 		v.Rebase = linkNames(links)
 	}
-	if v.Checks == nil {
-		v.Checks = []forge.Check{}
-	}
-	finished := len(checks) > 0 || repo.NoCI
-	v.NoCI = len(checks) == 0 && repo.NoCI
-	for _, c := range checks {
-		switch c.State {
-		case forge.CheckFailed:
-			v.Verdict, v.Failing = validationFailed, append(v.Failing, c.Name)
-		case forge.CheckPending:
-			finished = false
-		}
-	}
-	if v.Verdict == validationPassed && !finished {
-		// The text names no check, so a wait that sees other pending checks replays the same message.
-		return false, Next{Wait: WaitChecks, Step: s.ID}, r.notify(fmt.Sprintf("checks-pending.%s.%s", s.ID, h[:12]), store.MessageChecksPending,
-			fmt.Sprintf("Step %s waits for the checks of head %s on pull request %s to finish. Advancing the task again, such as with task start, reads them again.", s.ID, h, pr.URL))
+	pending := fmt.Sprintf("Step %s waits for the checks of head %s on pull request %s to finish. Advancing the task again, such as with task start, reads them again.", s.ID, h, pr.URL)
+	if waits, next, err := r.awaitChecks(s, repo, pr, h, checkWait(&v, repo.NoCI), pending); err != nil || waits {
+		return false, next, err
 	}
 	if last != nil && v.Verdict == validationFailed && !newFailure(v.Checks, last.Checks) {
 		return false, wait, nil
 	}
 	if v.Verdict == validationFailed {
 		// Under flaky_checks, a round about to be recorded first gives its failed jobs their one rerun on this head.
-		pending := fmt.Sprintf("Step %s waits for the checks of head %s on pull request %s to finish. Advancing the task again, such as with task start, reads them again.", s.ID, h, pr.URL)
 		if stop, next, err := r.rerunFailed(s, repo, pr, h, &v, pending); err != nil || stop {
 			return false, next, err
 		}

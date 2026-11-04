@@ -210,6 +210,10 @@ type Commit struct {
 	Repository, Remote string
 	// Head is the full commit id whose checks are read.
 	Head string
+	// PullRequest, when set, is the number of the pull request Head is published on: Checks then reports only the
+	// checks that pull request reports for Head, as its required checks count them, so a run the forge does not
+	// link to it, such as a GitHub workflow_dispatch run on the same commit, is not one of them.
+	PullRequest int
 }
 
 // Validate reports a commit missing a field or naming an invalid head, as ErrInvalid.
@@ -219,6 +223,8 @@ func (c Commit) Validate() error {
 		return fmt.Errorf("%w: a commit names its repository and remote", ErrInvalid)
 	case !digest.ValidHead(c.Head):
 		return fmt.Errorf("%w: head %q is not a full commit id", ErrInvalid, c.Head)
+	case c.PullRequest < 0:
+		return fmt.Errorf("%w: pull request number %d", ErrInvalid, c.PullRequest)
 	}
 	return nil
 }

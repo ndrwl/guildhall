@@ -95,7 +95,8 @@ Each task's position is one plain phrase:
 ## Limits
 
 - **Local state only.** Every answer says `local state`: Clerk makes no forge or network call.
-  A pull request's checks are what the store already holds: `CI pending` while the task waits on them, else the newest checks message (`CI passed` or `CI failed`), else `no checks recorded`.
+  A pull request's checks are what the store already holds: `CI pending` while the task waits on them, or `no CI run` when its newest checks message is a [`checks-missing`](interpreter.md#absent-checks) one, else the newest checks message (`CI passed` or `CI failed`), else `no checks recorded`.
+  A task in that state shows `no CI run for <head12>, PR #n` instead of `CI pending`, and a merge-queue front waiting on CI in it shows `no CI run`.
 - **This copy only.** Other machines, other Directors and the Steward are not shown.
 - **A busy store.** If the Director is writing for longer than the store wait, Clerk says `the store is busy (the Director is writing); try again in a moment` rather than an empty answer.
 - **No marker writes.** `--copy` must name a copy that already has its marker; Clerk never marks one.

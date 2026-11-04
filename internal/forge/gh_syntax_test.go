@@ -21,14 +21,16 @@ func validateGHArgs(args []string) error {
 		positional    int
 	}
 	shapes := map[string]shape{
-		"repo view":   {values: []string{"--json"}, positional: 1},
-		"pr list":     {values: []string{"--repo", "--head", "--state", "--json"}},
-		"pr create":   {values: []string{"--repo", "--head", "--title", "--body"}},
-		"pr edit":     {values: []string{"--repo", "--title", "--body"}, positional: 1},
-		"pr view":     {values: []string{"--repo", "--json"}, positional: 1},
-		"pr merge":    {values: []string{"--repo", "--match-head-commit", "--subject", "--body"}, bools: []string{"--squash"}, positional: 1},
-		"pr close":    {values: []string{"--repo", "--comment"}, positional: 1},
-		"api graphql": {values: []string{"--hostname", "-f"}},
+		"repo view": {values: []string{"--json"}, positional: 1},
+		"pr list":   {values: []string{"--repo", "--head", "--state", "--json"}},
+		"pr create": {values: []string{"--repo", "--head", "--title", "--body"}},
+		"pr edit":   {values: []string{"--repo", "--title", "--body"}, positional: 1},
+		"pr view":   {values: []string{"--repo", "--json"}, positional: 1},
+		"pr merge":  {values: []string{"--repo", "--match-head-commit", "--subject", "--body"}, bools: []string{"--squash"}, positional: 1},
+		"pr close":  {values: []string{"--repo", "--comment"}, positional: 1},
+		// StartCI's reopen of the pull request it closed.
+		"pr reopen":   {values: []string{"--repo"}, positional: 1},
+		"api graphql": {values: []string{"--hostname", "-f", "-F"}},
 		// gh api <endpoint> is a REST GET; the only endpoint read is a job's logs.
 		"api jobs-logs": {values: []string{"--hostname"}, bools: []string{"--allow-escape-sequences"}},
 		// gh api <endpoint> --method POST: the only endpoint written is a job's rerun.
@@ -92,6 +94,8 @@ func ghCallShapes() [][]string {
 		{"api", "repos/acme/widgets/actions/jobs/123/logs", "--hostname", "github.com", "--allow-escape-sequences"},
 		{"pr", "close", "1", "--repo", "github.com/acme/widgets", "--comment", "Cancelled by Guildhall: duplicate"},
 		{"api", "repos/acme/widgets/actions/jobs/123/rerun", "--method", "POST", "--hostname", "github.com"},
+		{"pr", "reopen", "1", "--repo", "github.com/acme/widgets"},
+		{"api", "graphql", "--hostname", "github.com", "-f", "query=query { viewer { login } }", "-f", "owner=acme", "-f", "name=widgets", "-F", "number=1"},
 	}
 }
 

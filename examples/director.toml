@@ -53,6 +53,12 @@ owner_machine = "workstation"
 # then passes is a flake the Director files a bug for; this is the default. "rerun" re-runs without the flake
 # message, and "off" sends a failed check back to build at once.
 # flaky_checks = "rerun-and-file"
+# When GitHub creates no CI run for a pushed head, such as after a dropped pull_request event, Guildhall reports it to
+# the Director once ci_start_grace has passed. With ci_retrigger = "reopen" it first closes and reopens the pull
+# request, once per head, so GitHub's pull_request reopened event runs CI on the same head; that notifies the pull
+# request's subscribers and fires any workflow on pull_request closed. Unset or "off", the default, starts nothing.
+# Guildhall's own repository sets ci_retrigger = "reopen".
+ci_retrigger = "reopen"
 
 # How the merge queue rebases this repository's pull requests; these are the defaults. A rebase at or above
 # reapprove_after_rebase (no_conflicts | minor_conflicts | major_conflicts | never) asks the Guildmaster again.
