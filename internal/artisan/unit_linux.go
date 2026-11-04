@@ -65,7 +65,7 @@ func contained(c Containment, worker Identity) ([]Identity, error) {
 	switch c.Kind {
 	case KindCgroup:
 		return containedCgroup(c.Name)
-	case KindSubreaper:
+	case KindSubreaper, KindGroup:
 		return containedGroup(worker)
 	}
 	return nil, fmt.Errorf("containment %q on Linux: %w", c.Kind, errors.ErrUnsupported)
@@ -81,6 +81,24 @@ func newUnit(name string) (Unit, error) {
 		return newCgroupUnit(name, d)
 	}
 	return newSubreaperUnit(d.reason)
+}
+
+// newSessionUnit is newUnit for a session runtime, such as the Director's,
+// except that without a delegated cgroup it is a plain process group: the
+// supervisor is not made a child subreaper, so an orphan anywhere below it
+// (the ssh of a failed git fetch, say) goes to the system, which reaps it,
+// instead of staying its zombie. A worker whose stdin is the caller's
+// terminal already becomes its foreground group.
+func newSessionUnit(name string) (Unit, error) {
+	return sessionUnit(name, detectCgroup(systemCgroupEnv))
+}
+
+// sessionUnit is the session unit for detection result d.
+func sessionUnit(name string, d cgroupDetection) (Unit, error) {
+	if d.ok {
+		return newCgroupUnit(name, d)
+	}
+	return newGroupUnit(Containment{Kind: KindGroup, Reason: d.reason}), nil
 }
 
 // setSubreaper makes the launcher process the child subreaper, once.
@@ -99,8 +117,10 @@ func newSubreaperUnit(reason string) (Unit, error) {
 
 // Escapes lists the live processes that left the worker's process group and
 // were orphaned to the launcher, which as child subreaper inherits them
-// instead of init. The launcher runs one unit and starts no other children,
-// so every such child is attributed to this unit. Escapes are reported, not
+// instead of init. Only the Artisan launcher's unit (NewUnit) is a subreaper
+// unit, and the launcher runs one unit and starts no other children, so every
+// such child is attributed to this unit; a session unit is not a subreaper
+// and has none. Escapes are reported, not
 // contained: Kill does not reach them. A cgroup unit has none.
 func (u *groupUnit) Escapes() ([]Identity, error) {
 	u.mu.Lock()

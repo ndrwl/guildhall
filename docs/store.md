@@ -325,6 +325,8 @@ Every [Artisan containment kind](artisan.md#recording-the-containment) has one, 
 {"kind": "subreaper+pgroup", "reason": "no cgroup v2 mounted at /sys/fs/cgroup", "worker": {"pid": 4242, "token": "boot:…:91234"}}
 ```
 
+An Artisan launcher without a cgroup records `subreaper+pgroup`; a Linux Director session without one records `pgroup` with the same detection reason, since its unit is a process group alone.
+
 | Kind | `name` | `worker` |
 |---|---|---|
 | `job` | The job name, required | Optional |

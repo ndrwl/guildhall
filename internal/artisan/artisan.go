@@ -150,7 +150,8 @@ const (
 	// KindSubreaper is a Linux process group with the launcher as child
 	// subreaper, used when no delegated cgroup v2 is available.
 	KindSubreaper = "subreaper+pgroup"
-	// KindGroup is a process group alone (macOS).
+	// KindGroup is a process group alone: macOS, and the Linux session unit
+	// (NewSessionUnit) when no delegated cgroup v2 is available.
 	KindGroup = "pgroup"
 	// KindNotStarted is completed supervision's explicit evidence that no
 	// worker startup was invoked. It is never inferred from missing evidence.

@@ -66,7 +66,8 @@ const (
 	// ContainmentSubreaper is a Linux process group with the launcher as
 	// child subreaper, found by its leader, the worker.
 	ContainmentSubreaper = "subreaper+pgroup"
-	// ContainmentGroup is a process group alone (macOS), found by its leader.
+	// ContainmentGroup is a process group alone (macOS, and a Linux Director
+	// session without a delegated cgroup v2), found by its leader.
 	ContainmentGroup = "pgroup"
 	// ContainmentNotStarted attests that completed supervision never invoked
 	// worker startup. It has no name, reason or worker identity.

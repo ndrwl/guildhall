@@ -73,7 +73,7 @@ The methods are safe for concurrent use.
 | `job` | Windows Job Object | `Local\guildhall-<name>` |
 | `cgroup` | Linux child cgroup of a delegated cgroup v2 | The cgroup directory |
 | `subreaper+pgroup` | Linux process group with the launcher as child subreaper | none |
-| `pgroup` | macOS process group | none |
+| `pgroup` | Process group alone: macOS, and a Linux Director session unit without a delegated cgroup v2 | none |
 
 The store's ownership record keeps the same description, with the worker identity in place of a name for a process group ([containment record](store.md#containment-record)).
 A job or cgroup exists, named, from the moment the unit is created, so `artisan start` records it with the ownership, before the worker starts, and the `running` update adds the worker identity; a process group is recorded only once its worker runs.
@@ -105,6 +105,9 @@ A cgroup that detection allowed but that cannot be created is an error, not a fa
 
 ### Linux: subreaper fallback
 
+The fallback of the Artisan launcher's unit (`NewUnit`) only.
+A Director session unit (`NewSessionUnit`) without a delegated cgroup v2 is a plain process group, recorded as `pgroup` with the detection reason: its supervisor runs many other children, such as `git` and `gh`, so as a subreaper it would adopt every orphan below it, the `ssh` of a failed `git fetch` among them, and keep each as a zombie it never waits on; as a plain group its orphans go to the system, which reaps them.
+
 - The launcher process makes itself the child subreaper (`PR_SET_CHILD_SUBREAPER`) once, then contains the worker in a process group as below.
 - A descendant that leaves the group and is orphaned reparents to the launcher instead of init.
 - `Escapes` on the fallback unit lists those live reparented processes; the launcher runs one unit and starts no other children, so each is attributed to its unit.
@@ -113,7 +116,7 @@ A cgroup that detection allowed but that cannot be created is an error, not a fa
 
 ### Unix: process group
 
-The macOS backend and the Linux fallback.
+The macOS backend, the Linux launcher's subreaper fallback, and the Linux Director session unit without a cgroup, which is a process group alone and no subreaper.
 
 - The worker leads its own process group (`Setpgid`).
 - When the worker's stdin is the launcher's terminal, the worker group becomes the terminal's foreground group (`Foreground`, `Ctty`), so Ctrl+C in the pane reaches the worker rather than the launcher; `Close` gives the terminal back.
@@ -590,6 +593,7 @@ Every case follows the harness rules: it records every identity it caused and ch
 `TestIdentityContract` checks the identity rules against live, reused, zombie and reaped processes.
 `TestDetectCgroup` is the detection table over recorded host files: cgroup v2 delegated by a systemd user manager, on WSL and inside a cgroup namespace; cgroup v2 not delegated as a system service, on WSL without systemd and with `cgroup.procs` locked; no `cgroup.kill`; a cgroup outside the mounted subtree; cgroup v1; hybrid; no cgroup filesystem; unreadable mountinfo.
 `TestCgroupKillEmpties` shows `cgroup.kill` ending a grandchild that left the process group and `Close` removing the cgroup; `TestSubreaperRecordsReparent` shows an orphaned `setsid` grandchild reparented to the launcher and reported by `Escapes`, not `Members`.
+`TestSessionUnitLeavesNoZombies` shows, each in a helper process of its own, that a session unit without a cgroup records `pgroup`, leaves its process no child subreaper and leaves no zombie child after a worker's orphan exits, while the launcher's subreaper unit still adopts it; `TestSweepKillsProcessGroupRecords` shows `Contained` and `Sweep` finding both `pgroup` and `subreaper+pgroup` records on Linux.
 The endpoint tests bind real sockets in a short temporary state directory on every runner; their inventory is in the [package contract](contracts/artisan.md#tests).
 
 `artisantest.RunStopContract` is the stop ladder and precedence contract.

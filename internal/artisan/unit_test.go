@@ -48,6 +48,10 @@ func TestSessionUnitContract(t *testing.T) {
 		return u
 	})
 	platformHarness(t, &h)
+	// A Linux session unit without a cgroup is a plain process group, not a subreaper.
+	if h.Kind == artisan.KindSubreaper {
+		h.Kind = artisan.KindGroup
+	}
 	// A session unit's Job Object allows breakaway, so a detached launcher can leave it.
 	h.BreakawayRefused = false
 	artisantest.RunUnitContract(t, h)
