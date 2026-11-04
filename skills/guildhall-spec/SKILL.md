@@ -28,10 +28,14 @@ The Guildmaster accepts a spec that states its scope, contracts, tests and size.
    When the plan runs again after slices have merged, keep every merged slice's entry byte for byte and rewrite only the slices still to come.
 6. Write every decision you could not settle from the inputs or the repository as a numbered open question under `## Open questions`, in the template's shape: its title, its body, an `Options:` line and a `Recommended:` line with your answer, and proceed on that recommendation.
    Write "None" when there is none.
+   Nothing else may come before the first `**Q1.` line: no sentence, no `### Q1.` heading, no list marker such as `- **Q1.`, and no explanation after "None".
    The approval ask copies each question in full, so write it to be answered without the rest of the spec.
 7. Write the `## Summary` block last, and rewrite it whenever the plan runs again: Goal, Size, Slices, Changed since the grill and Open questions, as list items in that order, with only the number of open questions, since the ask shows the questions themselves after it.
    The Guildmaster's approval ask shows it as written, so it says only what the spec below it says.
-   Guildhall refuses a plan with no Summary block, or with open questions that are not in the template's shape, and the plan runs again.
+   Guildhall refuses a plan with no Summary block, or with open questions that are not in the template's shape; the prompt's Strict sections block shows a valid and an invalid example of each strict section.
+8. Submit your result with `guildhall result submit <draft file>`, as the prompt's Result template says.
+   It prints `ok`, or `rejected: <reason>` with the reason intake would give, such as `open questions malformed: ## Open questions line 3 is neither "None" nor a **Qn. title** question`.
+   Fix what the reason names in the spec and submit again, until it prints `ok`, so the plan does not run again.
 
 ## Rules
 

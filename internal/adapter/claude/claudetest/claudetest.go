@@ -104,7 +104,9 @@ const HangLimit = 2 * time.Minute
 // Instruction lines the stub reads the attempt's files from.
 const (
 	PromptLine = "Prompt file: "
-	DraftLine  = "Result file: "
+	DraftLine  = "Draft file: "
+	// SubmitLine starts the instruction's line that submits the draft file.
+	SubmitLine = "guildhall result submit "
 )
 
 // Prompt is the prompt that makes the stub produce b.
@@ -220,8 +222,14 @@ func stub(args []string) error {
 		}
 	}
 	if promptFile == "" || draft == "" {
-		return fmt.Errorf("instruction names no prompt or result file: %q", instruction)
+		return fmt.Errorf("instruction names no prompt or draft file: %q", instruction)
 	}
+	if !strings.Contains(instruction, "\n"+SubmitLine+draft+"\n") {
+		return fmt.Errorf("instruction does not say to submit %s with %s: %q", draft, SubmitLine, instruction)
+	}
+	// The stub plays an accepted `guildhall result submit`: what it writes lands where submit puts an accepted
+	// draft, the model directory's result file, which the wrapper publishes.
+	draft = filepath.Join(filepath.Dir(draft), artisan.ResultFile)
 	added := addDirs(flags)
 	for _, f := range []string{promptFile, draft} {
 		if !slices.Contains(added, filepath.Dir(f)) {

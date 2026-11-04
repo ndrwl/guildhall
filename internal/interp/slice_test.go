@@ -304,7 +304,7 @@ func TestThreeSlicesRunToDone(t *testing.T) {
 				text := string(prompt)
 				base, k := workflow.ParseSliceStep(step)
 				if base != "build" && base != "review" {
-					if strings.Contains(text, "## Slice") {
+					if strings.Contains(text, "\n## Slice\n") {
 						t.Errorf("%s's prompt has a slice section; only steps in the slice range get one", step)
 					}
 					continue
@@ -373,7 +373,7 @@ func TestOneSliceKeepsTodaysNames(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if strings.Contains(string(prompt), "## Slice") {
+			if strings.Contains(string(prompt), "\n## Slice\n") {
 				t.Errorf("one-slice %s prompt has a slice section", s.Manifest.Identity.Step)
 			}
 		}

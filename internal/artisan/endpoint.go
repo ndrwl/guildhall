@@ -122,6 +122,10 @@ func (k AttemptKey) Dir(stateDir string) string {
 // launcher's log, are never in it.
 const ModelDir = "model"
 
+// DraftFile is the file in ModelDir a model-run Artisan writes its result to before it submits it with
+// `guildhall result submit`, which copies an accepted one to ResultFile in ModelDir for its wrapper to publish.
+const DraftFile = "draft.json"
+
 // Files `guildhall result submit` keeps in the attempt directory, outside ModelDir, where the model cannot reset
 // them (docs/contracts/cli.md).
 const (

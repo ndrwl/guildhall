@@ -80,6 +80,7 @@ Recommended: (<letter>). <why; the answer this spec already follows>.
 
 The approval ask copies each `## Open questions` question in full, after the Summary, with its recommended option first and marked, so the Summary gives only their number.
 Guildhall refuses a plan whose spec has no `## Summary` block, or whose `## Open questions` is neither "None" nor questions in this shape: numbered Q1, Q2, ... with no gaps, each starting on a line `**Qn. <title>**` and each with an `Options: (a) …; (b) ….` line and a `Recommended:` line that starts with one of those letters.
+Nothing else may come before the first `**Q1.` line: no sentence, no `### Q1.` heading, no list marker such as `- **Q1.`, and no explanation after "None".
 
 A good acceptance criterion names an observable result: "`Install` into a non-empty directory returns `ErrNotEmpty` and writes nothing".
 A poor one cannot be checked: "install works correctly".

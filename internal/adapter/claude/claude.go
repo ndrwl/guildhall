@@ -253,10 +253,19 @@ func ArtisanSettings(rules []string) []byte {
 	return append(data, '\n')
 }
 
-// DraftFile is the draft result Claude writes in the model directory for the
-// result file result.
+// DraftFile is the draft result in the model directory for the result file
+// result, which the wrapper publishes: `guildhall result submit` writes it for
+// an accepted submission, and a Claude that does not submit may write it
+// directly.
 func DraftFile(result string) string {
 	return filepath.Join(ModelDir(result), artisan.ResultFile)
+}
+
+// SubmitFile is the file in the model directory for the result file result
+// that Claude writes its result to and submits with `guildhall result submit`;
+// the wrapper never reads it.
+func SubmitFile(result string) string {
+	return filepath.Join(ModelDir(result), artisan.DraftFile)
 }
 
 // PromptCopy is the copy of the prompt file Claude reads in the model
@@ -267,8 +276,11 @@ func PromptCopy(result string) string {
 
 // Instruction is the prompt Claude Code is given for attempt a: read and
 // follow the prompt copy, then write the version 1 result for a's identity to
-// the draft file, once, as the last action.
+// SubmitFile and submit it with `guildhall result submit`, fixing and
+// resubmitting it until it prints ok or no resubmissions are left; only when
+// the command cannot run is the result written to DraftFile directly.
 func Instruction(a Args) string {
+	submit := SubmitFile(a.ResultFile)
 	tmpl, _ := json.Marshal(struct {
 		Schema    string `json:"schema"`
 		Version   int    `json:"version"`
@@ -280,9 +292,12 @@ func Instruction(a Args) string {
 		"Read the prompt file below and follow it; the inputs and skills directories it names are beside it.",
 		"",
 		"Prompt file: " + PromptCopy(a.ResultFile),
-		"Result file: " + DraftFile(a.ResultFile),
+		"Draft file: " + submit,
 		"",
-		"When you have finished, or cannot go on, write your result to the result file above, once, as your last action, and nowhere else.",
+		"When you have finished, or cannot go on, write your result to the draft file above and submit it, as your last step:",
+		"guildhall result submit " + submit,
+		"It runs the checks Guildhall runs on your result and prints ok, or rejected: <reason> with the reason Guildhall would refuse it for. On rejected, fix what the reason names, in your work or the draft, and submit again; stop once it prints ok, or once it says no resubmissions are left.",
+		"Only if the command cannot run, because it is not found or permission is denied, write the result to " + DraftFile(a.ResultFile) + " instead, once, as your last action, and say so in its summary.",
 		"Use the prompt's Result template, including its required outputs entries. It is one JSON object with these fixed identity fields:",
 		string(tmpl),
 		`status is "succeeded" when the prompt's work is done and "failed" when it is not; summary says what was done, or why it failed.`,

@@ -11,7 +11,7 @@
   },
   "prompt": {
     "path": "prompt.md",
-    "digest": "sha256:0ca1a8606b0bce6de83cbdce4709106619939501138a6c02e50afb36c79f8179"
+    "digest": "sha256:244886f3efea1fb0004b178ad83fdbe9af30e4ade60a4b10add82a43835a74a1"
   },
   "role": {
     "path": "roles/reviewer.md",

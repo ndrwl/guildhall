@@ -62,7 +62,8 @@ The interpreter supplies the attempt's recorded review revisions through `Stage.
 Standalone rendering without revisions shows explicitly illustrative values to replace, never a claim that zero hashes identify the real subject.
 A review must write the outcome file and list it in result `outputs`; a verdict in summary alone is insufficient.
 Code-head ports need no file: Guildhall records the final committed Git HEAD automatically, and the result uses `outputs: []`.
-The generated Result template carries the task and attempt identity and the matching file entries.
+Plan, design and hallmark document ports add a Strict sections block (`render.strictSections`): for each section Guildhall parses itself, the plan's `## Summary`, `## Slices` and `## Open questions`, the design's `## Open questions` and the hallmark report's `## Questions`, its rule, a valid and an invalid example and the exact error the invalid one gets, all from `internal/spec`'s examples (`spec.Example`), whose parser tests run them.
+The generated Result template carries the task and attempt identity and the matching file entries, and says to write the result to the draft file the runtime names and submit it with [`guildhall result submit`](contracts/cli.md), fixing and resubmitting it until it prints `ok` (`render.SubmitStep`); a runtime that names only a result file has it written there once, as the last action.
 Adapters name where to write that result and refer to this template instead of supplying an empty-output default.
 Director-actor prompts omit these generated sections and retain [command-based completion](running.md#step-finish).
 Engine-only and Guildmaster-only kinds do not launch an Artisan and have no Artisan guide or result template.

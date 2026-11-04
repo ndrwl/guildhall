@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/spec"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
@@ -78,6 +79,7 @@ func outputInstructions(id Identity, revisions *workflow.Revisions, branch strin
 			fmt.Fprintf(&b, "\nExample requesting changes, with previous findings f0, f1 and f2:\n\n```json\n%s\n```\n", data)
 		} else {
 			b.WriteString("Format: a UTF-8 Markdown document. Minimal example:\n\n```text\n# Notes\n\nThe requested work is recorded here.\n```\n")
+			b.WriteString(strictSections(id.Kind, filename))
 		}
 		if mockup := MockupFile(surface); id.Kind == designKind && mockup != "" {
 			outputs = append(outputs, adapter.Output{Path: mockup})
@@ -90,7 +92,45 @@ func outputInstructions(id Identity, revisions *workflow.Revisions, branch strin
 		adapter.Result
 	}{adapter.ResultSchema, adapter.ResultVersion, adapter.Result{Identity: adapter.Identity{TaskID: id.Task, AttemptID: fmt.Sprintf("%s-%d", id.Step, id.Attempt)}, Status: adapter.StatusSucceeded, Summary: "What was done, in one or more sentences.", Outputs: outputs}}
 	data, _ := json.MarshalIndent(result, "", "  ")
-	fmt.Fprintf(&b, "\n## Result template\n\nAfter writing the required files (or committing the code head), write this JSON shape to the result file your runtime names, once, as your last action. Keep schema, version, task_id and attempt_id unchanged. Use status `succeeded` only when the work and required outputs are complete; otherwise use `failed` and explain why in summary (failed results may use an empty outputs list).\n\n```json\n%s\n```\n", data)
+	fmt.Fprintf(&b, "\n## Result template\n\n%s Keep schema, version, task_id and attempt_id unchanged. Use status `succeeded` only when the work and required outputs are complete; otherwise use `failed` and explain why in summary (failed results may use an empty outputs list).\n\n```json\n%s\n```\n", SubmitStep, data)
+	return b.String()
+}
+
+// SubmitStep is how every prompt's Result template says to hand in the result: write it to the draft file, submit it
+// with `guildhall result submit`, which runs intake's checks, and fix and resubmit until it prints ok. A runtime that
+// names only a result file gets it written directly, as before.
+const SubmitStep = "After writing the required files (or committing the code head), write this JSON shape to the draft file your runtime names and submit it with `guildhall result submit <draft file>`, which runs the checks Guildhall runs on your result when you finish. " +
+	"If it prints `rejected: <reason>`, fix what the reason names, in your files or the draft, and submit again; you are done when it prints `ok`, or when it says no resubmissions are left. " +
+	"If your runtime names a result file and no draft file, write this JSON shape to that result file instead, once, as your last action."
+
+// strictKinds are the strict sections each kind's document port has, which Guildhall parses itself, and whether
+// intake refuses a result that breaks one; a hallmark report's questions are only read for the follow-ups ask.
+var strictKinds = map[string]struct {
+	examples []spec.Example
+	refused  bool
+}{
+	"plan":     {[]spec.Example{spec.SummaryExample, spec.SlicesExample, spec.OpenQuestionsExample}, true},
+	designKind: {[]spec.Example{spec.OpenQuestionsExample}, true},
+	"hallmark": {[]spec.Example{spec.ReportQuestionsExample}, false},
+}
+
+// strictSections is the Strict sections block of kind's document port, written as file: for each strict section its
+// rule, a valid and an invalid example and the error the invalid one gets, all from internal/spec's examples, which
+// the parser tests run. It is empty for a kind with none.
+func strictSections(kind, file string) string {
+	k, ok := strictKinds[kind]
+	if !ok {
+		return ""
+	}
+	var b strings.Builder
+	if k.refused {
+		fmt.Fprintf(&b, "\nStrict sections: Guildhall parses these sections of `%s` itself, and `guildhall result submit` and intake refuse a result that breaks one with the error shown, so copy the valid shape exactly.\n", file)
+	} else {
+		fmt.Fprintf(&b, "\nStrict sections: Guildhall parses these sections of `%s` itself for the ask it shows the Guildmaster, and leaves out a section that breaks one, with the error shown, so copy the valid shape exactly.\n", file)
+	}
+	for _, ex := range k.examples {
+		fmt.Fprintf(&b, "\n**`%s`.** %s\n\nValid:\n\n```text\n%s\n```\n\nInvalid:\n\n```text\n%s\n```\n\nIt gets: `%s`\n", ex.Heading, ex.Rule, ex.Valid, ex.Invalid, ex.Error)
+	}
 	return b.String()
 }
 

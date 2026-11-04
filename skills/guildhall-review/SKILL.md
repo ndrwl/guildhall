@@ -92,8 +92,15 @@ guildhall review check review-outcome.json
 
 When there is a `previous` input, add `--previous <the previous input's path>`, so the check also finds a previous finding with no disposition.
 Fix every error it reports, and run it again until it prints `ok`.
-Only then write the result file.
-If the command cannot be run, because permission is denied or it is not found, say so in the result summary; never skip the self-check silently.
+Only then write the result to the draft file and submit it, as the prompt's Result template says:
+
+```text
+guildhall result submit <draft file>
+```
+
+It checks the whole result as intake will, the outcome's binding to this attempt included, and prints `ok` or `rejected: <reason>`.
+On `rejected`, fix what the reason names and submit again until it prints `ok`, so the review round is not lost.
+If either command cannot be run, because permission is denied or it is not found, say so in the result summary; never skip the self-check silently.
 
 The result's summary is one line: the findings on each axis and the worst one within each axis, never one winner across both.
 
