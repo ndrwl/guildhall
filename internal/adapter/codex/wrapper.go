@@ -23,7 +23,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
-	"github.com/ndrwl/guildhall/internal/adapter/claude"
+	"github.com/ndrwl/guildhall/internal/adapter/grant"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/atomicfile"
 	"github.com/ndrwl/guildhall/internal/secrets"
@@ -265,7 +265,7 @@ func Run(ctx context.Context, a Args, answers Answers, stdout, stderr io.Writer)
 	// event file, the answer and the result (docs/secrets.md#redaction).
 	red := secrets.FromEnv(os.Getenv)
 	stdout, stderr = red.Writer(stdout), red.Writer(stderr)
-	rules, err := claude.ProfileTools(a.Copy, a.Profile, a.Repository)
+	rules, err := grant.ProfileTools(a.Copy, a.Profile, a.Repository)
 	if err != nil {
 		return fmt.Errorf("codex adapter: profile: %w", err)
 	}

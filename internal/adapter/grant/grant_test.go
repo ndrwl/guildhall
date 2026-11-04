@@ -1,4 +1,4 @@
-package claude_test
+package grant_test
 
 import (
 	"os"
@@ -8,7 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ndrwl/guildhall/internal/adapter/claude"
+	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/adapter/grant"
 	"github.com/ndrwl/guildhall/internal/config"
 )
 
@@ -50,10 +51,10 @@ allowed_tools = ["Bash(npm test:*)"]
 	return cfg
 }
 
-func grants(source claude.GrantSource, rules ...string) []claude.Grant {
-	var gs []claude.Grant
+func grants(source grant.GrantSource, rules ...string) []grant.Grant {
+	var gs []grant.Grant
 	for _, r := range rules {
-		gs = append(gs, claude.Grant{Rule: r, Source: source})
+		gs = append(gs, grant.Grant{Rule: r, Source: source})
 	}
 	return gs
 }
@@ -70,28 +71,28 @@ func TestEffectiveGrant(t *testing.T) {
 		"[profile.researcher]\nadapter = \"claude\"\n[profile.worker]\nadapter = \"claude\"\n"
 	for name, c := range map[string]struct {
 		extra, profile, repository string
-		want                       []claude.Grant
+		want                       []grant.Grant
 	}{
-		"builder default":    {claudeProfiles, "builder", "", grants(claude.SourceDefault, builder...)},
-		"planner default":    {claudeProfiles, "planner", "", grants(claude.SourceDefault, readOnly...)},
-		"reviewer default":   {claudeProfiles, "reviewer", "", grants(claude.SourceDefault, reviewer...)},
-		"researcher default": {claudeProfiles, "researcher", "", grants(claude.SourceDefault, append(slices.Clone(readOnly), "WebSearch", "WebFetch")...)},
-		"rebaser default":    {claudeProfiles, "rebaser", "", grants(claude.SourceDefault, rebaser...)},
+		"builder default":    {claudeProfiles, "builder", "", grants(grant.SourceDefault, builder...)},
+		"planner default":    {claudeProfiles, "planner", "", grants(grant.SourceDefault, readOnly...)},
+		"reviewer default":   {claudeProfiles, "reviewer", "", grants(grant.SourceDefault, reviewer...)},
+		"researcher default": {claudeProfiles, "researcher", "", grants(grant.SourceDefault, append(slices.Clone(readOnly), "WebSearch", "WebFetch")...)},
+		"rebaser default":    {claudeProfiles, "rebaser", "", grants(grant.SourceDefault, rebaser...)},
 		"shipped rebaser and repository": {"[profile.worker]\nadapter = \"claude\"\n", "rebaser", "app",
-			append(grants(claude.SourceDefault, rebaser...), grants(claude.SourceRepository, "Bash(go test:*)")...)},
+			append(grants(grant.SourceDefault, rebaser...), grants(grant.SourceRepository, "Bash(go test:*)")...)},
 		"shipped builder, no copy section": {"[profile.worker]\nadapter = \"claude\"\n", "builder", "",
-			grants(claude.SourceDefault, builder...)},
+			grants(grant.SourceDefault, builder...)},
 		"other name":            {claudeProfiles, "worker", "", nil},
-		"other name repository": {claudeProfiles, "worker", "app", grants(claude.SourceRepository, "Bash(make:*)")},
+		"other name repository": {claudeProfiles, "worker", "app", grants(grant.SourceRepository, "Bash(make:*)")},
 		"repository appended": {claudeProfiles, "builder", "app",
-			append(grants(claude.SourceDefault, builder...), grants(claude.SourceRepository, "Bash(go test:*)")...)},
+			append(grants(grant.SourceDefault, builder...), grants(grant.SourceRepository, "Bash(go test:*)")...)},
 		"other repository": {claudeProfiles, "builder", "site",
-			append(grants(claude.SourceDefault, builder...), grants(claude.SourceRepository, "Bash(npm test:*)")...)},
-		"unlisted repository": {claudeProfiles, "builder", "elsewhere", grants(claude.SourceDefault, builder...)},
+			append(grants(grant.SourceDefault, builder...), grants(grant.SourceRepository, "Bash(npm test:*)")...)},
+		"unlisted repository": {claudeProfiles, "builder", "elsewhere", grants(grant.SourceDefault, builder...)},
 		"copy list replaces": {"[profile.builder]\nadapter = \"claude\"\nallowed_tools = [\"Read\", \"Bash(go test:*)\"]\n[profile.worker]\nadapter = \"claude\"\n", "builder", "app",
-			append(grants(claude.SourceCopy, "Read", "Bash(go test:*)"), grants(claude.SourceRepository, "Bash(git commit:*)")...)},
+			append(grants(grant.SourceCopy, "Read", "Bash(go test:*)"), grants(grant.SourceRepository, "Bash(git commit:*)")...)},
 		"copy empty grants nothing":  {"[profile.builder]\nadapter = \"claude\"\nallowed_tools = []\n[profile.worker]\nadapter = \"claude\"\n", "builder", "", nil},
-		"copy empty with repository": {"[profile.builder]\nadapter = \"claude\"\nallowed_tools = []\n[profile.worker]\nadapter = \"claude\"\n", "builder", "site", grants(claude.SourceRepository, "Bash(npm test:*)")},
+		"copy empty with repository": {"[profile.builder]\nadapter = \"claude\"\nallowed_tools = []\n[profile.worker]\nadapter = \"claude\"\n", "builder", "site", grants(grant.SourceRepository, "Bash(npm test:*)")},
 		"fake builder":               {"[profile.builder]\nadapter = \"claude\"\n[profile.worker]\nadapter = \"claude\"\n[profile.planner]\nadapter = \"fake\"\n", "planner", "app", nil},
 		"codex judge":                {"[profile.builder]\nadapter = \"claude\"\n[profile.worker]\nadapter = \"claude\"\n[profile.judge]\nadapter = \"codex\"\n", "judge", "app", nil},
 	} {
@@ -100,22 +101,46 @@ func TestEffectiveGrant(t *testing.T) {
 			// result check and messages last; a profile of another adapter, fake or codex, gets none of them.
 			want := c.want
 			if name != "fake builder" && name != "codex judge" {
-				want = append(slices.Clone(want), grants(claude.SourceGuildhall, "Bash(guildhall ci log:*)", "Bash(guildhall result submit:*)",
+				want = append(slices.Clone(want), grants(grant.SourceGuildhall, "Bash(guildhall ci log:*)", "Bash(guildhall result submit:*)",
 					"Bash(guildhall result check:*)", "Bash(guildhall messages:*)")...)
 			}
-			got, err := claude.EffectiveGrant(grantConfig(t, c.extra), c.profile, c.repository)
+			got, err := grant.EffectiveGrant(grantConfig(t, c.extra), c.profile, c.repository)
 			if err != nil || !slices.Equal(got, want) {
 				t.Errorf("EffectiveGrant = %v, %v; want %v", got, err, want)
 			}
-			for _, r := range claude.GrantRules(got) {
+			for _, r := range grant.GrantRules(got) {
 				if strings.Contains(r, "gh ") || strings.Contains(r, "curl") || strings.Contains(r, "gh:") {
 					t.Errorf("EffectiveGrant grants %s", r)
 				}
 			}
 		})
 	}
-	if _, err := claude.EffectiveGrant(grantConfig(t, claudeProfiles), "undeclared", "app"); err == nil {
+	if _, err := grant.EffectiveGrant(grantConfig(t, claudeProfiles), "undeclared", "app"); err == nil {
 		t.Error("EffectiveGrant accepted an undeclared profile")
+	}
+}
+
+// TestGrantsTools: of the runtimes, only claude grants tools, so only its profiles get a shipped default and the
+// Guildhall rules; an unknown name grants none.
+func TestGrantsTools(t *testing.T) {
+	for name, want := range map[string]bool{adapter.ClaudeName: true, adapter.CodexName: false, adapter.FakeName: false, "nope": false, "": false} {
+		if got := adapter.GrantsTools(name); got != want {
+			t.Errorf("GrantsTools(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
+// TestWithTaskGrant: a task grant's rules are added last as SourceTask, a rule already granted keeping its earlier
+// source, and the input is left as it was.
+func TestWithTaskGrant(t *testing.T) {
+	base := grants(grant.SourceDefault, "Bash(git status:*)", "Bash(go:*)")
+	got := grant.WithTaskGrant(base, []string{"Bash(go:*)", "Bash(claude:*)"})
+	want := append(grants(grant.SourceDefault, "Bash(git status:*)", "Bash(go:*)"), grants(grant.SourceTask, "Bash(claude:*)")...)
+	if !slices.Equal(got, want) {
+		t.Errorf("WithTaskGrant = %+v; want %+v", got, want)
+	}
+	if len(base) != 2 {
+		t.Errorf("WithTaskGrant changed its input: %+v", base)
 	}
 }
 
@@ -123,7 +148,7 @@ func TestEffectiveGrant(t *testing.T) {
 // grant, so a copy that declares no profiles still gives each role its permissions.
 func TestShippedProfilesHaveShippedGrants(t *testing.T) {
 	for name, p := range config.ShippedProfiles {
-		if p.Adapter != "claude" || p.AllowedToolsSet() || len(claude.ShippedDefaultGrants[name]) == 0 {
+		if p.Adapter != "claude" || p.AllowedToolsSet() || len(grant.ShippedDefaultGrants[name]) == 0 {
 			t.Errorf("shipped profile %s = %+v has no shipped grant", name, p)
 		}
 	}
@@ -136,7 +161,7 @@ func TestFakeBuilderGetsNoDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, err := claude.EffectiveGrant(cfg, "builder", "app"); err != nil || got != nil {
+	if got, err := grant.EffectiveGrant(cfg, "builder", "app"); err != nil || got != nil {
 		t.Errorf("fake builder grant = %v, %v; want none", got, err)
 	}
 }
@@ -168,19 +193,19 @@ func TestShippedClaudeRoleDefaults(t *testing.T) {
 			t.Errorf("profile %s = %+v, want only the shipped profiles", name, p)
 		}
 	}
-	goTools := map[string][]string{"builder": claude.SuggestedGoAllowedTools, "reviewer": {"Bash(go test:*)"}, "rebaser": {"Bash(go test:*)"}}
+	goTools := map[string][]string{"builder": grant.SuggestedGoAllowedTools, "reviewer": {"Bash(go test:*)"}, "rebaser": {"Bash(go test:*)"}}
 	for name, preset := range map[string]string{"researcher": "artisan-v1", "planner": "artisan-v1", "builder": "builder-v1", "reviewer": "reviewer-v1", "rebaser": "builder-v1"} {
 		p, err := cfg.ClaudeSkills(name)
 		if err != nil || p.Preset != preset {
 			t.Fatalf("%s: %+v %v", name, p, err)
 		}
 		for _, repo := range cfg.Repositories {
-			grant, err := claude.EffectiveGrant(cfg, name, repo.ID)
+			g, err := grant.EffectiveGrant(cfg, name, repo.ID)
 			if err != nil {
 				t.Fatal(err)
 			}
-			rules := claude.GrantRules(grant)
-			if !slices.Equal(rules[:len(claude.ShippedDefaultGrants[name])], claude.ShippedDefaultGrants[name]) {
+			rules := grant.GrantRules(g)
+			if !slices.Equal(rules[:len(grant.ShippedDefaultGrants[name])], grant.ShippedDefaultGrants[name]) {
 				t.Errorf("%s in %s: grant %q does not start with its shipped default", name, repo.ID, rules)
 			}
 			for _, tool := range []string{"WebSearch", "WebFetch"} {
@@ -188,7 +213,7 @@ func TestShippedClaudeRoleDefaults(t *testing.T) {
 					t.Errorf("%s in %s: wrong %s authority", name, repo.ID, tool)
 				}
 			}
-			for _, tool := range claude.SuggestedGoAllowedTools {
+			for _, tool := range grant.SuggestedGoAllowedTools {
 				if slices.Contains(rules, tool) != (repo.ID == goRepo && slices.Contains(goTools[name], tool)) {
 					t.Errorf("%s in %s: wrong %s authority", name, repo.ID, tool)
 				}

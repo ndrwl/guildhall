@@ -16,6 +16,7 @@ import (
 	"github.com/ndrwl/guildhall/baseline"
 	"github.com/ndrwl/guildhall/internal/adapter/claude"
 	"github.com/ndrwl/guildhall/internal/adapter/claude/claudetest"
+	"github.com/ndrwl/guildhall/internal/adapter/grant"
 	"github.com/ndrwl/guildhall/internal/clerk"
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -388,7 +389,7 @@ func TestDirectorStartCheckNamesArtisanPermissions(t *testing.T) {
 		}
 	}
 	const guildhall = ", plus from Guildhall Bash(guildhall ci log:*), Bash(guildhall result submit:*), Bash(guildhall result check:*), Bash(guildhall messages:*);"
-	reviewer := "profile reviewer grants the shipped default " + strings.Join(claude.ShippedDefaultGrants["reviewer"], ", ") + ", plus for repository app Bash(go vet:*)" + guildhall
+	reviewer := "profile reviewer grants the shipped default " + strings.Join(grant.ShippedDefaultGrants["reviewer"], ", ") + ", plus for repository app Bash(go vet:*)" + guildhall
 	for _, want := range []string{"Director alpha", filepath.Join(dir, "config.toml"), "profile builder grants from the copy Bash(go test:*), Bash(git commit:*)" + guildhall,
 		reviewer, "profile worker gets no shipped default" + guildhall, "edits only", "Bash", "docs/adapters.md#artisan-permissions",
 		"copy/profile/repository reference, never raw rule flags"} {

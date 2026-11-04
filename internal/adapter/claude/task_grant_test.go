@@ -13,6 +13,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/adapter/claude"
 	"github.com/ndrwl/guildhall/internal/adapter/claude/claudetest"
+	"github.com/ndrwl/guildhall/internal/adapter/grant"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -23,7 +24,7 @@ import (
 var profileRules = []string{"Bash(go test:*)", "Bash(git commit:*)"}
 
 // effectiveRules are the builder's effective grant without a task grant: profileRules and the GuildhallRules.
-var effectiveRules = append(slices.Clone(profileRules), claude.GuildhallRules...)
+var effectiveRules = append(slices.Clone(profileRules), grant.GuildhallRules...)
 
 // grantCopy is a copy whose builder grants profileRules, with a store holding task app/task-1 and, when rules is not
 // nil, its approved one-attempt grant g1 of rules for build, bound to attempt build-1 by its binding document.
@@ -233,18 +234,6 @@ func TestRunRefusesAnUnverifiedTaskGrant(t *testing.T) {
 	}
 }
 
-func TestWithTaskGrant(t *testing.T) {
-	base := grants(claude.SourceDefault, "Bash(git status:*)", "Bash(go:*)")
-	got := claude.WithTaskGrant(base, []string{"Bash(go:*)", "Bash(claude:*)"})
-	want := append(grants(claude.SourceDefault, "Bash(git status:*)", "Bash(go:*)"), grants(claude.SourceTask, "Bash(claude:*)")...)
-	if !slices.Equal(got, want) {
-		t.Errorf("WithTaskGrant = %+v; want %+v", got, want)
-	}
-	if len(base) != 2 {
-		t.Errorf("WithTaskGrant changed its input: %+v", base)
-	}
-}
-
 // TestRunAdmitsTheCopysManagedRevision: an attempt launched from an enrolled copy whose managed.toml no reload or
 // approval authorized fails before Claude starts, naming the unauthorized digest, as every Director command does,
 // so its profile grant and skill policy never come from that file; once a reload authorizes it, the attempt runs.
@@ -264,7 +253,7 @@ func TestRunAdmitsTheCopysManagedRevision(t *testing.T) {
 		return err
 	})
 	want := "managed.toml " + d + " is not authorized"
-	if _, err := claude.ProfileTools(spec.Copy, spec.Profile, spec.Repository); err == nil || !strings.Contains(err.Error(), want) {
+	if _, err := grant.ProfileTools(spec.Copy, spec.Profile, spec.Repository); err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("ProfileTools = %v; want %q", err, want)
 	}
 	if err := claude.Run(context.Background(), args(spec), &bytes.Buffer{}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), want) {

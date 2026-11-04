@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
-	"github.com/ndrwl/guildhall/internal/adapter/claude"
+	"github.com/ndrwl/guildhall/internal/adapter/grant"
 	"github.com/ndrwl/guildhall/internal/atomicfile"
 	"github.com/ndrwl/guildhall/internal/store"
 )
@@ -75,7 +75,7 @@ func RecordedSettings(result string) (adapter.Settings, error) {
 
 // Command returns the fake Artisan invocation for spec, passing spec's
 // settings as --model and --effort, each only when set. It refuses a spec
-// referencing a profile whose effective grant (claude.EffectiveGrant) has any rule, since the fake grants none;
+// referencing a profile whose effective grant (grant.EffectiveGrant) has any rule, since the fake grants none;
 // a fake profile gets no shipped default, whatever its name.
 func (a Adapter) Command(spec adapter.Spec) (adapter.Command, error) {
 	if err := spec.Validate(); err != nil {
@@ -84,7 +84,7 @@ func (a Adapter) Command(spec adapter.Spec) (adapter.Command, error) {
 	if a.Executable == "" {
 		return adapter.Command{}, errors.New("fake adapter: guildhall executable is not set")
 	}
-	rules, err := claude.ProfileTools(spec.Copy, spec.Profile, spec.Repository)
+	rules, err := grant.ProfileTools(spec.Copy, spec.Profile, spec.Repository)
 	if err != nil {
 		return adapter.Command{}, err
 	}

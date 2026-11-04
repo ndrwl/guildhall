@@ -27,6 +27,16 @@ const (
 	CodexName = "codex"
 )
 
+// grantsTools are the runtimes, by name, that apply a profile's allowed_tools and repository grants.
+var grantsTools = map[string]bool{ClaudeName: true}
+
+// GrantsTools reports whether the runtime named name applies a profile's allowed_tools and repository grants
+// (package adapter/grant): only claude does. A name no runtime has grants none. It is declared here, beside the
+// names, so a package that cannot import adapter/runtimes reads it without comparing names.
+func GrantsTools(name string) bool {
+	return grantsTools[name]
+}
+
 // Spec is what Guildhall gives an Artisan for one task attempt.
 type Spec struct {
 	Identity

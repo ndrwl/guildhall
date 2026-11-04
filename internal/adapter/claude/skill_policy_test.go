@@ -13,6 +13,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/adapter/claude"
 	"github.com/ndrwl/guildhall/internal/adapter/claude/claudetest"
+	"github.com/ndrwl/guildhall/internal/adapter/grant"
 	"github.com/ndrwl/guildhall/internal/config"
 )
 
@@ -105,7 +106,7 @@ func TestSkillPolicyArtisanResolvesOverrides(t *testing.T) {
 	if err := json.Unmarshal(b, &settings); err != nil {
 		t.Fatal(err)
 	}
-	if !settings.Sync || settings.Disable || settings.Overrides["anthropic-skills:pdf"] != "on" || settings.Overrides["dataviz"] != "off" || settings.Overrides["run"] != "on" || !slices.Equal(settings.Permissions.Allow, append([]string{"WebSearch", "WebFetch"}, claude.GuildhallRules...)) {
+	if !settings.Sync || settings.Disable || settings.Overrides["anthropic-skills:pdf"] != "on" || settings.Overrides["dataviz"] != "off" || settings.Overrides["run"] != "on" || !slices.Equal(settings.Permissions.Allow, append([]string{"WebSearch", "WebFetch"}, grant.GuildhallRules...)) {
 		t.Fatalf("wrong resolved settings: %s", b)
 	}
 	b, err = os.ReadFile(filepath.Join(filepath.Dir(spec.ResultFile), claude.SkillPolicyFile))

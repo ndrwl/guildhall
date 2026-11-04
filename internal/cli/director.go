@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
-	"github.com/ndrwl/guildhall/internal/adapter/claude"
 	"github.com/ndrwl/guildhall/internal/adapter/fake"
+	"github.com/ndrwl/guildhall/internal/adapter/grant"
 	"github.com/ndrwl/guildhall/internal/adapter/runtimes"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/config"
@@ -310,7 +310,7 @@ func (a *App) preflight(copyDir, cfgPath, storePath, positional string) (startPl
 }
 
 // artisanPermissions says what this Director's config at cfgPath grants each profile that runs the claude adapter,
-// its effective grant (claude.EffectiveGrant) grouped by source: the copy's allowed_tools, or else the shipped
+// its effective grant (grant.EffectiveGrant) grouped by source: the copy's allowed_tools, or else the shipped
 // default, or a note that the profile gets none; then each repository's additions, labelled with the repository id.
 // acceptEdits grants edits only but inherited settings, hooks and skill-scoped grants may allow more, so a build's
 // checks and commits depend on Bash permission (docs/adapters.md#artisan-permissions). A profile of another adapter
@@ -334,27 +334,27 @@ func artisanPermissions(cfg *config.Config, cfgPath string) (string, error) {
 			}
 			continue
 		}
-		base, err := claude.EffectiveGrant(cfg, name, "")
+		base, err := grant.EffectiveGrant(cfg, name, "")
 		if err != nil {
 			return "", err
 		}
 		// The rule Guildhall gives every claude profile is named apart, after the profile's own grant.
 		var guildhall []string
-		base = slices.DeleteFunc(base, func(g claude.Grant) bool {
-			if g.Source == claude.SourceGuildhall {
+		base = slices.DeleteFunc(base, func(g grant.Grant) bool {
+			if g.Source == grant.SourceGuildhall {
 				guildhall = append(guildhall, g.Rule)
 			}
-			return g.Source == claude.SourceGuildhall
+			return g.Source == grant.SourceGuildhall
 		})
 		var additions []string
 		for _, r := range cfg.Repositories {
-			grant, err := claude.EffectiveGrant(cfg, name, r.ID)
+			repoGrant, err := grant.EffectiveGrant(cfg, name, r.ID)
 			if err != nil {
 				return "", err
 			}
 			var added []string
-			for _, g := range grant {
-				if g.Source == claude.SourceRepository {
+			for _, g := range repoGrant {
+				if g.Source == grant.SourceRepository {
 					added = append(added, g.Rule)
 				}
 			}
@@ -366,7 +366,7 @@ func artisanPermissions(cfg *config.Config, cfgPath string) (string, error) {
 			additions = append(additions, ", plus from Guildhall "+strings.Join(guildhall, ", "))
 		}
 		var s string
-		switch rules := strings.Join(claude.GrantRules(base), ", "); {
+		switch rules := strings.Join(grant.GrantRules(base), ", "); {
 		case p.AllowedToolsSet() && rules == "":
 			s = fmt.Sprintf("profile %s grants nothing from the copy", name)
 		case p.AllowedToolsSet():
