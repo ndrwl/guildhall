@@ -119,7 +119,11 @@ type Task struct {
 	Tag string
 	// TagStage is Tag's step, such as grill, for its chip; "" when it names none.
 	TagStage string
-	ReadAt   time.Time
+	// Grill is the task's grill mode as task show prints it, such as "grill: unattended (director): <reason>" or
+	// "grill: live", shown in the band under where it stands (docs/tasks.md#grill-mode); "" for a task whose
+	// workflow has no grill.
+	Grill  string
+	ReadAt time.Time
 }
 
 // Where is a where-it-stands sentence: Lead, shown in bold, says who or what the task waits on, such as "Waiting for

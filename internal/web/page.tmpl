@@ -98,7 +98,8 @@ words box below (docs/web.md#confirm-and-say). */}}
 <header class="band">
 <div class="crumb"><a href="/">All tasks</a><span class="sep">/</span><span>{{.T.Repository}}</span><span class="sep">/</span><b>{{.T.ID}}</b><span class="sep">·</span><span>{{.T.State}}</span>{{range .Crumbs}}<span class="sep">·</span><span>{{.Label}} <a href="{{.Href}}">{{.Name}}</a></span>{{end}}</div>
 <h1>{{.T.Title}}</h1>
-{{template "where" .}}
+{{template "where" .}}{{with .T.Grill}}
+<p class="gm">{{.}}</p>{{end}}
 {{template "chips" .}}
 <ol class="steps">{{range .Steps}}<li class="{{.State}}"{{if .Raw}} title="{{.Raw}}"{{end}}><b>{{.Name}}</b>{{.Note}}</li>{{end}}</ol>
 </header>

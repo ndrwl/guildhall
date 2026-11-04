@@ -42,6 +42,11 @@ var webStepWords = map[string]stepWords{
 	"handoff-wait":         {"handoff", "The handoff arrived"},
 }
 
+// webUnattendedGrill is the stepper's name of a grill an Artisan runs, an unattended grill (docs/tasks.md#grill-mode),
+// whose row says finished rather than counting rounds with the Guildmaster; the story and documents keep the grill's
+// words.
+const webUnattendedGrill = "Unattended grill (Artisan)"
+
 // stepWordsOf is the words of the bound workflow's step id: its type's, or, with no workflow, the type named like the
 // step, as the default workflow names them; a step of no known type is named by its id.
 func (b webBuilder) stepWordsOf(id string) stepWords {
