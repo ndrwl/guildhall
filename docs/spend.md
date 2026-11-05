@@ -1,7 +1,7 @@
 # Recorded spend report
 
 `guildhall spend report --copy <dir> [--repo <name>] [--task <id>] [--since <RFC3339>] [--json]` reads the existing store and attempt usage files without writing, launching processes or parsing transcripts.
-This first increment reports only recorded aggregate usage; the unavailable attribution dimensions are listed below.
+It reports recorded aggregate usage split by attempt outcome; the unavailable attribution dimensions are listed below.
 The default is a human-readable table; `--json` returns the same complete report as JSON.
 The [November 2026 token usage audit](audits/token-usage-2026-11.md) breaks this spend down by step, outcome, day and cache behaviour, and ranks the savings.
 `--copy` defaults to the copy found from the current directory ([copies](running.md#copies)); alternatively, use both `--store <path>` and `--state <dir>` to select an existing store and its attempt state directory explicitly.
@@ -10,7 +10,8 @@ An absent store is an error, not an empty report.
 
 ## Behavioural contract
 
-Each row groups repository, task, step, rerun label, recorded profile, role, adapter and model.
+Each row groups repository, task, step, rerun label, recorded profile, role, adapter, model and outcome.
+The outcome is `succeeded`, `failed` or `stopped` as the store records it, `running` for an attempt not yet finished, or `refused` for an attempt whose result intake refused; refusal is checked first, because the store records a refused attempt as failed.
 Every recorded attempt is counted, including running attempts whose current spend is unknown.
 The store's spend takes precedence over an attempt's `usage.json`; the file is used only when the store has no spend.
 Missing usage is unknown, not zero measured usage; malformed usage is an error rather than silently discarded evidence.

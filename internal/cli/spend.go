@@ -58,6 +58,7 @@ type spendGroup struct {
 	Role       string `json:"role"`
 	Adapter    string `json:"adapter"`
 	Model      string `json:"model"`
+	Outcome    string `json:"outcome"`
 }
 type spendRow struct {
 	spendGroup
@@ -267,7 +268,7 @@ func readSpend(s spendStore, state, repository, taskID string, since time.Time) 
 					u = store.Spend{Tokens: store.Measure(usage.Tokens), InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CacheCreationInputTokens: usage.CacheCreationInputTokens, CacheReadInputTokens: usage.CacheReadInputTokens, Cost: store.Measure(usage.Cost), CostUSD: usage.CostUSD}
 				}
 				rerun := rerunLabel(byStep, at)
-				key := spendGroup{repo, task.ID, at.Step, rerun, "unavailable", "unavailable", "unavailable", "unavailable"}
+				key := spendGroup{Repository: repo, Task: task.ID, Step: at.Step, Rerun: rerun, Profile: "unavailable", Role: "unavailable", Adapter: "unavailable", Model: "unavailable", Outcome: spendOutcome(at)}
 				if err := spendManifest(dir, at, &key); err != nil {
 					return out, err
 				}
@@ -286,8 +287,8 @@ func readSpend(s spendStore, state, repository, taskID string, since time.Time) 
 	}
 	sort.Slice(out.Rows, func(i, j int) bool {
 		a, b := out.Rows[i].spendGroup, out.Rows[j].spendGroup
-		aa := []string{a.Repository, a.Task, a.Step, a.Rerun, a.Profile, a.Role, a.Adapter, a.Model}
-		bb := []string{b.Repository, b.Task, b.Step, b.Rerun, b.Profile, b.Role, b.Adapter, b.Model}
+		aa := []string{a.Repository, a.Task, a.Step, a.Rerun, a.Profile, a.Role, a.Adapter, a.Model, a.Outcome}
+		bb := []string{b.Repository, b.Task, b.Step, b.Rerun, b.Profile, b.Role, b.Adapter, b.Model, b.Outcome}
 		for n := range aa {
 			if aa[n] != bb[n] {
 				return aa[n] < bb[n]
@@ -296,6 +297,19 @@ func readSpend(s spendStore, state, repository, taskID string, since time.Time) 
 		return false
 	})
 	return out, nil
+}
+
+// spendOutcome classifies an attempt as succeeded, failed, stopped, refused or running.
+// Refusal comes first: RejectAttempt stores a refused attempt as failed.
+func spendOutcome(at store.StageAttempt) string {
+	switch {
+	case at.IntakeRejection != "":
+		return "refused"
+	case at.Outcome == "":
+		return "running"
+	default:
+		return string(at.Outcome)
+	}
 }
 
 func spendManifest(dir string, at store.StageAttempt, key *spendGroup) error {
@@ -327,7 +341,7 @@ func spendManifest(dir string, at store.StageAttempt, key *spendGroup) error {
 func (a *App) spendTable(r spendReport) int {
 	var b strings.Builder
 	w := tabwriter.NewWriter(&b, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "REPO\tTASK\tSTEP\tRERUN\tPROFILE\tROLE\tADAPTER\tMODEL\tMEASURE\tINPUT\tOUTPUT\tCACHE-CREATE\tCACHE-READ\tUSD\tCOVERAGE")
+	_, _ = fmt.Fprintln(w, "REPO\tTASK\tSTEP\tRERUN\tPROFILE\tROLE\tADAPTER\tMODEL\tOUTCOME\tMEASURE\tINPUT\tOUTPUT\tCACHE-CREATE\tCACHE-READ\tUSD\tCOVERAGE")
 	row := func(k spendGroup, s spendSummary) {
 		coverage := "complete"
 		if s.Partial {
@@ -337,9 +351,9 @@ func (a *App) spendTable(r spendReport) int {
 			name string
 			v    spendAmounts
 		}{{"measured", s.Measured}, {"estimated", s.Estimated}} {
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\t%.6f\t%s\n", k.Repository, k.Task, k.Step, k.Rerun, k.Profile, k.Role, k.Adapter, k.Model, m.name, m.v.InputTokens, m.v.OutputTokens, m.v.CacheCreationInputTokens, m.v.CacheReadInputTokens, m.v.CostUSD, coverage)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\t%.6f\t%s\n", k.Repository, k.Task, k.Step, k.Rerun, k.Profile, k.Role, k.Adapter, k.Model, k.Outcome, m.name, m.v.InputTokens, m.v.OutputTokens, m.v.CacheCreationInputTokens, m.v.CacheReadInputTokens, m.v.CostUSD, coverage)
 		}
-		_, _ = fmt.Fprintf(w, "\t\t\t\t\t\t\t\tunknown\ttokens=%d\tcost=%d\t\t\t\t%d attempts\n", s.TokensUnknown, s.CostUnknown, s.Attempts)
+		_, _ = fmt.Fprintf(w, "\t\t\t\t\t\t\t\t\tunknown\ttokens=%d\tcost=%d\t\t\t\t%d attempts\n", s.TokensUnknown, s.CostUnknown, s.Attempts)
 	}
 	for _, v := range r.Rows {
 		row(v.spendGroup, v.spendSummary)

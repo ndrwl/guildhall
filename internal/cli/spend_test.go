@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,7 +59,7 @@ func TestSpendReportRecordedUsage(t *testing.T) {
 	if got.Total.Attempts != 3 || !got.Total.Partial || got.Total.Measured.InputTokens != 10 || got.Total.Estimated.InputTokens != 20 || got.Total.TokensUnknown != 1 || got.Total.Measured.CostUSD != 0.2 || got.Total.Estimated.CostUSD != 0.1 {
 		t.Fatalf("total=%+v", got.Total)
 	}
-	if len(got.Rows) != 3 || got.Rows[0].Step != "one" || got.Rows[0].Model != "unavailable" {
+	if len(got.Rows) != 3 || got.Rows[0].Step != "one" || got.Rows[0].Model != "unavailable" || got.Rows[0].Outcome != "running" {
 		t.Fatalf("rows=%+v", got.Rows)
 	}
 	after, _ := os.ReadFile(d.store)
@@ -380,6 +381,119 @@ func TestSpendReportSinceKeepsLabelAndSubtotals(t *testing.T) {
 		if !found {
 			t.Fatalf("no TOTAL %s line: %s", label, table)
 		}
+	}
+}
+
+func TestSpendReportSplitsByOutcome(t *testing.T) {
+	d := newRunDirector(t)
+	s, err := store.Open(d.store, store.Options{RequireStore: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed := false
+	t.Cleanup(func() {
+		if !closed {
+			_ = s.Close()
+		}
+	})
+	// Each attempt finishes before the next starts; the launcher-succeeded one is refused at intake.
+	for i, end := range []string{"succeeded", "failed", "stopped", "refused-running", "refused-succeeded", "running"} {
+		id := fmt.Sprintf("a%d", i)
+		r, err := s.StartAttempt(id, "app", "t1", "build")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = s.RecordAttemptSpend(id+"-spend", "app", "t1", "build", r.Attempt, store.Spend{Tokens: store.SpendMeasured, InputTokens: int64(1) << i, Cost: store.SpendMeasured, CostUSD: 1}); err != nil {
+			t.Fatal(err)
+		}
+		switch end {
+		case "succeeded", "failed", "stopped":
+			_, err = s.FinishAttempt(id+"-finish", "app", "t1", "build", r.Attempt, store.AttemptOutcome(end))
+		case "refused-succeeded":
+			if _, err = s.FinishAttempt(id+"-finish", "app", "t1", "build", r.Attempt, store.AttemptSucceeded); err != nil {
+				t.Fatal(err)
+			}
+			fallthrough
+		case "refused-running":
+			_, err = s.RejectAttempt(id+"-reject", "app", "t1", "build", r.Attempt, "no head")
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	closed = true
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	app, out, stderr := newTestApp(nil, nil)
+	args := []string{"spend", "report", "--store", d.store, "--state", d.state, "--json"}
+	if code := app.Run(args); code != 0 {
+		t.Fatalf("code=%d out=%s err=%s", code, out, stderr)
+	}
+	var got spendReport
+	if err = json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	// Rows also split by rerun label, so each attempt is its own row, sorted by rerun before outcome.
+	rows := []struct {
+		rerun, outcome string
+		input          int64
+	}{
+		{"after-failure", "stopped", 4},
+		{"after-refusal", "refused", 16},
+		{"after-refusal", "running", 32},
+		{"after-stop", "refused", 8},
+		{"first", "succeeded", 1},
+		{"send-back", "failed", 2},
+	}
+	if len(got.Rows) != len(rows) {
+		t.Fatalf("rows=%+v", got.Rows)
+	}
+	for i, w := range rows {
+		r := got.Rows[i]
+		if r.Rerun != w.rerun || r.Outcome != w.outcome || r.Attempts != 1 || r.Measured.InputTokens != w.input || r.Model != "unavailable" {
+			t.Fatalf("row %d=%+v, want %+v", i, r, w)
+		}
+	}
+	// Summing rows by outcome gives the audit's "By outcome" split; both refusals land in refused, never failed.
+	type sum struct {
+		attempts int
+		input    int64
+	}
+	byOutcome := map[string]sum{}
+	for _, r := range got.Rows {
+		s := byOutcome[r.Outcome]
+		byOutcome[r.Outcome] = sum{s.attempts + r.Attempts, s.input + r.Measured.InputTokens}
+	}
+	wantOutcome := map[string]sum{"failed": {1, 2}, "refused": {2, 8 + 16}, "running": {1, 32}, "stopped": {1, 4}, "succeeded": {1, 1}}
+	if len(byOutcome) != len(wantOutcome) {
+		t.Fatalf("by outcome=%+v", byOutcome)
+	}
+	for k, w := range wantOutcome {
+		if byOutcome[k] != w {
+			t.Fatalf("outcome %s=%+v, want %+v", k, byOutcome[k], w)
+		}
+	}
+	if got.Total.Attempts != 6 || got.Total.Measured.InputTokens != 63 || got.Total.Measured.CostUSD != 6 || got.Total.Partial {
+		t.Fatalf("total=%+v", got.Total)
+	}
+	var raw struct {
+		Rows []map[string]any `json:"rows"`
+	}
+	if err = json.Unmarshal(out.Bytes(), &raw); err != nil || raw.Rows[0]["outcome"] != "stopped" {
+		t.Fatalf("json rows=%v err=%v", raw.Rows, err)
+	}
+	out.Reset()
+	if code := app.Run(args[:len(args)-1]); code != 0 {
+		t.Fatalf("table code=%d: %s", code, stderr)
+	}
+	lines := strings.Split(out.String(), "\n")
+	if !strings.Contains(lines[0], "MODEL") || strings.Index(lines[0], "OUTCOME") <= strings.Index(lines[0], "MODEL") || strings.Index(lines[0], "MEASURE") <= strings.Index(lines[0], "OUTCOME") {
+		t.Fatalf("header=%q", lines[0])
+	}
+	// Line 1 is the first row's measured line, line 3 its unknown line: MEASURE, measured and unknown share a column.
+	if col := strings.Index(lines[0], "MEASURE"); strings.Index(lines[1], "measured") != col || strings.Index(lines[3], "unknown") != col || !strings.Contains(lines[1], "stopped") {
+		t.Fatalf("misaligned table:\n%s", out)
 	}
 }
 
