@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -42,6 +43,35 @@ func (e *unacknowledged) Error() string {
 		list += " and more"
 	}
 	return fmt.Sprintf("unacknowledged steering %s to this attempt: %s; read each with guildhall messages, acknowledge it with guildhall messages ack <id>, then submit again", noun, list)
+}
+
+// steerable reports whether an attempt of step s runs on a runtime that can be steered (Engine.Steerable), resolving
+// its adapter as the launch does: the step's effective profile in Config, a synthetic step's being its role profile.
+// The adapter is resolved from the current config, not recorded at launch, so a hand edit of the profile's adapter
+// between launch and intake changes the answer; task overrides cannot change a profile's adapter. A step whose
+// profile does not resolve is steerable, so its inbox is still checked.
+func (r *run) steerable(s workflow.Step) bool {
+	if r.e.Steerable == nil || r.e.Config == nil {
+		return true
+	}
+	p, err := r.e.Config.Profile(workflow.EffectiveProfile(s))
+	if err != nil {
+		return true
+	}
+	return r.e.Steerable(p.Adapter)
+}
+
+// StepProfile returns the profile an attempt of step runs under in def, a workflow step's effective profile or a
+// synthetic step's role profile, as the engine launches it; false when step is neither. `messages send` resolves an
+// attempt's runtime with it, as intake does (run.steerable).
+func StepProfile(def *workflow.Definition, step string) (string, bool) {
+	if i := slices.IndexFunc(def.Steps, func(s workflow.Step) bool { return s.ID == step }); i >= 0 {
+		return workflow.EffectiveProfile(def.Steps[i]), true
+	}
+	if s, ok := (&run{def: def}).syntheticStep(step); ok {
+		return workflow.EffectiveProfile(s), true
+	}
+	return "", false
 }
 
 // checkMessages refuses a succeeded result of attempt n of step s while a message to the attempt's own inbox that

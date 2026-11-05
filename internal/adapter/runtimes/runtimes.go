@@ -33,6 +33,10 @@ type Runtime interface {
 	// a model or effort the runtime cannot honour; the zero Settings, the runtime's defaults, is always honoured.
 	// It builds and starts nothing, so a preflight can run it before any attempt is recorded.
 	CheckSettings(s adapter.Settings) error
+	// Steerable reports whether the runtime can be steered: it tells its Artisan about steering and lets it run
+	// `guildhall messages` and `guildhall messages ack` (docs/messaging.md). `messages send` refuses an attempt
+	// on a runtime that cannot, and intake does not check that attempt's inbox.
+	Steerable() bool
 }
 
 // Session builds the command that runs one interactive Director session (docs/director.md#start).

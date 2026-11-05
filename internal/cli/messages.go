@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/config"
+	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/store"
 )
@@ -151,6 +153,7 @@ func (a *App) messages(args []string) int {
 		return 1
 	}
 	var env messaging.Envelope
+	var steerCfg *config.Config
 	if sub == "send" {
 		var err error
 		if env, err = a.readEnvelope(pos[1]); err != nil {
@@ -161,6 +164,11 @@ func (a *App) messages(args []string) int {
 			if err := listedEnvelope(*cfgPath, set["config"], env); err != nil {
 				return fail(err)
 			}
+		}
+		// The boundary reads the copy's store, so the config steering resolves runtimes in is applied before the
+		// send opens the store for writing.
+		if to.Role == store.RecipientArtisan {
+			steerCfg = steeringConfig(*cfgPath)
 		}
 	}
 	// Preserve the CLI's missing-store diagnostic before the existing-store-only open.
@@ -187,6 +195,11 @@ func (a *App) messages(args []string) int {
 		if to.Role == store.RecipientArtisan && env.Recipient == store.RecipientArtisan && sender != store.SenderDirector {
 			err = fmt.Errorf("%w: an artisan's inbox takes messages send from %s only, run in its copy's Director session, not from %s; the Guildmaster steers an attempt through the Director", store.ErrInvalid, store.SenderDirector, sender)
 			break
+		}
+		if to.Role == store.RecipientArtisan {
+			if err = unsteerable(steerCfg, *cfgPath, s, to); err != nil {
+				break
+			}
 		}
 		out, err = box.Send(to, sender, env)
 	case "list":
@@ -292,6 +305,54 @@ func listedEnvelope(path string, named bool, env messaging.Envelope) error {
 		return fmt.Errorf("config %s: %w", path, err)
 	}
 	return nil
+}
+
+// steeringConfig is the config at cfgPath as the boundary applies it (appliedConfig: the admitted config intake
+// reads, never the unadmitted raw merge), in which a send resolves its recipient's runtime; nil when there is none
+// or it does not load, so the send refuses nothing for steerability.
+func steeringConfig(cfgPath string) *config.Config {
+	if cfgPath == "" {
+		return nil
+	}
+	if _, err := os.Stat(cfgPath); err != nil {
+		return nil
+	}
+	cfg, _, err := appliedConfig(cfgPath)
+	if err != nil {
+		return nil
+	}
+	return cfg
+}
+
+// unsteerable refuses, with store.ErrInvalid, steering to an attempt whose runtime cannot be steered: it resolves
+// the attempt's step profile in the task's bound workflow, as intake does, and that profile's adapter in cfg
+// (steeringConfig of cfgPath). When the config, task, workflow or step does not resolve it refuses nothing, leaving
+// the store's own refusals to the send.
+func unsteerable(cfg *config.Config, cfgPath string, s *store.Store, to store.Recipient) error {
+	if cfg == nil {
+		return nil
+	}
+	r, err := cfg.ListedRepository(to.Repository)
+	if err != nil {
+		return nil
+	}
+	t, err := s.Task(to.Repository, to.TaskID)
+	if err != nil {
+		return nil
+	}
+	def, err := boundWorkflow(filepath.Join(filepath.Dir(cfgPath), "workflows"), cfg, r, t.Workflow)
+	if err != nil {
+		return nil
+	}
+	name, ok := interp.StepProfile(def, to.Step)
+	if !ok {
+		return nil
+	}
+	p, err := cfg.Profile(name)
+	if err != nil || runtimeSteerable(p.Adapter) {
+		return nil
+	}
+	return fmt.Errorf("%w: attempt %d of %s runs on the %s runtime, which cannot be steered; nothing was sent", store.ErrInvalid, to.Attempt, to.Step, p.Adapter)
 }
 
 // readEnvelope reads an envelope from a file, or from standard input for "-".

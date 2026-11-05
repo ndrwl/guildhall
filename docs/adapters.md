@@ -232,7 +232,8 @@ The session's **effective grant** is, in order and with a repeated rule kept onc
 2. then the **repository grant** of the task's repository for that profile, `[repository.profiles.<name>]` ([repositories](configuration.md#repositories)), if any;
 3. then, for every `claude` profile, the **`guildhall` grant** (`grant.GuildhallRules`): `Bash(guildhall ci log:*)` (`grant.CILogRule`), which lets the Artisan read its task's [failed CI job logs](ci-logs.md) ([decision](decisions/failed-job-logs.md)), and `Bash(guildhall result submit:*)` and `Bash(guildhall result check:*)` (`grant.ResultRules`), which let it check its result with intake's checks and fix a rejection while its session is live ([CLI contract](contracts/cli.md)), and `Bash(guildhall messages:*)` (`grant.MessagesRule`), which lets it list and acknowledge the [steering messages](messaging.md#steering-an-attempt) to its attempt.
    They are added even when the copy sets the profile's own `allowed_tools`, which replace the shipped default and would otherwise drop them, because the commands read only the Artisan's own task, `result submit` writes only its own attempt's draft and submission count, and `messages`, with `GUILDHALL_ATTEMPT` set, reads and acknowledges only the attempt's own inbox and refuses `--store`, a recipient, `read` and `send`.
-   A `codex` or `fake` profile gets none of them; Codex runs no stage step, so it has no steering.
+   A `codex` or `fake` profile gets none of them.
+   Codex cannot be steered (`Steerable` is false), so `messages send` refuses its attempts and intake does not check their inboxes ([steering](messaging.md#steering-an-attempt)).
    No `gh`, `curl` or GitHub API rule is granted: Guildhall's own gh fetches the logs.
 4. then the **task grant** the attempt's binding records, if any, while the store does not record it revoked ([task grants](tasks.md#task-grants), [decision](decisions/task-grants.md)).
 
@@ -345,6 +346,7 @@ For workflow launches rather than these manual flags, see [workflow Artisan work
 
 Package `internal/adapter/runtimes` is the one owner of the runtimes Guildhall can launch: `runtimes.Lookup` returns the runtime by the name `artisan start --adapter` and a profile's `adapter` use, `fake`, `claude` or `codex`, and `runtimes.Names` lists them.
 `codex` runs attempts only, not a Director session, so `runtimes.LookupSession` refuses it and `runtimes.SessionNames` lists the others.
+Each runtime declares, with its `Command`, its `CheckSettings`, the model and effort it can honour, and `Steerable`, whether it tells its Artisan about [steering](messaging.md#steering-an-attempt) and lets it run `guildhall messages` and `guildhall messages ack`: `claude` and `fake` do, `codex` does not.
 `artisan start` refuses any other name with a usage error that names it and lists them, in both modes.
 `launch.Process` passes the engine's adapter name through unchanged, so an unknown name is refused by the `artisan start` process it starts and reported as that process exiting before it owns the attempt, with its log, as every other startup failure is.
 The names are spelled once, as `adapter.FakeName`, `adapter.ClaudeName` and `adapter.CodexName` in the leaf package every party imports; the lookup is keyed by them and `interp.FakeAdapter` and `interp.ClaudeAdapter` refer to them.

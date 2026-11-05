@@ -586,7 +586,7 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 		Workflow: func(rev workflow.Revision) (*workflow.Definition, error) {
 			return boundWorkflow(filepath.Join(cfgDir, "workflows"), cfg, r, rev)
 		},
-		Config: eff, Overrides: &overrides, StandardsRevision: standards, CheckSettings: runtimeSettings,
+		Config: eff, Overrides: &overrides, StandardsRevision: standards, CheckSettings: runtimeSettings, Steerable: runtimeSteerable,
 		DocumentDir: filepath.Join(state, "documents"), StateDir: state, StallInterval: stall, ChecksRefresh: refresh, CIStartGrace: grace, CILogLimit: logLimit,
 		Forge: fg, Workspaces: ws,
 		// The task's base is read from the repository's own refs, which the worktree custody fetched, and the

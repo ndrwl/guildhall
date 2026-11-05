@@ -217,6 +217,9 @@ type Engine struct {
 	// honour (adapter.ErrUnsupportedSetting), before anything is recorded, as CheckAdapter refuses an adapter; nil
 	// leaves them to the launch.
 	CheckSettings func(adapter string, s adapter.Settings) error
+	// Steerable, when set, reports whether an attempt on the named adapter can be steered (runtimes.Runtime.Steerable);
+	// intake does not check the inbox of an attempt that cannot. nil leaves every attempt steerable.
+	Steerable func(adapter string) bool
 	// DocumentDir is the absolute Director document directory every recorded document path is relative to.
 	DocumentDir string
 	Copy        string
@@ -1158,8 +1161,9 @@ func (r *run) checkOutputs(s workflow.Step, n int, outputs []adapter.Output) (*c
 	port := kind.Outputs[0]
 	recorded := r.document(documentName(place{step: s.ID, round: n, part: port.Name})) != nil
 	// Steering messages are checked first, so a result is refused for them alone until each is acknowledged. Once the
-	// port's document is recorded, intake is replaying and its first check stands.
-	if !recorded {
+	// port's document is recorded, intake is replaying and its first check stands. An attempt whose runtime cannot
+	// be steered keeps no inbox it could acknowledge, so it is not checked.
+	if !recorded && r.steerable(s) {
 		if err := r.checkMessages(s, n); err != nil {
 			return nil, err
 		}

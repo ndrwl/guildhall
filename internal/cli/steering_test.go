@@ -15,6 +15,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/release"
+	"github.com/ndrwl/guildhall/internal/session"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/testenv"
 )
@@ -151,6 +152,50 @@ func TestArtisanMessagesRefusals(t *testing.T) {
 				t.Errorf("exit %d, stdout %q, stderr %q; want a usage refusal", code, out, stderr)
 			}
 		})
+	}
+}
+
+// TestSteeringRefusedToAnUnsteerableRuntime: once the plan step's profile runs codex, which cannot be steered, the
+// Director's messages send to its attempt exits 1 naming the runtime and records nothing. The skip at intake is
+// tested in interp (TestCheckResultSkipsMessagesOfAnUnsteerableAttempt): a codex plan step cannot run while Codex
+// has no step kinds, so this copy's engine refuses the workflow before it checks a result.
+func TestSteeringRefusedToAnUnsteerableRuntime(t *testing.T) {
+	c := newResultCopy(t)
+	cfg := filepath.Join(c.dir, "config.toml")
+	data, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The task is bound and its attempt running; the profile's adapter is edited afterwards, as by hand.
+	codex := strings.Replace(string(data), "[profile.demo]\nadapter = \"fake\"", "[profile.demo]\nadapter = \"codex\"", 1)
+	if codex == string(data) {
+		t.Fatal("the copy's config has no fake demo profile to edit")
+	}
+	writeFile(t, cfg, codex)
+	path := filepath.Join(c.dir, directorStoreFile)
+	app, stdout, stderr := newTestApp(nil, nil)
+	app.Getwd = func() (string, error) { return c.dir, nil }
+	app.Getenv = func(name string) string {
+		if name == session.NumberEnv {
+			return "1"
+		}
+		return ""
+	}
+	app.Stdin = strings.NewReader(`{"schema": "guildhall.message/1", "id": "steer-1", "recipient": "artisan", "repository": "app", "task": "t1",
+  "step": "plan", "attempt": 1, "type": "note", "text": "Rebase first."}`)
+	code := app.Run([]string{"messages", "send", "--store", path, "--config", cfg, "artisan:app/t1/plan/1", "-"})
+	want := "guildhall: messages send: invalid store request: attempt 1 of plan runs on the codex runtime, which cannot be steered; nothing was sent\n"
+	if code != 1 || stdout.Len() != 0 || stderr.String() != want {
+		t.Fatalf("send: exit %d, stdout %q, stderr %q; want exit 1 with %q", code, stdout, stderr, want)
+	}
+	s, err := store.Open(path, store.Options{ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs, _, err := s.Inbox(store.Recipient{Role: store.RecipientArtisan, Repository: "app", TaskID: "t1", Step: "plan", Attempt: 1}, 0, 10)
+	_ = s.Close()
+	if err != nil || len(msgs) != 0 {
+		t.Fatalf("the attempt's inbox holds %+v, %v; want nothing sent", msgs, err)
 	}
 }
 
