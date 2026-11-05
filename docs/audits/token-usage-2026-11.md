@@ -375,10 +375,56 @@ The Director can copy each of these into a task as it stands. Items 1–4 are pl
 20. **Meter the Director session** (R8). Medium PR, and amend the token attribution record.
 21. **Codex usage capture** (R9). Small PR.
 
+## 10. Review intake refusals (d192)
+
+Follow-up 3 (W3) needs the reason for each of review's 10 intake refusals. The tables above count them but never print why. `-refusals` lists each one from the same read-only store, with its reason quoted as stored and local paths masked. The output goes to `docs/evidence/token-usage-audit-2026-11-review-refusals.txt`. It covers `review` and `review--s<n>` steps; rebase-review steps are left out, as above. It groups the refusals three ways: in the audit window (starts up to 2026-11-03T20:58:32Z), after it but before #320, and since #320 (2026-11-04T08:21Z).
+
+**Which check now catches each family.** These are merge times in UTC: #191 `review check` at 2026-10-30 07:22, #306 `result check`/`result submit` at 2026-11-04 02:44, and #320 prompts requiring `submit` at 2026-11-04 08:21.
+
+| Family | Reason text (start) | Caught in-session by |
+|---|---|---|
+| Outcome form: schema, summary, verdict, ids, findings, dispositions, revisions form | `review outcome: …`, `summary …`, `verdict …`, `finding …`, `disposition …`, `subject …` | #191 (`review check`), and #306+#320 |
+| Coverage | `previous finding %q has no disposition` | #191 (`review check --previous`), and #306+#320 |
+| Binding | `review outcome is stale: … differ` | #306+#320 only; `review check` cannot see the binding |
+| Generic output or identity | `a succeeded result lists no output …`, `output path …`, `read output …`, `malformed artisan result`, `… for another task attempt` | #306+#320 |
+| Steering (added by #321, after the window) | `unacknowledged steering message(s) to this attempt: …` | #306+#320, except a message that arrives after the last `submit` |
+
+**Verdicts.**
+
+- A refusal in the window, or before #320, gets the verdict of its family's row: "caught by #191" or "caught by #306+#320".
+- A refusal that started after #320 had every tool and was still refused, so it is "still live".
+- A reason that fits no family is also "still live" until someone reads it.
+- A reason that intake no longer gives at all is "removed by #<n>", naming the PR that dropped the check.
+
+The program prints a first reading of each row, and every row is then checked by hand against the stored reason. Each "still live" row becomes one slice of d192's slice 2, with a red-first regression test. If no row is still live, slice 2 is dropped.
+
+Three paths stay open even after the new tools: a steering message that arrives after the last `submit`, a third rejected submission (it becomes the draft by design), and a result written without `submit`. A refusal through any of them would show up in the "since #320" group.
+
+**Refusals.** The rows below come from the evidence file, which was regenerated under the read-only store grant g1 on 2026-11-04 at 13:54 UTC. The audit window holds 10 review refusals, which matches the "intake refusals by step" count. The two later groups are empty: no review attempt has been refused since the window closed. Each row was checked by hand against the validator on `main`:
+
+- The id refusals (d4, d8) and the "resolved finding … still listed" refusals (d12, d27) come from `ReviewOutcome.Validate` in `internal/workflow/review.go`, which `review check` runs. `TestReviewCheckRefusesWhatIntakeRefuses` replays d12 review-3 and d27 review-5. The id wording now ends "…, starting with a letter".
+- The d3 review-1 refusal (`a succeeded result lists no output for port outcome`) comes from the engine's output check (`internal/interp/engine.go`). `review check` does not see it, but `result submit` does.
+- The d3 review-2 refusal (`standards_revision is required`) no longer exists. #149 (merged 2026-10-26 18:39 UTC, about 1h40m after that attempt started) made `standards_revision` optional. Now only a whitespace-only value is refused.
+
+| Attempt | Started (UTC) | Tools at start | Reason (as stored) | Family | Verdict |
+|---|---|---|---|---|---|
+| guildhall/d3/review-1 | 2026-10-25 21:37 | before #191 | `a succeeded result lists no output for port outcome` | generic output or identity | caught by #306+#320 |
+| guildhall/d3/review-2 | 2026-10-26 16:58 | before #191 | `invalid review outcome: standards_revision is required` | outcome form | removed by #149 |
+| guildhall/d4/review-1 | 2026-10-27 09:27 | before #191 | `invalid review outcome: finding id "S1" must be lowercase letters, digits and hyphens; …` (S1–S4) | outcome form | caught by #191 |
+| guildhall/d4/review-2 | 2026-10-27 09:29 | before #191 | `invalid review outcome: finding id "R1" must be lowercase letters, digits and hyphens; …` (R1, S1–S3) | outcome form | caught by #191 |
+| guildhall/d4/review-3 | 2026-10-27 09:32 | before #191 | `invalid review outcome: finding id "R1" must be lowercase letters, digits and hyphens; …` (R1, S1–S3) | outcome form | caught by #191 |
+| guildhall/d8/review-1 | 2026-10-27 22:16 | before #191 | `invalid review outcome: finding id "F1" must be lowercase letters, digits and hyphens; …` (F1, F2) | outcome form | caught by #191 |
+| guildhall/d8/review-2 | 2026-10-27 22:19 | before #191 | `invalid review outcome: finding id "F1" must be lowercase letters, digits and hyphens; …` (F1, F2) | outcome form | caught by #191 |
+| guildhall/d8/review-3 | 2026-10-27 22:32 | before #191 | `invalid review outcome: finding id "S1" must be lowercase letters, digits and hyphens; …` (S1, S2) | outcome form | caught by #191 |
+| guildhall/d27/review-5 | 2026-10-29 21:10 | before #191 | `invalid review outcome: resolved finding "relaunch-base" is still listed in findings or suggestions` | outcome form | caught by #191 |
+| guildhall/d12/review-3 | 2026-10-29 21:45 | before #191 | `invalid review outcome: resolved finding "suggest-4" is still listed in findings or suggestions; resolved finding "suggest-5" is still listed in findings or suggestions` | outcome form | caught by #191 |
+
+Full reasons are in the evidence file. No row is still live, and neither later group has a refusal, so by Q2 slice 2 has nothing to fix and can be dropped.
 ## Reproducing
 
 ```text
 go run docs/evidence/token-usage-audit-2026-11.go -copy <director copy> -transcripts <director project dir>[,<dir>...] > docs/evidence/token-usage-audit-2026-11.txt
+go run docs/evidence/token-usage-audit-2026-11.go -copy <director copy> -refusals > docs/evidence/token-usage-audit-2026-11-review-refusals.txt
 guildhall spend report --copy <director copy> --json   # total.estimated.cost_usd must match the script's cost_usd to the cent
 ```
 

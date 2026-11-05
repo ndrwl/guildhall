@@ -11,6 +11,11 @@
 // session ids, URLs or prompt and transcript text.
 //
 //	go run docs/evidence/token-usage-audit-2026-11.go -copy <director copy> -transcripts <dir>[,<dir>...] > docs/evidence/token-usage-audit-2026-11.txt
+//
+// With -refusals it reads only the store, the same read-only way, and lists each review intake refusal with its
+// stored reason (task d192) in place of the tables:
+//
+//	go run docs/evidence/token-usage-audit-2026-11.go -copy <director copy> -refusals > docs/evidence/token-usage-audit-2026-11-review-refusals.txt
 package main
 
 import (
@@ -73,12 +78,19 @@ func main() {
 	copyDir := flag.String("copy", "", "Director copy directory")
 	transcripts := flag.String("transcripts", "", "comma-separated Claude Code project directories of the Director's sessions")
 	days := flag.Int("days", 14, "days of per-day figures")
+	refusals := flag.Bool("refusals", false, "list review intake refusals with their reasons instead of the tables")
 	flag.Parse()
 	if *copyDir == "" {
-		fmt.Fprintln(os.Stderr, "usage: -copy <dir> [-transcripts <dir,...>]")
+		fmt.Fprintln(os.Stderr, "usage: -copy <dir> [-transcripts <dir,...>] [-refusals]")
 		os.Exit(2)
 	}
 	ran := time.Now().UTC()
+	if *refusals {
+		opened := time.Now()
+		atts, _ := readStore(filepath.Join(*copyDir, "director.store"))
+		reviewRefusals(atts, ran, time.Since(opened), *copyDir)
+		return
+	}
 	cfg := readConfig(filepath.Join(*copyDir, "config.toml"))
 	opened := time.Now()
 	atts, tasks := readStore(filepath.Join(*copyDir, "director.store"))
@@ -656,6 +668,128 @@ func main() {
 	if *transcripts != "" {
 		director(out, strings.Split(*transcripts, ","), price, startDay, end)
 	}
+}
+
+// The audit window's last start, and the merges that moved review's intake checks into the session (UTC).
+var (
+	auditLastStart = time.Date(2026, 11, 3, 20, 58, 32, 0, time.UTC)
+	reviewCheckAt  = time.Date(2026, 10, 30, 7, 22, 0, 0, time.UTC) // #191 guildhall review check
+	resultSubmitAt = time.Date(2026, 11, 4, 2, 44, 0, 0, time.UTC)  // #306 guildhall result check and submit
+	submitPromptAt = time.Date(2026, 11, 4, 8, 21, 0, 0, time.UTC)  // #320 prompts require result submit
+)
+
+// reviewRefusals lists every attempt of a review or review--s<n> step that intake refused, with its stored reason.
+// Rebase-review steps are left out, as the audit counts them apart. Local paths in a reason are masked.
+func reviewRefusals(atts []*attempt, ran time.Time, held time.Duration, copyDir string) {
+	out := bufio.NewWriter(os.Stdout)
+	defer out.Flush()
+	fmt.Fprintf(out, "# token-usage-audit-2026-11 review intake refusals\n\n")
+	fmt.Fprintf(out, "ran_at: %s\nstore_read_only_held: %s\n", ran.Format(time.RFC3339), held.Round(time.Millisecond))
+	fmt.Fprintf(out, "audit window: starts up to %s\n", auditLastStart.Format(time.RFC3339))
+	var rs []*attempt
+	for _, a := range atts {
+		if a.Base == "review" && strings.TrimSpace(a.Rejection) != "" {
+			rs = append(rs, a)
+		}
+	}
+	sort.Slice(rs, func(i, j int) bool {
+		if !rs[i].Start.Equal(rs[j].Start) {
+			return rs[i].Start.Before(rs[j].Start)
+		}
+		return rs[i].id() < rs[j].id()
+	})
+	pairs := []string{}
+	if abs, err := filepath.Abs(copyDir); err == nil {
+		pairs = append(pairs, abs, "<copy>")
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		pairs = append(pairs, home, "~")
+	}
+	mask := strings.NewReplacer(pairs...)
+	groups := []struct {
+		title string
+		in    func(time.Time) bool
+	}{
+		{"In the audit window", func(t time.Time) bool { return !t.After(auditLastStart) }},
+		{"After the audit window, before #320 (2026-11-04T08:21:00Z)", func(t time.Time) bool {
+			return t.After(auditLastStart) && t.Before(submitPromptAt)
+		}},
+		{"Since #320 (started at or after 2026-11-04T08:21:00Z)", func(t time.Time) bool { return !t.Before(submitPromptAt) }},
+	}
+	for _, g := range groups {
+		section(out, g.title)
+		n := 0
+		tw := table(out, "TASK", "STEP", "ATTEMPT", "STARTED_AT", "TOOLS_AT_START")
+		var reasons []string
+		for _, a := range rs {
+			if !g.in(a.Start) {
+				continue
+			}
+			n++
+			row(tw, a.Repo+"/"+a.Task, a.Step, a.Number, a.Start.Format(time.RFC3339), toolsAt(a.Start))
+			reasons = append(reasons, fmt.Sprintf("%s: %q", a.id(), mask.Replace(a.Rejection)))
+		}
+		tw.Flush()
+		fmt.Fprintf(out, "refusals: %d\nreasons, as stored:\n", n)
+		for _, r := range reasons {
+			fmt.Fprintf(out, "- %s\n", r)
+		}
+	}
+	section(out, "Rows for the audit doc (family and verdict are a first reading; check each by hand)")
+	fmt.Fprintf(out, "| Attempt | Started (UTC) | Tools at start | Reason (as stored) | Family | Verdict |\n|---|---|---|---|---|---|\n")
+	cell := strings.NewReplacer("|", `\|`, "`", "'")
+	for _, a := range rs {
+		fam, caught := refusalFamily(a.Rejection)
+		if !a.Start.Before(submitPromptAt) {
+			caught = "still live"
+		}
+		fmt.Fprintf(out, "| %s | %s | %s | `%s` | %s | %s |\n", a.id(), a.Start.Format("2006-01-02 15:04"), toolsAt(a.Start),
+			cell.Replace(strings.Join(strings.Fields(mask.Replace(a.Rejection)), " ")), fam, caught)
+	}
+}
+
+// refusalFamily names the family of a review refusal reason (docs/audits/token-usage-2026-11.md section 10) and
+// which in-session check now catches it. A reason it does not know is "still live" until read by hand.
+func refusalFamily(reason string) (family, caught string) {
+	has := func(s ...string) bool {
+		for _, x := range s {
+			if strings.Contains(reason, x) {
+				return true
+			}
+		}
+		return false
+	}
+	switch {
+	case has("unacknowledged steering"):
+		return "steering", "caught by #306+#320"
+	case has("recorded no revisions"):
+		return "binding (engine)", "still live"
+	case has("is stale"):
+		return "binding", "caught by #306+#320"
+	case has("previous finding"):
+		return "coverage", "caught by #191"
+	case has("malformed artisan result", "for another task attempt", "lists no output", "output path", "read output"):
+		return "generic output or identity", "caught by #306+#320"
+	case has("review outcome", "summary", "verdict", "finding", "disposition", "subject", "code_head", "document_digest",
+		"spec_digest", "standards_revision", " id "):
+		return "outcome form", "caught by #191"
+	}
+	return "unknown", "still live"
+}
+
+// toolsAt names the in-session checks that had merged when an attempt started.
+func toolsAt(t time.Time) string {
+	switch {
+	case t.IsZero():
+		return "unknown"
+	case t.Before(reviewCheckAt):
+		return "before #191"
+	case t.Before(resultSubmitAt):
+		return "#191"
+	case t.Before(submitPromptAt):
+		return "#191+#306"
+	}
+	return "#191+#306+#320"
 }
 
 type summary struct {
