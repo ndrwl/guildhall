@@ -92,8 +92,15 @@ func (w webAnswerer) Answer(x web.Answer) error {
 				return struct{}{}, err
 			}
 			// The confirmation is the Guildmaster's on the page, naming the recommendation, written with the answer.
-			say = &store.Saying{Author: store.ConversationGuildmasterPage, Tag: x.Decision, Kind: store.ConversationConfirmed, Text: answer,
+			say = &store.Saying{Author: store.ConversationGuildmasterPage, Tag: x.Decision, Kind: store.ConversationConfirmed,
 				Option: rec.Option, Confirms: rec.Number}
+		}
+		// A plan approval's answer carries its open questions' answers, saved and read in this same open.
+		if answer, err = webPlanAnswer(s, x, answer); err != nil {
+			return struct{}{}, err
+		}
+		if say != nil {
+			say.Text = answer
 		}
 		if err := webRecordAnswer(s, x, answer, say); err != nil {
 			return struct{}{}, err

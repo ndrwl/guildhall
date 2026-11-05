@@ -48,17 +48,22 @@ saying there is none or it is for an earlier version; one block of its own, so t
 
 {{/* questions and answers: the one layout of an ask's question cards and its answer row (questions.go); every ask
 that shows questions or answers draws them through these two, so a change here changes them all. */}}
-{{define "questions"}}{{if .None}}<p class="ph">Open questions: none.</p>{{else}}<p class="ph oqh">Open questions <span class="n">{{.Count}}</span></p><div class="oqs">
+{{define "questions"}}{{if .None}}<p class="ph">Open questions: none.</p>{{else}}{{if .Controls}}<p class="ph oqh">Open questions · {{.Answered}} of {{.Count}} answered</p>{{else}}<p class="ph oqh">Open questions <span class="n">{{.Count}}</span></p>{{end}}<div class="oqs{{if .Controls}} ctl{{end}}">
 {{- range .Cards}}
-<section class="oq"><p class="qt"><span class="qn">Q{{.N}}</span>{{.Title}}</p>{{if .Body}}<div class="qb">{{.Body}}</div>{{end}}
+<section class="oq{{if $.Controls}} rq{{if .Folded}} done{{end}}{{end}}"{{if .ID}} id="{{.ID}}"{{end}}><p class="qt"><span class="qn">Q{{.N}}</span>{{.Title}}</p>
+{{- if .Folded}}<p class="rdone"><b>{{.Done}}</b> <span class="gist">{{.Gist}}</span>{{if $.Form}}<button class="lnk" type="submit" name="act" value="change-{{.N}}">Change</button>{{end}}</p>
+{{- else}}{{if .Body}}<div class="qb">{{.Body}}</div>{{end}}
 {{- if .Pick}}{{$n := .N}}<ul class="ol pk">{{range .Rows}}<li{{if .Rec}} class="rec"{{end}}><label for="p-{{$.Ask}}-{{$n}}-{{.Letter}}"><input type="radio" id="p-{{$.Ask}}-{{$n}}-{{.Letter}}" name="pick-{{$n}}" value="{{if not .Rec}}{{.Letter}}{{end}}"{{if .Checked}} checked{{end}}><span class="lt">{{.Mark}}</span><span class="ot">{{.Text}}{{if .Why}}<span class="why">{{.Why}}</span>{{end}}{{if not .Rec}}<span class="ya">Your answer: Q{{$n}} → {{.Mark}}</span>{{end}}</span>{{if .Rec}}<i class="badge">Recommended</i>{{end}}</label></li>{{end}}</ul>
 {{- else if .Rows}}<ul class="ol">{{range .Rows}}<li{{if .Rec}} class="rec"{{end}}>{{if .Mark}}<span class="lt">{{.Mark}}</span>{{end}}<span class="ot">{{.Text}}{{if .Why}}<span class="why">{{.Why}}</span>{{end}}</span>{{if .Rec}}<i class="badge">Recommended</i>{{end}}</li>{{end}}</ul>{{end}}
-{{- if .Verbatim}}<div class="qv">{{.Verbatim}}</div>{{end}}{{if .More}}<div class="qm">{{.More}}</div>{{end}}</section>
+{{- if .Verbatim}}<div class="qv">{{.Verbatim}}</div>{{end}}{{if .More}}<div class="qm">{{.More}}</div>{{end}}
+{{- if $.Form}}<label class="yw" for="{{.ID}}-w">Your words <span>saved by every button</span></label><textarea id="{{.ID}}-w" name="text-{{.N}}" rows="2">{{.Words}}</textarea>{{if .Saved}}<p class="saved">{{.Saved}}</p>{{end}}
+<div class="opts">{{if .Rec}}<button class="opt pos rec" type="submit" name="act" value="accept-{{.N}}"><b>Accept recommendation</b><span>{{.Rec}}</span></button>{{end}}<button class="opt" type="submit" name="act" value="words-{{.N}}"><b>Answer with my words</b><span>the words above are the answer</span></button></div>{{end}}{{end}}</section>
 {{- end}}
-{{- if .Cut}}<p class="cut">(cut; read the document)</p>{{end}}</div>{{end}}{{end}}
+{{- if .Cut}}<p class="cut">(cut; read the document)</p>{{end}}
+{{- if .Form}}<div class="opts"><button class="opt" type="submit" name="act" value="save"><b>Save, answer later</b><span>saves every box; nothing is answered</span></button></div>{{end}}</div>{{end}}{{end}}
 
 {{define "answers"}}{{if .Tiles}}<p class="pick">Answer</p>
-<div class="opts">{{range .Tiles}}{{if $.Form}}<button class="opt{{if .Tone}} {{.Tone}}{{end}}{{if .Rec}} rec{{end}}" type="submit" name="option" value="{{.Option}}">{{else}}<button class="opt{{if .Tone}} {{.Tone}}{{end}}{{if .Rec}} rec{{end}}" type="button" disabled>{{end}}<b>{{.Word}}{{if .Rec}} <i class="badge">Recommended</i>{{end}}</b>{{if .Text}}<span>{{.Text}}</span>{{end}}</button>{{end}}</div>{{end}}
+<div class="opts">{{range .Tiles}}{{if $.Form}}<button class="opt{{if .Tone}} {{.Tone}}{{end}}{{if .Rec}} rec{{end}}" type="submit" name="option" value="{{.Option}}">{{else}}<button class="opt{{if .Tone}} {{.Tone}}{{end}}{{if .Rec}} rec{{end}}" type="button" disabled>{{end}}<b>{{.Word}}{{if .Rec}} <i class="badge">Recommended</i>{{end}}</b>{{if .Text}}<span>{{.Text}}</span>{{end}}{{if .Picked}}<span class="pkd">{{.Picked}}</span>{{end}}</button>{{end}}</div>{{end}}
 {{- if and .Form (not .Tiles)}}<div class="opts"><button class="opt pos" type="submit" name="send" value="answer"><b>Answer with your words</b><span>your words are the answer</span></button></div>{{end}}{{end}}
 
 {{define "msg"}}{{if .Round}}{{template "roundrow" .}}{{else}}<div class="{{.Class}}"><div class="mh"><b>{{.Who}}</b>{{if .Src}}<span class="src">{{.Src}}</span>{{end}}{{if .Rec}}<span class="rk">recommends <b>{{.Rec}}</b></span>{{end}}{{if .Time}}<time>{{.Time}}</time>{{end}}</div><div class="mb">{{.Body}}</div></div>{{end}}{{end}}

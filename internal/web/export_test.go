@@ -3,10 +3,14 @@ package web
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net"
 	"net/http/httptest"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
@@ -28,6 +32,54 @@ func AnsweringFixture(t *testing.T, id Identifier, guildmaster string, a Answere
 		Answerer: a})
 	s.token = FixtureToken
 	return s
+}
+
+// DraftsFixture is AnsweringFixture with drafts saved on the fixture task.
+func DraftsFixture(t *testing.T, id Identifier, guildmaster string, a Answerer, drafts []Draft) *Server {
+	t.Helper()
+	s := AnsweringFixture(t, id, guildmaster, a)
+	src := s.o.Source.(*fakeSource)
+	task := src.tasks["guildhall/d122"]
+	task.Drafts = drafts
+	src.tasks["guildhall/d122"] = task
+	return s
+}
+
+// PickDesign is the design round ask of PicksFixture whose design has a lettered open question.
+const PickDesign = "design-4"
+
+// PicksFixture is AnsweringFixture with design-4's design given a lettered open question, Q1, so its card is a pick;
+// it returns the server and the ask's subject digest.
+func PicksFixture(t *testing.T, id Identifier, guildmaster string, a Answerer) (*Server, string) {
+	t.Helper()
+	s := AnsweringFixture(t, id, guildmaster, a)
+	body := "# The task page's answers\n\n## Open questions\n\n**Q1. Which address**\nThe page needs an address to be served on.\nOptions: (a) the tailnet one; (b) localhost only.\nRecommended: (a). The Guildmaster reads it from a phone.\n"
+	return s, RewriteDocument(t, s, "tasks/guildhall/d122/designer-4/design.md", PickDesign, body)
+}
+
+// RewriteDocument writes body as the fixture document at p on s, a fixture's server, with its digest recorded on the
+// document and as the subject of the ask about it, and returns that subject.
+func RewriteDocument(t *testing.T, s *Server, p, ask, body string) string {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(s.o.Documents, filepath.FromSlash(p)), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte(body))
+	digest := hex.EncodeToString(sum[:])
+	src := s.o.Source.(*fakeSource)
+	task := src.tasks["guildhall/d122"]
+	for i := range task.Documents {
+		if task.Documents[i].Path == p {
+			task.Documents[i].SHA256 = digest
+		}
+	}
+	for i := range task.Asks {
+		if task.Asks[i].ID == ask {
+			task.Asks[i].Subject = "sha256:" + digest
+		}
+	}
+	src.tasks["guildhall/d122"] = task
+	return "sha256:" + digest
 }
 
 // WithoutOwnScripts is body with exactly the own <script> elements removed, so any "<script" left is not one.

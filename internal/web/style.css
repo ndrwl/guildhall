@@ -204,8 +204,13 @@ shows its "Your answer" line, and the ask's answer row then hides Approved and p
 .ol.pk .ya{display:none;margin-top:4px;font-size:13px;font-weight:650;color:var(--you)}
 .ol.pk input:checked~.ot .ya{display:block}
 .ol.pk li:has(input:checked:not([value=""])){background:var(--youbg);border-color:var(--youline);border-left:4px solid var(--youdot)}
-.ask:has(.pk input:checked:not([value=""])) .opt[value="approved"]{display:none}
-.ask:has(.pk input:checked:not([value=""])) .opt[value="changes_requested"]{grid-column:1/-1;background:var(--youbg);border-color:var(--youline);border-left:6px solid var(--youdot)}
+.ask:has(.oqs:not(.ctl) .pk input:checked:not([value=""])) .opt[value="approved"]{display:none}
+.ask:has(.oqs:not(.ctl) .pk input:checked:not([value=""])) .opt[value="changes_requested"]{grid-column:1/-1;background:var(--youbg);border-color:var(--youline);border-left:6px solid var(--youdot)}
+/* on a plan approval's open questions (.ctl) a changed pick is that question's answer: Approved stays, and the
+tiles' line says the picks go with them */
+.opt .pkd{display:none}
+.ask:has(.ctl .pk input:checked:not([value=""])) .opt:has(.pkd) span:not(.pkd){display:none}
+.ask:has(.ctl .pk input:checked:not([value=""])) .opt .pkd{display:block}
 .oqs .cut{margin:0;color:var(--mut);font-size:13px}
 .badge{font:700 10.5px/1 system-ui,sans-serif;font-style:normal;text-transform:uppercase;letter-spacing:.06em;color:var(--on);background:var(--ok);padding:4px 7px;border-radius:5px;flex:none;align-self:center;white-space:nowrap}
 .opt.rec{grid-column:1/-1;background:var(--okbg);border-color:var(--ok);border-left-width:6px}

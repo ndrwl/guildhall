@@ -25,10 +25,13 @@ const (
 	DraftAccept = "accept"
 	// DraftWords answers the question with the draft's words.
 	DraftWords = "words"
+	// DraftPick answers a plan approval's open question with the option the draft's Pick names, picked on its card,
+	// with any words after it.
+	DraftPick = "pick"
 )
 
 // DraftMarks lists the marks in the order the docs name them.
-var DraftMarks = []string{DraftUnmarked, DraftAccept, DraftWords}
+var DraftMarks = []string{DraftUnmarked, DraftAccept, DraftWords, DraftPick}
 
 // Draft is one saved draft of one question: the attempt or decision it is under (Tag), the conversation entry of the
 // round it answers (Round), the question's number from 1, its mark and the words in its box, which may be empty. A
@@ -39,6 +42,8 @@ type Draft struct {
 	Question int    `json:"question"`
 	Mark     string `json:"mark,omitempty"`
 	Text     string `json:"text,omitempty"`
+	// Pick is the letter of the option a draft marked DraftPick picks, such as "b"; "" on any other draft.
+	Pick string `json:"pick,omitempty"`
 }
 
 // DraftEntry is one saved draft of a task. Entries are numbered per task from 1 and append-only; for each tag, round
@@ -53,7 +58,8 @@ type DraftEntry struct {
 }
 
 // validateDraft checks a draft: a tag of id form, a round and question from 1, a mark of DraftMarks, a draft marked
-// words that has words, and words of valid UTF-8 at most MaxTextBytes.
+// words that has words, a pick of one lower-case letter exactly on a draft marked pick, and words of valid UTF-8 at
+// most MaxTextBytes.
 func validateDraft(d Draft) error {
 	if err := validateIDs(d.Tag); err != nil {
 		return err
@@ -69,6 +75,8 @@ func validateDraft(d Draft) error {
 		return invalid("draft words are not valid UTF-8")
 	case d.Mark == DraftWords && isBlank(d.Text):
 		return invalid("a draft answered with words needs words")
+	case (d.Mark == DraftPick) != (len(d.Pick) == 1 && d.Pick[0] >= 'a' && d.Pick[0] <= 'z'):
+		return invalid("a draft has a pick, one lower-case letter, exactly when it is marked pick, not %q", d.Pick)
 	}
 	return nil
 }

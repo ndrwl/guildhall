@@ -208,8 +208,13 @@ shows its "Your answer" line, and the ask's answer row then hides Approved and p
 .ol.pk .ya{display:none;margin-top:4px;font-size:13px;font-weight:650;color:var(--you)}
 .ol.pk input:checked~.ot .ya{display:block}
 .ol.pk li:has(input:checked:not([value=""])){background:var(--youbg);border-color:var(--youline);border-left:4px solid var(--youdot)}
-.ask:has(.pk input:checked:not([value=""])) .opt[value="approved"]{display:none}
-.ask:has(.pk input:checked:not([value=""])) .opt[value="changes_requested"]{grid-column:1/-1;background:var(--youbg);border-color:var(--youline);border-left:6px solid var(--youdot)}
+.ask:has(.oqs:not(.ctl) .pk input:checked:not([value=""])) .opt[value="approved"]{display:none}
+.ask:has(.oqs:not(.ctl) .pk input:checked:not([value=""])) .opt[value="changes_requested"]{grid-column:1/-1;background:var(--youbg);border-color:var(--youline);border-left:6px solid var(--youdot)}
+/* on a plan approval's open questions (.ctl) a changed pick is that question's answer: Approved stays, and the
+tiles' line says the picks go with them */
+.opt .pkd{display:none}
+.ask:has(.ctl .pk input:checked:not([value=""])) .opt:has(.pkd) span:not(.pkd){display:none}
+.ask:has(.ctl .pk input:checked:not([value=""])) .opt .pkd{display:block}
 .oqs .cut{margin:0;color:var(--mut);font-size:13px}
 .badge{font:700 10.5px/1 system-ui,sans-serif;font-style:normal;text-transform:uppercase;letter-spacing:.06em;color:var(--on);background:var(--ok);padding:4px 7px;border-radius:5px;flex:none;align-self:center;white-space:nowrap}
 .opt.rec{grid-column:1/-1;background:var(--okbg);border-color:var(--ok);border-left-width:6px}
@@ -432,15 +437,16 @@ The review is review--s2-2-outcome.</pre></div></details><details class="ctx"><s
 <li><strong>Changed since the grill:</strong> nothing; the plan follows the grill's agreed change.</li>
 <li><strong>Open questions:</strong> 1.</li>
 </ul>
-<p class="ph oqh">Open questions <span class="n">1</span></p><div class="oqs">
-<section class="oq"><p class="qt"><span class="qn">Q1</span>Which address</p><div class="qb"><p>The page needs an address to be served on.</p>
-</div><ul class="ol pk"><li class="rec"><label for="p-accept--s2-1-1-a"><input type="radio" id="p-accept--s2-1-1-a" name="pick-1" value="" checked><span class="lt">(a)</span><span class="ot">the tailnet one<span class="why">The Guildmaster reads it from a phone.</span></span><i class="badge">Recommended</i></label></li><li><label for="p-accept--s2-1-1-b"><input type="radio" id="p-accept--s2-1-1-b" name="pick-1" value="b"><span class="lt">(b)</span><span class="ot">localhost only<span class="ya">Your answer: Q1 → (b)</span></span></label></li></ul></section></div></div><p class="subj">About <code>sha256:3e96ffeff48b</code> · <a href="/guildhall/d122/doc/plan-1-spec">read plan-1-spec</a></p><details class="ctx"><summary>The rest of the question</summary><div><pre>Approval needed for guildhall/d122, step accept--s2 (guildmaster-approval version 1), attempt 1.
+<p class="ph oqh">Open questions · 0 of 1 answered</p><div class="oqs ctl">
+<section class="oq rq" id="accept--s2-1-q1"><p class="qt"><span class="qn">Q1</span>Which address</p><div class="qb"><p>The page needs an address to be served on.</p>
+</div><ul class="ol pk"><li class="rec"><label for="p-accept--s2-1-1-a"><input type="radio" id="p-accept--s2-1-1-a" name="pick-1" value="" checked><span class="lt">(a)</span><span class="ot">the tailnet one<span class="why">The Guildmaster reads it from a phone.</span></span><i class="badge">Recommended</i></label></li><li><label for="p-accept--s2-1-1-b"><input type="radio" id="p-accept--s2-1-1-b" name="pick-1" value="b"><span class="lt">(b)</span><span class="ot">localhost only<span class="ya">Your answer: Q1 → (b)</span></span></label></li></ul><label class="yw" for="accept--s2-1-q1-w">Your words <span>saved by every button</span></label><textarea id="accept--s2-1-q1-w" name="text-1" rows="2"></textarea>
+<div class="opts"><button class="opt pos rec" type="submit" name="act" value="accept-1"><b>Accept recommendation</b><span>(a) the tailnet one</span></button><button class="opt" type="submit" name="act" value="words-1"><b>Answer with my words</b><span>the words above are the answer</span></button></div></section><div class="opts"><button class="opt" type="submit" name="act" value="save"><b>Save, answer later</b><span>saves every box; nothing is answered</span></button></div></div></div><p class="subj">About <code>sha256:3e96ffeff48b</code> · <a href="/guildhall/d122/doc/plan-1-spec">read plan-1-spec</a></p><details class="ctx"><summary>The rest of the question</summary><div><pre>Approval needed for guildhall/d122, step accept--s2 (guildmaster-approval version 1), attempt 1.
 
 Inputs:
 - spec: tasks/guildhall/d122/plan-1/spec.md
 
 Answer with one of: approved, changes_requested.</pre></div></details><label class="yw" for="w-accept--s2-1">Your words <span>optional with an answer; to change an answer, name it, such as “Q2 (a)”</span></label><textarea id="w-accept--s2-1" name="text" rows="3"></textarea><p class="pick">Answer</p>
-<div class="opts"><button class="opt pos rec" type="submit" name="option" value="approved"><b>Approved <i class="badge">Recommended</i></b><span>take every recommendation above; the task goes on</span></button><button class="opt carry" type="submit" name="option" value="changes_requested"><b>Changes requested</b><span>send it back with your words, such as “Q2 (a)”</span></button></div><div class="wo"><button class="opt" type="submit" name="send" value="words"><b>Send words only</b><span>answers nothing; your words reach the Director as a message</span></button></div>
+<div class="opts"><button class="opt pos rec" type="submit" name="option" value="approved"><b>Approved <i class="badge">Recommended</i></b><span>take every recommendation above; the task goes on</span><span class="pkd">with your picks and answers above; the rest take the recommendation</span></button><button class="opt carry" type="submit" name="option" value="changes_requested"><b>Changes requested</b><span>send it back with your words, such as “Q2 (a)”</span><span class="pkd">send it back with your picks and answers above; the rest take the recommendation; add your words</span></button></div><div class="wo"><button class="opt" type="submit" name="send" value="words"><b>Send words only</b><span>answers nothing; your words reach the Director as a message</span></button></div>
 <p class="who">Deferred: still yours, for later. Answering as <b>gm@example.com</b> · your Tailscale login</p></form>
 </div><div class="ask def" id="deliver-1"><form method="post" action="/guildhall/d122/answer"><input type="hidden" name="decision" value="deliver-1"><input type="hidden" name="subject" value=""><input type="hidden" name="token" value="fixture-token">
 <div class="ah"><span class="kind">Merge</span><a class="aid" href="#deliver-1">#deliver-1</a><a class="tg" href="#deliver-1">deliver · deliver-1</a><span class="tag you">deferred</span><span class="since">open since 4 Nov 14:35</span></div>

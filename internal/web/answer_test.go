@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -181,7 +182,7 @@ func TestAnswerRecordsAndRedirects(t *testing.T) {
 		t.Fatalf("answer: %d %q\n%s", w.Code, w.Header().Get("Location"), w.Body)
 	}
 	want := web.Answer{Repository: "guildhall", TaskID: "d122", Decision: "review--s2-x2", Subject: loopSubject, Option: "accept", Text: "Good enough.\r\nShip it.", Login: gmLogin}
-	if len(f.answers) != 1 || f.answers[0] != want {
+	if len(f.answers) != 1 || !reflect.DeepEqual(f.answers[0], want) {
 		t.Fatalf("answers = %+v, want %+v", f.answers, want)
 	}
 
@@ -411,9 +412,15 @@ const (
 	planSubject = "sha256:3e96ffeff48b212662e8402d587622e91ef7814e28425f995f2bd196e94e1d18"
 )
 
-// pickForm is an answer to the plan approval with option ("" for none), words and the pick fields picks.
-func pickForm(option, text string, picks map[string]string) url.Values {
-	v := form(planAsk, planSubject, option, text)
+// picking is web.PicksFixture's server answering for gmLogin through f, and its design ask's subject digest.
+func picking(t *testing.T, f *fakeAnswerer) (*web.Server, string) {
+	t.Helper()
+	return web.PicksFixture(t, webtest.Logins{"100.101.102.103": gmLogin, "100.101.102.104": "other@example.com"}, gmLogin, f)
+}
+
+// pickForm is an answer to ask about subject with option ("" for none), words and the pick fields picks.
+func pickForm(ask, subject, option, text string, picks map[string]string) url.Values {
+	v := form(ask, subject, option, text)
 	for k, x := range picks {
 		v.Set(k, x)
 	}
@@ -432,27 +439,32 @@ func askHTML(t *testing.T, page, id string) string {
 	return ask
 }
 
-// TestPickCards: on the Guildmaster's page a plan approval's lettered card is a radio group, pick-<N>, the
+// TestPickCards: on the Guildmaster's page a design approval's lettered card is a radio group, pick-<N>, the
 // recommended pick checked with an empty value, ids carrying the ask id, a "Your answer" line on each other pick;
-// the read-only page keeps static rows, and no other ask has picks.
+// the plan approval's lettered card is a pick too, beside its open questions' controls; the read-only page keeps
+// static rows, and no other ask has picks.
 func TestPickCards(t *testing.T) {
-	h := answering(t, &fakeAnswerer{})
+	h, _ := picking(t, &fakeAnswerer{})
 	body := request(h, http.MethodGet, "/guildhall/d122", gmAddr, nil, nil).Body.String()
-	plan := askHTML(t, body, planAsk)
+	design := askHTML(t, body, web.PickDesign)
 	for _, want := range []string{
-		`<ul class="ol pk"><li class="rec"><label for="p-accept--s2-1-1-a"><input type="radio" id="p-accept--s2-1-1-a" name="pick-1" value="" checked>`,
-		`<label for="p-accept--s2-1-1-b"><input type="radio" id="p-accept--s2-1-1-b" name="pick-1" value="b"><span class="lt">(b)</span>`,
+		`<ul class="ol pk"><li class="rec"><label for="p-design-4-1-a"><input type="radio" id="p-design-4-1-a" name="pick-1" value="" checked>`,
+		`<label for="p-design-4-1-b"><input type="radio" id="p-design-4-1-b" name="pick-1" value="b"><span class="lt">(b)</span>`,
 		`<span class="ya">Your answer: Q1 → (b)</span>`,
 	} {
-		if !strings.Contains(plan, want) {
-			t.Errorf("the plan approval lacks %s\n%s", want, plan)
+		if !strings.Contains(design, want) {
+			t.Errorf("the design approval lacks %s\n%s", want, design)
 		}
 	}
-	if n := strings.Count(body, `type="radio"`); n == 0 || n != strings.Count(plan, `type="radio"`) {
-		t.Errorf("%d radios on the page, want only the plan approval's", n)
+	plan := askHTML(t, body, planAsk)
+	if n := strings.Count(body, `type="radio"`); n == 0 || n != strings.Count(design, `type="radio"`)+strings.Count(plan, `type="radio"`) {
+		t.Errorf("%d radios on the page, want only the two approvals'", n)
 	}
-	if n := strings.Count(plan, " checked>"); n != 1 {
+	if n := strings.Count(design, " checked>"); n != 1 {
 		t.Errorf("%d checked picks, want one per card", n)
+	}
+	if !strings.Contains(plan, `<ul class="ol pk"><li class="rec"><label for="p-accept--s2-1-1-a">`) || !strings.Contains(plan, `name="act" value="accept-1"`) {
+		t.Errorf("the plan approval's card is not a pick beside its controls:\n%s", plan)
 	}
 	ro := request(h, http.MethodGet, "/guildhall/d122", otherAddr, nil, nil).Body.String()
 	if strings.Contains(ro, "<input") || strings.Contains(ro, `class="ol pk"`) || !strings.Contains(ro, `<ul class="ol"><li class="rec"><span class="lt">(a)</span>`) {
@@ -465,9 +477,12 @@ func TestPickCards(t *testing.T) {
 // exactly today's answer; the same submission gives the same text.
 func TestPicksRecorded(t *testing.T) {
 	f := &fakeAnswerer{}
-	h := answering(t, f)
+	h, subject := picking(t, f)
 	post := func(v url.Values) *httptest.ResponseRecorder {
 		return request(h, http.MethodPost, "/guildhall/d122/answer", gmAddr, v, nil)
+	}
+	pickForm := func(option, text string, picks map[string]string) url.Values {
+		return pickForm(web.PickDesign, subject, option, text, picks)
 	}
 	if w := post(pickForm("changes_requested", "Use the tailnet.", map[string]string{"pick-2": "b", "pick-1": ""})); w.Code != http.StatusSeeOther {
 		t.Fatalf("changes: %d\n%s", w.Code, w.Body)
@@ -480,12 +495,12 @@ func TestPicksRecorded(t *testing.T) {
 		t.Errorf("two picks: text %q, want the lines in question order", got)
 	}
 	post(pickForm("changes_requested", "Use the tailnet.", map[string]string{"pick-2": "b", "pick-1": ""}))
-	if f.answers[2] != f.answers[0] {
+	if !reflect.DeepEqual(f.answers[2], f.answers[0]) {
 		t.Errorf("the same submission gave %+v, then %+v", f.answers[0], f.answers[2])
 	}
 	post(pickForm("approved", "Fine.", map[string]string{"pick-1": "", "pick-2": ""}))
-	want := web.Answer{Repository: "guildhall", TaskID: "d122", Decision: planAsk, Subject: planSubject, Option: "approved", Text: "Fine.", Login: gmLogin}
-	if f.answers[3] != want {
+	want := web.Answer{Repository: "guildhall", TaskID: "d122", Decision: web.PickDesign, Subject: subject, Option: "approved", Text: "Fine.", Login: gmLogin}
+	if !reflect.DeepEqual(f.answers[3], want) {
 		t.Errorf("approved with every pick unchanged: %+v, want %+v", f.answers[3], want)
 	}
 	post(pickForm("changes_requested", "Only words.", map[string]string{"pick-1": ""}))
@@ -519,14 +534,14 @@ func TestPicksRefused(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := &fakeAnswerer{}
-			h := answering(t, f)
-			w := request(h, http.MethodPost, "/guildhall/d122/answer", gmAddr, pickForm(c.option, "Keep <these> words.", c.picks), nil)
+			h, subject := picking(t, f)
+			w := request(h, http.MethodPost, "/guildhall/d122/answer", gmAddr, pickForm(web.PickDesign, subject, c.option, "Keep <these> words.", c.picks), nil)
 			body := w.Body.String()
 			if w.Code != http.StatusBadRequest || len(f.answers) != 0 || len(f.sent) != 0 {
 				t.Fatalf("%d %+v %+v, want 400 with nothing written", w.Code, f.answers, f.sent)
 			}
-			plan := askHTML(t, body, planAsk)
-			if !strings.Contains(plan, ` refused" id="`+planAsk+`">`) || !strings.Contains(plan, "<b>Refused · nothing written:</b> "+c.reason+".") {
+			plan := askHTML(t, body, web.PickDesign)
+			if !strings.Contains(plan, ` refused" id="`+web.PickDesign+`">`) || !strings.Contains(plan, "<b>Refused · nothing written:</b> "+c.reason+".") {
 				t.Errorf("the reason is not on the ask:\n%s", plan)
 			}
 			if !strings.Contains(plan, "Keep &lt;these&gt; words.</textarea>") {
