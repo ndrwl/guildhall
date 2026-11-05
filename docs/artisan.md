@@ -398,6 +398,9 @@ Refusing an already-decided attempt preserves its ownership record and containme
 
 With a positive `--stall-interval` (zero, the default, observes nothing), the launcher also sends the Director `worker-stalled` from its heartbeat when the worker has been silent past the interval ([heartbeat](#heartbeat)); `launch.Process` passes the engine's `stall_interval` when it is positive.
 
+`--lock-wait <duration>` is how long each of the launcher's Director store opens, taking ownership among them, waits on the store's lock; zero, the default, is the store's own two seconds, and a negative wait is a usage error.
+`launch.Process` passes its `LockWait`, the copy's [`lock_wait`](configuration.md#settings), when it is set, so the launcher tolerates store contention as long as every other caller does (d221).
+
 `--profile <name>` names the profile in the Director `--copy`; see [Artisan permissions](adapters.md#artisan-permissions) for grant resolution and runtime support.
 `--model <model>` and `--effort <effort>` are the profile's [runtime settings](adapters.md#runtime-settings), which the runtime runs the attempt on; `launch.Process` passes the profile's effective settings after [effort fallback resolution](configuration.md#settings), and a setting the runtime cannot honour is exit 1 before the attempt is owned.
 `--profile`, `--model` and `--effort` apply only to an owned attempt, including a workflow Artisan workspace; in the manual fake-only `artisan start --herdr-session` mode they are a usage error.
@@ -442,6 +445,9 @@ It is `launch.Resume`, whose [doc comments](../internal/launch/resume.go) own th
 
 A second resume finds the record released; a resume interrupted after `outcome.json` was written records the same outcome when run again, because its store write's mutation id comes from the attempt and the gone launcher's identity.
 It prints one JSON line, the owner it found (`none`, `released`, `live`, `unverified` or `exited`), the processes it swept, the outcome, the store outcome and the classification afterwards, and exits 0 when nothing was left to resume or the attempt was settled, otherwise 1.
+
+With no ownership record and a bound `pane-launch.json`, resume also recovers [a pane claim with no owner](#a-pane-claim-with-no-owner): `pane_claim` is then `abandoned`, and the next `task start` launches the attempt.
+`--abandon-pane-claim` is the operator's assertion that no launcher of that claim will appear; with an ownership record it is refused and nothing changes.
 
 The owner-gone rule is `reconcile.ProbeOwner`: the recorded launcher identity is probed, the record's containment translated and `artisan.Contained` asked for survivors; an owner is gone only when its launcher is gone and its recorded unit is proven empty.
 Take-over (`launch.ProbeOwner`), classification and the sweep all read it.
@@ -546,6 +552,22 @@ Before it creates the replacement, it closes the Herdr workspace the claim recor
 It warns on stderr and logs a [`pane-claim-recovered`](#events) event naming the recorded workspace and whether it closed.
 Only when Guildhall refused or failed to close it, saying why, or when a claim from before d91 records no workspace, so an earlier one with the same label may have been left behind by a lost create response, does the warning say to close it by hand; Guildhall never closes a workspace by its label alone.
 Any other claim is still refused: a launch without the task lock, an unparseable or empty claim, or an attempt with an ownership record.
+
+#### A pane claim with no owner
+
+The pane's bridge writes `pane-launcher.json` in the attempt directory as soon as it starts its launcher: that launcher's process identity, created exclusively and never rewritten (`launch.PaneLauncherFile`).
+A bound claim's command is typed once, so that is the only launcher the claim can ever have.
+`StartTimeout` (30 seconds) bounds only a pane launch's setup, up to typing; the launch then waits for ownership up to `lock_wait` plus 10 seconds from its caller's context, and fails at once, "the launcher exited before owning the attempt; see launcher.log", when the recorded launcher is gone with no ownership recorded.
+A failed launch's error names the attempt's real classification, read with a fresh context.
+
+`artisan status` gives an attempt with no ownership record and a bound claim the reason `pane claim held, no owner`, saying whether its launcher was proven gone, never recorded or is still live; its state stays `absent`.
+A launch holding the task lock that finds such a claim recovers it when, under the attempt lock, no ownership is recorded and `pane-launcher.json` names a launcher proven gone: no launcher of that claim can still own the attempt.
+It closes the claim's Herdr workspace with the checks above, best effort within 20 seconds, keeps the claim as `pane-launch.abandoned-<n>.json` and the launcher record as `pane-launcher.abandoned-<n>.json`, writes a fresh launching claim, launches, and warns and logs a `pane-claim-recovered` event as above.
+A claim with no launcher recorded, because the typed line never ran or an older release typed it, or with one live or unverified, is refused, naming `guildhall artisan resume <flags> --abandon-pane-claim`; a claim is never recovered on elapsed time or a missing pane alone.
+
+`artisan resume` takes the task lock with the copy's `lock_wait`, as `task start` does, and sets such a claim aside the same way, without launching: at once for a launcher proven gone, and otherwise only with `--abandon-pane-claim`, after closing the claim's workspace in the copy's Herdr session, with the copy's Herdr session confirming the workspace gone, and re-checking under the attempt lock that no ownership is recorded.
+A launcher that appears after that is still refused by ownership's single-owner rule, so the worst case is one refused launcher, never two workers.
+`director status` lists a `resume` needs_me item for an open task's unfinished attempt that is `absent`, has no `launched.json` and holds a bound claim older than the start budget, 30 seconds plus `lock_wait` plus 10 seconds, so a launch in progress is not listed; its command is that resume, with `--abandon-pane-claim` unless the launcher is proven gone, whatever the task's last `next.json` wait says.
 A claim holding a tab binding and no owner may have had its command typed; it still needs operator inspection of the preserved launch intent rather than an automatic retry of the same launch.
 
 The supervisor's **workspace close sweep** closes a finished attempt's Herdr workspace only after its result is recorded and its work is preserved, and only what Guildhall created (R1.54; [decision](decisions/artisan-herdr-workspaces.md)).

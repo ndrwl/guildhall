@@ -104,6 +104,8 @@ func (a *App) artisan(args []string) int {
 type attemptFlags struct {
 	store, state, repo, task, step, attempt string
 	copy                                    copyFlags
+	// lockWait is `artisan start --lock-wait`, the attempt's launch.Attempt.LockWait; zero is the store's default.
+	lockWait time.Duration
 }
 
 func (f *attemptFlags) register(fl *flag.FlagSet) {
@@ -133,7 +135,7 @@ func (f *attemptFlags) parse(a *App) (launch.Attempt, error) {
 		return launch.Attempt{}, fmt.Errorf("--attempt %q must be a positive attempt number", f.attempt)
 	}
 	state, err := filepath.Abs(f.state)
-	return launch.Attempt{Store: f.store, StateDir: state, Key: artisan.AttemptKey{Repository: f.repo, TaskID: f.task, Step: f.step, Attempt: n}}, err
+	return launch.Attempt{Store: f.store, StateDir: state, LockWait: f.lockWait, Key: artisan.AttemptKey{Repository: f.repo, TaskID: f.task, Step: f.step, Attempt: n}}, err
 }
 
 // artisanOwned runs `artisan stop`, `status` or `resume` and prints the
@@ -146,6 +148,10 @@ func (a *App) artisanOwned(cmd string, args []string) int {
 	var f attemptFlags
 	f.register(fl)
 	timeout := fl.Duration("timeout", defaultStopTimeout, "how long stop waits for the stop ladder")
+	var abandon bool
+	if cmd == "resume" {
+		fl.BoolVar(&abandon, strings.TrimPrefix(launch.AbandonPaneClaimFlag, "--"), false, "set aside a bound pane claim with no owner whose launcher is not proven gone, asserting none will appear")
+	}
 	if err := fl.Parse(args); err != nil {
 		return a.usageError("artisan " + cmd + ": " + err.Error())
 	}
@@ -170,7 +176,14 @@ func (a *App) artisanOwned(cmd string, args []string) int {
 	case "status":
 		out, err = launch.Status(ctx, at)
 	case "resume":
-		out, err = launch.Resume(ctx, at)
+		var rep launch.ResumeReport
+		rep, err = launch.Resume(ctx, at)
+		if err == nil && rep.Owner == launch.OwnerNone {
+			rep, err = a.resumePaneClaim(ctx, at, f.copy.dir, abandon, rep)
+		} else if err == nil && abandon {
+			err = fmt.Errorf("artisan resume: %s: %s has an ownership record (%s), which is never removed", launch.AbandonPaneClaimFlag, at.Key, rep.Owner)
+		}
+		out = rep
 	}
 	if !errors.Is(err, launch.ErrNotStopped) && err != nil && cmd != "resume" {
 		return a.fail(err)
@@ -249,6 +262,7 @@ func (a *App) artisanStart(args []string) int {
 	fl.StringVar(&paneOutput, strings.TrimPrefix(launch.PaneOutputFlag, "--"), workbench.OutputWorkbench, "internal pane bridge: the artisan_pane_output it shows, workbench or plain")
 	fl.BoolVar(&advance, "advance", false, "advance the task over the copy once the attempt is recorded")
 	fl.DurationVar(&stall, "stall-interval", 0, "send the Director worker-stalled when the worker is silent this long; zero observes nothing")
+	fl.DurationVar(&owned.lockWait, "lock-wait", 0, "how long each Director store open waits on the store's lock (lock_wait); zero is the store's default")
 	fl.StringVar(&profile, "profile", "", "profile declared by the Director copy")
 	fl.StringVar(&settings.Model, "model", "", "model the runtime runs the attempt on; empty is its default")
 	fl.StringVar(&settings.Effort, "effort", "", "effort the runtime runs the attempt at; empty is its default")
@@ -279,6 +293,8 @@ func (a *App) artisanStart(args []string) int {
 		return a.usageError("artisan start: --timeout must not be negative")
 	case stall < 0:
 		return a.usageError("artisan start: --stall-interval must not be negative")
+	case owned.lockWait < 0:
+		return a.usageError("artisan start: --lock-wait must not be negative")
 	case session == "":
 		if result != "" || workspace != "" || len(herdrExec) > 0 || label != "" || stopOnTimeout {
 			return a.usageError("artisan start: --result, --herdr-workspace, --herdr-exec, --tab-label and --stop-on-timeout need --herdr-session")
@@ -318,8 +334,8 @@ func (a *App) artisanStart(args []string) int {
 			return 0
 		}
 		return a.runOwned(at, adapterName, prompt, workdir, owned.copy.dir, profile, settings, timeout, stall, advanceArgv)
-	case paneLaunch || owned.store != "" || owned.state != "" || owned.repo != "" || owned.step != "" || owned.copy.dir != "" || advance || stall != 0 || profile != "" || settings != adapter.Settings{}:
-		return a.usageError("artisan start: --store, --state, --repo, --step, --copy, --advance, --stall-interval, --profile, --model and --effort do not apply in a Herdr tab")
+	case paneLaunch || owned.store != "" || owned.state != "" || owned.repo != "" || owned.step != "" || owned.copy.dir != "" || advance || stall != 0 || owned.lockWait != 0 || profile != "" || settings != adapter.Settings{}:
+		return a.usageError("artisan start: --store, --state, --repo, --step, --copy, --advance, --stall-interval, --lock-wait, --profile, --model and --effort do not apply in a Herdr tab")
 	case prompt == "" || result == "" || workdir == "":
 		return a.usageError("artisan start: --task, --attempt, --prompt, --result and --workdir are required")
 	case (session == "") != (workspace == ""):

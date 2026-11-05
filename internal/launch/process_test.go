@@ -224,6 +224,30 @@ func TestProcessPassesTheEnginesStallInterval(t *testing.T) {
 	}
 }
 
+// TestProcessPassesItsLockWait: a Process given a lock wait passes it as --lock-wait, so the launcher's store
+// opens, its ownership write among them, wait on the store's lock as long as every other caller (d221).
+func TestProcessPassesItsLockWait(t *testing.T) {
+	p := newProcess(t)
+	p.LockWait = 30 * time.Second
+	argv := filepath.Join(t.TempDir(), "argv.json")
+	p.Env = []string{argvEnv + "=" + argv}
+	spec := prepared(t, p, fixtureSpec(t, ""))
+	if _, err := p.Launch(context.Background(), spec); err == nil {
+		t.Fatal("Launch of a refusing launcher succeeded")
+	}
+	b, err := os.ReadFile(argv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if i := slices.Index(got, "--lock-wait"); i < 0 || i+1 >= len(got) || got[i+1] != "30s" {
+		t.Errorf("argv = %q, want --lock-wait 30s", got)
+	}
+}
+
 func TestProcessRefusesASpecOutsideItsAttemptLayout(t *testing.T) {
 	p := newProcess(t)
 	good := prepared(t, p, fixtureSpec(t, ""))

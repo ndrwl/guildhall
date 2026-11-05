@@ -100,7 +100,11 @@ func FinishLine(closeAfter time.Duration) string {
 // permission to launch this attempt again. A launching claim, written before
 // the binding, proves nothing was typed: a caller holding the task lock
 // (Process.TaskLocked) that finds one with no owner recovers it and launches
-// again. ReadPaneClaim is its only reader.
+// again. Such a caller also recovers a bound claim with no owner whose one
+// launcher, as its bridge recorded it in PaneLauncherFile, is proven gone,
+// first setting the claim aside as pane-launch.abandoned-<n>.json; `artisan
+// resume` sets aside one with no owner (AbandonPaneClaim). ReadPaneClaim is its
+// only reader.
 const PaneClaimFile = "pane-launch.json"
 
 // Launching is a launching claim: the Herdr workspace a launch created and the
@@ -298,24 +302,49 @@ func (pr *Presentation) closeAbandoned(ctx context.Context, at Attempt, stale La
 	return true, ""
 }
 
-func (p *Process) launchPane(ctx context.Context, at Attempt, cmd *exec.Cmd, presentation *Presentation) (interp.Handle, error) {
+// launchPane launches at in presentation's terminal: ctx bounds the terminal's setup, up to typing the command, and
+// the wait for ownership after it is ownershipWait from caller. Each failure's classification is read with a
+// fresh context (classifyFresh), so it names the attempt's real state.
+func (p *Process) launchPane(ctx, caller context.Context, at Attempt, cmd *exec.Cmd, presentation *Presentation) (interp.Handle, error) {
 	if presentation.Host == nil || presentation.Report == nil {
 		return interp.Handle{}, errors.New("launch: incomplete pane presentation")
 	}
 	// Reconcile durable ownership before opening any terminal. In particular a
 	// live or unverified owner can never be replaced because its pane disappeared.
 	if owner, err := at.owner(); err != nil || owner != nil {
-		classification, statusErr := Status(ctx, at)
+		classification, statusErr := classifyFresh(ctx, at)
 		return interp.Handle{}, fmt.Errorf("launch: %s already owned (%+v): %w", at.Key, classification, errors.Join(err, statusErr, errors.New("reconcile with artisan status/resume before retrying")))
 	}
 	claimPath := filepath.Join(at.Dir(), PaneClaimFile)
 	claim, err := os.OpenFile(claimPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	var stale Launching
 	recoverable := false
+	var bound *adapter.TabRef
 	if errors.Is(err, fs.ErrExist) && p.TaskLocked {
 		stale, recoverable = staleLaunchingClaim(claimPath)
+		if !recoverable {
+			bound = boundPaneClaim(at)
+		}
+	}
+	var unrecovered error
+	if bound != nil {
+		// A bound claim had its command typed once, so it has at most the one launcher its bridge recorded. Under
+		// the task lock and the attempt lock, with no owner recorded and that launcher proven gone, no launcher of
+		// the claim can still own the attempt, so it is recovered and launched again (d221). Any other bound claim
+		// is refused, naming the command that recovers it.
+		ok, why, rerr := p.recoverBound(ctx, at, presentation, *bound)
+		switch {
+		case rerr != nil:
+			return interp.Handle{}, fmt.Errorf("launch: recover bound pane claim of %s: %w", at.Key, rerr)
+		case ok:
+			recoverable, err = true, nil
+		default:
+			unrecovered = errUnrecoveredClaim(at, why)
+		}
 	}
 	switch {
+	case bound != nil && recoverable:
+		// recoverBound wrote a fresh launching claim in place of the bound one.
 	case err == nil:
 		if _, err := claim.WriteString(launchingClaim); err != nil {
 			_ = claim.Close()
@@ -339,8 +368,8 @@ func (p *Process) launchPane(ctx context.Context, at Attempt, cmd *exec.Cmd, pre
 		}
 		presentation.recovered(at, stale.Workspace, closed, reason)
 	default:
-		classification, statusErr := Status(ctx, at)
-		return interp.Handle{}, fmt.Errorf("launch: pane launch already claimed or unavailable (%+v): %w", classification, errors.Join(err, statusErr))
+		classification, statusErr := classifyFresh(ctx, at)
+		return interp.Handle{}, fmt.Errorf("launch: pane launch already claimed or unavailable (%+v): %w", classification, errors.Join(err, unrecovered, statusErr))
 	}
 	label := TabLabel(at.Key)
 	// The launching claim records each workspace and tab as it is created, so a
@@ -391,17 +420,17 @@ func (p *Process) launchPane(ctx context.Context, at Attempt, cmd *exec.Cmd, pre
 		presentation.log(at, report)
 		// Type may have succeeded despite losing its response. Reconcile files and
 		// ownership for diagnosis, but never send a second command or stop a worker.
-		classification, statusErr := Status(ctx, at)
+		classification, statusErr := classifyFresh(ctx, at)
 		return interp.Handle{}, fmt.Errorf("launch: pane command uncertain (%+v): %w", classification, errors.Join(err, statusErr))
 	}
 	c := &child{at: at, pane: true, exited: make(chan struct{})}
-	if err := p.owned(ctx, c); err != nil {
+	if err := p.owned(caller, c, p.ownershipWait()); err != nil {
 		report.ReadBackErr = errLaunchUnsettled
 		presentation.log(at, report)
-		classification, statusErr := Status(ctx, at)
+		classification, statusErr := classifyFresh(ctx, at)
 		return interp.Handle{}, fmt.Errorf("launch: pane ownership uncertain (%+v): %w", classification, errors.Join(err, statusErr))
 	}
-	presentation.settle(ctx, c.exited, agent, &report)
+	presentation.settle(caller, c.exited, agent, &report)
 	presentation.log(at, report)
 	h := interp.Handle{Identity: at.Identity(), Ref: fmt.Sprintf("%s pid %d", at.Key, c.identity.PID)}
 	p.mu.Lock()
