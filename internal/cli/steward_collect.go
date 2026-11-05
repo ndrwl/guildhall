@@ -410,8 +410,8 @@ func lockBusyMessage(be *steward.BusyError) store.Message {
 	if !be.Owner.At.IsZero() {
 		since = be.Owner.At.UTC().Format(time.RFC3339)
 	}
-	text := fmt.Sprintf("Scheduled collection found %s held %d rounds in a row: held by %s since %s. Tell the Guildmaster; "+
-		"if its owner has stopped, they remove the lock by hand once they have confirmed it.", be.Path, lockBusyRounds, be.Owner, since)
+	text := fmt.Sprintf("Scheduled collection found %s held %d rounds in a row: held by %s since %s. "+
+		"Its owner is still running; tell the Guildmaster, who stops it if it is stuck.", be.Path, lockBusyRounds, be.Owner, since)
 	return store.Message{ID: "lock-busy." + digest.Of(record).Hex()[:16],
 		Recipient: store.RecipientSteward, Repository: stewardRepository, TaskID: stewardRolloutsTask, Type: store.MessageLockBusy,
 		Text: truncateUTF8(text, store.MaxMessageTextBytes), Sender: store.SenderDirector}

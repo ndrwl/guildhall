@@ -427,10 +427,7 @@ func TestCollectOfflineMachine(t *testing.T) {
 func TestCollectBusyLock(t *testing.T) {
 	fx := newCollectFixture(t)
 	fx.tools.lesson("l-one", "One")
-	lock := filepath.Join(fx.checkout, ".rollout.lock")
-	if err := os.WriteFile(lock, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	holdLock(t, fx.checkout)
 	head := fx.head()
 	c, f := fx.collector()
 	if _, err := c.Collect(context.Background(), nil, nil); !errors.Is(err, steward.ErrBusy) {
@@ -447,8 +444,8 @@ func TestCollectBusyLock(t *testing.T) {
 			t.Errorf("a busy round ran %q", call)
 		}
 	}
-	if _, err := os.Stat(lock); err != nil {
-		t.Errorf("the held lock was removed: %v", err)
+	if !lockHeld(t, fx.checkout) {
+		t.Error("the held lock was released")
 	}
 }
 

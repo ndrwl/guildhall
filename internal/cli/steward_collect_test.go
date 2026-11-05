@@ -11,7 +11,9 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/session"
@@ -229,13 +231,27 @@ func TestStewardCollect(t *testing.T) {
 	}
 }
 
+// holdPrivateLock holds the private config's lock in dir with owner's record, as a live Steward command would, until
+// the returned release or the end of the test, whichever comes first.
+func holdPrivateLock(t *testing.T, dir string, owner steward.LockOwner) (release func()) {
+	t.Helper()
+	free, err := steward.TakePrivateLock(dir, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var once sync.Once
+	release = func() { once.Do(free) }
+	t.Cleanup(release)
+	return release
+}
+
 // TestStewardCollectBusy: a held .rollout.lock makes steward collect exit 1 saying busy, changing nothing.
 func TestStewardCollectBusy(t *testing.T) {
 	cs := newCollectSetup(t)
 	if code, _, stderr := queueCmd(t, cliLesson, "lesson", "propose", "-", "--copy", cs.director); code != 0 {
 		t.Fatal(stderr)
 	}
-	writeFile(t, filepath.Join(cs.private, ".rollout.lock"), "")
+	holdPrivateLock(t, cs.private, steward.LockOwner{})
 	head := collectGit(t, cs.private, "rev-parse", "HEAD")
 	if code, _, stderr := cs.collect(t); code != 1 || !strings.Contains(stderr, "busy") {
 		t.Errorf("collect: exit %d, %s; want busy", code, stderr)
@@ -337,18 +353,16 @@ func TestScheduledCollectLockBusy(t *testing.T) {
 		}
 		return busy
 	}
-	lock := filepath.Join(cs.private, ".rollout.lock")
-	const owner = `{"pid":4242,"token":"boot:1","command":"guildhall steward takeover --apply","at":"2026-11-04T10:00:00Z"}`
+	owner := steward.LockOwner{PID: 4242, Token: "boot:1", Command: "guildhall steward takeover --apply",
+		At: time.Date(2026, 11, 4, 10, 0, 0, 0, time.UTC)}
 
 	round := schedule()
-	writeFile(t, lock, owner)
+	release := holdPrivateLock(t, cs.private, owner)
 	round()
 	round()
-	if err := os.Remove(lock); err != nil {
-		t.Fatal(err)
-	}
+	release()
 	round()
-	writeFile(t, lock, owner)
+	holdPrivateLock(t, cs.private, owner)
 	round()
 	if ms := lockBusy(); len(ms) != 0 {
 		t.Fatalf("two busy rounds, a clean one and a busy one sent %+v", ms)

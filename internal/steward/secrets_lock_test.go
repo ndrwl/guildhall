@@ -10,7 +10,8 @@ import (
 )
 
 // TestSecretsLockIsPrivateLock: a secrets set or apply takes .rollout.lock through privateLock, so the lock holds this
-// process's owner record, a second taker is refused with a busy error naming that owner, and release removes it.
+// process's owner record, a second taker is refused with a busy error naming that owner, and release frees it,
+// leaving the file.
 func TestSecretsLockIsPrivateLock(t *testing.T) {
 	dir := t.TempDir()
 	s := &Secrets{Private: git.WorkTree{Dir: dir}, Now: func() time.Time { return lockTime }}
@@ -28,7 +29,10 @@ func TestSecretsLockIsPrivateLock(t *testing.T) {
 		t.Fatal("a rollout took the lock a secrets set holds")
 	}
 	release()
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("lock after release: %v", err)
+	if dirLockHeld(t, dir) {
+		t.Fatal("lock held after release")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("release removed the lock file: %v", err)
 	}
 }

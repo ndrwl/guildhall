@@ -200,7 +200,7 @@ func TestScheduledStewardMessages(t *testing.T) {
 		t.Errorf("a short outage was reported: %d messages", n)
 	}
 	// A run whose round finds the lock busy still sends its reports.
-	writeFile(t, filepath.Join(cs.private, ".rollout.lock"), "")
+	holdPrivateLock(t, cs.private, steward.LockOwner{})
 	writeRolloutReceipt(t, cs.steward, "d", steward.StatusFailed, now)
 	w.round()
 	if n := len(directorExternal(t, cs.director)); n != len(ms)+1 {
