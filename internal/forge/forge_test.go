@@ -1,6 +1,8 @@
 package forge_test
 
 import (
+	"archive/zip"
+	"bytes"
 	"cmp"
 	"context"
 	"crypto/sha1"
@@ -8,7 +10,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -127,6 +131,7 @@ func newGitHub(t *testing.T) *gh {
 			}
 			return "", ""
 		},
+		SetTestRun: func(t *testing.T, head string, run forgetest.RunFixture) { g.setTestRun(t, head, run) },
 		Edits: func(t *testing.T) int {
 			n := 0
 			for _, c := range g.readState(t).Calls {
@@ -673,6 +678,11 @@ type ghState struct {
 	HangLogs  bool              `json:"hang_logs,omitempty"`
 	// RerunStatus is an HTTP error every job rerun answers with.
 	RerunStatus int `json:"rerun_status,omitempty"`
+	// Runs are each head's workflow runs, newest first; ArtifactStatus is an HTTP error an artifact's download answers
+	// with, by artifact id, and HangArtifacts makes every artifact download hang.
+	Runs           map[string][]ghRun `json:"runs,omitempty"`
+	ArtifactStatus map[string]int     `json:"artifact_status,omitempty"`
+	HangArtifacts  bool               `json:"hang_artifacts,omitempty"`
 	// Unlinked are each head's contexts GitHub links to no pull request, as a workflow_dispatch run's: the commit's
 	// rollup reports them, a pull request's does not.
 	Unlinked map[string][]map[string]any `json:"unlinked,omitempty"`
@@ -685,6 +695,24 @@ type ghState struct {
 	ReopenRefuse     string           `json:"reopen_refuse,omitempty"`
 	Mergeable        string           `json:"mergeable"`
 	MergeStateStatus string           `json:"merge_state_status"`
+}
+
+// ghRun is one GitHub Actions workflow run of a head, with its artifacts.
+type ghRun struct {
+	ID         int64           `json:"id"`
+	Event      string          `json:"event"`
+	Status     string          `json:"status"`
+	Conclusion string          `json:"conclusion"`
+	Artifacts  []ghRunArtifact `json:"artifacts"`
+}
+
+// ghRunArtifact is one artifact of a run: its zip, and the size GitHub reports for it, the zip's length when zero.
+type ghRunArtifact struct {
+	ID      int64  `json:"id"`
+	Name    string `json:"name"`
+	Expired bool   `json:"expired"`
+	Size    int64  `json:"size,omitempty"`
+	Zip     []byte `json:"zip"`
 }
 
 type ghPR struct {
@@ -764,6 +792,8 @@ func runGH(s *ghState, bare string, args []string) int {
 		return jobLogs(s, args[1], rest)
 	case "api jobs-rerun":
 		return jobRerun(s, args[1], rest)
+	case "api runs", "api run-artifacts", "api artifact-zip":
+		return actionsRuns(s, cmd, args[1], rest)
 	}
 	flags := map[string]string{}
 	var positional []string
@@ -1115,4 +1145,130 @@ func graphQL(s *ghState, bare string, args []string) int {
 	}
 	fmt.Println(string(data))
 	return 0
+}
+
+// actionsRuns answers the REST reads TestResults makes, as GitHub and gh answer them: gh api
+// repos/<owner>/<repo>/actions/runs?head_sha=<head>&event=push&status=completed&per_page=<n> with the head's
+// matching runs, .../actions/runs/<id>/artifacts?per_page=100 with a run's artifacts, and
+// .../actions/artifacts/<id>/zip with an artifact's zip bytes once gh has followed GitHub's redirect. An unknown run
+// or artifact is gh's message for an HTTP 404, exit 1, and gh signed out exits 4. It refuses any other query.
+func actionsRuns(s *ghState, cmd, endpoint string, args []string) int {
+	fail := func(code int, format string, a ...any) int {
+		fmt.Fprintf(os.Stderr, format+"\n", a...)
+		return code
+	}
+	var m []string
+	switch cmd {
+	case "api runs":
+		m = runsEndpoint.FindStringSubmatch(endpoint)
+	case "api run-artifacts":
+		m = runArtifactsEndpoint.FindStringSubmatch(endpoint)
+	default:
+		m = artifactZipEndpoint.FindStringSubmatch(endpoint)
+	}
+	switch {
+	case !slices.Equal(args, []string{"--hostname", "github.com"}):
+		return fail(2, "fake gh: api %s %q", endpoint, args)
+	case s.SignedOut:
+		return fail(4, "To get started with GitHub CLI, please run:  gh auth login")
+	case s.Offline:
+		return fail(1, "error connecting to api.github.com")
+	case m[1] != "acme" || m[2] != "widgets":
+		return fail(1, "gh: Not Found (HTTP 404)")
+	}
+	out := func(v any) int {
+		data, err := json.Marshal(v)
+		if err != nil {
+			return fail(1, "fake gh: %v", err)
+		}
+		fmt.Println(string(data))
+		return 0
+	}
+	switch cmd {
+	case "api runs":
+		q, err := url.ParseQuery(m[3])
+		if err != nil || len(q) != 4 || q.Get("event") != "push" || q.Get("status") != "completed" || q.Get("per_page") == "" || len(q.Get("head_sha")) != 40 {
+			return fail(2, "fake gh: api %s: unexpected query", endpoint)
+		}
+		head := q.Get("head_sha")
+		list := []map[string]any{}
+		for _, r := range s.Runs[head] {
+			if r.Event == "push" && r.Status == "completed" {
+				list = append(list, map[string]any{"id": r.ID, "html_url": fmt.Sprintf("https://github.com/acme/widgets/actions/runs/%d", r.ID),
+					"head_sha": head, "event": r.Event, "status": r.Status, "conclusion": r.Conclusion})
+			}
+		}
+		return out(map[string]any{"total_count": len(list), "workflow_runs": list})
+	case "api run-artifacts":
+		for _, runs := range s.Runs {
+			for _, r := range runs {
+				if strconv.FormatInt(r.ID, 10) != m[3] {
+					continue
+				}
+				list := []map[string]any{}
+				for _, a := range r.Artifacts {
+					list = append(list, map[string]any{"id": a.ID, "name": a.Name, "size_in_bytes": cmp.Or(a.Size, int64(len(a.Zip))), "expired": a.Expired})
+				}
+				return out(map[string]any{"total_count": len(list), "artifacts": list})
+			}
+		}
+		return fail(1, "gh: Not Found (HTTP 404)")
+	}
+	if s.HangArtifacts {
+		time.Sleep(time.Minute) // timing:allow hung forge subprocess; caller timeout kills and reaps it.
+		return fail(1, "fake gh: hung artifact download was not killed")
+	}
+	if code := s.ArtifactStatus[m[3]]; code != 0 {
+		return fail(1, "gh: %s (HTTP %d)", map[int]string{403: "Forbidden", 404: "Not Found", 410: "Gone"}[code], code)
+	}
+	for _, runs := range s.Runs {
+		for _, r := range runs {
+			for _, a := range r.Artifacts {
+				if strconv.FormatInt(a.ID, 10) == m[3] {
+					if a.Expired {
+						return fail(1, "gh: Gone (HTTP 410)")
+					}
+					_, _ = os.Stdout.Write(a.Zip)
+					return 0
+				}
+			}
+		}
+	}
+	return fail(1, "gh: Not Found (HTTP 404)")
+}
+
+// zipFiles returns a zip holding files, as upload-artifact stores an artifact.
+func zipFiles(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	for _, name := range slices.Sorted(maps.Keys(files)) {
+		f, err := w.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.WriteString(f, files[name]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// setTestRun makes run the completed push run of head the stand-in reports, its artifacts zipped, with ids run.ID*100+1
+// onwards in order.
+func (g *gh) setTestRun(t *testing.T, head string, run forgetest.RunFixture) {
+	t.Helper()
+	r := ghRun{ID: run.ID, Event: "push", Status: "completed", Conclusion: run.Conclusion}
+	for i, a := range run.Artifacts {
+		r.Artifacts = append(r.Artifacts, ghRunArtifact{ID: run.ID*100 + int64(i) + 1, Name: a.Name, Expired: a.Expired, Zip: zipFiles(t, a.Files)})
+	}
+	s := g.readState(t)
+	if s.Runs == nil {
+		s.Runs = map[string][]ghRun{}
+	}
+	s.Runs[head] = []ghRun{r}
+	g.writeState(t, s)
 }

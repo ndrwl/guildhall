@@ -1,0 +1,35 @@
+{"Time":"2026-11-04T14:38:15.297677729Z","Action":"start","Package":"probe/ok"}
+{"Time":"2026-11-04T14:38:15.301358765Z","Action":"run","Package":"probe/ok","Test":"TestParent"}
+{"Time":"2026-11-04T14:38:15.301438833Z","Action":"output","Package":"probe/ok","Test":"TestParent","Output":"=== RUN   TestParent\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:15.301476513Z","Action":"run","Package":"probe/ok","Test":"TestParent/pass"}
+{"Time":"2026-11-04T14:38:15.301481873Z","Action":"output","Package":"probe/ok","Test":"TestParent/pass","Output":"=== RUN   TestParent/pass\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:15.301494346Z","Action":"output","Package":"probe/ok","Test":"TestParent/pass","Output":"    ok_test.go:6: passing sibling noise\n"}
+{"Time":"2026-11-04T14:38:15.301506248Z","Action":"output","Package":"probe/ok","Test":"TestParent/pass","Output":"--- PASS: TestParent/pass (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:15.301511017Z","Action":"pass","Package":"probe/ok","Test":"TestParent/pass","Elapsed":0}
+{"Time":"2026-11-04T14:38:15.301518491Z","Action":"run","Package":"probe/ok","Test":"TestParent/fail"}
+{"Time":"2026-11-04T14:38:15.301521867Z","Action":"output","Package":"probe/ok","Test":"TestParent/fail","Output":"=== RUN   TestParent/fail\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:15.301525364Z","Action":"output","Package":"probe/ok","Test":"TestParent/fail","Output":"    ok_test.go:7: failing detail\n"}
+{"Time":"2026-11-04T14:38:15.301529131Z","Action":"output","Package":"probe/ok","Test":"TestParent/fail","Output":"    ok_test.go:7: boom\n","OutputType":"error"}
+{"Time":"2026-11-04T14:38:15.301533839Z","Action":"output","Package":"probe/ok","Test":"TestParent/fail","Output":"--- FAIL: TestParent/fail (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:15.301537756Z","Action":"fail","Package":"probe/ok","Test":"TestParent/fail","Elapsed":0}
+{"Time":"2026-11-04T14:38:15.301543347Z","Action":"run","Package":"probe/ok","Test":"TestParent/pass2"}
+{"Time":"2026-11-04T14:38:15.30155037Z","Action":"output","Package":"probe/ok","Test":"TestParent/pass2","Output":"=== RUN   TestParent/pass2\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:15.301554998Z","Action":"output","Package":"probe/ok","Test":"TestParent/pass2","Output":"    ok_test.go:8: second sibling noise\n"}
+{"Time":"2026-11-04T14:38:15.301559657Z","Action":"output","Package":"probe/ok","Test":"TestParent/pass2","Output":"--- PASS: TestParent/pass2 (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:15.301563414Z","Action":"pass","Package":"probe/ok","Test":"TestParent/pass2","Elapsed":0}
+{"Time":"2026-11-04T14:38:15.301567612Z","Action":"output","Package":"probe/ok","Test":"TestParent","Output":"--- FAIL: TestParent (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:15.301571469Z","Action":"fail","Package":"probe/ok","Test":"TestParent","Elapsed":0}
+{"Time":"2026-11-04T14:38:15.301574995Z","Action":"run","Package":"probe/ok","Test":"TestQuiet"}
+{"Time":"2026-11-04T14:38:15.301580105Z","Action":"output","Package":"probe/ok","Test":"TestQuiet","Output":"=== RUN   TestQuiet\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:15.301583571Z","Action":"output","Package":"probe/ok","Test":"TestQuiet","Output":"    ok_test.go:11: quiet passing noise\n"}
+{"Time":"2026-11-04T14:38:15.301587589Z","Action":"output","Package":"probe/ok","Test":"TestQuiet","Output":"--- PASS: TestQuiet (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:15.301590955Z","Action":"pass","Package":"probe/ok","Test":"TestQuiet","Elapsed":0}
+{"Time":"2026-11-04T14:38:15.301594311Z","Action":"run","Package":"probe/ok","Test":"TestLogged"}
+{"Time":"2026-11-04T14:38:15.301597176Z","Action":"output","Package":"probe/ok","Test":"TestLogged","Output":"=== RUN   TestLogged\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:15.301605111Z","Action":"output","Package":"probe/ok","Test":"TestLogged","Output":"    ok_test.go:14: context before failure\n"}
+{"Time":"2026-11-04T14:38:15.301608688Z","Action":"output","Package":"probe/ok","Test":"TestLogged","Output":"    ok_test.go:15: want 1, got 2\n","OutputType":"error"}
+{"Time":"2026-11-04T14:38:15.30162048Z","Action":"output","Package":"probe/ok","Test":"TestLogged","Output":"--- FAIL: TestLogged (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:15.301625739Z","Action":"fail","Package":"probe/ok","Test":"TestLogged","Elapsed":0}
+{"Time":"2026-11-04T14:38:15.301633734Z","Action":"output","Package":"probe/ok","Output":"FAIL\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:15.306278811Z","Action":"output","Package":"probe/ok","Output":"FAIL\tprobe/ok\t0.008s\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:15.30632163Z","Action":"fail","Package":"probe/ok","Elapsed":0.009}

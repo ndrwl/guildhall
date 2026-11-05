@@ -49,6 +49,11 @@ type Fake struct {
 	// publishes, merges, closes, logReads and views count calls, and edits the publishes that changed an open pull
 	// request's text.
 	publishes, merges, closes, logReads, views, edits int
+	// testRuns are the completed push runs each remote reports for a head, nil until SetTestRun configures the
+	// reader; testErr is what SetTestResultsError makes every read fail with, and testReads counts the reads.
+	testRuns  map[string]map[string]RunFixture
+	testErr   error
+	testReads int
 }
 
 // text is a pull request's title and body.
@@ -514,11 +519,12 @@ func NewFakeHarness(t *testing.T) Harness {
 	const remote = "https://github.com/acme/widgets.git"
 	h := Harness{Forge: f, Repository: "/repo", Remote: remote, Base: "main",
 		BaseHead: repeat('a'), Heads: [3]string{repeat('b'), repeat('c'), repeat('d')},
-		Branch:    func(_ *testing.T, name string) string { return f.Branch(remote, name) },
-		Refuse:    func(_ *testing.T, reason string) { f.Refuse(reason) },
-		SetChecks: func(_ *testing.T, head string, checks []forge.Check) { f.SetChecks(remote, head, checks...) },
-		Text:      func(_ *testing.T, number int) (string, string) { return f.Text(remote, number) },
-		Edits:     func(_ *testing.T) int { return f.Edits() },
+		Branch:     func(_ *testing.T, name string) string { return f.Branch(remote, name) },
+		Refuse:     func(_ *testing.T, reason string) { f.Refuse(reason) },
+		SetChecks:  func(_ *testing.T, head string, checks []forge.Check) { f.SetChecks(remote, head, checks...) },
+		Text:       func(_ *testing.T, number int) (string, string) { return f.Text(remote, number) },
+		Edits:      func(_ *testing.T) int { return f.Edits() },
+		SetTestRun: func(_ *testing.T, head string, run RunFixture) { f.SetTestRun(remote, head, run) },
 	}
 	f.SetBranch(h.Remote, h.Base, h.BaseHead)
 	for _, c := range append([]string{h.BaseHead}, h.Heads[:]...) {

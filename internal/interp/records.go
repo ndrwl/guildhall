@@ -158,3 +158,12 @@ type CheckLogReader interface {
 }
 
 var _ CheckLogReader = forge.GitHub{}
+
+// TestResultsReader reads what a commit's completed push CI run recorded of its test suite, from its test-timings-*
+// artifacts (docs/decisions/ci-test-timings.md); it is optional on the forge. A head with no completed push run is
+// forge.ErrNoTestRun. forge.GitHub and forgetest.Fake implement it; a forge without it gives no test results.
+type TestResultsReader interface {
+	TestResults(ctx context.Context, c forge.Commit) (forge.TestResults, error)
+}
+
+var _ TestResultsReader = forge.GitHub{}

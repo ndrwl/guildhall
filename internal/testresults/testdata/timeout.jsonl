@@ -1,0 +1,13 @@
+{"Time":"2026-11-04T14:38:15.82467388Z","Action":"start","Package":"probe/hang"}
+{"Time":"2026-11-04T14:38:15.828875463Z","Action":"run","Package":"probe/hang","Test":"TestHang"}
+{"Time":"2026-11-04T14:38:15.829044275Z","Action":"output","Package":"probe/hang","Test":"TestHang","Output":"=== RUN   TestHang\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:15.829091011Z","Action":"output","Package":"probe/hang","Test":"TestHang","Output":"    hang_test.go:5: before hang\n"}
+{"Time":"2026-11-04T14:38:16.832257488Z","Action":"output","Package":"probe/hang","Test":"TestHang","Output":"panic: test timed out after 1s\n"}
+{"Time":"2026-11-04T14:38:16.832303182Z","Action":"output","Package":"probe/hang","Test":"TestHang","Output":"\trunning tests:\n"}
+{"Time":"2026-11-04T14:38:16.832309794Z","Action":"output","Package":"probe/hang","Test":"TestHang","Output":"\t\tTestHang (1s)\n"}
+{"Time":"2026-11-04T14:38:16.832313451Z","Action":"output","Package":"probe/hang","Test":"TestHang","Output":"\n"}
+{"Time":"2026-11-04T14:38:16.832317078Z","Action":"output","Package":"probe/hang","Test":"TestHang","Output":"goroutine 33 [running]:\n"}
+{"Time":"2026-11-04T14:38:16.832414929Z","Action":"output","Package":"probe/hang","Test":"TestHang","Output":"goroutine 3 [select (no cases)]:\n"}
+{"Time":"2026-11-04T14:38:16.832418726Z","Action":"output","Package":"probe/hang","Test":"TestHang","Output":"probe/hang.TestHang(0x60b5649e248?)\n"}
+{"Time":"2026-11-04T14:38:16.833110385Z","Action":"output","Package":"probe/hang","Output":"FAIL\tprobe/hang\t1.008s\n","OutputType":"frame"}
+{"Time":"2026-11-04T14:38:16.833139509Z","Action":"fail","Package":"probe/hang","Elapsed":1.008}

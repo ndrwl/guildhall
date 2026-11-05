@@ -47,6 +47,9 @@ type Harness struct {
 	// Edits returns how many times the forge was asked to edit an open pull request's title or body; nil skips
 	// counting them.
 	Edits func(t *testing.T) int
+	// SetTestRun makes run the completed push run the forge reports for head, its artifacts holding the files given;
+	// nil skips the test results cases.
+	SetTestRun func(t *testing.T, head string, run RunFixture)
 }
 
 // RunForgeContract runs the forge contract against fresh harnesses from newHarness.
@@ -622,4 +625,6 @@ func RunForgeContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 			t.Errorf("after a refusal the pull request is %+v, want open", again)
 		}
 	})
+
+	runTestResultsContract(t, newHarness)
 }
