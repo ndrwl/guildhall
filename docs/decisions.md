@@ -310,6 +310,7 @@ Regenerate it with `go test ./internal/doccheck -run TestDecisionIndex -update`,
 - [Machine setup runs on one Go engine of declarative step files, ported from Firstmate's wizard and doctor scripts](decisions/setup-engine-from-firstmate.md)
 - [Steward collection adds three fixed commands and marks items through an scp receipt](decisions/steward-collection-commands.md)
 - [The Steward runs only a fixed allow-list of Guildhall commands over ssh](decisions/steward-fixed-remote-commands.md)
+- [Retiring a machine rotates every value it could read, tracked in a record open until each is rotated](decisions/steward-machine-retire.md)
 - [The Steward reads each enrolled Director's status to report a stuck, unhealthy or out-of-date Director](decisions/steward-reads-director-status.md)
 - [Steward rollouts copy files with scp and run no remote command](decisions/steward-rollouts-copy-with-scp.md)
 - [The Steward pushes each machine's secrets ciphertext by an approved plan, and adds a read-only secrets check](decisions/steward-secrets-push.md)

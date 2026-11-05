@@ -4,6 +4,7 @@ date: 2026-11-04
 topic: steward
 tasks: d130
 amends: steward-fixed-remote-commands.md, secrets-sops-age.md
+amended-by: steward-machine-retire.md
 ---
 
 # The Steward pushes each machine's secrets ciphertext by an approved plan, and adds a read-only secrets check
@@ -34,4 +35,4 @@ The Steward needs to confirm a pushed file decrypts on the machine, which the ex
 A machine whose `guildhall` predates `secrets check` is refused by the plan until it is upgraded.
 The machine's `~/.config/guildhall` must exist before a push, as `scp` creates no directory; `guildhall secrets init` creates it with the key the push needs anyway.
 Secrets are pushed to Linux and macOS machines only until acceptance passes on Windows (R1.27).
-A lost machine keeps its old ciphertext and key, so revoking it means rotating every value it could read, the later retire command.
+A lost machine keeps its old ciphertext and key, so revoking it means rotating every value it could read, which [`steward machine retire`](steward-machine-retire.md) plans and tracks.

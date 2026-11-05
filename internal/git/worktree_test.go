@@ -83,6 +83,35 @@ func TestWorkTreeCommitFiles(t *testing.T) {
 	}
 }
 
+// TestWorkTreeCommitChanges: a commit can remove files too, from HEAD and the work tree, keeping other local edits; a
+// file HEAD lacks is no change, and a path both set and removed is refused.
+func TestWorkTreeCommitChanges(t *testing.T) {
+	ctx := context.Background()
+	global := isolate(t)
+	co, _ := privateCheckout(t, global)
+	w := git.WorkTree{Dir: co.dir}
+	write(t, co.dir, "roster.toml", "roster\nunstaged edit\n")
+	commit, err := w.CommitChanges(ctx, map[string][]byte{"retired/a.json": []byte("{}\n")}, []string{"managed.toml", "absent.toml"}, "Retire", sig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := co.run("show", "--name-status", "--format=", commit); got != "D\tmanaged.toml\nA\tretired/a.json" {
+		t.Errorf("commit changed %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(co.dir, "managed.toml")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("managed.toml in the work tree: %v", err)
+	}
+	if got := co.run("diff", "--name-only"); got != "roster.toml" {
+		t.Errorf("unstaged %q, want the roster.toml edit kept", got)
+	}
+	if again, err := w.CommitChanges(ctx, nil, []string{"managed.toml"}, "Retire", sig); err != nil || again != commit {
+		t.Errorf("removing a removed file = %s, %v; want HEAD %s", again, err, commit)
+	}
+	if _, err := w.CommitChanges(ctx, map[string][]byte{"x": []byte("x")}, []string{"x"}, "both", sig); err == nil {
+		t.Error("setting and removing one path succeeded")
+	}
+}
+
 // TestWorkTreePublish: Publish pushes what the remote lacks, pushes nothing when it is up to date, and replays the
 // local commits onto a remote that moved ahead, keeping local edits.
 func TestWorkTreePublish(t *testing.T) {

@@ -102,6 +102,12 @@ func validFile(name string) bool {
 // The checkout's branch, index and work tree then move to the commit, writing only these files; every other local
 // change, staged or not, is kept. A named file with a local change of its own fails the commit and moves nothing.
 func (w WorkTree) CommitFiles(ctx context.Context, files map[string][]byte, message string, sig Signature) (string, error) {
+	return w.CommitChanges(ctx, files, nil, message, sig)
+}
+
+// CommitChanges is CommitFiles that also removes the files remove names, slash-separated paths below the work tree;
+// one HEAD does not hold is no change, and a path both set and removed is refused.
+func (w WorkTree) CommitChanges(ctx context.Context, files map[string][]byte, remove []string, message string, sig Signature) (string, error) {
 	head, err := w.Head(ctx)
 	if err != nil {
 		return "", err
@@ -130,6 +136,17 @@ func (w WorkTree) CommitFiles(ctx context.Context, files map[string][]byte, mess
 			changed = true
 		}
 		fmt.Fprintf(&info, "100644 %s\t%s\n", id, name)
+	}
+	for _, name := range slices.Sorted(slices.Values(remove)) {
+		if _, set := files[name]; set || !validFile(name) {
+			return "", fmt.Errorf("git: refusing to remove %q: not a plain path below the work tree, or also set", name)
+		}
+		if _, ok, err := w.Show(ctx, head, name); err != nil {
+			return "", err
+		} else if ok {
+			changed = true
+			fmt.Fprintf(&info, "0 %s\t%s\n", strings.Repeat("0", len(head)), name)
+		}
 	}
 	if !changed {
 		return head, nil

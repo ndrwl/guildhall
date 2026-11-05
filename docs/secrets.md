@@ -119,7 +119,38 @@ The receipt `receipt-<UTC time>.json` in the plan directory records each machine
 A failure on one machine does not stop the others, and apply exits 1 unless every machine is applied or unchanged.
 The machine's sessions decrypt the new file at their next start.
 
-## Not yet
+## Retiring a machine
 
-Revoking a lost machine, by removing its recipient and file and rotating every value it could read, is a later change.
-Until then, removing a machine's `age_recipient` and file by hand stops further pushes to it, but the values it held must be rotated at their providers and set again on the machines that still need them.
+```sh
+guildhall steward machine retire --config <steward.toml> --plan <new dir> <machine>
+guildhall steward approval request --plan <dir> [--copy <steward copy>]
+guildhall steward machine retire --config <steward.toml> --plan <dir> --approve <plan digest> <machine>
+guildhall steward machine retire --config <steward.toml> --status <machine>
+guildhall steward machine retire --config <steward.toml> --rotated <NAME> <machine>
+```
+
+A lost or retired machine keeps its age key and the ciphertext it was given, and the private config's history keeps every file it was ever given, so removing its recipient stops only future pushes: **revoking a machine means rotating every value it could read** ([decision](decisions/steward-machine-retire.md)).
+
+The plan reads the machine's `age_recipient`, its `secrets/<machine>.sops.yaml` and every other machine's file at the private config's `HEAD`, changes nothing, and writes `plan.json`, a `guildhall.retire-plan/1` document, holding names and digests only. It prints:
+
+- the `age_recipient` it removes from `roster.toml` and `.sops.yaml`, and the file it removes, with its sha256 and names;
+- every name in that file, as a manual step: rotate it at its provider, then set the new value with [`secrets set`](#secrets-set) on each other machine whose file holds that name, or, when none does, have the Guildmaster mark it rotated with `--rotated`;
+- the machine's own credentials to revoke at their providers: its GitHub sign-in and tokens, its SSH keys and the Steward's `Host` entry for it, its Herdr profile, and its Claude Code and Codex sessions, none of which was ever copied to another machine ([sign-in](signin.md)).
+
+It is refused for a machine not in the roster, one already retired, whether its retirement is open or closed, a `roster.toml` that differs from `HEAD`, or one that does not write the machine's `age_recipient` on a line of its own.
+The Guildmaster approves the plan by its exact digest, the decision `retire-<first 12 hex digits>` on the reserved task `steward/secrets`, as for a secrets push.
+
+Apply holds `.rollout.lock`, plans again and refuses unless the digest is the same, then in one commit, pushed:
+
+1. removes the machine's `age_recipient` line from `roster.toml`, and nothing else, and regenerates `.sops.yaml` without it;
+2. removes `secrets/<machine>.sops.yaml`; no other machine's file is touched, as each has its own;
+3. writes `retired/<machine>.json`, a `guildhall.retire-receipt/1` record, also copied to the plan directory as `receipt.json`: the names, the commit the file was read at, each rotation the retirement waits for, and the revocation steps. There is a rotation for every name: one for each other machine that holds it, by name and machine, or, when none does, one by name alone.
+
+The machine stays in the roster, so a rollout to it fails until it is removed by hand; nothing is run on the machine, which may be gone.
+The retirement stays `open` until every rotation closes, so every name the machine could read is waited for:
+
+- A name another machine holds closes when `secrets set` of that name on that machine gives it a new value, in the same commit, recording its date. A value the retired machine could read does not count: neither the one the machine already held nor the one in the retired machine's own file, which `secrets set` decrypts with the recovery key at the commit the plan read it at. A rotation on a machine that is itself retired later closes with that retirement.
+- A name no other machine holds has nothing to set, so it closes when the Guildmaster, having rotated or revoked it at its provider, runs `--rotated <NAME>`. That holds `.rollout.lock`, records the date and closes the rotation in one pushed commit, and is refused for a name another machine holds. It records the Guildmaster's word, so it is refused inside a Guildhall session: an agent cannot mark a value rotated.
+
+`--status` prints the record, with each rotation's state and date; it is `closed` once none is waiting, and at once only when the machine's file held no names.
+Guildhall cannot check the revocation steps or that a marked value was really rotated; the Guildmaster follows them at each provider.

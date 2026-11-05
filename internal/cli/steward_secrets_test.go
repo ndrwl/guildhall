@@ -252,7 +252,7 @@ func TestStewardSecretsPush(t *testing.T) {
 		t.Fatalf("approval request: exit %d:\n%s", code, out)
 	}
 	answer := []string{"decide", "answer", "--copy", ps.steward, "--repo", stewardRepository, "--task", stewardSecretsTask, "--decision", secretsDecisionID(plan.Digest), "--answer-file", "-"}
-	if code, out := ps.runIn(t, true, "approve\n", answer...); code != 1 || !strings.Contains(out, "approves a secrets plan") {
+	if code, out := ps.runIn(t, true, "approve\n", answer...); code != 1 || !strings.Contains(out, "approves a secrets or retire plan") {
 		t.Fatalf("answer in a session: exit %d, want it refused:\n%s", code, out)
 	}
 	if code, out := ps.run(t, "approve\n", answer...); code != 0 {

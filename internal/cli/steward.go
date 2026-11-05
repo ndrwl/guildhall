@@ -33,6 +33,9 @@ const stewardUsage = `Usage:
   guildhall steward secrets plan|apply --config <steward.toml> --machine <label>... --plan <dir> [--approve <plan digest>]
   guildhall steward provision --config <steward.toml> --request <file> --plan <dir> --dry-run
   guildhall steward provision --config <steward.toml> --plan <dir> --apply --approve <plan digest>
+  guildhall steward machine retire --config <steward.toml> --plan <dir> [--approve <plan digest>] <machine>
+  guildhall steward machine retire --config <steward.toml> --status <machine>
+  guildhall steward machine retire --config <steward.toml> --rotated <NAME> <machine>
 
 start runs the Steward session supervisor, as director start does for a Director; the other lifecycle commands
 mirror the Director's on the Steward copy's steward.store. status prints the session, the roster and each copy's
@@ -48,7 +51,10 @@ terminal or standard input to a machine's age key and commits the ciphertext; se
 machine's committed ciphertext to it once the Guildmaster approved the plan's digest. provision makes a new managed
 Director copy on a roster machine that has Guildhall, from a request file: the dry run runs the machine's doctor and
 writes the plan, and --apply runs it once approved, stopping at each human step with the wizard command the
-Guildmaster runs there.
+Guildmaster runs there. machine retire plans a lost or retired machine's removal, removes its age_recipient and
+secrets file once the Guildmaster approved the plan's digest, and keeps the retirement open until every value it
+could read is rotated: set anew where another machine holds it, or marked with --rotated by the Guildmaster where
+none does.
 `
 
 // scpTimeout bounds each scp run during a rollout.
@@ -82,6 +88,8 @@ func (a *App) steward(args []string) int {
 			return a.stewardSecretsCmd(args[1:])
 		case "provision":
 			return a.stewardProvisionCmd(args[1:])
+		case "machine":
+			return a.stewardMachineCmd(args[1:])
 		}
 	}
 	if len(args) == 0 || args[0] != "rollout" {

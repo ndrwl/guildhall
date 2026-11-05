@@ -311,12 +311,17 @@ func (a *App) stewardSessionStart(p startPlan, copyDir, storePath, state string)
 			kind = "setup"
 		case stewardSecretsTask:
 			kind = "secrets"
+			if strings.HasPrefix(d.ID, "retire-") {
+				kind = "retire"
+			}
 		}
 		switch {
 		case d.Open():
 			out.inFlight = append(out.inFlight, fmt.Sprintf("%s approval %s: plan %s waits for the Guildmaster's answer; show them the plan", kind, d.ID, plan))
 		case d.Answered && d.Choice == stewardApprove && kind == "secrets":
 			out.inFlight = append(out.inFlight, fmt.Sprintf("secrets approval %s: the Guildmaster approved plan %s; apply it with guildhall steward secrets apply --approve %s unless its plan directory holds a receipt", d.ID, plan, plan))
+		case d.Answered && d.Choice == stewardApprove && kind == "retire":
+			out.inFlight = append(out.inFlight, fmt.Sprintf("retire approval %s: the Guildmaster approved plan %s; apply it with guildhall steward machine retire --approve %s unless its plan directory holds receipt.json, then follow guildhall steward machine retire --status until it is closed", d.ID, plan, plan))
 		case d.Answered && d.Choice == stewardApprove && kind == "setup":
 			out.inFlight = append(out.inFlight, fmt.Sprintf("setup approval %s: the Guildmaster approved plan %s; apply it with guildhall steward takeover or provision --apply --approve %s, as its plan's kind says, unless its step log shows it done", d.ID, plan, plan))
 		case d.Answered && d.Choice == stewardApprove:
@@ -675,6 +680,9 @@ func (a *App) stewardApprovalCmd(args []string) int {
 	}
 	if steward.IsSecretsPlan(*planDir) {
 		return a.secretsApprovalRequest(cp.dir, storePath, *planDir)
+	}
+	if steward.IsRetirePlan(*planDir) {
+		return a.retireApprovalRequest(cp.dir, storePath, *planDir)
 	}
 	plan, err := steward.ReadPlan(*planDir)
 	if err != nil {

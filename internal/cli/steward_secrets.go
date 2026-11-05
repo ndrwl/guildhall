@@ -173,6 +173,12 @@ func (a *App) stewardSecretsSet(ctx context.Context, s *steward.Secrets, machine
 	res, err := s.Set(ctx, machine, name, value, p.RecoveryKey())
 	if res != nil {
 		_, _ = fmt.Fprintf(a.Stdout, "%s: %s set; %s holds %s (sha256 %s)\ncommit: %s\n", machine, name, res.File, strings.Join(res.Names, ", "), res.SHA256, res.Commit)
+		for _, r := range res.Rotated {
+			_, _ = fmt.Fprintf(a.Stdout, "rotated %s on %s for the retirement of %s\n", name, machine, r)
+		}
+		for _, r := range res.Unrotated {
+			_, _ = fmt.Fprintf(a.Stdout, "not rotated: %s on %s is still the value retired machine %s could read; rotate it at its provider and set the new one\n", name, machine, r)
+		}
 	}
 	if err != nil {
 		return a.fail(fmt.Errorf("steward secrets set: %w", err))
