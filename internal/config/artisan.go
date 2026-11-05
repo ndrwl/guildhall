@@ -17,8 +17,8 @@ var ErrReadOnlyAdapter = errors.New("the codex adapter runs read-only and may no
 
 // codexStepKinds are the workflow step types a codex profile may run: the read-only kinds whose output the Codex
 // wrapper writes from the model's answer. It starts empty, so every workflow step refuses codex, and only the quality
-// judge, which runs outside the workflow engine and is always read-only, runs on it; d109 adds review and
-// document-review.
+// judge, which runs outside the workflow engine and is always read-only, runs on it. A step kind is added here only
+// once the Codex wrapper can write that step's output document and the Guildmaster has approved running it on Codex.
 var codexStepKinds = []string{}
 
 // CheckArtisanAdapters refuses a workflow with an Artisan step that resolves no declared profile
