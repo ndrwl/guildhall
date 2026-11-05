@@ -24,7 +24,7 @@ func (nopAnswerer) Round(RoundPost) error       { return nil }
 func answeringTalkServer(tasks ...Task) *Server {
 	s := talkServer(tasks...)
 	s.o.Identity, s.o.Guildmaster, s.o.Answerer = gmIdentity{}, "gm@example.com", nopAnswerer{}
-	s.token = "t"
+	s.token, s.start = "t", "s"
 	return s
 }
 

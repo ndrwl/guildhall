@@ -373,3 +373,8 @@ tiles' line says the picks go with them */
 .rqa .ra{margin:0;color:var(--ok);font-weight:600;font-size:14px}
 .rqa .md>:last-child{margin-bottom:0}
 .fold.void>summary{color:var(--mut)}
+.newbar{position:sticky;top:0;z-index:5;background:var(--runbg);border:1px solid var(--run);border-left:4px solid var(--run);border-radius:10px;padding:10px 14px;margin:0 0 14px;font-size:14.5px;box-shadow:var(--shadow)}
+.newbar[hidden],.newbar [hidden]{display:none}
+.newbar p{margin:0}
+.newbar p+p{margin-top:6px}
+.newbar a{font-weight:650}

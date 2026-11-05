@@ -75,7 +75,7 @@ An ask the Director has not explained says so in grey, pointing at the rest of t
 
 Only your open decisions are asks, as in Clerk's `/guild`: an answered decision the Director has not yet continued, a void decision and Guildhall's own install notice are not.
 The pull request and CI are the latest the store holds; the page makes no forge call.
-Nothing updates by itself: the rail says when the page was read, so reload for newer.
+Nothing updates by itself: the rail says when the page was read, so reload for newer; the [new-reply bar](#the-new-reply-bar) tells you when the Director has written.
 When the Director is writing, a page may say the store is busy; reload in a moment.
 
 On a phone the band carries the where-it-stands sentence and chips for the pull request and CI, the stepper becomes a thin progress bar, and the asks come first, then the story, then the task, the documents and Status.
@@ -229,6 +229,19 @@ With no question answered the answer is the approval alone, which takes every re
 An answer that would go over the 64 KiB limit with its list is refused, and your drafts are kept.
 Only the Guildmaster's login's page shows the controls; a read-only page shows the cards alone.
 
+## The new-reply bar
+
+While your page of an open task is open, it checks every 5 seconds whether the Director has written on the task, and every minute while the tab is in the background.
+When the Director has, a blue bar at the top of Now, on a desktop and on a phone, says "New from the Director on #<decision> · <time> · **Reload**", and the tab's title starts with the number of new messages, such as "(2)".
+**Reload** opens the page again at that talk, `#<decision>-talk`.
+The page never reloads by itself, so nothing you are typing is lost.
+
+When Guildhall has restarted since the page loaded, the bar says the page is out of date and its forms would be refused: reload before you answer.
+
+The check asks the page's own server only, reads only the task's talk, never the whole task, and writes nothing; only your login's page has the bar.
+With scripts turned off there is no bar, and the rail's "reload for newer" still applies.
+The [own-scripts decision](decisions/own-scripts.md) records why this one script may make a request.
+
 ## The reader page
 
 Every document link opens `http://<address>/<repo>/<task>/doc/<name>`: the document, rendered from Markdown with goldmark at its safe defaults ([decision](decisions/goldmark-for-documents.md)), with the open asks, answerable as on the task page, and Status beside it and a way back to the task.
@@ -239,6 +252,6 @@ A document is shown only when its file still matches the sha256 recorded for it;
 
 ## Limits
 
-- A bar that shows a new reply without reloading comes later: reload to see the Director's reply.
+- No push notifications: the [new-reply bar](#the-new-reply-bar) shows only on a page that is open.
 - HTTP only, inside the tailnet; no HTTPS.
 - The Steward serves no pages.

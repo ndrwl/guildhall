@@ -2,6 +2,7 @@ package store
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strconv"
@@ -211,6 +212,58 @@ func appendConversation(tx *bolt.Tx, repository, taskID string, say Saying, at t
 func (s *Store) Conversation(repository, taskID string) ([]ConversationEntry, error) {
 	out, err := list[ConversationEntry](s, repository, bucketConversation, recordKey(taskID, ""))
 	return append([]ConversationEntry{}, out...), err
+}
+
+// ConversationAfter reads only the tail of a task's conversation, for a page that polls for new talk: the number of
+// its last entry, 0 for none, and its entries numbered above after, by number. It reads the task's record and the
+// tail's keys only, never the whole conversation; an unknown task is ErrNotFound.
+func (s *Store) ConversationAfter(repository, taskID string, after int) (int, []ConversationEntry, error) {
+	if err := validateIDs(repository, taskID); err != nil {
+		return 0, nil, err
+	}
+	last, out := 0, []ConversationEntry{}
+	err := s.view(func(tx *bolt.Tx) error {
+		if _, err := getTask(tx, repository, taskID); err != nil {
+			return err
+		}
+		b := repoBucket(tx, repository, bucketConversation)
+		if b == nil {
+			return nil
+		}
+		prefix := recordKey(taskID, "")
+		c := b.Cursor()
+		// Every entry key is the prefix and ten digits, which sort below "~", so the key before it is the last entry.
+		k, _ := c.Seek(recordKey(taskID, "~"))
+		if k == nil {
+			k, _ = c.Last()
+		} else {
+			k, _ = c.Prev()
+		}
+		if k != nil && bytes.HasPrefix(k, prefix) {
+			last = keyNumber(k, prefix)
+		}
+		for k, v := c.Seek(conversationKey(taskID, max(after, 0)+1)); k != nil && bytes.HasPrefix(k, prefix); k, v = c.Next() {
+			var e ConversationEntry
+			if err := json.Unmarshal(v, &e); err != nil {
+				return err
+			}
+			out = append(out, e)
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, nil, fmt.Errorf("store: conversation of %s/%s: %w", repository, taskID, err)
+	}
+	return last, out, nil
+}
+
+// keyNumber is the entry number of a conversation key under prefix, 0 when it does not read as one.
+func keyNumber(k, prefix []byte) int {
+	n, err := strconv.Atoi(string(k[len(prefix):]))
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // ConversationRecord is the receipt record name of conversation entry number.

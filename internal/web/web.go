@@ -26,6 +26,16 @@ var ErrBusy = errors.New("the store is busy")
 type Source interface {
 	Task(repo, id string) (Task, error)
 	Tasks() (TaskList, error)
+	// Tail reads only the tail of repo/id's conversation, for the page's poll: it opens the store read-only and
+	// builds none of Clerk's read. Its errors are Task's.
+	Tail(repo, id string, after int) (Tail, error)
+}
+
+// Tail is the tail of a task's conversation: the number of its last message, 0 for none, and its messages numbered
+// above the one the poll named, oldest first, of which the poll counts only the Director's.
+type Tail struct {
+	Last  int
+	Newer []Message
 }
 
 // Group is the group of the task list a task is listed under.

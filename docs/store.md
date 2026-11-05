@@ -284,6 +284,7 @@ The bucket is created by the first entry, so it needs no schema bump, and the st
 `OpenDecisionSaying`, `AnswerDecisionSaying` and `SendMessageSaying` write their record and one entry in the same transaction, so both are written or neither: `decide open`'s question, `decide answer`'s answer, the task page's words-only note and Say box note, and its Confirm's answer with its `confirmed` entry each mirror this way.
 The entry is not part of their request digest, since it is derived from the record, and a task that is not open, such as a done task answering a decision, records the decision or message with no entry.
 `Conversation` lists a task's entries by number, and `TaskHistory` carries them.
+`ConversationAfter` reads only the tail, for the task page's [new-reply bar](web.md#the-new-reply-bar): the last entry's number, 0 for none, and the entries numbered above the one named, from the task's record and the tail's keys alone; an unknown task is `ErrNotFound`.
 `store doctor` counts and decodes every entry.
 A `recommendation` entry is appended by `SayRecommendation` with the decision's [recommendation record](#decision-recommendations), which names its number; the entry stays the talk row, and the record is what the page and Confirm read.
 
