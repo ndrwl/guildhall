@@ -221,7 +221,7 @@ Commands:
                  guild takes --all, task and inspect take a task id
   web [--copy <dir>]
                  serve the copy's read-only task pages at its [web] address on the tailnet until interrupted
-  spend report --copy <dir> [--repo <name>] [--task <id>] [--since <RFC3339>] [--json]
+  spend report --copy <dir> [--repo <name>] [--task <id>] [--since <RFC3339>] [--by day] [--json]
                  report recorded attempt tokens and cost without changing state
   ci log [--copy <dir>] [--tail <lines>] [--out <file>] <repo>/<task> <job|check>
                  print the full log of a failed CI job the task's validate results record

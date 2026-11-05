@@ -672,7 +672,7 @@ func TestPruneFailsOnABadMergeRecord(t *testing.T) {
 func (f *pruneFixture) spend() string {
 	f.t.Helper()
 	rep, err := withStore(f.store, true, func(s *store.Store) (spendReport, error) {
-		return readSpend(s, f.state, "", "", time.Time{})
+		return readSpend(s, f.state, "", "", time.Time{}, "")
 	})
 	if err != nil {
 		f.t.Fatal(err)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -63,6 +64,12 @@ func TestSpendReportRecordedUsage(t *testing.T) {
 	}
 	if len(got.Rows) != 3 || got.Rows[0].Step != "one" || got.Rows[0].Model != "unavailable" || got.Rows[0].Outcome != "running" {
 		t.Fatalf("rows=%+v", got.Rows)
+	}
+	for _, extra := range [][]string{{"--by", "day"}, {"--by", "day", "--json"}} {
+		out.Reset()
+		if code := app.Run(append(append([]string{}, args[:len(args)-1]...), extra...)); code != 0 {
+			t.Fatalf("%v code=%d: %s", extra, code, stderr)
+		}
 	}
 	after, _ := os.ReadFile(d.store)
 	if string(before) != string(after) {
@@ -168,11 +175,11 @@ func TestSpendReportMetadataFiltersAndMalformedEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
-	got, err := readSpend(s, d.state, "app", "t1", started.CommittedAt)
+	got, err := readSpend(s, d.state, "app", "t1", started.CommittedAt, "")
 	if err != nil || len(got.Rows) != 1 || got.Rows[0].Profile != "builder" || got.Rows[0].Role != "roles/builder.md" || got.Total.TokensUnknown != 1 {
 		t.Fatalf("report=%+v err=%v", got, err)
 	}
-	unfiltered, err := readSpend(s, d.state, "", "", time.Time{})
+	unfiltered, err := readSpend(s, d.state, "", "", time.Time{}, "")
 	if err != nil || len(unfiltered.Rows) != 1 || unfiltered.Rows[0].Profile != "builder" || unfiltered.Rows[0].Role != "roles/builder.md" {
 		t.Fatalf("unfiltered=%+v err=%v", unfiltered, err)
 	}
@@ -180,7 +187,7 @@ func TestSpendReportMetadataFiltersAndMalformedEvidence(t *testing.T) {
 		repo, task string
 		since      time.Time
 	}{{"other", "", time.Time{}}, {"", "other", time.Time{}}, {"", "", started.CommittedAt.Add(time.Nanosecond)}} {
-		got, err = readSpend(s, d.state, filter.repo, filter.task, filter.since)
+		got, err = readSpend(s, d.state, filter.repo, filter.task, filter.since, "")
 		if err != nil || got.Total.Attempts != 0 {
 			t.Fatalf("filter=%+v report=%+v err=%v", filter, got, err)
 		}
@@ -188,7 +195,7 @@ func TestSpendReportMetadataFiltersAndMalformedEvidence(t *testing.T) {
 	if err = os.WriteFile(adapter.UsageFile(filepath.Join(dir, artisan.ResultFile)), []byte("not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = readSpend(s, d.state, "", "", time.Time{}); err == nil {
+	if _, err = readSpend(s, d.state, "", "", time.Time{}, ""); err == nil {
 		t.Fatal("malformed usage accepted")
 	}
 	if err = os.Remove(adapter.UsageFile(filepath.Join(dir, artisan.ResultFile))); err != nil {
@@ -202,7 +209,7 @@ func TestSpendReportMetadataFiltersAndMalformedEvidence(t *testing.T) {
 	if err = os.WriteFile(manifest, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = readSpend(s, d.state, "", "", time.Time{}); err == nil {
+	if _, err = readSpend(s, d.state, "", "", time.Time{}, ""); err == nil {
 		t.Fatal("mismatched manifest accepted")
 	}
 }
@@ -237,7 +244,7 @@ func TestSpendReportRetriesAggregateWithoutTranscriptReads(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
-	got, err := readSpend(s, d.state, "", "", time.Time{})
+	got, err := readSpend(s, d.state, "", "", time.Time{}, "")
 	if err != nil || len(got.Rows) != 2 || got.Total.Attempts != 2 || got.Total.Partial || got.Total.Measured.InputTokens != 18 || got.Total.Measured.CostUSD != 0.5 {
 		t.Fatalf("report=%+v err=%v", got, err)
 	}
@@ -267,7 +274,7 @@ func spendLabelOf(t *testing.T, finish func(*store.Store) error) string {
 	if _, err = s.StartAttempt("start-2", "app", "t1", "build"); err != nil {
 		t.Fatal(err)
 	}
-	got, err := readSpend(s, d.state, "", "", time.Time{})
+	got, err := readSpend(s, d.state, "", "", time.Time{}, "")
 	if err != nil || len(got.Rows) != 2 || got.Rows[0].Rerun == got.Rows[1].Rerun {
 		t.Fatalf("report=%+v err=%v", got, err)
 	}
@@ -342,7 +349,7 @@ func TestSpendReportLabelsUnknownPredecessors(t *testing.T) {
 		at("build--s2", 1, "failed"),  // a sliced step is its own step: first
 		at("build--s2", 2, "stopped"), // after-failure
 	}}
-	got, err := readSpend(s, t.TempDir(), "", "", time.Time{})
+	got, err := readSpend(s, t.TempDir(), "", "", time.Time{}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -398,7 +405,7 @@ func TestSpendReportSinceKeepsLabelAndSubtotals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := readSpend(s, d.state, "", "", second.CommittedAt)
+	got, err := readSpend(s, d.state, "", "", second.CommittedAt, "")
 	_ = s.Close()
 	if err != nil || got.Total.Attempts != 2 || len(got.Rows) != 2 || got.Rows[0].Rerun != "after-failure" || got.Rows[1].Rerun != "send-back" || got.Rows[1].Measured.InputTokens != 7 {
 		t.Fatalf("since report=%+v err=%v", got, err)
@@ -588,18 +595,21 @@ func TestSpendReportScansReceiptsOnlyOnceWhenFiltered(t *testing.T) {
 			}
 		}
 	}
-	for _, since := range []time.Time{{}, boundary} {
+	for _, c := range []struct {
+		since time.Time
+		by    string
+	}{{time.Time{}, ""}, {boundary, ""}, {time.Time{}, "day"}, {boundary, "day"}} {
 		counted := &countedSpendStore{Store: s}
-		got, err := readSpend(counted, d.state, "", "", since)
+		got, err := readSpend(counted, d.state, "", "", c.since, c.by)
 		if err != nil || got.Total.Attempts != 4 || got.ExcludedUnknownStart != 0 {
-			t.Fatalf("since=%v report=%+v err=%v", since, got, err)
+			t.Fatalf("since=%v by=%q report=%+v err=%v", c.since, c.by, got, err)
 		}
 		wantReceipts := 0
-		if !since.IsZero() {
+		if !c.since.IsZero() || c.by != "" {
 			wantReceipts = 1
 		}
 		if counted.receiptReads != wantReceipts || counted.attemptReads != 2 {
-			t.Fatalf("since=%v receipt reads=%d, attempt reads=%d", since, counted.receiptReads, counted.attemptReads)
+			t.Fatalf("since=%v by=%q receipt reads=%d, attempt reads=%d", c.since, c.by, counted.receiptReads, counted.attemptReads)
 		}
 	}
 }
@@ -639,11 +649,11 @@ func (s startIndexSpendStore) Receipts() ([]store.Receipt, error) {
 func TestSpendReportStartIndexSeparatesAttemptIdentities(t *testing.T) {
 	s := startIndexSpendStore{boundary: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
 	state := t.TempDir()
-	got, err := readSpend(s, state, "", "", s.boundary)
+	got, err := readSpend(s, state, "", "", s.boundary, "")
 	if err != nil || got.Total.Attempts != 2 || got.ExcludedUnknownStart != 2 || len(got.Rows) != 2 || got.Rows[0].Repository != "app" || got.Rows[0].Task != "t1" || got.Rows[1].Task != "t1" || got.Rows[0].Rerun != "after-failure" || got.Rows[1].Rerun != "first" {
 		t.Fatalf("report=%+v err=%v", got, err)
 	}
-	got, err = readSpend(s, state, "", "", time.Time{})
+	got, err = readSpend(s, state, "", "", time.Time{}, "")
 	if err != nil || got.Total.Attempts != 8 || got.ExcludedUnknownStart != 0 {
 		t.Fatalf("unfiltered=%+v err=%v", got, err)
 	}
@@ -670,16 +680,22 @@ func TestSpendReportCopyAndHelp(t *testing.T) {
 		t.Fatalf("empty=%+v err=%v", got, err)
 	}
 	out.Reset()
-	if code := app.Run([]string{"spend", "report", "--help"}); code != 0 || !strings.Contains(out.String(), "--since") {
+	if code := app.Run([]string{"spend", "report", "--help"}); code != 0 || !strings.Contains(out.String(), "--since") || !strings.Contains(out.String(), "--by day") {
 		t.Fatalf("help code %d: %s", code, out)
 	}
 }
 
 func TestSpendReportRejectsInvalidInput(t *testing.T) {
-	for _, args := range [][]string{{"--since", "yesterday"}, {"--typo"}, {"extra"}} {
+	for _, args := range [][]string{{"--since", "yesterday"}, {"--typo"}, {"extra"}, {"--by", "week"}, {"--by"}} {
 		app, _, _ := newTestApp(nil, nil)
-		if code := app.Run(append([]string{"spend", "report"}, args...)); code != 2 {
+		dir := t.TempDir()
+		// --store names a path that is not there, so a store opened would be exit 1, not 2.
+		full := append([]string{"spend", "report", "--store", filepath.Join(dir, "absent.store"), "--state", dir}, args...)
+		if code := app.Run(full); code != 2 {
 			t.Fatalf("%v: code %d", args, code)
+		}
+		if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+			t.Fatalf("%v: opened the store: %v", args, entries)
 		}
 	}
 	app, _, _ := newTestApp(nil, nil)
@@ -691,5 +707,151 @@ func TestSpendReportRejectsInvalidInput(t *testing.T) {
 	entries, _ := os.ReadDir(dir)
 	if len(entries) != 1 || entries[0].Name() != copyMarkerFile {
 		t.Fatalf("created copy state: %v", entries)
+	}
+}
+
+// daySpendStore has one task whose attempts start either side of a UTC midnight, one written
+// in a +10:00 zone, and one with no start receipt; each attempt records its spend in the store.
+type daySpendStore struct{}
+
+func (daySpendStore) Repositories() ([]string, error) { return []string{"app"}, nil }
+
+func (daySpendStore) Tasks(repo string) ([]store.Task, error) {
+	return []store.Task{{Repository: repo, ID: "t1"}}, nil
+}
+
+func (daySpendStore) Attempts(repo, task string) ([]store.StageAttempt, error) {
+	spend := func(in int64, usd float64) *store.Spend {
+		return &store.Spend{Tokens: store.SpendMeasured, InputTokens: in, CacheReadInputTokens: in * 10, Cost: store.SpendMeasured, CostUSD: usd}
+	}
+	return []store.StageAttempt{
+		{Repository: repo, TaskID: task, Step: "build", Number: 1, Spend: spend(1, 0.5)},
+		{Repository: repo, TaskID: task, Step: "build", Number: 2, Spend: spend(2, 0.25)},
+		{Repository: repo, TaskID: task, Step: "review", Number: 1, Spend: spend(4, 1)},
+		{Repository: repo, TaskID: task, Step: "review", Number: 2, Spend: spend(8, 2)},
+	}, nil
+}
+
+func (daySpendStore) Receipts() ([]store.Receipt, error) {
+	plus10 := time.FixedZone("+10:00", 10*60*60)
+	return []store.Receipt{
+		{Repository: "app", TaskID: "t1", Operation: "start-attempt", Record: "attempt/build/1", CommittedAt: time.Date(2026, 10, 31, 23, 59, 59, 0, time.UTC)},
+		{Repository: "app", TaskID: "t1", Operation: "start-owned-attempt", Record: "attempt/build/2", CommittedAt: time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)},
+		// 2026-11-01 09:00 at +10:00 is 2026-10-31 23:00 UTC.
+		{Repository: "app", TaskID: "t1", Operation: "start-attempt", Record: "attempt/review/1", CommittedAt: time.Date(2026, 11, 1, 9, 0, 0, 0, plus10)},
+	}, nil
+}
+
+func TestSpendReportByDayBucketsByUTCStartReceipt(t *testing.T) {
+	state := t.TempDir()
+	got, err := readSpend(daySpendStore{}, state, "", "", time.Time{}, "day")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []struct {
+		day      string
+		attempts int
+		input    int64
+		usd      float64
+	}{{"2026-10-31", 2, 5, 1.5}, {"2026-11-01", 1, 2, 0.25}, {spendUnknownDay, 1, 8, 2}}
+	if len(got.Days) != len(want) || len(got.Rows) != 0 {
+		t.Fatalf("days=%+v rows=%+v", got.Days, got.Rows)
+	}
+	var sum spendSummary
+	for i, w := range want {
+		d := got.Days[i]
+		if d.Day != w.day || d.Attempts != w.attempts || d.Measured.InputTokens != w.input || d.Measured.CacheReadInputTokens != w.input*10 || d.Measured.CostUSD != w.usd {
+			t.Fatalf("day %d = %+v, want %+v", i, d, w)
+		}
+		sum.Attempts += d.Attempts
+		sum.Measured.InputTokens += d.Measured.InputTokens
+		sum.Measured.CostUSD += d.Measured.CostUSD
+	}
+	plain, err := readSpend(daySpendStore{}, state, "", "", time.Time{}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Total != plain.Total || got.ExcludedUnknownStart != plain.ExcludedUnknownStart || sum.Attempts != got.Total.Attempts || sum.Measured.InputTokens != got.Total.Measured.InputTokens || sum.Measured.CostUSD != got.Total.Measured.CostUSD {
+		t.Fatalf("total=%+v plain=%+v sum=%+v", got.Total, plain.Total, sum)
+	}
+
+	// --since drops the earlier attempts and the one without a start receipt before bucketing.
+	since := time.Date(2026, 10, 31, 23, 30, 0, 0, time.UTC)
+	got, err = readSpend(daySpendStore{}, state, "", "", since, "day")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err = readSpend(daySpendStore{}, state, "", "", since, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Days) != 2 || got.Days[0].Day != "2026-10-31" || got.Days[0].Attempts != 1 || got.Days[1].Day != "2026-11-01" || got.Days[1].Attempts != 1 {
+		t.Fatalf("since days=%+v", got.Days)
+	}
+	if got.Total != plain.Total || got.ExcludedUnknownStart != 1 || plain.ExcludedUnknownStart != 1 {
+		t.Fatalf("since total=%+v plain=%+v excluded=%d/%d", got.Total, plain.Total, got.ExcludedUnknownStart, plain.ExcludedUnknownStart)
+	}
+}
+
+func TestSpendReportByDayCommand(t *testing.T) {
+	d := newRunDirector(t)
+	s, err := store.Open(d.store, store.Options{RequireStore: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range []string{"build", "review"} {
+		r, err := s.StartAttempt(step, "app", "t1", step)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = s.RecordAttemptSpend(step+"-spend", "app", "t1", step, r.Attempt, store.Spend{Tokens: store.SpendMeasured, InputTokens: 3, Cost: store.SpendMeasured, CostUSD: 0.5}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	base := []string{"spend", "report", "--store", d.store, "--state", d.state}
+	run := func(extra ...string) string {
+		t.Helper()
+		app, out, stderr := newTestApp(nil, nil)
+		if code := app.Run(append(append([]string{}, base...), extra...)); code != 0 {
+			t.Fatalf("%v code=%d: %s", extra, code, stderr)
+		}
+		return out.String()
+	}
+	var days spendDayReport
+	if err = json.Unmarshal([]byte(run("--by", "day", "--json")), &days); err != nil {
+		t.Fatal(err)
+	}
+	var plain spendReport
+	if err = json.Unmarshal([]byte(run("--json")), &plain); err != nil {
+		t.Fatal(err)
+	}
+	if len(days.Rows) < 1 || days.Total != plain.Total || days.Total.Attempts != 2 || days.ExcludedUnknownStart != plain.ExcludedUnknownStart || !reflect.DeepEqual(days.ByRerun, plain.ByRerun) || !reflect.DeepEqual(days.Unavailable, plain.Unavailable) {
+		t.Fatalf("days=%+v plain=%+v", days, plain)
+	}
+	var n int
+	for _, r := range days.Rows {
+		if r.Day == spendUnknownDay {
+			t.Fatalf("unknown day with start receipts: %+v", days.Rows)
+		}
+		n += r.Attempts
+	}
+	if n != 2 {
+		t.Fatalf("day rows sum to %d attempts: %+v", n, days.Rows)
+	}
+	if raw := run("--by", "day", "--json"); !strings.Contains(raw, `"day":`) || strings.Contains(raw, `"repository"`) {
+		t.Fatalf("day JSON: %s", raw)
+	}
+	if table := run("--by", "day"); !strings.HasPrefix(table, "DAY ") || !strings.Contains(table, days.Rows[0].Day) || !strings.Contains(table, "TOTAL") || strings.Contains(table, "REPO") {
+		t.Fatalf("day table:\n%s", table)
+	}
+	if table := run(); !strings.HasPrefix(table, "REPO ") || strings.Contains(table, "DAY") {
+		t.Fatalf("default table:\n%s", table)
+	}
+	var empty map[string]json.RawMessage
+	if err = json.Unmarshal([]byte(run("--by", "day", "--json", "--task", "absent")), &empty); err != nil || string(empty["rows"]) != "[]" {
+		t.Fatalf("empty day rows=%s err=%v", empty["rows"], err)
 	}
 }
