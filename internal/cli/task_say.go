@@ -25,7 +25,7 @@ the task, quoted. The text is Markdown; - reads it from standard input. It answe
 With --recommend the text is the Director's reading of the Guildmaster's words on the open decision --tag names,
 and the option is its recommended answer, one of the decision's options: it becomes the decision's one
 recommendation, and the page shows it under the ask with a Confirm that answers with that option in one click.
---subject-digest is the digest of what the Director read, as decide explain takes; a recommendation made against
+--subject-digest is the subject_digest decide show prints, as decide explain takes; a recommendation made against
 an earlier digest is shown as stale and cannot be confirmed. --words-file pre-fills the ask's Your words box, which
 otherwise holds the Guildmaster's latest words on the ask.
 A closed task's conversation stays readable and takes nothing new. Running the same command again prints the

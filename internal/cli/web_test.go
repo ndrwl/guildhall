@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -125,8 +126,9 @@ func TestWebSourceAsksFollowClerk(t *testing.T) {
 }
 
 // TestWebSourceExplanation: an ask carries its readable headline and short phrase, and the Director's explanation
-// from the status feed once decide explain records one, current while its digest matches the decision's subject and
-// stale once it does not.
+// from the status feed once decide explain records one with the subject_digest decide show prints, which is current,
+// for a decision with a subject and for a question with none. Stale rendering is pinned in internal/web with records
+// made by hand, since explain now refuses a digest that is not current.
 func TestWebSourceExplanation(t *testing.T) {
 	dir := clerkFixture(t)
 	src := webSourceFor(t, dir)
@@ -139,20 +141,34 @@ func TestWebSourceExplanation(t *testing.T) {
 		t.Fatalf("asks = %+v", task.Asks)
 	}
 	path := filepath.Join(dir, "director.store")
-	for _, c := range []struct {
-		digest string
-		stale  bool
-	}{{"sha256:" + strings.Repeat("a", 64), false}, {"sha256:" + strings.Repeat("f", 64), true}} {
-		if code, _, stderr := runDecide(t, "", "explain", "app/a-approve", "accept-plan", "--store", path, "--subject-digest", c.digest, "--text", "It plans **three** steps.",
-			"--recommend", "approve"); code != 0 {
-			t.Fatalf("explain: exit %d, %s", code, stderr)
+	code, out, stderr := runDecide(t, "", "open", "--store", path, "--repo", "app", "--task", "a-approve", "--question", "Which port?", "--option", "80", "--option", "8080")
+	if code != 0 {
+		t.Fatalf("open: exit %d, %s", code, stderr)
+	}
+	question := decodeJSON[struct {
+		ID string `json:"id"`
+	}](t, out).ID
+	// The approval has a subject and the question has none, so both of SubjectDigestOf's branches are pinned.
+	for _, id := range []string{"accept-plan", question} {
+		code, out, stderr := runDecide(t, "", "show", "--store", path, "--repo", "app", "--task", "a-approve", "--decision", id)
+		digest := decodeJSON[struct {
+			SubjectDigest string `json:"subject_digest"`
+		}](t, out).SubjectDigest
+		if code != 0 || digest == "" {
+			t.Fatalf("show %s: exit %d, %s %s", id, code, out, stderr)
+		}
+		if code, _, stderr := runDecide(t, "", "explain", "app/a-approve", id, "--store", path, "--subject-digest", digest, "--text", "It plans **three** steps."); code != 0 {
+			t.Fatalf("explain %s: exit %d, %s", id, code, stderr)
 		}
 		if task, err = src.Task("app", "a-approve"); err != nil {
 			t.Fatal(err)
 		}
-		e := task.Asks[0].Explanation
-		if e == nil || e.Text != "It plans **three** steps." || e.Recommend != "approve" || e.At.IsZero() || e.Stale != c.stale {
-			t.Errorf("digest %s: explanation = %+v, want stale %v", c.digest, e, c.stale)
+		i := slices.IndexFunc(task.Asks, func(a web.Ask) bool { return a.ID == id })
+		if i < 0 {
+			t.Fatalf("no ask %s in %+v", id, task.Asks)
+		}
+		if e := task.Asks[i].Explanation; e == nil || e.Text != "It plans **three** steps." || e.At.IsZero() || e.Stale {
+			t.Errorf("%s with the printed digest %s: explanation = %+v, want current", id, digest, e)
 		}
 	}
 }

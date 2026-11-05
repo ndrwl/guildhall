@@ -117,7 +117,7 @@ You asked whether it covers Windows; it does, in slice 2, so I recommend **Appro
 READING
 ```
 
-`--recommend` takes one of the decision's options; `--subject-digest` is the digest of what you read, as `decide explain` takes; `--words-file` sets the words the box is pre-filled with, which are otherwise their latest words on the ask.
+`--recommend` takes one of the decision's options; `--subject-digest` is the `subject_digest` that `decide show` prints, as `decide explain` takes; `--words-file` sets the words the box is pre-filled with, which are otherwise their latest words on the ask.
 Nothing is answered until they click Confirm, or answer another way.
 Each decision has one recommendation, your latest from `task say`, `decide explain` or `decide open`; one made against an older digest shows as stale and cannot be confirmed.
 When you open a question of your own with `guildhall decide open`, `--recommend <option>` marks the option you recommend on its page.

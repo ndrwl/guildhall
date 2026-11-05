@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -53,6 +55,58 @@ func TestDecideExplain(t *testing.T) {
 	}
 	if code, out, _ = runDecide(t, "", "show", "--store", path, "--repo", "lib", "--task", "t1", "--decision", "port"); code != 0 || strings.Contains(out, "explanation") {
 		t.Errorf("show of an unexplained decision = %d %s; want no explanation field", code, out)
+	}
+}
+
+// TestDecideExplainRefusesHandDigest: a digest computed by hand, the question's sha256 with the trailing newline that
+// `echo "$q" | sha256sum` hashes, is not the decision's subject_digest: explain exits 1 naming the current digest
+// and records nothing, so show still has no explanation.
+func TestDecideExplainRefusesHandDigest(t *testing.T) {
+	path := decideStorePath(t)
+	sum := sha256.Sum256([]byte("Which port?\n"))
+	byHand := "sha256:" + hex.EncodeToString(sum[:])
+	current := store.SubjectDigestOf(store.Decision{Question: "Which port?"})
+	before := lastSequence(t, path)
+	code, out, errOut := runDecide(t, "", "explain", "lib/t1", "port", "--store", path, "--subject-digest", byHand, "--text", "It picks the port.")
+	if code != 1 || out != "" || !strings.Contains(errOut, current) {
+		t.Errorf("explain with a hand-computed digest = %d %q, stderr %s; want exit 1 naming %s", code, out, errOut, current)
+	}
+	if lastSequence(t, path) != before {
+		t.Error("a refused digest wrote to the store")
+	}
+	if code, out, _ = runDecide(t, "", "show", "--store", path, "--repo", "lib", "--task", "t1", "--decision", "port"); code != 0 || strings.Contains(out, "explanation") {
+		t.Errorf("show after the refusal = %d %s; want no explanation", code, out)
+	}
+}
+
+// TestDecideShowSubjectDigest: show prints subject_digest, store.SubjectDigestOf of the decision, for a decision with
+// a subject, one with none and an answered one, and open prints it for the question it opens; explain takes it.
+func TestDecideShowSubjectDigest(t *testing.T) {
+	path := decideStorePath(t)
+	type shown struct {
+		Question      string          `json:"question"`
+		Subject       *store.Subject  `json:"subject"`
+		SubjectDigest string          `json:"subject_digest"`
+		Explanation   json.RawMessage `json:"explanation"`
+	}
+	for _, c := range []struct{ repo, task, id string }{{"app", "t1", "approve-plan"}, {"lib", "t1", "port"}, {"app", "t1", "done-already"}} {
+		code, out, errOut := runDecide(t, "", "show", "--store", path, "--repo", c.repo, "--task", c.task, "--decision", c.id)
+		d := decodeJSON[shown](t, out)
+		want := store.SubjectDigestOf(store.Decision{Question: d.Question, Subject: d.Subject})
+		if code != 0 || d.SubjectDigest == "" || d.SubjectDigest != want {
+			t.Errorf("show %s = %d %s %s; want subject_digest %s", c.id, code, out, errOut, want)
+		}
+	}
+	code, out, errOut := runDecide(t, "", "open", "--store", path, "--repo", "app", "--task", "t1", "--question", "Back off or stop?", "--option", "back-off", "--option", "stop")
+	opened := decodeJSON[struct {
+		shown
+		ID string `json:"id"`
+	}](t, out)
+	if want := store.SubjectDigestOf(store.Decision{Question: "Back off or stop?"}); code != 0 || opened.SubjectDigest != want {
+		t.Fatalf("open = %d %s %s; want subject_digest %s", code, out, errOut, want)
+	}
+	if code, _, errOut := runDecide(t, "", "explain", "app/t1", opened.ID, "--store", path, "--subject-digest", opened.SubjectDigest, "--text", "Words."); code != 0 {
+		t.Errorf("explain with the printed digest = %d %s", code, errOut)
 	}
 }
 

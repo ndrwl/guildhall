@@ -151,7 +151,7 @@ func TestRecommendationRefusals(t *testing.T) {
 			}
 		})
 	}
-	if _, err := s.ExplainDecision("explain-q-3", "app", "t-1", "q-3", "Words.", digest, "merge", 0); !errors.Is(err, ErrInvalid) {
+	if _, err := s.ExplainDecision("explain-q-3", "app", "t-1", "q-3", "Words.", SubjectDigestOf(sampleDecision("q-3")), "merge", 0); !errors.Is(err, ErrInvalid) {
 		t.Errorf("an explanation recommending an option not offered = %v", err)
 	}
 	if _, err := s.SetTaskState("close-t-9", "app", "t-9", TaskDone); err != nil {

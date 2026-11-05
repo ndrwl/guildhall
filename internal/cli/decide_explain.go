@@ -100,7 +100,8 @@ func explainDecision(s *store.Store, repo, task, id, text, digest, recommend str
 	}
 	if prior.Revision > 0 && prior.Text == text && prior.SubjectDigest == digest && prior.Recommend == recommend {
 		// Only while the decision is open: an answered or void one is refused below, as any explanation of it is.
-		if d, err := findDecision(s, repo, task, id); err == nil && d.Open() {
+		// A stored digest that is not current, from before the store refused one, falls through and is refused there.
+		if d, err := findDecision(s, repo, task, id); err == nil && d.Open() && prior.Current(d) {
 			return prior, nil
 		}
 	}
