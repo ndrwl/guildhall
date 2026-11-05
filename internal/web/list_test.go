@@ -54,7 +54,7 @@ func TestTaskList(t *testing.T) {
 	body := w.Body.String()
 	for _, want := range []string{
 		`<meta name="viewport" content="width=device-width, initial-scale=1">`, `<h1>All tasks</h1>`,
-		`<p class="ws you"><b>? 3 tasks wait for you · 3 are moving · 2 wait on something else</b></p>`,
+		`<p class="ws you"><b>3 tasks wait for you · 3 are moving · 2 wait on something else</b></p>`,
 		`<section class="tg you"><h2>Waiting for you <span class="n you">3</span></h2>`,
 		`<section class="tg moving"><h2>Moving <span class="n">3</span></h2>`,
 		`<section class="tg other"><h2>Waiting on something else <span class="n">2</span></h2>`,

@@ -38,7 +38,7 @@ button{font:inherit;color:inherit}
 .steps .back{border-color:#a78bfa}.steps .back b::before{content:"↩\FE0E  ";color:#c4b5fd}
 .steps .run{border-color:#5b9cff}.steps .run b::before{content:"▸ ";color:#8fbcff}
 .steps .bad{border-color:#ff6b6b}.steps .bad b::before{content:"✗ ";color:#ff9b9b}
-.steps .you{border-color:#f5b31c;background:#262116}.steps .you b{color:#ffd166}.steps .you b::before{content:"? "}
+.steps .you{border-color:#f5b31c;background:#262116}.steps .you b{color:#ffd166}.steps .you b::before{content:"● "}
 .steps .later b{color:var(--bandmut);font-weight:500}
 /* quiet text and status */
 .mut{color:var(--mut)}.faint{color:var(--faint)}
@@ -122,7 +122,7 @@ button{font:inherit;color:inherit}
 .node.bad::before{content:"✗";background:var(--bad)}
 .node.void::before{content:"⊘";background:var(--faint)}
 .node.later::before{content:"";background:var(--bg);box-shadow:0 0 0 4px var(--bg),inset 0 0 0 2px var(--line2)}
-.node.you::before{content:"?";background:var(--youdot);box-shadow:0 0 0 4px var(--bg),0 0 0 7px var(--youline)}
+.node.you::before{content:"";background:var(--youdot);box-shadow:0 0 0 4px var(--bg),0 0 0 7px var(--youline)}
 .nh{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;min-height:26px}
 .nh .t{font-weight:650;font-size:15px}
 .st{font-size:12px;font-weight:700;letter-spacing:.03em;padding:2px 8px;border-radius:999px;background:var(--okbg);color:var(--ok)}
@@ -390,7 +390,7 @@ tiles' line says the picks go with them */
 <div class="c2-body">
 <aside class="c2-rail">
 <section class="r-status"><h2>Status</h2>
-<dl class="kv"><dt>Where it stands</dt><dd><span class="tag you">? Waiting for you</span> · 2 asks</dd><dt>Talk</dt><dd>13 messages · last 21:41</dd>
+<dl class="kv"><dt>Where it stands</dt><dd><span class="tag you">Waiting for you</span> · 2 asks</dd><dt>Talk</dt><dd>13 messages · last 21:41</dd>
 <dt>PR</dt><dd>none</dd>
 <dt>CI</dt><dd>no checks recorded</dd>
 </dl>
@@ -404,7 +404,7 @@ tiles' line says the picks go with them */
 <section class="r-docs"><h2>Documents <span class="n">0</span></h2><p class="empty">No documents yet.</p></section>
 </aside>
 <section class="c2-now"><ol class="spine"><li class="node you"><div class="nh"><span class="t">Now</span><span class="st">waiting on you · 2 asks</span><time>since 3 Nov 21:25</time></div>
-<p class="stage">? The Director runs grill with you; its grill round 2 is below, to answer here.</p>
+<p class="stage">The Director runs grill with you; its grill round 2 is below, to answer here.</p>
 
 <div class="ask" id="q1"><form method="post" action="/guildhall/d145/answer"><input type="hidden" name="decision" value="q1"><input type="hidden" name="subject" value=""><input type="hidden" name="token" value="t">
 <div class="ah"><span class="kind">Question</span><a class="aid" href="#q1">#q1</a><a class="tg" href="#q1-talk">q1</a><span class="since">open since 3 Nov 21:25</span></div>
@@ -443,7 +443,7 @@ tiles' line says the picks go with them */
 </div></div></div>
 </li></ol></section>
 <section class="c2-story"><h2>The story · newest first</h2>
-<ul class="key"><li><span class="dot">✓</span>finished</li><li><span class="dot back">↩&#xFE0E;</span>sent back</li><li><span class="dot run">▸</span>running</li><li><span class="dot you">?</span>waiting on you</li><li><span class="dot later"></span>later</li></ul>
+<ul class="key"><li><span class="dot">✓</span>finished</li><li><span class="dot back">↩&#xFE0E;</span>sent back</li><li><span class="dot run">▸</span>running</li><li><span class="dot you"></span>waiting on you</li><li><span class="dot later"></span>later</li></ul>
 <ol class="spine">
 <li class="node you" id="story-q1"><div class="nh"><span class="t">Question · q1</span><span class="st">waiting on you</span><time>3 Nov 21:25</time></div><div class="nb">Its talk is on Now, inside the ask: 2 messages.</div><div class="links"><a class="flag" href="#q1">Answer #q1 above ↑</a></div></li><li class="node run" id="story-grill-2"><div class="nh"><span class="t">Grill · round 2</span><span class="st">running</span><time>3 Nov 21:00</time></div><div class="nb">Its talk is on Now, under the asks.</div></li><li class="node ok" id="story-grill-1"><div class="nh"><span class="t">Grill · round 1</span><span class="st">finished</span><time>31 Oct 17:05–18:20</time></div><details class="fold talkf"><summary>Talk · 2 messages</summary><div class="talk"><div class="msg dir"><div class="mh"><b>Director</b><time>31 Oct 17:05</time></div><div class="mb"><p>Round 1 is four questions on scope.</p>
 </div></div><div class="msg"><div class="mh"><b>You</b><span class="src">chat</span><time>31 Oct 17:10</time></div><div class="mb"><p>scope is <em>one task</em></p>

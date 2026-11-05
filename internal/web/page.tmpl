@@ -4,11 +4,11 @@
 <title>{{.}}</title>
 {{end}}
 
-{{define "where"}}{{with .Where}}{{if .Lead}}<p class="ws{{if .You}} you{{end}}"><b>{{if .You}}? {{end}}{{.Lead}}</b>{{if .Rest}} {{.Rest}}{{end}}{{if .Meta}}<span class="m">{{.Meta}}</span>{{end}}</p>{{end}}{{end}}{{end}}
+{{define "where"}}{{with .Where}}{{if .Lead}}<p class="ws{{if .You}} you{{end}}"><b>{{.Lead}}</b>{{if .Rest}} {{.Rest}}{{end}}{{if .Meta}}<span class="m">{{.Meta}}</span>{{end}}</p>{{end}}{{end}}{{end}}
 
 {{define "chips"}}{{if or .Status.PR .Status.CI}}<ul class="chips">{{with .Status.PR}}<li>{{if $.Status.PRHref}}<a href="{{$.Status.PRHref}}">PR #{{.Number}}</a>{{else}}PR #{{.Number}}{{end}} {{if .Merged}}merged{{else}}open{{end}}</li>{{end}}{{if .Status.CI}}<li>CI <span class="c-{{.Status.CIClass}}">{{.Status.CI}}</span></li>{{end}}</ul>{{end}}{{end}}
 
-{{define "status"}}<dl class="kv"><dt>Where it stands</dt><dd>{{if .Open}}<span class="tag you">? Waiting for you</span> · {{.Open}} {{plural .Open "ask" "asks"}}{{else}}{{.Status.Stands}}{{end}}</dd>
+{{define "status"}}<dl class="kv"><dt>Where it stands</dt><dd>{{if .Open}}<span class="tag you">Waiting for you</span> · {{.Open}} {{plural .Open "ask" "asks"}}{{else}}{{.Status.Stands}}{{end}}</dd>
 {{- if .Status.Step}}<dt>Step</dt><dd><b>{{.Status.Step}}</b>{{if .SliceOf}} · {{.SliceOf}}{{end}}</dd>{{end}}
 {{- if .Status.Attempt}}<dt>Last attempt</dt><dd><span title="{{.Status.AttemptRaw}}">{{.Status.Attempt}}</span> · {{.Status.AttemptWhen}}</dd>{{end}}
 {{- if .Status.Talk}}<dt>Talk</dt><dd>{{.Status.Talk}}</dd>{{end}}
@@ -150,7 +150,7 @@ words box below (docs/web.md#confirm-and-say). */}}
 <section class="r-docs"><h2>Documents <span class="n">{{.DocCount}}</span></h2>{{if .Docs}}<ul class="dix">{{range .Docs}}{{$k := .Kind}}{{range $i, $d := .Docs}}<li{{if $d.Old}} class="old"{{end}}><span class="k">{{if not $i}}{{$k}}{{end}}</span><a href="{{$d.Href}}" title="{{$d.Name}}">{{$d.Label}}</a><span class="d">{{$d.Day}}</span></li>{{end}}{{end}}</ul>{{else}}<p class="empty">No documents yet.</p>{{end}}</section>
 </aside>
 <section class="c2-now"><ol class="spine"><li class="node {{if .Open}}you{{else}}ok{{end}}"><div class="nh"><span class="t">Now</span><span class="st">{{if .Open}}waiting on you · {{.Open}} {{plural .Open "ask" "asks"}}{{else}}nothing waits on you{{end}}</span>{{if .Since}}<time>{{.Since}}</time>{{end}}</div>
-{{if and .Round .Status.Stage}}<p class="stage">? The Director runs {{.Status.Stage}} with you; its {{lower .Round.Name}} is below, to answer here.</p>{{else if .Status.Stage}}<p class="stage">? The Director runs {{.Status.Stage}} with you in its session; answer it there.</p>{{end}}
+{{if and .Round .Status.Stage}}<p class="stage">The Director runs {{.Status.Stage}} with you; its {{lower .Round.Name}} is below, to answer here.</p>{{else if .Status.Stage}}<p class="stage">The Director runs {{.Status.Stage}} with you in its session; answer it there.</p>{{end}}
 {{with .Gone}}{{template "gone" .}}{{end}}
 {{range .Asks}}{{template "ask" .}}{{end}}{{with .Round}}{{template "round" .}}
 {{end}}
@@ -158,7 +158,7 @@ words box below (docs/web.md#confirm-and-say). */}}
 {{range .Talks}}{{template "talk" .}}{{end}}
 </li></ol></section>
 <section class="c2-story"><h2>The story · newest first</h2>
-<ul class="key"><li><span class="dot">✓</span>finished</li><li><span class="dot back">↩&#xFE0E;</span>sent back</li><li><span class="dot run">▸</span>running</li><li><span class="dot you">?</span>waiting on you</li><li><span class="dot later"></span>later</li></ul>
+<ul class="key"><li><span class="dot">✓</span>finished</li><li><span class="dot back">↩&#xFE0E;</span>sent back</li><li><span class="dot run">▸</span>running</li><li><span class="dot you"></span>waiting on you</li><li><span class="dot later"></span>later</li></ul>
 <ol class="spine">
 {{range .Story}}{{template "node" .}}{{end}}
 {{if .Older}}<li><details class="older"><summary>{{len .Older}} earlier {{plural (len .Older) "entry" "entries"}}{{if .OlderDay}} · from {{.OlderDay}}{{end}}</summary><ol class="spine">{{range .Older}}{{template "node" .}}{{end}}</ol></details></li>{{end}}
@@ -174,12 +174,12 @@ words box below (docs/web.md#confirm-and-say). */}}
 <div class="rtop"><a class="backto" href="{{.Base}}">← Back to the task</a><div><p class="dname">{{.Doc.Name}}</p><div class="crumb">{{.T.Repository}} / {{.T.ID}} · {{.T.Title}}</div></div></div>
 <div class="dmeta">{{if .Doc.Kind}}<span>{{.Doc.Kind}}{{if .Doc.Step}} · {{.Doc.Step}}{{end}}</span><span>·</span>{{end}}{{if .Doc.Recorded}}<span>recorded {{.Doc.Recorded}}</span><span>·</span>{{end}}<span class="okk">✓ sha256 matches the record</span><span>·</span><a href="{{.Doc.RawHref}}">Raw</a></div>
 </header>
-<nav class="jump"><a class="jb" href="{{.Base}}">← {{.T.ID}}</a><a class="jn" href="#needs">? Needs you · {{.Open}} · below ↓</a></nav>
+<nav class="jump"><a class="jb" href="{{.Base}}">← {{.T.ID}}</a><a class="jn" href="#needs">Needs you · {{.Open}} · below ↓</a></nav>
 <div class="r-body">
 <div class="r-doc">{{if .Frame}}<iframe sandbox src="{{.Doc.FrameHref}}" title="{{.Doc.Name}}"></iframe>{{else if .HTML}}<article class="md">{{.HTML}}</article>{{else}}<pre class="txt">{{.Text}}</pre>{{end}}</div>
 <aside class="r-side">
 <section id="needs"><h2>Needs you <span class="n{{if .Open}} you{{end}}">{{.Open}}</span></h2>
-{{if .Status.Stage}}<p class="stage">? The Director runs {{.Status.Stage}} with you in its session; answer it there.</p>{{end}}
+{{if .Status.Stage}}<p class="stage">The Director runs {{.Status.Stage}} with you in its session; answer it there.</p>{{end}}
 {{range .Asks}}{{template "ask" .}}{{else}}<p class="empty">Nothing needs you on this task.</p>{{end}}
 </section>
 <section><h2>Status</h2>
@@ -198,7 +198,7 @@ words box below (docs/web.md#confirm-and-say). */}}
 <header class="band list">
 <div class="crumb"><b>All tasks</b></div>
 <h1>All tasks</h1>
-<p class="ws{{if .You}} you{{end}}"><b>{{if .You}}? {{end}}{{.Count}}</b></p>
+<p class="ws{{if .You}} you{{end}}"><b>{{.Count}}</b></p>
 </header>
 <main class="tl">
 {{range .Groups}}<section class="tg {{.Class}}"><h2>{{.Title}} <span class="n{{if eq .Class "you"}} you{{end}}">{{len .Rows}}</span></h2><ul class="rows">{{range .Rows}}{{template "row" .}}{{end}}</ul></section>
