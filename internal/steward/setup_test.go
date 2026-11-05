@@ -477,8 +477,12 @@ func TestTakeoverAbandon(t *testing.T) {
 	p = fx.dryRun(t, planDir)
 	s = fx.setup()
 	fx.ops.fail["director enrol"] = true
-	if _, err := s.ApplySetup(context.Background(), planDir, p.Digest); err == nil {
-		t.Fatal("apply with enrol failing succeeded")
+	// Only the injected enrol failure may stop this apply: a refusal before any step runs (busy, plan changed)
+	// leaves no managed record, so Abandon would rightly succeed and the flake would show up only at the check below.
+	_, err = s.ApplySetup(context.Background(), planDir, p.Digest)
+	var stepErr *steward.ErrStepFailed
+	if !errors.As(err, &stepErr) || stepErr.Step != steward.StepEnrol {
+		t.Fatalf("apply with enrol failing: %v, want step %s to fail", err, steward.StepEnrol)
 	}
 	if _, err := s.Abandon(context.Background(), planDir); err == nil || !strings.Contains(err.Error(), "--apply") {
 		t.Errorf("abandon after the managed step: %v, want a refusal naming --apply", err)
