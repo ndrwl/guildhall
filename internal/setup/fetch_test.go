@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -182,5 +183,114 @@ func TestUnpackRefusesEscapes(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(sb.home, "evil")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("escaping entry written: %v", err)
+	}
+}
+
+// tarGz builds a gzipped tar archive of hdrs; a regular file's content is its name.
+func tarGz(t *testing.T, hdrs ...tar.Header) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	for _, h := range hdrs {
+		if h.Typeflag == tar.TypeReg {
+			h.Size = int64(len(h.Name))
+		}
+		if err := tw.WriteHeader(&h); err != nil {
+			t.Fatal(err)
+		}
+		if h.Typeflag == tar.TypeReg {
+			if _, err := tw.Write([]byte(h.Name)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// leftovers lists the scratch and old-copy names setup's unpack leaves in dir.
+func leftovers(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".setup-unpack-") || strings.Contains(e.Name(), ".old-") {
+			out = append(out, e.Name())
+		}
+	}
+	return out
+}
+
+// unpackDemo unpacks a tar.gz into an owned directory; its check passes once the file named by want is there.
+const unpackDemo = `schema = "guildhall.steps/1"
+name = "unpack-demo"
+
+[params]
+tool = ""
+url = ""
+sum = ""
+want = ""
+
+[[step]]
+id = "payload"
+title = "Unpack the payload"
+tag = "fixable"
+os = ["linux", "darwin", "windows"]
+check = ["${tool}", "exists", "${home}/bin/payload/${want}"]
+creates = ["${home}/bin/payload"]
+undo = "Remove ~/bin/payload."
+
+[step.fetch]
+url = "${url}"
+sha256 = "${sum}"
+dest = "${home}/bin/payload"
+unpack = "tar.gz"
+strip = 1
+`
+
+func TestUnpackFailureKeepsEarlierInstall(t *testing.T) {
+	sb := newSandbox(t)
+	s := parse(t, unpackDemo)
+	dest := filepath.Join(sb.home, "bin", "payload")
+	good := tarGz(t, tar.Header{Name: "top/", Typeflag: tar.TypeDir, Mode: 0o755}, tar.Header{Name: "top/marker", Typeflag: tar.TypeReg, Mode: 0o644})
+	f := sb.facts
+	f.Vars = map[string]string{"tool": tool(), "url": serve(t, good), "sum": setup.Digest(good), "want": "marker"}
+	if _, err := setup.Fix(context.Background(), s, f, nil, nil); err != nil {
+		t.Fatalf("first install: %v", err)
+	}
+	if m, _ := setup.ReadManifest(sb.setupDir); !m.Owns(dest) {
+		t.Fatalf("manifest does not own %s", dest)
+	}
+	before := tree(t, dest)
+	if before[filepath.Join(dest, "marker")] != "top/marker" {
+		t.Fatalf("first install = %v", before)
+	}
+	bad := tarGz(t,
+		tar.Header{Name: "top/", Typeflag: tar.TypeDir, Mode: 0o755},
+		tar.Header{Name: "top/other", Typeflag: tar.TypeReg, Mode: 0o644},
+		tar.Header{Name: "top/link", Typeflag: tar.TypeSymlink, Linkname: "other", Mode: 0o777},
+	)
+	// The check now looks for a file only the new archive has, so the act runs over the earlier install.
+	f.Vars["url"], f.Vars["sum"], f.Vars["want"] = serve(t, bad), setup.Digest(bad), "other"
+	if _, err := setup.Fix(context.Background(), s, f, nil, nil); err == nil || !strings.Contains(err.Error(), "neither a directory nor a regular file") {
+		t.Fatalf("symlink entry = %v", err)
+	}
+	if after := tree(t, dest); !reflect.DeepEqual(after, before) {
+		t.Errorf("earlier install changed: before %v, after %v", before, after)
+	}
+	if m, _ := setup.ReadManifest(sb.setupDir); !m.Owns(dest) {
+		t.Errorf("manifest no longer owns %s", dest)
+	}
+	if l := leftovers(t, filepath.Dir(dest)); len(l) != 0 {
+		t.Errorf("left behind: %v", l)
 	}
 }
