@@ -13,14 +13,17 @@ import (
 	"github.com/ndrwl/guildhall/internal/setup"
 )
 
-const setupUsage = `Usage:
+// setupUsage is the setup command's usage text; it names the built-in step files setup.Builtins lists.
+func setupUsage() string {
+	return `Usage:
   guildhall setup doctor [--json] [--fix [--only <ids>]] [--steps <file|built-in> [--digest <hex>]] [--set <name>=<value>]... [--setup-dir <dir>]
   guildhall setup wizard --steps <file|built-in> [--digest <hex>] [--only <ids>] [--set <name>=<value>]... [--setup-dir <dir>] [--dry-run]
   guildhall setup run --steps <file|built-in> [--digest <hex>] [--only <ids>] [--set <name>=<value>]... [--setup-dir <dir>]
 
---steps names a built-in step file (` + "director, herdr, go, git-and-claude, sign-in, wsl-settings" + `) or a step file's path, which needs
+--steps names a built-in step file (` + strings.Join(setup.Builtins(), ", ") + `) or a step file's path, which needs
 --digest, its sha256. Without --steps the doctor checks every built-in. --only takes comma-separated step ids.
 `
+}
 
 // listFlag collects a repeated flag; --only also splits on commas.
 type listFlag struct {
@@ -77,14 +80,14 @@ func (a *App) setupCmd(args []string) int {
 	case "run":
 		return a.setupRun(args[1:])
 	case "help", "-h", "--help":
-		_, _ = io.WriteString(a.Stdout, setupUsage)
+		_, _ = io.WriteString(a.Stdout, setupUsage())
 		return 0
 	}
 	return a.setupUsageError(fmt.Errorf("unknown subcommand %q", args[0]))
 }
 
 func (a *App) setupUsageError(err error) int {
-	_, _ = fmt.Fprintf(a.Stderr, "guildhall: setup: %v\n\n%s", err, setupUsage)
+	_, _ = fmt.Fprintf(a.Stderr, "guildhall: setup: %v\n\n%s", err, setupUsage())
 	return 2
 }
 
