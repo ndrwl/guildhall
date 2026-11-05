@@ -151,7 +151,7 @@ Keep each `<what>` and each state to a few words, so a line rarely wraps.
 
 A decision is a question Guildhall opened for the Guildmaster, such as approving a plan or merging a pull request.
 Read it with `guildhall decide show --repo app --task a12 --decision accept-1`, then write your plain-English explanation once, where it opens, on its task page with `guildhall decide explain`: what the ask is about, what each answer means and the one you recommend, naming it with `--recommend <option>` when it is one of the options.
-`--subject-digest` is the digest `decide show` prints under `subject`, or, for a decision with no subject, `sha256:` and the hex sha256 of its question text.
+`--subject-digest` is the `subject_digest` that `decide show` prints; copy it, since any other digest is refused.
 The page marks your latest recommendation on the decision, from `decide explain`, `decide open` or `task say --recommend`, which takes the same `--subject-digest`.
 
 ```sh

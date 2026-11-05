@@ -83,7 +83,7 @@ func (a *App) decideOpen(args []string) int {
 	if err != nil {
 		return fail(err)
 	}
-	if err := json.NewEncoder(a.Stdout).Encode(d); err != nil {
+	if err := json.NewEncoder(a.Stdout).Encode(shownDecision{Decision: d, SubjectDigest: store.SubjectDigestOf(d)}); err != nil {
 		return 1
 	}
 	return 0

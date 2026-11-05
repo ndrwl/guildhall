@@ -20,8 +20,9 @@ const MaxSubjectDigestBytes = 128
 
 // DecisionExplanation is the Director's plain-English explanation of an open decision, written once when the ask opens
 // and shown on the task page above the ask's summary (docs/store.md#decision-explanations). The decision itself never
-// changes. SubjectDigest is what the Director read when it wrote the text (SubjectDigestOf); the page hides an
-// explanation whose digest no longer matches. Recommend is the option the Director recommends, "" for none. Explaining
+// changes. SubjectDigest is what the Director read when it wrote the text: the decision's current SubjectDigestOf, which
+// decide show prints, and ExplainDecision refuses any other. The page hides an explanation whose digest no longer
+// matches, as one written before that refusal can. Recommend is the option the Director recommends, "" for none. Explaining
 // again replaces the record and bumps Revision, the number of explanations so far, which the mutation id carries as a
 // deferral's cycle.
 type DecisionExplanation struct {
@@ -57,7 +58,8 @@ func (e DecisionExplanation) Current(d Decision) bool {
 // subjectDigest, with recommend the option it recommends or "", receipt record decision-explain/<id>. revision is the
 // explanation record's revision the caller read, 0 when there was none; the new record's is one more. In the same
 // transaction it refuses with ErrInvalid blank, oversized or non-UTF-8 text, a blank or oversized digest, an
-// answered or void decision and a recommend that is not one of the decision's options; an unknown decision is
+// answered or void decision, a recommend that is not one of the decision's options and a subjectDigest that is not the
+// decision's current SubjectDigestOf, naming the current one; an unknown decision is
 // ErrNotFound and a stored revision other than revision is ErrExists. The record's time is the mutation's. A
 // recommend that is not "" also replaces the decision's recommendation record (Recommendation), written against
 // subjectDigest in the same transaction; with "" the record is left as it is.
@@ -95,6 +97,9 @@ func (s *Store) ExplainDecision(mutationID, repository, taskID, id, text, subjec
 				return invalid("decision %q of %s/%s offers no options, so none can be recommended", id, repository, taskID)
 			}
 			return invalid("decision %q of %s/%s offers %s; %q is not one of them", id, repository, taskID, strings.Join(dec.Options, ", "), recommend)
+		case subjectDigest != SubjectDigestOf(dec):
+			return invalid("decision %q of %s/%s is about %s; subject digest %s is not it (read it with decide show)", id, repository, taskID,
+				SubjectDigestOf(dec), subjectDigest)
 		}
 		b, err := createRepoBucket(tx, repository, bucketDecisionExplanations)
 		if err != nil {

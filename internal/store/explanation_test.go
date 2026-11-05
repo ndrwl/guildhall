@@ -56,7 +56,8 @@ func TestExplainDecision(t *testing.T) {
 }
 
 // TestExplainDecisionRefusals: an answered, void or unknown decision, blank, oversized or non-UTF-8 text, a blank
-// digest and a recommendation that is not one of the decision's options are refused, writing nothing.
+// digest, a recommendation that is not one of the decision's options and a digest that is not the decision's current
+// one, such as its question's with a trailing newline, are refused, writing no explanation and no recommendation.
 func TestExplainDecisionRefusals(t *testing.T) {
 	s := holdFixture(t)
 	q := Decision{Repository: "app", TaskID: "t-1", ID: "q-3", Kind: DecisionQuestion, Question: "Which?"}
@@ -84,6 +85,8 @@ func TestExplainDecisionRefusals(t *testing.T) {
 		"digest with a space":    {"q-1", "Words.", "sha256: ab", "", ErrInvalid},
 		"unknown recommendation": {"q-1", "Words.", digest, "approved", ErrInvalid},
 		"no options to name":     {"q-3", "Words.", SubjectDigestOf(q), "yes", ErrInvalid},
+		"not the current digest": {"q-1", "Words.", sampleDigest('d'), "approve", ErrInvalid},
+		"a question's newline":   {"q-3", "Words.", SubjectDigestOf(Decision{Question: q.Question + "\n"}), "", ErrInvalid},
 	} {
 		if _, err := s.ExplainDecision("explain-"+strings.ReplaceAll(name, " ", "-"), "app", "t-1", tc.id, tc.text, tc.digest, tc.recommend, 0); !errors.Is(err, tc.want) {
 			t.Errorf("%s: err = %v, want %v", name, err, tc.want)
@@ -92,6 +95,29 @@ func TestExplainDecisionRefusals(t *testing.T) {
 	v, err := s.DirectorView()
 	if err != nil || len(v.Explanations) != 0 {
 		t.Fatalf("refusals wrote %+v, %v", v.Explanations, err)
+	}
+	if _, err := s.DecisionRecommendation("app", "t-1", "q-1"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("refusals wrote a recommendation: %v", err)
+	}
+}
+
+// TestExplainDecisionRefusesStaleDigest: a digest that is not the decision's current one is refused with ErrInvalid
+// naming the current one, and leaves an earlier explanation and its recommendation as they were.
+func TestExplainDecisionRefusesStaleDigest(t *testing.T) {
+	s := holdFixture(t)
+	current := SubjectDigestOf(sampleDecision("q-1"))
+	if _, err := s.ExplainDecision("explain.0", "app", "t-1", "q-1", "First words.", current, "approve", 0); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.ExplainDecision("explain.1", "app", "t-1", "q-1", "Second words.", sampleDigest('d'), "reject", 1)
+	if !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), current) || !strings.Contains(err.Error(), sampleDigest('d')) {
+		t.Fatalf("a digest that is not current = %v, want ErrInvalid naming both digests", err)
+	}
+	if e, err := s.DecisionExplanation("app", "t-1", "q-1"); err != nil || e.Text != "First words." || e.Revision != 1 || e.SubjectDigest != current {
+		t.Errorf("explanation after the refusal = %+v, %v", e, err)
+	}
+	if r, err := s.DecisionRecommendation("app", "t-1", "q-1"); err != nil || r.Option != "approve" || r.Revision != 1 {
+		t.Errorf("recommendation after the refusal = %+v, %v", r, err)
 	}
 }
 

@@ -224,10 +224,12 @@ func answerDecisionSaying(s *store.Store, repo, task, id, answer, via, by string
 	return s.AnswerDecisionSaying(mutationID("decision-answer", repo, task, id), repo, task, id, answer, via, by, say)
 }
 
-// shownDecision is what decide show prints: the decision, and the Director's explanation of it when there is one.
+// shownDecision is what decide show prints: the decision, the subject digest an explanation of it must be written
+// against (store.SubjectDigestOf), and the Director's explanation of it when there is one.
 type shownDecision struct {
 	store.Decision
-	Explanation *store.DecisionExplanation `json:"explanation,omitempty"`
+	SubjectDigest string                     `json:"subject_digest"`
+	Explanation   *store.DecisionExplanation `json:"explanation,omitempty"`
 }
 
 // showDecision reads a decision and its explanation, if any (docs/decisions-cli.md#decide-explain).
@@ -236,7 +238,7 @@ func showDecision(s *store.Store, repo, task, id string) (shownDecision, error) 
 	if err != nil {
 		return shownDecision{}, err
 	}
-	out := shownDecision{Decision: d}
+	out := shownDecision{Decision: d, SubjectDigest: store.SubjectDigestOf(d)}
 	switch e, err := s.DecisionExplanation(repo, task, id); {
 	case err == nil:
 		out.Explanation = &e
