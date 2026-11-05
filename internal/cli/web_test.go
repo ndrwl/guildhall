@@ -22,6 +22,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/testenv"
 	"github.com/ndrwl/guildhall/internal/web"
+	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
 // webSourceFor is the task pages' Source over the marked copy dir, at clerkNow.
@@ -397,11 +398,10 @@ func TestWebSourceTaskList(t *testing.T) {
 	}
 	want := map[string]web.Group{
 		"app/a-approve": web.GroupYou, "app/a-grill": web.GroupYou,
-		"app/a-build": web.GroupMoving, "app/a-q1": web.GroupMoving, "app/a-q2": web.GroupMoving, "app/a-q3": web.GroupMoving,
-		"lib/l-front": web.GroupMoving, "app/a-checks": web.GroupMoving, "app/a-sliced": web.GroupMoving, "app/a-queued": web.GroupMoving,
-		"app/a-deps": web.GroupOther, "app/a-bug": web.GroupOther, "app/a-long": web.GroupOther, "app/a-new": web.GroupOther,
-		"lib/a-new": web.GroupOther, "app/a-odd": web.GroupOther,
-		"app/a-merged2": web.GroupFinished,
+		"app/a-build": web.GroupBuild, "app/a-q1": web.GroupMergeQueue, "app/a-q2": web.GroupMergeQueue, "app/a-q3": web.GroupMergeQueue,
+		"lib/l-front": web.GroupMergeQueue, "app/a-checks": web.GroupCI, "app/a-sliced": web.GroupCI, "app/a-queued": web.GroupBuild,
+		"app/a-deps": web.GroupHeld, "app/a-bug": web.GroupHeld, "app/a-long": web.GroupHeld, "app/a-new": web.GroupHeld,
+		"lib/a-new": web.GroupHeld, "app/a-odd": web.GroupHeld,
 	}
 	var order []string
 	byKey := map[string]web.Listed{}
@@ -419,11 +419,59 @@ func TestWebSourceTaskList(t *testing.T) {
 	if len(l.Tasks) != len(want) {
 		t.Errorf("listed %v, want %d tasks", order, len(want))
 	}
-	if _, ok := byKey["app/a-merged9"]; ok {
-		t.Error("a task closed nine days ago is listed")
+	for _, gone := range []string{"app/a-merged9", "app/a-merged2"} {
+		if _, ok := byKey[gone]; ok {
+			t.Errorf("%s, closed more than 24 hours ago, is listed", gone)
+		}
 	}
-	if wantOrder := []string{"app/a-bug", "app/a-q1", "app/a-build"}; len(order) < 3 || strings.Join(order[:3], " ") != strings.Join(wantOrder, " ") || order[len(order)-1] != "app/a-merged2" {
+	if wantOrder := []string{"app/a-bug", "app/a-q1", "app/a-build"}; len(order) < 3 || strings.Join(order[:3], " ") != strings.Join(wantOrder, " ") {
 		t.Errorf("order = %v", order)
+	}
+	// the row's columns: priority, step and attempt, slice, PR and CI, the ask and the merge-queue place
+	if b := byKey["app/a-build"]; b.Step != "build" || b.Attempt < 1 {
+		t.Errorf("a-build = %+v", b)
+	}
+	if q := byKey["app/a-queued"]; q.Step != "build" || q.Attempt != 1 || q.Priority != int(store.PriorityLow) {
+		t.Errorf("a-queued = %+v", q)
+	}
+	if s := byKey["app/a-sliced"]; s.Slice != 2 || s.Slices != 3 || s.PR == nil || s.PR.Number != 402 || s.CI != web.CIPending {
+		t.Errorf("a-sliced = %+v (PR %+v)", s, s.PR)
+	}
+	if c := byKey["app/a-checks"]; c.Slices != 0 || c.PR == nil || c.PR.Number != 212 {
+		t.Errorf("a-checks = %+v", c)
+	}
+	if a := byKey["app/a-approve"]; a.Ask != "Approval of the plan." {
+		t.Errorf("a-approve ask = %q", a.Ask)
+	}
+	if g := byKey["app/a-grill"]; g.Ask != "The grill runs in the Director's session with you." {
+		t.Errorf("a-grill ask = %q", g.Ask)
+	}
+	if b := byKey["app/a-bug"]; b.Ask != "" || b.Queue != nil {
+		t.Errorf("a-bug = %+v", b)
+	}
+	if q := byKey["app/a-q1"].Queue; q == nil || q.Position != 1 || !q.Front || q.WaitingOn != "rebase" {
+		t.Errorf("a-q1 queue = %+v", q)
+	}
+	if q := byKey["app/a-q2"].Queue; q == nil || q.Position != 2 || q.Front || !q.Held {
+		t.Errorf("a-q2 queue = %+v", q)
+	}
+	if q := byKey["lib/l-front"].Queue; q == nil || q.Position != 1 || !q.Front || q.WaitingOn != "ci" {
+		t.Errorf("l-front queue = %+v", q)
+	}
+
+	// Recently finished covers 24 hours: widened past two days, a-merged2 shows, merged, newest first and last
+	window := webFinishedWindow
+	webFinishedWindow = 3 * 24 * time.Hour
+	l3, err := src.Tasks()
+	webFinishedWindow = window
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(l3.Tasks); n != len(want)+1 || l3.Tasks[n-1].ID != "a-merged2" {
+		t.Fatalf("with a 3-day window: %d tasks, last %+v", n, l3.Tasks[n-1])
+	}
+	if m := l3.Tasks[len(l3.Tasks)-1]; m.Group != web.GroupFinished || m.Finished != "merged" || m.Where.Lead != "Done:" || m.Since == nil || clerkNow.Sub(*m.Since) > 3*24*time.Hour {
+		t.Errorf("a-merged2 = %+v", m)
 	}
 	if a := byKey["app/a-approve"]; a.Where.Lead != "Waiting for you on 1 ask:" || a.Where.Rest != "approval of the plan." || !a.Where.You || a.Stands != "waiting for your approval" {
 		t.Errorf("a-approve = %+v", a)
@@ -433,9 +481,6 @@ func TestWebSourceTaskList(t *testing.T) {
 	}
 	if c := byKey["app/a-checks"]; c.Where.Rest != "CI is running on PR #212." {
 		t.Errorf("a-checks = %+v", c)
-	}
-	if m := byKey["app/a-merged2"]; m.Where.Lead != "Done:" || m.Since == nil || clerkNow.Sub(*m.Since) > 7*24*time.Hour {
-		t.Errorf("a-merged2 = %+v", m)
 	}
 
 	held, err := store.Open(filepath.Join(dir, "director.store"), store.Options{})
@@ -452,6 +497,57 @@ func TestWebSourceTaskList(t *testing.T) {
 	}
 }
 
+// TestWebListStageGroups: a starting, running or queued step is grouped by its step type in the bound workflow, never
+// by its name: a step named build of type plan is in Grill and plan; with no workflow, the type named like the step;
+// a designer step is in Grill and plan, and a step of no known type in Build and review.
+func TestWebListStageGroups(t *testing.T) {
+	def := &workflow.Definition{Steps: []workflow.Step{{ID: "build", Type: "plan"}, {ID: "draft", Type: "grill"}, {ID: "check", Type: "review"}}}
+	for _, c := range []struct {
+		def        *workflow.Definition
+		step, wait string
+		want       web.Group
+	}{
+		{def, "build", "attempt", web.GroupPlan}, {def, "draft--s2", "queued", web.GroupPlan}, {def, "check", "attempt", web.GroupBuild},
+		{nil, "research", "attempt", web.GroupPlan}, {nil, "designer", "attempt", web.GroupPlan}, {nil, "deliver-rebase", "attempt", web.GroupBuild},
+		{nil, "publish", "queued", web.GroupBuild}, {def, "mystery", "attempt", web.GroupBuild},
+	} {
+		ct := clerkTask{view: taskView{Task: store.Task{Repository: "app", ID: "t1", State: store.TaskOpen}}}
+		ct.status.Next, _ = json.Marshal(clerkNext{Step: c.step, Wait: c.wait, Attempt: 1})
+		b := webBuilder{d: clerkData{now: clerkNow}, ct: ct, def: c.def}
+		if got := b.group(web.Where{}); got != c.want {
+			t.Errorf("%s (%s): group %q, want %q", c.step, c.wait, got, c.want)
+		}
+	}
+}
+
+// TestWebStageGroupsCoverEveryStepType: every built-in step type has a stage group, a moving one.
+func TestWebStageGroupsCoverEveryStepType(t *testing.T) {
+	for _, k := range workflow.Kinds() {
+		if g := webStageGroup[k.Type]; g != web.GroupPlan && g != web.GroupBuild {
+			t.Errorf("step type %s has stage group %q, want plan or build", k.Type, g)
+		}
+	}
+}
+
+// TestWebListAttempt: the row's attempt is the status feed's latest of the next step, or next.json's when the feed
+// has none.
+func TestWebListAttempt(t *testing.T) {
+	ct := clerkTask{view: taskView{Task: store.Task{Repository: "app", ID: "t1", State: store.TaskOpen}}}
+	ct.status.Steps = []statusStep{{Step: "plan", Attempt: 2}, {Step: "build--s2", Attempt: 3}}
+	b := webBuilder{ct: ct}
+	for _, c := range []struct {
+		n    clerkNext
+		want int
+	}{
+		{clerkNext{Step: "build--s2", Wait: "checks"}, 3}, {clerkNext{Step: "build--s2", Wait: "attempt", Attempt: 4}, 4},
+		{clerkNext{Step: "review", Wait: "queued", Attempt: 1}, 1}, {clerkNext{Step: "review", Wait: "dependencies"}, 0},
+	} {
+		if got := b.listAttempt(c.n); got != c.want {
+			t.Errorf("%+v: attempt %d, want %d", c.n, got, c.want)
+		}
+	}
+}
+
 // TestWebListGroups pins the task list's group for every wait, a Director stage and an open or deferred ask.
 func TestWebListGroups(t *testing.T) {
 	task := func(wait string) webBuilder {
@@ -465,11 +561,11 @@ func TestWebListGroups(t *testing.T) {
 		wait string
 		want web.Group
 	}{
-		{string(interp.WaitAttempt), web.GroupMoving}, {string(interp.WaitQueued), web.GroupMoving},
-		{string(interp.WaitChecks), web.GroupMoving}, {string(interp.WaitMergeQueue), web.GroupMoving},
-		{string(interp.WaitDecision), web.GroupOther}, {string(interp.WaitDirector), web.GroupOther},
-		{string(interp.WaitPaused), web.GroupOther}, {string(interp.WaitDependencies), web.GroupOther},
-		{string(interp.WaitDone), web.GroupOther}, {"mystery", web.GroupOther}, {"", web.GroupOther},
+		{string(interp.WaitAttempt), web.GroupBuild}, {string(interp.WaitQueued), web.GroupBuild},
+		{string(interp.WaitChecks), web.GroupCI}, {string(interp.WaitMergeQueue), web.GroupMergeQueue},
+		{string(interp.WaitDecision), web.GroupHeld}, {string(interp.WaitDirector), web.GroupHeld},
+		{string(interp.WaitPaused), web.GroupHeld}, {string(interp.WaitDependencies), web.GroupHeld},
+		{string(interp.WaitDone), web.GroupHeld}, {"mystery", web.GroupHeld}, {"", web.GroupHeld},
 	} {
 		b := task(c.wait)
 		if got := b.group(b.where(nil, "", nil)); got != c.want {

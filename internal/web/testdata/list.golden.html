@@ -303,30 +303,86 @@ tiles' line says the picks go with them */
 .raw{font-size:13px}
 .raw>summary{color:var(--mut);font-weight:500;min-height:44px}
 .raw pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace;margin:0;color:var(--mut);background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
-/* d150: the task list at /, grouped by who each task waits on */
-.band.list{padding-bottom:4px}
-.tl{max-width:960px;padding:24px 32px 64px}
-.tg{margin:0 0 26px}
+/* d222: the task list at / as a triage list: Needs you, then stage groups of one-line rows (Layout A) */
+.band.list{padding-bottom:2px}
+.band.list h1{margin-bottom:8px}
+.band.list .ws{margin:0 0 14px;font-size:14.5px}
+.tl{max-width:1240px;padding:24px 32px 64px;--cols:150px minmax(0,1fr) 34px 200px 50px 82px 80px}
 .rows{list-style:none;margin:0;padding:0}
-.row{display:flex;gap:6px 14px;align-items:baseline;flex-wrap:wrap;padding:10px 14px;margin:0 0 8px;background:var(--card);border:1px solid var(--line);border-left:5px solid var(--line2);border-radius:10px}
-.you .row,.row.you{border-color:var(--youline);border-left-color:var(--youdot);background:var(--youbg)}
-.moving .row{border-left-color:var(--run)}
-.finished .row{border-left-color:var(--ok)}
 .tid{font:600 14px ui-monospace,Menlo,Consolas,monospace;display:inline-flex;align-items:center;min-height:44px;min-width:44px}
-.tb{flex:1;min-width:0}
-.tt{margin:0;font-weight:650;overflow-wrap:anywhere}
-.tw{margin:2px 0 0;font-size:14px;color:var(--mut);overflow-wrap:anywhere}
-.tw b{color:var(--fg);font-weight:600}
-.you .tw b{color:var(--you)}
-.row time{font-size:13px;color:var(--faint);white-space:nowrap;font-variant-numeric:tabular-nums}
-.fold.tg>summary{font-size:13.5px}
-.fold.tg .rows{margin-top:8px}
+/* the filter box, its chips and the sort */
+.fb{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;margin:0 0 14px}
+.fq{flex:1 1 240px;min-width:0;min-height:40px;padding:0 12px;border-radius:9px;border:1px solid var(--line2);background:var(--card);color:inherit;font:14.5px system-ui,sans-serif}
+.fc{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px}
+.fc .fl{color:var(--mut);font-weight:600;margin-right:2px}
+.cp{display:inline-flex;align-items:center;min-height:34px;padding:0 11px;border-radius:999px;border:1px solid var(--line2);background:var(--card);color:var(--fg);text-decoration:none;font-weight:600;font-variant-numeric:tabular-nums}
+.cp.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.cp i{font-style:normal;font-weight:500;color:var(--faint);margin-left:5px}
+.cp.on i{color:inherit;opacity:.75}
+.sortp{display:none}
+.rh{display:grid;grid-template-columns:var(--cols);gap:0 12px;align-items:center;padding:0 12px 0 17px;min-height:34px;font:650 11px/1.2 system-ui,sans-serif;text-transform:uppercase;letter-spacing:.07em;color:var(--mut);position:sticky;top:0;z-index:2;background:var(--bg);border-bottom:1px solid var(--line2);margin:0 0 10px}
+.rh a{color:var(--mut);text-decoration:none;display:flex;align-items:center;min-height:34px}
+.rh a::after{content:'↕';margin-left:4px;opacity:.45;font-size:12px}
+.rh a.on{color:var(--fg)}.rh a.on::after{content:'▾';opacity:1}.rh a.on.desc::after{content:'▴'}
+/* Needs you and the stage groups */
+.sg{margin:0 0 12px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--card)}
+.sg>summary,.sg>.sgh{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 12px;background:var(--bg2);border-left:4px solid var(--line2);list-style:none;cursor:pointer}
+.sg>summary::-webkit-details-marker{display:none}
+.sg>summary::before{content:'▸';width:1em;color:var(--mut)}
+.sg[open]>summary::before{content:'▾'}
+.sg h2{margin:0;font-size:15px}
+.sgm{font-size:13px;color:var(--mut);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sg.you>.sgh{border-left-color:var(--youdot);background:var(--youbg)}
+.sg.you h2{color:var(--you)}
+.sg.mv>summary{border-left-color:var(--run)}
+.sg.fin>summary{border-left-color:var(--ok)}
+/* one-line rows */
+.r{display:grid;grid-template-columns:var(--cols);gap:0 12px;align-items:center;min-height:44px;padding:0 12px 0 16px;border-top:1px solid var(--line);font-size:14px}
+.idc{display:flex;align-items:center;gap:6px;min-width:0}
+.r .tid{font-size:13px;white-space:nowrap}
+.tid .rp{color:var(--faint);font-weight:500}
+.rt{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.pri{justify-self:start;font:700 11px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:3px 6px;border-radius:5px;background:var(--bg2);color:var(--mut);border:1px solid var(--line)}
+.pri.p0{background:var(--badbg);color:var(--bad);border-color:transparent}.pri.p1{background:var(--youbg);color:var(--you);border-color:transparent}
+.stp{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--mut);font-size:13px}
+.stp b{color:var(--fg);font-weight:600}
+.sx{font-size:13px;color:var(--mut);font-variant-numeric:tabular-nums}
+.sx .lb{display:none}
+.prc{display:flex;align-items:center;gap:5px;font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.prc a{display:inline-flex;align-items:center;min-height:44px;font-weight:600}
+.ci{font-style:normal;font-weight:700}
+.ci.ok{color:var(--ok)}.ci.run{color:var(--run)}.ci.bad{color:var(--bad)}
+.r time{font-size:13px;color:var(--faint);white-space:nowrap;font-variant-numeric:tabular-nums;text-align:right}
+.r.you{background:var(--youbg);border-top-color:var(--youline)}
+.r .ak{grid-column:2/-1;margin:-10px 0 9px;font-size:13px;color:var(--you);min-width:0;overflow-wrap:anywhere}
+/* the merge queue: queue order, the front and what holds it */
+.qp{flex:none;width:18px;text-align:right;font:700 12px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--faint)}
+.r.front{background:var(--runbg)}.r.front .qp{color:var(--run)}
+.hm{font:700 10.5px/1 system-ui,sans-serif;text-transform:uppercase;letter-spacing:.06em;color:var(--you);border:1px solid var(--youline);background:var(--youbg);padding:3px 6px;border-radius:5px;margin-right:6px}
+.hold{margin:0;padding:9px 16px;font-size:13.5px;border-top:1px solid var(--line);background:var(--runbg);border-left:4px solid var(--run);overflow-wrap:anywhere}
+.hold b{font-weight:650}
 @media (max-width:760px){
  .ws{font-size:14.5px;margin:0 0 10px}
  .ws .m{display:block;margin:2px 0 0}
- .tl{padding:16px 12px 48px}
- .row{padding:8px 12px}
- .row time{flex-basis:100%;order:-1;font-size:12.5px}
+ .band.list .ws{margin:0 0 8px}
+ .tl{padding:12px 10px 48px}
+ .fb{gap:8px}
+ .fq{flex-basis:100%;min-height:44px;font-size:16px}
+ .cp{min-height:44px;padding:0 13px}
+ .rh{display:none}
+ .sortp{display:flex;margin:-4px 0 12px}
+ .r{display:flex;flex-wrap:wrap;align-items:center;gap:0 10px;padding:0 12px 9px}
+ .r>span:empty{display:none}
+ .idc{order:0}
+ .prc{order:1}
+ .r time{order:2;margin-left:auto}
+ .rt{order:3;flex-basis:100%;white-space:normal;overflow-wrap:anywhere;font-size:14.5px;margin:-4px 0 2px}
+ .pri,.stp,.sx{order:4}
+ .stp{white-space:normal}
+ .sx .lb{display:inline}
+ .r .ak{order:5;flex-basis:100%;margin:2px 0 0}
+ .hold{padding:9px 12px}
+ .sgm{white-space:normal}
 }
 /* the conversation (docs/web.md#the-conversation): ledger rows, tag chips, talk under its ask, on Now and in the story */
 .tg{display:inline-flex;align-items:center;font:12px/1 ui-monospace,Menlo,Consolas,monospace;color:var(--mut);background:var(--bg2);border:1px solid var(--line2);border-radius:999px;padding:4px 9px;text-decoration:none;white-space:nowrap}
@@ -440,14 +496,51 @@ tiles' line says the picks go with them */
 <header class="band list">
 <div class="crumb"><b>All tasks</b></div>
 <h1>All tasks</h1>
-<p class="ws you"><b>3 tasks wait for you · 3 are moving · 2 wait on something else</b></p>
+<p class="ws you"><b>3 tasks wait for you</b><span class="m">12 open · 3 in the merge queue · updated <time datetime="2026-11-05T14:52:10Z" title="Thu 5 Nov 2026, 14:52:10 UTC">now</time></span></p>
 </header>
-<main class="tl">
-<section class="tg you"><h2>Waiting for you <span class="n you">3</span></h2><ul class="rows"><li class="row you"><a class="tid" href="/guildhall/d150">guildhall/d150</a><div class="tb"><p class="tt">Task page shows the human-readable version</p><p class="tw"><b>Waiting for you on 2 asks:</b> whether to go on after the slice 2 review, and a grant for an attempt.</p></div><time>since 4 Nov 14:20</time></li><li class="row you"><a class="tid" href="/guildhall/d153">guildhall/d153</a><div class="tb"><p class="tt">One ask card</p><p class="tw"><b>Waiting for you in the Director&#39;s session:</b> the grill runs there with you.</p></div><time>since 4 Nov 11:00</time></li><li class="row you"><a class="tid" href="/guildhall/d139">guildhall/d139</a><div class="tb"><p class="tt">Hallmark follow-ups</p><p class="tw"><b>Waiting for you, later:</b> 1 deferred ask, held until other tasks merge.</p></div><time>since 2 Nov 16:00</time></li></ul></section>
-<section class="tg moving"><h2>Moving <span class="n">3</span></h2><ul class="rows"><li class="row"><a class="tid" href="/guildhall/d147">guildhall/d147</a><div class="tb"><p class="tt">Design stage renders real-page mock-ups</p><p class="tw"><b>Moving:</b> the slice 2 build is running (attempt 1).</p></div><time>since 4 Nov 13:05</time></li><li class="row"><a class="tid" href="/guildhall/d140">guildhall/d140</a><div class="tb"><p class="tt">Merge queue rebases</p><p class="tw"><b>Moving:</b> CI is running on PR #260.</p></div><time>since 4 Nov 12:40</time></li><li class="row"><a class="tid" href="/firstmate/f12">firstmate/f12</a><div class="tb"><p class="tt">Captain view</p><p class="tw"><b>Waiting for a free slot:</b> the build is queued 2.</p></div><time>since 4 Nov 14:00</time></li></ul></section>
-<section class="tg other"><h2>Waiting on something else <span class="n">2</span></h2><ul class="rows"><li class="row"><a class="tid" href="/guildhall/d145">guildhall/d145</a><div class="tb"><p class="tt">Talk with the Director on the task page</p><p class="tw"><b>Waiting on other tasks:</b> d150 must finish first.</p></div><time>since 3 Nov 09:30</time></li><li class="row"><a class="tid" href="/guildhall/d138">guildhall/d138</a><div class="tb"><p class="tt">Paused work</p><p class="tw"><b>Paused:</b> nothing runs until the Director resumes it.</p></div><time>since 1 Nov 10:00</time></li></ul></section>
-<details class="fold tg finished"><summary>Finished in the last 7 days · 2</summary><ul class="rows"><li class="row"><a class="tid" href="/guildhall/d136">guildhall/d136</a><div class="tb"><p class="tt">Shipped last week</p><p class="tw"><b>Done:</b> the work is merged.</p></div><time>closed 3 Nov 18:00</time></li><li class="row"><a class="tid" href="/guildhall/d135">guildhall/d135</a><div class="tb"><p class="tt">Not needed</p><p class="tw"><b>Cancelled:</b> superseded by d150.</p></div><time>closed 2 Nov 08:00</time></li></ul></details>
+<main class="tl tri">
+<section class="sg you" id="g-you"><div class="sgh"><h2>Needs you <span class="n you">3</span></h2><span class="sgm">oldest ask first</span></div><ul class="rows">
+<li class="r you"><span class="idc"><a class="tid" href="/firstmate/f31"><span class="rp">firstmate/</span>f31</a></span><span class="rt" title="Captain view keeps its scroll position across refreshes">Captain view keeps its scroll position across refreshes</span><span></span><span class="stp"><b>build</b> · attempt 3</span><span class="sx"><span class="lb">slice </span>1/2</span><span class="prc"><a href="https://github.com/ndrwl/firstmate/pull/90">#90</a><i class="ci bad" title="CI failed">✗</i></span><time datetime="2026-11-04T12:40:00Z" title="Wed 4 Nov 2026, 12:40:00 UTC">1 day ago</time><span class="ak">A grant for an attempt.</span></li>
+<li class="r you"><span class="idc"><a class="tid" href="/guildhall/d219"><span class="rp">guildhall/</span>d219</a></span><span class="rt" title="Retry budget per step type">Retry budget per step type</span><span class="pri p1">p1</span><span class="stp"><b>plan approval</b> · attempt 1</span><span class="sx"></span><span class="prc"></span><time datetime="2026-11-05T12:12:00Z" title="Thu 5 Nov 2026, 12:12:00 UTC">2 h ago</time><span class="ak">Approval of the plan.</span></li>
+<li class="r you"><span class="idc"><a class="tid" href="/guildhall/d222"><span class="rp">guildhall/</span>d222</a></span><span class="rt" title="Full design overhaul of the Director’s all-tasks web page">Full design overhaul of the Director’s all-tasks web page</span><span class="pri p2">p2</span><span class="stp"><b>design</b> · attempt 1</span><span class="sx"></span><span class="prc"></span><time datetime="2026-11-05T14:40:00Z" title="Thu 5 Nov 2026, 14:40:00 UTC">12 min ago</time><span class="ak">Your pick of the design.</span></li>
+</ul></section>
+<form class="fb" action="/" method="get" role="search"><input class="fq" type="search" name="q" value="" placeholder="Filter by id or title" aria-label="Filter by id or title">
+<div class="fc"><span class="fl">Priority</span><a class="cp on" href="/">All</a><a class="cp" href="/?p=p1">p1<i>3</i></a><a class="cp" href="/?p=p2">p2<i>5</i></a><a class="cp" href="/?p=p3">p3<i>4</i></a></div>
+<div class="fc"><span class="fl">Repository</span><a class="cp on" href="/">All<i>12</i></a><a class="cp" href="/?repo=guildhall">guildhall<i>10</i></a><a class="cp" href="/?repo=firstmate">firstmate<i>2</i></a></div>
+</form>
+<div class="fc sortp"><span class="fl">Sort</span><a class="cp" href="/?sort=task">Id</a><a class="cp on" href="/?dir=desc&amp;sort=pri">Priority ▾</a><a class="cp" href="/?sort=stage">Stage</a><a class="cp" href="/?sort=pr">PR</a><a class="cp" href="/?sort=time">In state</a></div>
+<div class="rh"><a class="" href="/?sort=task">Task</a><span>Title</span><a class="on" href="/?dir=desc&amp;sort=pri">Pri</a><a class="" href="/?sort=stage">Stage · step</a><span>Slice</span><a class="" href="/?sort=pr">PR</a><a class="" href="/?sort=time">In state</a></div>
+<details class="sg mv" id="g-plan" open><summary><h2>Grill and plan <span class="n">1</span></h2><span class="sgm">1 grill</span></summary>
+<ul class="rows">
+<li class="r"><span class="idc"><a class="tid" href="/guildhall/d225"><span class="rp">guildhall/</span>d225</a></span><span class="rt" title="Spend report groups spend by step type">Spend report groups spend by step type</span><span></span><span class="stp"><b>grill</b> · attempt 1</span><span class="sx"></span><span class="prc"></span><time datetime="2026-11-05T14:27:00Z" title="Thu 5 Nov 2026, 14:27:00 UTC">25 min ago</time></li>
+</ul></details>
+<details class="sg mv" id="g-build" open><summary><h2>Build and review <span class="n">2</span></h2><span class="sgm">1 build, 1 review</span></summary>
+<ul class="rows">
+<li class="r"><span class="idc"><a class="tid" href="/guildhall/d215"><span class="rp">guildhall/</span>d215</a></span><span class="rt" title="Merge queue rows say why each rebase happened">Merge queue rows say why each rebase happened</span><span class="pri p1">p1</span><span class="stp"><b>build</b> · attempt 2</span><span class="sx"><span class="lb">slice </span>2/3</span><span class="prc"></span><time datetime="2026-11-05T13:40:00Z" title="Thu 5 Nov 2026, 13:40:00 UTC">1 h ago</time></li>
+<li class="r"><span class="idc"><a class="tid" href="/firstmate/f29"><span class="rp">firstmate/</span>f29</a></span><span class="rt" title="Offline mode for the logbook">Offline mode for the logbook</span><span class="pri p2">p2</span><span class="stp"><b>review</b> · attempt 1</span><span class="sx"><span class="lb">slice </span>1/2</span><span class="prc"><a href="https://github.com/ndrwl/firstmate/pull/88">#88</a><i class="ci ok" title="CI passed">✓</i></span><time datetime="2026-11-05T14:18:00Z" title="Thu 5 Nov 2026, 14:18:00 UTC">34 min ago</time></li>
+</ul></details>
+<details class="sg mv" id="g-ci" open><summary><h2>CI <span class="n">1</span></h2><span class="sgm">checks running on 1 PR</span></summary>
+<ul class="rows">
+<li class="r"><span class="idc"><a class="tid" href="/guildhall/d211"><span class="rp">guildhall/</span>d211</a></span><span class="rt" title="Clerk digest drops empty sections">Clerk digest drops empty sections</span><span></span><span class="stp"><b>CI</b> · checks running</span><span class="sx"></span><span class="prc"><a href="https://github.com/ndrwl/guildhall/pull/378">#378</a><i class="ci run" title="CI running">●</i></span><time datetime="2026-11-05T14:43:00Z" title="Thu 5 Nov 2026, 14:43:00 UTC">9 min ago</time></li>
+</ul></details>
+<details class="sg mv" id="g-merge-queue" open><summary><h2>Merge queue <span class="n">3</span></h2><span class="sgm">queue order · 1 held</span></summary>
+<p class="hold"><b>Front: guildhall/d208, PR #371.</b> Waiting on CI since <time datetime="2026-11-05T14:46:00Z" title="Thu 5 Nov 2026, 14:46:00 UTC">6 min ago</time>.</p>
+<ul class="rows">
+<li class="r front"><span class="idc"><span class="qp">1</span><a class="tid" href="/guildhall/d208"><span class="rp">guildhall/</span>d208</a></span><span class="rt" title="Web pages share one header partial">Web pages share one header partial</span><span class="pri p2">p2</span><span class="stp"><b>front</b> · waiting on CI</span><span class="sx"></span><span class="prc"><a href="https://github.com/ndrwl/guildhall/pull/371">#371</a><i class="ci run" title="CI running">●</i></span><time datetime="2026-11-05T14:46:00Z" title="Thu 5 Nov 2026, 14:46:00 UTC">6 min ago</time></li>
+<li class="r"><span class="idc"><span class="qp">2</span><a class="tid" href="/guildhall/d204"><span class="rp">guildhall/</span>d204</a></span><span class="rt" title="Director status shows parked attempts">Director status shows parked attempts</span><span class="pri p1">p1</span><span class="stp">waiting · checks passed</span><span class="sx"></span><span class="prc"><a href="https://github.com/ndrwl/guildhall/pull/369">#369</a><i class="ci ok" title="CI passed">✓</i></span><time datetime="2026-11-05T12:47:00Z" title="Thu 5 Nov 2026, 12:47:00 UTC">2 h ago</time></li>
+<li class="r"><span class="idc"><span class="qp">3</span><a class="tid" href="/guildhall/d201"><span class="rp">guildhall/</span>d201</a></span><span class="rt" title="Hallmark checks run in parallel">Hallmark checks run in parallel</span><span class="pri p2">p2</span><span class="stp"><span class="hm">held</span>the Director holds its merge</span><span class="sx"></span><span class="prc"><a href="https://github.com/ndrwl/guildhall/pull/366">#366</a><i class="ci bad" title="CI failed">✗</i></span><time datetime="2026-11-05T10:50:00Z" title="Thu 5 Nov 2026, 10:50:00 UTC">4 h ago</time></li>
+</ul></details>
+<details class="sg" id="g-held" open><summary><h2>Held <span class="n">2</span></h2><span class="sgm">waiting on other tasks or the Director, paused or not started</span></summary>
+<ul class="rows">
+<li class="r"><span class="idc"><a class="tid" href="/guildhall/d217"><span class="rp">guildhall/</span>d217</a></span><span class="rt" title="Merge queue rebases after CI timeouts">Merge queue rebases after CI timeouts</span><span class="pri p2">p2</span><span class="stp">Waiting on other tasks: d208 must finish first.</span><span class="sx"></span><span class="prc"></span><time datetime="2026-11-04T10:52:00Z" title="Wed 4 Nov 2026, 10:52:00 UTC">1 day ago</time></li>
+<li class="r"><span class="idc"><a class="tid" href="/guildhall/d203"><span class="rp">guildhall/</span>d203</a></span><span class="rt" title="Copy-level pause for the night">Copy-level pause for the night</span><span></span><span class="stp">Paused.</span><span class="sx"></span><span class="prc"></span><time datetime="2026-10-01T13:50:00Z" title="Thu 1 Oct 2026, 13:50:00 UTC">1 Oct</time></li>
+</ul></details>
+<details class="sg fin" id="g-done"><summary><h2>Recently finished <span class="n">2</span></h2><span class="sgm">last 24 hours · 1 merged, 1 cancelled</span></summary>
+<ul class="rows">
+<li class="r"><span class="idc"><a class="tid" href="/guildhall/d223"><span class="rp">guildhall/</span>d223</a></span><span class="rt" title="An open grill round gets an Accept all recommendations button">An open grill round gets an Accept all recommendations button</span><span></span><span class="stp"><b>merged</b></span><span class="sx"></span><span class="prc"><a href="https://github.com/ndrwl/guildhall/pull/383">#383</a></span><time datetime="2026-11-05T13:40:00Z" title="Thu 5 Nov 2026, 13:40:00 UTC">1 h ago</time></li>
+<li class="r"><span class="idc"><a class="tid" href="/firstmate/f26"><span class="rp">firstmate/</span>f26</a></span><span class="rt" title="Old export format">Old export format</span><span></span><span class="stp"><b>cancelled</b> · superseded by f29</span><span class="sx"></span><span class="prc"></span><time datetime="2026-11-04T18:20:00Z" title="Wed 4 Nov 2026, 18:20:00 UTC">20 h ago</time></li>
+</ul></details>
 
-<p class="asof">Read from the store at 14:52 · reload for newer</p>
+<p class="asof">Read from the store <time datetime="2026-11-05T14:52:10Z" title="Thu 5 Nov 2026, 14:52:10 UTC">now</time> · reload for newer</p>
 </main>
 </body></html>

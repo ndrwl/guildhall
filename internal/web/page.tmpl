@@ -199,22 +199,52 @@ appears; the script fills only the tag, the time and Reload's link, with textCon
 </body></html>
 {{end}}
 
-{{define "row"}}<li class="row{{if .Where.You}} you{{end}}"><a class="tid" href="{{.Href}}">{{.Name}}</a><div class="tb"><p class="tt">{{.Title}}</p>{{if .Where.Lead}}<p class="tw"><b>{{.Where.Lead}}</b>{{if .Where.Rest}} {{.Where.Rest}}{{end}}</p>{{end}}</div>{{if .Since}}<time>{{.Since}}</time>{{end}}</li>{{end}}
+{{define "time"}}<time datetime="{{.ISO}}" title="{{.Title}}">{{.Text}}</time>{{end}}
+
+{{define "row"}}<li class="r{{if .You}} you{{end}}{{if .Front}} front{{end}}"><span class="idc">{{if .Position}}<span class="qp">{{.Position}}</span>{{end}}<a class="tid" href="{{.Href}}">{{if .Repo}}<span class="rp">{{.Repo}}</span>{{end}}{{.ID}}</a></span><span class="rt" title="{{.Title}}">{{.Title}}</span>{{if .Pri}}<span class="pri {{.Pri}}">{{.Pri}}</span>{{else}}<span></span>{{end}}<span class="stp">{{if .Held}}<span class="hm">held</span>{{end}}{{if .Step}}<b>{{.Step}}</b>{{end}}{{.Rest}}</span><span class="sx">{{if .Slice}}<span class="lb">slice </span>{{.Slice}}{{end}}</span><span class="prc">{{with .PR}}{{if $.PRHref}}<a href="{{$.PRHref}}">#{{.Number}}</a>{{else}}#{{.Number}}{{end}}{{if $.CI.Mark}}<i class="ci {{$.CI.Class}}" title="{{$.CI.Word}}">{{$.CI.Mark}}</i>{{end}}{{end}}</span>{{with .Time}}{{template "time" .}}{{else}}<span></span>{{end}}{{if .Ask}}<span class="ak">{{.Ask}}</span>{{end}}</li>{{end}}
+
+{{define "chip"}}<a class="cp{{if .On}} on{{end}}" href="{{.Href}}">{{.Label}}{{if .Count}}<i>{{.Count}}</i>{{end}}</a>{{end}}
+
+{{define "sorthead"}}<a class="{{if .On}}on{{if .Desc}} desc{{end}}{{end}}" href="{{.Href}}">{{.Head}}</a>{{end}}
+
+{{define "group"}}<details class="{{.Class}}" id="{{.ID}}"{{if ne .ID "g-done"}} open{{end}}><summary><h2>{{.Title}} <span class="n">{{len .Rows}}</span></h2><span class="sgm">{{.Status}}</span></summary>
+{{range .Banners}}<p class="hold"><b>{{.Front}}</b> {{.Wait}}{{with .Since}} since {{template "time" .}}{{end}}.</p>
+{{end}}<ul class="rows">
+{{range .Rows}}{{template "row" .}}
+{{end}}</ul></details>
+{{end}}
 
 {{define "list"}}{{template "head" "All tasks"}}<style>{{.Style}}</style>{{range .Scripts}}<script>{{.}}</script>{{end}}</head>
 <body>
 <header class="band list">
 <div class="crumb"><b>All tasks</b></div>
 <h1>All tasks</h1>
-<p class="ws{{if .You}} you{{end}}"><b>{{.Count}}</b></p>
+<p class="ws{{if .You}} you{{end}}"><b>{{.Count}}</b><span class="m">{{.Meta}} · updated {{template "time" .ReadAt}}</span></p>
 </header>
-<main class="tl">
-{{range .Groups}}<section class="tg {{.Class}}"><h2>{{.Title}} <span class="n{{if eq .Class "you"}} you{{end}}">{{len .Rows}}</span></h2><ul class="rows">{{range .Rows}}{{template "row" .}}{{end}}</ul></section>
+<main class="tl tri">
+{{if .Needs}}<section class="sg you" id="g-you"><div class="sgh"><h2>Needs you <span class="n you">{{len .Needs}}</span></h2><span class="sgm">oldest ask first</span></div><ul class="rows">
+{{range .Needs}}{{template "row" .}}
+{{end}}</ul></section>
 {{end}}
-{{- if .Finished}}<details class="fold tg finished"><summary>Finished in the last 7 days · {{len .Finished}}</summary><ul class="rows">{{range .Finished}}{{template "row" .}}{{end}}</ul></details>
+{{- if .Open}}<form class="fb" action="/" method="get" role="search"><input class="fq" type="search" name="q" value="{{.Query.Q}}" placeholder="Filter by id or title" aria-label="Filter by id or title">
+{{- if .Query.P}}<input type="hidden" name="p" value="{{.Query.P}}">{{end}}
+{{- if .Query.Repo}}<input type="hidden" name="repo" value="{{.Query.Repo}}">{{end}}
+{{- if .Query.Sort}}<input type="hidden" name="sort" value="{{.Query.Sort}}">{{end}}
+{{- if .Query.Desc}}<input type="hidden" name="dir" value="desc">{{end}}
+<div class="fc"><span class="fl">Priority</span>{{range .Priorities}}{{template "chip" .}}{{end}}</div>
+{{- if .Repos}}
+<div class="fc"><span class="fl">Repository</span>{{range .Repos}}{{template "chip" .}}{{end}}</div>
+{{- end}}
+</form>
+<div class="fc sortp"><span class="fl">Sort</span>{{range .Sorts}}<a class="cp{{if .On}} on{{end}}" href="{{.Href}}">{{.Chip}}{{if .On}}{{if .Desc}} ▴{{else}} ▾{{end}}{{end}}</a>{{end}}</div>
+<div class="rh">{{template "sorthead" index .Sorts 0}}<span>Title</span>{{template "sorthead" index .Sorts 1}}{{template "sorthead" index .Sorts 2}}<span>Slice</span>{{template "sorthead" index .Sorts 3}}{{template "sorthead" index .Sorts 4}}</div>
 {{end}}
-{{- if not (or .Groups .Finished)}}<p class="empty">No task is open, and none finished in the last 7 days.</p>{{end}}
-<p class="asof">Read from the store at {{.ReadAt}} · reload for newer</p>
+{{- range .Groups}}{{template "group" .}}{{end}}
+{{- with .Finished}}{{template "group" .}}{{end}}
+{{- if .NoneMatches}}<p class="empty">No task matches the filter. <a href="{{.Clear}}">Show every task</a></p>
+{{else if not (or .Needs .Groups .Finished)}}<p class="empty">No task is open, and none finished in the last 24 hours.</p>
+{{end}}
+<p class="asof">Read from the store {{template "time" .ReadAt}} · reload for newer</p>
 </main>
 </body></html>
 {{end}}

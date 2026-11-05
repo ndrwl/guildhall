@@ -37,17 +37,25 @@ guildhall web [--copy <dir>]
 
 ## The task list
 
-Open `http://<address>/`, such as `http://andrew-lap-wsl.tail5da40a.ts.net:4388/`, for every task of the copy, in every repository it serves, grouped by who it waits on:
+Open `http://<address>/`, such as `http://andrew-lap-wsl.tail5da40a.ts.net:4388/`, for every task of the copy, in every repository it serves, as one column of sections:
 
-- **Waiting for you**, marked amber: a task with an open or deferred ask, or a grill the Director runs with you in its session.
-- **Moving**: a task whose step is starting or running, waits for a free slot, or waits for CI or the merge queue; it needs nobody.
-- **Waiting on something else**: a task waiting on its dependencies or the Director, paused, or not started.
-- **Finished in the last 7 days**, folded last: the tasks done or cancelled this week, as Clerk's `/guild all` lists them.
+- **Needs you**, pinned on top in amber and always open: a task with an open or deferred ask, or a grill the Director runs with you in its session, oldest ask first. Each row has a second line naming the ask, such as "Approval of the plan.". The filter never hides it.
+- The filter bar and the column header, then one group per pipeline stage, each folding on its own, open at first, with a count and a short status line:
+  - **Grill and plan** and **Build and review**: a task whose next step is starting or running, or waits for a free slot, grouped by the step's type in its workflow (grill, research, plan, refute, document review, plan approval and design; build, rebase, review, publish, validate, deliver, hallmark and handoff), never by its name.
+  - **CI**: a task waiting for its pull request's checks.
+  - **Merge queue**: always in queue order, whatever the sort, each entry numbered. A banner under the heading names the front and what holds it, such as "Front: d208, PR #371. Waiting on CI since 6 min ago.", and the front row is tinted blue. An entry whose merge the Director holds keeps its place with an amber **held** mark.
+  - **Held**, with a grey bar: an open task in no running stage, waiting on its dependencies or the Director, paused, parked or not started.
+- **Recently finished**, folded: the tasks merged, done or cancelled in the last 24 hours, newest first, with when each finished; its heading counts them, such as "5 merged, 1 cancelled". Clerk's `/guild all` keeps its own 7 days.
 
-The band counts them, such as "3 tasks wait for you · 5 are moving · 3 wait on something else".
-Each row names the task, linked to its page, its title, its where-it-stands sentence, the same one its page shows, and since when: the oldest open ask's opening for a task waiting for you, the closing for a finished one, and otherwise the last change recorded on the task.
-Open tasks are listed in Clerk's order, by priority then id; finished ones newest first.
-The list has no forms: answer on each task's page.
+The band says how many tasks wait for you, then "25 open · 16 in the merge queue · updated now". There is no "?" mark: waiting on you is amber only.
+
+Each row is one line, 44 px tall: the task, linked to its page (`repo/id`, the repository part faint, when the copy serves more than one repository); its title, cut off with an ellipsis; its priority, left out at p3; its step and attempt, such as "build · attempt 2"; its slice, such as "2/4", for a task of several slices; its pull request, linked, with its CI mark (✓ passed, ● running, ✗ failed); and how long it has stood so: the oldest open ask's opening for a task waiting for you, the closing for a finished one, and otherwise the last change recorded on the task.
+On a phone (760 px or narrower) a row takes three lines, the task, pull request and time, then the whole title, then the priority, step and slice, and nothing scrolls sideways.
+
+Every time on the list reads relative to when the page was read: "now" under a minute, then "6 min ago", "2 h ago", "3 days ago", and past 30 days the date, "4 Oct". Hover over one, or press it long on a phone, for the exact time in the server's zone, such as "Thu 5 Nov 2026, 14:52:10 GMT". The task, reader and round pages keep their clock times.
+
+The filter box matches a task's id or title; the priority and repository chips, with their counts, narrow it, and a chip in effect turns it off again. On a desktop the sticky column header sorts by Task, Pri, Stage · step, PR or In state, and the sort in effect reverses on a second press; on a phone, sort chips take its place. The default is priority, then oldest in state. All of it lives in the URL, `/?q=&p=&repo=&sort=&dir=`, and the server applies it, so a link or a reload gives the same view with scripts off.
+The list's only form is that filter, a GET: answer on each task's page.
 Every task page's crumb starts with **All tasks**, a link back to the list.
 
 ## The task page
