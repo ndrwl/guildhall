@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -190,7 +191,42 @@ func (a *App) loadSetup(cfgPath string) (*steward.Setup, error) {
 		runner = steward.SSH{Path: ssh, Timeout: sshTimeout, LongTimeout: sshLongTimeout}
 	}
 	return &steward.Setup{Private: git.WorkTree{Program: git.Program{Path: gitPath, Timeout: scpTimeout}, Dir: private},
-		Transport: copier, Runner: runner, Steward: cfg.Steward.Name, Now: a.now}, nil
+		Transport: copier, Runner: runner, Steward: cfg.Steward.Name, Now: a.now, Self: a.selfBinary}, nil
+}
+
+// selfBinary is this Steward's own Guildhall release, which provisioning copies to a bare machine: the running
+// binary, which must report a release version, not modified, with a release contract, and the PATH launcher, the
+// home's when it has one, else one found beside the binary or on PATH.
+func (a *App) selfBinary() (steward.SelfBinary, error) {
+	if a.Executable == nil {
+		return steward.SelfBinary{}, errors.New("the running binary cannot be found")
+	}
+	exe, err := a.Executable()
+	if err != nil {
+		return steward.SelfBinary{}, err
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	r, err := a.releaseProbe(context.Background(), exe)
+	if err != nil {
+		return steward.SelfBinary{}, fmt.Errorf("%s: version --json: %w", exe, err)
+	}
+	if r.Version == "dev" || r.Modified || r.ReleaseContract == 0 {
+		return steward.SelfBinary{}, fmt.Errorf("%s reports version %s (modified %v, release contract %d), which is not a release; run the Steward on an installed release, such as go install github.com/ndrwl/guildhall/cmd/guildhall@<version>", exe, r.Version, r.Modified, r.ReleaseContract)
+	}
+	launcher := ""
+	if h, err := a.releaseHome(); err == nil {
+		if info, err := os.Stat(h.Launcher()); err == nil && info.Mode().IsRegular() {
+			launcher = h.Launcher()
+		}
+	}
+	if launcher == "" {
+		if launcher, err = a.findLauncher("", exe); err != nil {
+			return steward.SelfBinary{}, err
+		}
+	}
+	return steward.SelfBinary{Path: exe, Launcher: launcher, Version: r.Version, GOOS: runtime.GOOS, GOARCH: runtime.GOARCH}, nil
 }
 
 // sshLongTimeout bounds each remote command of a setup plan that may take minutes: a clone, a fix that downloads,
@@ -202,14 +238,22 @@ const sshLongTimeout = 15 * time.Minute
 func renderSetupPlan(p *steward.SetupPlan, cfgPath string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s plan %s\ndry run: nothing was changed\n\n", p.Kind, p.Digest)
-	if p.Kind == steward.SetupKindProvision {
+	switch {
+	case p.Bootstrap != nil:
+		bs := p.Bootstrap
+		fmt.Fprintf(&b, "%s (%s): a bare machine, with nothing at guildhall_path %s\n", p.Machine, p.SSHAlias, bs.Guildhall)
+		fmt.Fprintf(&b, "this plan only bootstraps Guildhall: it copies this Steward's own guildhall %s (%s) there and the launcher to %s, checks each with sha256sum before it first runs, and installs it with release install --from --sha256\n", bs.Version, bs.Platform, bs.Launcher)
+		fmt.Fprintf(&b, "once it is done, make the dry run again with the same request to plan Director %s at %s\n", p.Director, p.CopyDir)
+	case p.Kind == steward.SetupKindProvision:
 		fmt.Fprintf(&b, "%s/%s (%s:%s): a new copy with setup directory %s, enrolled with Steward %s once applied\n", p.Machine, p.Director, p.SSHAlias, p.CopyDir, p.SetupDir, p.Steward)
-	} else {
+	default:
 		fmt.Fprintf(&b, "%s/%s (%s:%s): %s, session %s, enrolled with Steward %s once applied\n", p.Machine, p.Director, p.SSHAlias, p.CopyDir, p.Probe.Mode, p.Session(), p.Steward)
 	}
-	fmt.Fprintf(&b, "roster.toml:\n")
-	for line := range strings.Lines(p.RosterDiff) {
-		b.WriteString("    " + line)
+	if p.RosterDiff != "" {
+		fmt.Fprintf(&b, "roster.toml:\n")
+		for line := range strings.Lines(p.RosterDiff) {
+			b.WriteString("    " + line)
+		}
 	}
 	for _, f := range p.Files {
 		fmt.Fprintf(&b, "file %s -> %s (sha256 %s)\n", f.Name, f.Target, f.SHA256)
@@ -287,6 +331,10 @@ func (a *App) setupApprovalRequest(copyDir, storePath, planDir string) int {
 		question = fmt.Sprintf("Approve %s plan %s of new Director %s on %s at %s? It fixes the doctor's gaps %s; waits for you to run the wizard on the machine for %s; runs the Steward-written step files %s; writes config.toml and a managed.toml with no managed key, makes the store, clones %s, adopts the release, enrols the copy with Steward %s, reloads it, starts its Herdr tab and commits its roster entry. Plan: %s",
 			plan.Kind, plan.Digest, plan.Director, plan.Machine, plan.CopyDir, orNone(fixes), orNone(wizards), orNone(written),
 			strings.Join(plan.Roster.Repositories, ", "), plan.Steward, plan.PlanDir)
+	}
+	if bs := plan.Bootstrap; bs != nil {
+		question = fmt.Sprintf("Approve bootstrap plan %s of bare machine %s? It copies this Steward's own guildhall %s (%s, sha256 %s) to %s and the launcher to %s, checks each with sha256sum before it first runs, and installs it with release install --from --sha256; nothing else. Plan: %s",
+			plan.Digest, plan.Machine, bs.Version, bs.Platform, plan.Files[0].SHA256, bs.Guildhall, bs.Launcher, plan.PlanDir)
 	}
 	d := store.Decision{Repository: stewardRepository, TaskID: stewardSetupTask, ID: id, Kind: store.DecisionApproval,
 		Subject: &store.Subject{Kind: store.SubjectDocument, Digest: plan.Digest}, Options: []string{stewardApprove, stewardDecline},

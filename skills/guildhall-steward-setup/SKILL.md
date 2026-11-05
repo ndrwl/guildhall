@@ -57,6 +57,7 @@ Provisioning makes a new managed Director copy on a roster machine that already 
 Keep each plan in a new directory such as `rollouts/provision-<director>`.
 
 1. Ask the Guildmaster for the roster machine, the Director's name, its copy and setup directories there, the Herdr session its tab opens in, each repository's id, remote and path, and any pins; write them as a request file in your copy (`docs/steward.md#provisioning`).
+   When the machine has no Guildhall yet, add `bootstrap = true` and make sure the roster names its `guildhall_path`, such as `/home/<user>/.local/bin/guildhall`, in a directory that exists; with Go and Herdr missing too, ask for their pins (`docs/steward.md#bootstrapping-a-bare-machine`).
    When the machine needs an install no built-in step file covers, write a step file of your own beside the request and name it in `step_files`; every change it makes must be a `check`, `action` and `verify`, and anything that needs administrator rights a `human` step.
 2. Dry-run:
 
@@ -66,7 +67,7 @@ Keep each plan in a new directory such as `rollouts/provision-<director>`.
 
    A refusal changes nothing: tell the Guildmaster why, such as a copy directory that already has a config or store, a clone path that is not empty, or a missing Herdr with no pins, and stop.
 3. Show the Guildmaster the plan: the doctor's gaps, every step, each step file you wrote in full with its digest, the config it writes and the plan digest.
-   Say which steps are theirs to run on the machine, including any Guildhall fact the doctor found missing: the pinned Guildhall release (`guildhall-pin`), Tailscale SSH without a check-mode rule (`tailscale-ssh`) and a running Herdr server for the session (`herdr-session`).
+   Say which steps are theirs to run on the machine, including any Guildhall fact the doctor found missing: the pinned Guildhall release (`guildhall-pin`), `guildhall_path` on the `PATH` of SSH commands (`guildhall-on-path`), Tailscale SSH without a check-mode rule (`tailscale-ssh`) and a running Herdr server for the session (`herdr-session`).
 4. Open the approval decision as for a takeover, and give them its answer command; never answer it yourself.
 5. Once they answered `approve`, apply:
 
@@ -75,6 +76,7 @@ Keep each plan in a new directory such as `rollouts/provision-<director>`.
    ```
 
 6. Read the last line:
+   - `done` after `guildhall-install`, a bootstrap plan: Guildhall is on the machine; make the dry run again with the same request in a new plan directory, and go on from step 3 with that plan.
    - `done`: give the Guildmaster the summary line: the tab, the versions against the pins and any outstanding manual item; confirm with `guildhall steward status`.
    - `waiting <step>: …`: a human step; give the Guildmaster the one `guildhall setup wizard …` command it prints, to run themselves on the machine, and what the record shows, and apply the same command again once they say it is done.
      Never run the wizard yourself.

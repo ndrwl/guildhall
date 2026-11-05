@@ -58,8 +58,8 @@ const directorSteps = "director"
 const preflightSteps = "new-copy"
 
 // DefaultStepFiles are the step files a request that names none is checked against: the copy's directory, Herdr,
-// the administrator installs and the sign-ins.
-var DefaultStepFiles = []string{directorSteps, "herdr", "git-and-claude", "sign-in"}
+// Go, the administrator installs and the sign-ins.
+var DefaultStepFiles = []string{directorSteps, "herdr", "go", "git-and-claude", "sign-in"}
 
 // The plan files of a provisioning plan beside plan.json: the generated config.toml, Steward-written step files and
 // the verified summary.
@@ -84,15 +84,18 @@ var (
 // doctor checks the machine against (built-in names or step file paths, the latter Steward-written and relative to
 // the request), the pins, and one or more repositories it clones.
 type ProvisionRequest struct {
-	SchemaVersion int                   `toml:"schema_version" json:"schema_version"`
-	Machine       string                `toml:"machine" json:"machine"`
-	Director      string                `toml:"director" json:"director"`
-	CopyDir       string                `toml:"copy_dir" json:"copy_dir"`
-	SetupDir      string                `toml:"setup_dir" json:"setup_dir"`
-	HerdrSession  string                `toml:"herdr_session" json:"herdr_session"`
-	StepFiles     []string              `toml:"step_files" json:"step_files"`
-	Pins          Pins                  `toml:"pins" json:"pins"`
-	Repositories  []ProvisionRepository `toml:"repository" json:"repositories"`
+	SchemaVersion int      `toml:"schema_version" json:"schema_version"`
+	Machine       string   `toml:"machine" json:"machine"`
+	Director      string   `toml:"director" json:"director"`
+	CopyDir       string   `toml:"copy_dir" json:"copy_dir"`
+	SetupDir      string   `toml:"setup_dir" json:"setup_dir"`
+	HerdrSession  string   `toml:"herdr_session" json:"herdr_session"`
+	StepFiles     []string `toml:"step_files" json:"step_files"`
+	// Bootstrap lets the dry run place Guildhall on a bare machine, one with no file at the roster's guildhall_path:
+	// the plan then only copies the Steward's own binary there and installs it (docs/steward.md#bootstrapping-a-bare-machine).
+	Bootstrap    bool                  `toml:"bootstrap" json:"bootstrap,omitempty"`
+	Pins         Pins                  `toml:"pins" json:"pins"`
+	Repositories []ProvisionRepository `toml:"repository" json:"repositories"`
 }
 
 // Pins are the versions the provisioning installs or checks: Herdr's version, download URL and sha256 for the
@@ -103,6 +106,10 @@ type Pins struct {
 	HerdrURL     string `toml:"herdr_url" json:"herdr_url,omitempty"`
 	HerdrSHA256  string `toml:"herdr_sha256" json:"herdr_sha256,omitempty"`
 	Guildhall    string `toml:"guildhall" json:"guildhall,omitempty"`
+	// GoVersion, GoURL and GoSHA256 are the Go release archive the go step file unpacks when the machine has no Go.
+	GoVersion string `toml:"go_version" json:"go_version,omitempty"`
+	GoURL     string `toml:"go_url" json:"go_url,omitempty"`
+	GoSHA256  string `toml:"go_sha256" json:"go_sha256,omitempty"`
 }
 
 // ProvisionRepository is one repository the new copy works on, cloned from Remote into the empty Path.
@@ -214,6 +221,11 @@ func (r *ProvisionRequest) check() error {
 	case !versionPattern.MatchString(p.HerdrVersion) || !strings.HasPrefix(p.HerdrURL, "https://") || !SetPattern.MatchString("herdr_url="+p.HerdrURL) || !hexPattern.MatchString(p.HerdrSHA256):
 		fault("[pins] herdr_version, herdr_url and herdr_sha256 go together: a version, an https:// URL of letters, digits and '.', '_', '~', '+', ':', '/', '-', and a lowercase hex sha256")
 	}
+	switch {
+	case p.GoVersion == "" && p.GoURL == "" && p.GoSHA256 == "":
+	case !versionPattern.MatchString(p.GoVersion) || !strings.HasPrefix(p.GoURL, "https://") || !SetPattern.MatchString("go_url="+p.GoURL) || !hexPattern.MatchString(p.GoSHA256):
+		fault("[pins] go_version, go_url and go_sha256 go together: a version, an https:// URL of letters, digits and '.', '_', '~', '+', ':', '/', '-', and a lowercase hex sha256")
+	}
 	if p.Guildhall != "" && !versionPattern.MatchString(p.Guildhall) {
 		fault("[pins] guildhall %q is not a release version", p.Guildhall)
 	}
@@ -301,6 +313,15 @@ func (s *Setup) PlanProvision(ctx context.Context, req *ProvisionRequest, planDi
 	reqCopy := *req
 	reqCopy.StepFiles = slices.Clone(req.stepFileRefs())
 	reqCopy.Repositories = slices.Clone(req.Repositories)
+	if req.Bootstrap {
+		bare, err := s.bareMachine(ctx, m)
+		if err != nil {
+			return nil, err
+		}
+		if bare {
+			return s.planBootstrap(m, &reqCopy, entry, rosterData, planDir)
+		}
+	}
 	p := &SetupPlan{Schema: SetupPlanSchema, Kind: SetupKindProvision, Machine: m.Label, Director: req.Director, CopyDir: req.CopyDir,
 		SSHAlias: m.SSHAlias, Guildhall: m.Guildhall(), Steward: s.Steward, PlanDir: planDir, SetupDir: req.SetupDir,
 		RosterDigest: digest.Of(rosterData).Hex(), Roster: entry, Request: &reqCopy, files: map[string][]byte{}}
@@ -372,6 +393,9 @@ func (s *Setup) PlanProvision(ctx context.Context, req *ProvisionRequest, planDi
 		for _, gap := range r.Gaps {
 			if gap.Tag == setup.Fixable && sf.Name == "herdr" && req.Pins.HerdrURL == "" {
 				return nil, fmt.Errorf("the machine has no Herdr (%s), and the request pins none to install; set [pins] herdr_version, herdr_url and herdr_sha256", gap.Detail)
+			}
+			if gap.ID == "go" && sf.Name == "go" && req.Pins.GoURL == "" {
+				return nil, fmt.Errorf("the machine has no Go (%s), and the request pins none to install; set [pins] go_version, go_url and go_sha256", oneLine(gap.Detail))
 			}
 			p.Steps = append(p.Steps, gapStep(g, p.SetupDir, p.StepFiles[i], gap.ID, gap.Tag, gap.Title, gap.Detail))
 		}
@@ -455,6 +479,10 @@ func (s *Setup) planStepFile(p *SetupPlan, ref string) (StepFile, []byte, error)
 				sf.Sets = []string{"herdr_sha256=" + pins.HerdrSHA256, "herdr_url=" + pins.HerdrURL, "herdr_version=" + pins.HerdrVersion}
 			}
 			sf.Sets = append(sf.Sets, "herdr_session="+p.Request.HerdrSession)
+		case "go":
+			if pins.GoURL != "" {
+				sf.Sets = []string{"go_sha256=" + pins.GoSHA256, "go_url=" + pins.GoURL, "go_version=" + pins.GoVersion}
+			}
 		}
 		for _, kv := range sf.Sets {
 			if !SetPattern.MatchString(kv) {

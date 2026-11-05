@@ -77,6 +77,12 @@ func (s *Setup) putNew(ctx context.Context, p *SetupPlan, f PlannedFile) stepRes
 // enrol, reload and roster steps, which runStep runs as they are.
 func (s *Setup) runProvisionStep(ctx context.Context, p *SetupPlan, st SetupStep, log *StepLog) (stepResult, bool) {
 	switch {
+	case st.ID == StepPlaceGuildhall && p.Bootstrap != nil:
+		return s.runPlace(ctx, p, p.plannedFile(bootstrapGuildhall)), true
+	case st.ID == StepPlaceLauncher && p.Bootstrap != nil:
+		return s.runPlace(ctx, p, p.plannedFile(bootstrapLauncher)), true
+	case st.ID == StepInstall && p.Bootstrap != nil:
+		return s.runInstall(ctx, p, st), true
 	case st.Kind == StepKindFix:
 		return s.runFix(ctx, p, st), true
 	case st.Kind == StepKindWizard:

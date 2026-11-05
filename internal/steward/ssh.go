@@ -25,7 +25,7 @@ var ErrNotAllowed = errors.New("not one of the fixed remote commands a Steward m
 // An argument written argDir is a value: an absolute path in the restricted character set, such as the copy directory
 // most commands end with; argLabel is a lowercase id (workflow.ValidID); argHex a lowercase hex sha256; argIDs
 // comma-separated step ids; argSteps a built-in step file's name or a step file's absolute path; argRemote a git
-// remote (ValidRemote); and argSets, only last, zero or more `--set <name>=<value>` pairs (SetPattern).
+// remote (ValidRemote); argVersion a release version; and argSets, only last, zero or more `--set <name>=<value>` pairs (SetPattern).
 // Only these run: no other command, flag or argument can be passed.
 var allowedCommands = []struct {
 	program string
@@ -75,17 +75,24 @@ var allowedCommands = []struct {
 	{args: []string{"release", "adopt", "--copy", argDir}, long: true},
 	{args: []string{"director", "start", "--tab", "--copy", argDir}, long: true},
 	{program: "git", args: []string{"clone", "--", argRemote, argDir}, long: true},
+	// The bootstrap commands of an approved provisioning plan for a bare machine
+	// (docs/steward.md#bootstrapping-a-bare-machine): sha256sum only reads a file the plan copied, which is checked
+	// before it first runs, and release install --from --sha256, run by that file, installs it as a release after
+	// checking its sha256 again itself.
+	{program: "sha256sum", args: []string{argDir}},
+	{args: []string{"release", "install", argVersion, "--from", argDir, "--sha256", argHex}, long: true},
 }
 
 // Value placeholders of allowedCommands.
 const (
-	argDir    = "<dir>"
-	argLabel  = "<label>"
-	argHex    = "<hex>"
-	argIDs    = "<ids>"
-	argSteps  = "<steps>"
-	argRemote = "<remote>"
-	argSets   = "<sets>"
+	argDir     = "<dir>"
+	argLabel   = "<label>"
+	argHex     = "<hex>"
+	argIDs     = "<ids>"
+	argSteps   = "<steps>"
+	argRemote  = "<remote>"
+	argSets    = "<sets>"
+	argVersion = "<version>"
 )
 
 var (
@@ -201,6 +208,17 @@ func CloneCommand(remote, path string) []string {
 	return []string{"git", "clone", "--", remote, path}
 }
 
+// HashCommand is `sha256sum <path>`, which prints the sha256 of the file at the absolute path, changing nothing.
+func HashCommand(path string) []string {
+	return []string{"sha256sum", path}
+}
+
+// InstallFromCommand is `<guildhall> release install <version> --from <file> --sha256 <hex>`: the binary at file,
+// checked against sum, becomes release version in the machine's Guildhall home; installing it again changes nothing.
+func InstallFromCommand(guildhall, version, file, sum string) []string {
+	return []string{guildhall, "release", "install", version, "--from", file, "--sha256", sum}
+}
+
 // CollectReceiptPath is where, relative to a Director copy's directory, the Steward copies the receipt that
 // `director collected` reads, marks and deletes.
 const CollectReceiptPath = "state/steward/collect-receipt.json"
@@ -266,7 +284,7 @@ func allowed(argv []string) (long bool, err error) {
 		}
 		return c.long, nil
 	}
-	if argv[0] != "git" && !guildhallProgram {
+	if argv[0] != "git" && argv[0] != "sha256sum" && !guildhallProgram {
 		return false, fmt.Errorf("%w: program %q must be %s or an absolute guildhall_path", ErrNotAllowed, argv[0], DefaultGuildhall)
 	}
 	return false, fmt.Errorf("%w: %q", ErrNotAllowed, argv[1:])
@@ -310,6 +328,8 @@ func matchArgs(pattern, args []string) bool {
 			ok = stepIDPattern.MatchString(a) || validFile(a)
 		case argRemote:
 			ok = ValidRemote(a)
+		case argVersion:
+			ok = versionPattern.MatchString(a)
 		default:
 			ok = a == p
 		}
