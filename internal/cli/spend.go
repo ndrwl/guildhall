@@ -53,6 +53,7 @@ type spendGroup struct {
 	Repository string `json:"repository"`
 	Task       string `json:"task"`
 	Step       string `json:"step"`
+	Rerun      string `json:"rerun"`
 	Profile    string `json:"profile"`
 	Role       string `json:"role"`
 	Adapter    string `json:"adapter"`
@@ -63,10 +64,11 @@ type spendRow struct {
 	spendSummary
 }
 type spendReport struct {
-	Rows                 []spendRow   `json:"rows"`
-	Total                spendSummary `json:"total"`
-	ExcludedUnknownStart int          `json:"excluded_unknown_start"`
-	Unavailable          []string     `json:"unavailable"`
+	Rows                 []spendRow              `json:"rows"`
+	Total                spendSummary            `json:"total"`
+	ByRerun              map[string]spendSummary `json:"by_rerun"`
+	ExcludedUnknownStart int                     `json:"excluded_unknown_start"`
+	Unavailable          []string                `json:"unavailable"`
 }
 
 func (s *spendSummary) add(u store.Spend) {
@@ -166,8 +168,40 @@ type spendStore interface {
 	Receipts() ([]store.Receipt, error)
 }
 
+// Rerun labels name what came before an attempt: attempt N-1 of the same task and step (docs/spend.md).
+const (
+	rerunFirst        = "first"
+	rerunAfterRefusal = "after-refusal"
+	rerunAfterFailure = "after-failure"
+	rerunAfterStop    = "after-stop"
+	rerunSendBack     = "send-back"
+	rerunUnknown      = "unknown"
+)
+
+// rerunLabel labels at by its predecessor in byStep, the task's full attempt list keyed by step and number.
+// A refusal is checked before the outcome, since it is stored as failed over any launcher outcome.
+func rerunLabel(byStep map[string]map[int]store.StageAttempt, at store.StageAttempt) string {
+	if at.Number <= 1 {
+		return rerunFirst
+	}
+	prev, ok := byStep[at.Step][at.Number-1]
+	switch {
+	case !ok:
+		return rerunUnknown
+	case prev.IntakeRejection != "":
+		return rerunAfterRefusal
+	case prev.Outcome == store.AttemptFailed:
+		return rerunAfterFailure
+	case prev.Outcome == store.AttemptStopped:
+		return rerunAfterStop
+	case prev.Outcome == store.AttemptSucceeded:
+		return rerunSendBack
+	}
+	return rerunUnknown
+}
+
 func readSpend(s spendStore, state, repository, taskID string, since time.Time) (spendReport, error) {
-	out := spendReport{Rows: []spendRow{}, Unavailable: []string{"prompt_only_tokens", "tool_schema_tokens", "file_read_tokens", "adapter", "model"}}
+	out := spendReport{Rows: []spendRow{}, ByRerun: map[string]spendSummary{}, Unavailable: []string{"prompt_only_tokens", "tool_schema_tokens", "file_read_tokens", "adapter", "model"}}
 	groups := map[spendGroup]spendSummary{}
 	starts := map[[3]string]time.Time{}
 	if !since.IsZero() {
@@ -201,6 +235,14 @@ func readSpend(s spendStore, state, repository, taskID string, since time.Time) 
 			if err != nil {
 				return out, err
 			}
+			// Built before the --since filter, so a filter never changes a label.
+			byStep := map[string]map[int]store.StageAttempt{}
+			for _, at := range attempts {
+				if byStep[at.Step] == nil {
+					byStep[at.Step] = map[int]store.StageAttempt{}
+				}
+				byStep[at.Step][at.Number] = at
+			}
 			for _, at := range attempts {
 				if !since.IsZero() {
 					record := fmt.Sprintf("attempt/%s/%d", at.Step, at.Number)
@@ -224,7 +266,8 @@ func readSpend(s spendStore, state, repository, taskID string, since time.Time) 
 					}
 					u = store.Spend{Tokens: store.Measure(usage.Tokens), InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CacheCreationInputTokens: usage.CacheCreationInputTokens, CacheReadInputTokens: usage.CacheReadInputTokens, Cost: store.Measure(usage.Cost), CostUSD: usage.CostUSD}
 				}
-				key := spendGroup{repo, task.ID, at.Step, "unavailable", "unavailable", "unavailable", "unavailable"}
+				rerun := rerunLabel(byStep, at)
+				key := spendGroup{repo, task.ID, at.Step, rerun, "unavailable", "unavailable", "unavailable", "unavailable"}
 				if err := spendManifest(dir, at, &key); err != nil {
 					return out, err
 				}
@@ -232,6 +275,9 @@ func readSpend(s spendStore, state, repository, taskID string, since time.Time) 
 				sum.add(u)
 				groups[key] = sum
 				out.Total.add(u)
+				byRerun := out.ByRerun[rerun]
+				byRerun.add(u)
+				out.ByRerun[rerun] = byRerun
 			}
 		}
 	}
@@ -240,8 +286,8 @@ func readSpend(s spendStore, state, repository, taskID string, since time.Time) 
 	}
 	sort.Slice(out.Rows, func(i, j int) bool {
 		a, b := out.Rows[i].spendGroup, out.Rows[j].spendGroup
-		aa := []string{a.Repository, a.Task, a.Step, a.Profile, a.Role, a.Adapter, a.Model}
-		bb := []string{b.Repository, b.Task, b.Step, b.Profile, b.Role, b.Adapter, b.Model}
+		aa := []string{a.Repository, a.Task, a.Step, a.Rerun, a.Profile, a.Role, a.Adapter, a.Model}
+		bb := []string{b.Repository, b.Task, b.Step, b.Rerun, b.Profile, b.Role, b.Adapter, b.Model}
 		for n := range aa {
 			if aa[n] != bb[n] {
 				return aa[n] < bb[n]
@@ -281,7 +327,7 @@ func spendManifest(dir string, at store.StageAttempt, key *spendGroup) error {
 func (a *App) spendTable(r spendReport) int {
 	var b strings.Builder
 	w := tabwriter.NewWriter(&b, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "REPO\tTASK\tSTEP\tPROFILE\tROLE\tADAPTER\tMODEL\tMEASURE\tINPUT\tOUTPUT\tCACHE-CREATE\tCACHE-READ\tUSD\tCOVERAGE")
+	_, _ = fmt.Fprintln(w, "REPO\tTASK\tSTEP\tRERUN\tPROFILE\tROLE\tADAPTER\tMODEL\tMEASURE\tINPUT\tOUTPUT\tCACHE-CREATE\tCACHE-READ\tUSD\tCOVERAGE")
 	row := func(k spendGroup, s spendSummary) {
 		coverage := "complete"
 		if s.Partial {
@@ -291,14 +337,22 @@ func (a *App) spendTable(r spendReport) int {
 			name string
 			v    spendAmounts
 		}{{"measured", s.Measured}, {"estimated", s.Estimated}} {
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\t%.6f\t%s\n", k.Repository, k.Task, k.Step, k.Profile, k.Role, k.Adapter, k.Model, m.name, m.v.InputTokens, m.v.OutputTokens, m.v.CacheCreationInputTokens, m.v.CacheReadInputTokens, m.v.CostUSD, coverage)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\t%.6f\t%s\n", k.Repository, k.Task, k.Step, k.Rerun, k.Profile, k.Role, k.Adapter, k.Model, m.name, m.v.InputTokens, m.v.OutputTokens, m.v.CacheCreationInputTokens, m.v.CacheReadInputTokens, m.v.CostUSD, coverage)
 		}
-		_, _ = fmt.Fprintf(w, "\t\t\t\t\t\t\tunknown\ttokens=%d\tcost=%d\t\t\t\t%d attempts\n", s.TokensUnknown, s.CostUnknown, s.Attempts)
+		_, _ = fmt.Fprintf(w, "\t\t\t\t\t\t\t\tunknown\ttokens=%d\tcost=%d\t\t\t\t%d attempts\n", s.TokensUnknown, s.CostUnknown, s.Attempts)
 	}
 	for _, v := range r.Rows {
 		row(v.spendGroup, v.spendSummary)
 	}
 	row(spendGroup{Repository: "TOTAL"}, r.Total)
+	labels := make([]string, 0, len(r.ByRerun))
+	for label := range r.ByRerun {
+		labels = append(labels, label)
+	}
+	sort.Strings(labels)
+	for _, label := range labels {
+		row(spendGroup{Repository: "TOTAL", Rerun: label}, r.ByRerun[label])
+	}
 	_ = w.Flush()
 	_, _ = fmt.Fprintf(&b, "Excluded unknown start: %d\nUnavailable: %s\n", r.ExcludedUnknownStart, strings.Join(r.Unavailable, ", "))
 	if _, err := io.WriteString(a.Stdout, b.String()); err != nil {

@@ -182,8 +182,204 @@ func TestSpendReportRetriesAggregateWithoutTranscriptReads(t *testing.T) {
 	}
 	defer func() { _ = s.Close() }()
 	got, err := readSpend(s, d.state, "", "", time.Time{})
-	if err != nil || len(got.Rows) != 1 || got.Total.Attempts != 2 || got.Total.Partial || got.Rows[0].Measured.InputTokens != 18 || got.Rows[0].Measured.CostUSD != 0.5 {
+	if err != nil || len(got.Rows) != 2 || got.Total.Attempts != 2 || got.Total.Partial || got.Total.Measured.InputTokens != 18 || got.Total.Measured.CostUSD != 0.5 {
 		t.Fatalf("report=%+v err=%v", got, err)
+	}
+	for n, want := range []string{"after-failure", "first"} {
+		if r := got.Rows[n]; r.Rerun != want || r.Attempts != 1 || r.Measured.InputTokens != 9 || r.Measured.CostUSD != 0.25 {
+			t.Fatalf("row %d=%+v, want rerun %s", n, r, want)
+		}
+	}
+}
+
+// spendLabelOf records attempt 1 of t1/build with finish, then starts attempt 2,
+// and returns attempt 2's label from an unfiltered report.
+func spendLabelOf(t *testing.T, finish func(*store.Store) error) string {
+	t.Helper()
+	d := newRunDirector(t)
+	s, err := store.Open(d.store, store.Options{RequireStore: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	if _, err = s.StartAttempt("start-1", "app", "t1", "build"); err != nil {
+		t.Fatal(err)
+	}
+	if err = finish(s); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.StartAttempt("start-2", "app", "t1", "build"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := readSpend(s, d.state, "", "", time.Time{})
+	if err != nil || len(got.Rows) != 2 || got.Rows[0].Rerun == got.Rows[1].Rerun {
+		t.Fatalf("report=%+v err=%v", got, err)
+	}
+	labels := map[string]bool{got.Rows[0].Rerun: true, got.Rows[1].Rerun: true}
+	if !labels["first"] {
+		t.Fatalf("no first row: %+v", got.Rows)
+	}
+	delete(labels, "first")
+	for label := range labels {
+		return label
+	}
+	return ""
+}
+
+func TestSpendReportLabelsRerunsByPredecessor(t *testing.T) {
+	finish := func(o store.AttemptOutcome) func(*store.Store) error {
+		return func(s *store.Store) error {
+			_, err := s.FinishAttempt("finish-1", "app", "t1", "build", 1, o)
+			return err
+		}
+	}
+	reject := func(s *store.Store) error {
+		_, err := s.RejectAttempt("reject-1", "app", "t1", "build", 1, "missing output")
+		return err
+	}
+	for _, c := range []struct {
+		name   string
+		finish func(*store.Store) error
+		want   string
+	}{
+		{"refused", reject, "after-refusal"},
+		{"refused after launcher success", func(s *store.Store) error {
+			if err := finish(store.AttemptSucceeded)(s); err != nil {
+				return err
+			}
+			return reject(s)
+		}, "after-refusal"},
+		{"failed", finish(store.AttemptFailed), "after-failure"},
+		{"stopped", finish(store.AttemptStopped), "after-stop"},
+		{"succeeded", finish(store.AttemptSucceeded), "send-back"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := spendLabelOf(t, c.finish); got != c.want {
+				t.Fatalf("label %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+type fixedSpendStore struct {
+	attempts []store.StageAttempt
+	receipts []store.Receipt
+}
+
+func (s fixedSpendStore) Repositories() ([]string, error) { return []string{"app"}, nil }
+func (s fixedSpendStore) Tasks(repo string) ([]store.Task, error) {
+	return []store.Task{{Repository: repo, ID: "t1"}}, nil
+}
+func (s fixedSpendStore) Attempts(string, string) ([]store.StageAttempt, error) {
+	return s.attempts, nil
+}
+func (s fixedSpendStore) Receipts() ([]store.Receipt, error) { return s.receipts, nil }
+
+func TestSpendReportLabelsUnknownPredecessors(t *testing.T) {
+	at := func(step string, n int, o store.AttemptOutcome) store.StageAttempt {
+		return store.StageAttempt{Repository: "app", TaskID: "t1", Step: step, Number: n, Outcome: o}
+	}
+	s := fixedSpendStore{attempts: []store.StageAttempt{
+		at("build", 1, ""),            // running predecessor
+		at("build", 2, ""),            // unknown
+		at("review", 3, ""),           // missing predecessor: unknown
+		at("build--s2", 1, "failed"),  // a sliced step is its own step: first
+		at("build--s2", 2, "stopped"), // after-failure
+	}}
+	got, err := readSpend(s, t.TempDir(), "", "", time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	labels := map[string]string{}
+	for _, r := range got.Rows {
+		labels[r.Step] += r.Rerun + ","
+	}
+	if labels["build"] != "first,unknown," || labels["review"] != "unknown," || labels["build--s2"] != "after-failure,first," {
+		t.Fatalf("labels=%v", labels)
+	}
+	if got.ByRerun["unknown"].Attempts != 2 || got.ByRerun["first"].Attempts != 2 || got.ByRerun["after-failure"].Attempts != 1 || len(got.ByRerun) != 3 {
+		t.Fatalf("by_rerun=%+v", got.ByRerun)
+	}
+}
+
+func TestSpendReportSinceKeepsLabelAndSubtotals(t *testing.T) {
+	d := newRunDirector(t)
+	// Each receipt is a second after the last, so attempt 2 starts strictly after attempt 1.
+	clock := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	s, err := store.Open(d.store, store.Options{RequireStore: true, Now: func() time.Time {
+		clock = clock.Add(time.Second)
+		return clock
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.StartAttempt("start-1", "app", "t1", "build"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.RecordAttemptSpend("spend-1", "app", "t1", "build", 1, store.Spend{Tokens: store.SpendMeasured, InputTokens: 5, Cost: store.SpendMeasured, CostUSD: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.FinishAttempt("finish-1", "app", "t1", "build", 1, store.AttemptSucceeded); err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.StartAttempt("start-2", "app", "t1", "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.RecordAttemptSpend("spend-2", "app", "t1", "build", 2, store.Spend{Tokens: store.SpendMeasured, InputTokens: 7, Cost: store.SpendMeasured, CostUSD: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.FinishAttempt("finish-2", "app", "t1", "build", 2, store.AttemptFailed); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.StartAttempt("start-3", "app", "t1", "build"); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = store.Open(d.store, store.Options{ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := readSpend(s, d.state, "", "", second.CommittedAt)
+	_ = s.Close()
+	if err != nil || got.Total.Attempts != 2 || len(got.Rows) != 2 || got.Rows[0].Rerun != "after-failure" || got.Rows[1].Rerun != "send-back" || got.Rows[1].Measured.InputTokens != 7 {
+		t.Fatalf("since report=%+v err=%v", got, err)
+	}
+	if _, ok := got.ByRerun["first"]; ok {
+		t.Fatalf("attempt 1 counted: %+v", got.ByRerun)
+	}
+	var sum spendSummary
+	for _, v := range got.ByRerun {
+		sum.Attempts += v.Attempts
+		sum.Measured.InputTokens += v.Measured.InputTokens
+		sum.Measured.CostUSD += v.Measured.CostUSD
+		sum.TokensUnknown += v.TokensUnknown
+		sum.CostUnknown += v.CostUnknown
+	}
+	if sum.Attempts != got.Total.Attempts || sum.Measured != got.Total.Measured || sum.TokensUnknown != got.Total.TokensUnknown || sum.CostUnknown != got.Total.CostUnknown {
+		t.Fatalf("by_rerun %+v does not sum to total %+v", got.ByRerun, got.Total)
+	}
+	app, out, stderr := newTestApp(nil, nil)
+	if code := app.Run([]string{"spend", "report", "--store", d.store, "--state", d.state}); code != 0 {
+		t.Fatalf("code=%d err=%s", code, stderr)
+	}
+	table := out.String()
+	if !strings.Contains(table, "RERUN") {
+		t.Fatalf("no RERUN column: %s", table)
+	}
+	for _, label := range []string{"first", "send-back", "after-failure"} {
+		found := false
+		for _, line := range strings.Split(table, "\n") {
+			f := strings.Fields(line)
+			if len(f) > 2 && f[0] == "TOTAL" && f[1] == label {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("no TOTAL %s line: %s", label, table)
+		}
 	}
 }
 
@@ -253,7 +449,7 @@ func (s startIndexSpendStore) Tasks(repo string) ([]store.Task, error) {
 
 func (s startIndexSpendStore) Attempts(repo, task string) ([]store.StageAttempt, error) {
 	return []store.StageAttempt{
-		{Repository: repo, TaskID: task, Step: "build", Number: 1},
+		{Repository: repo, TaskID: task, Step: "build", Number: 1, Outcome: store.AttemptFailed},
 		{Repository: repo, TaskID: task, Step: "build", Number: 2},
 	}, nil
 }
@@ -275,7 +471,7 @@ func TestSpendReportStartIndexSeparatesAttemptIdentities(t *testing.T) {
 	s := startIndexSpendStore{boundary: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
 	state := t.TempDir()
 	got, err := readSpend(s, state, "", "", s.boundary)
-	if err != nil || got.Total.Attempts != 2 || got.ExcludedUnknownStart != 2 || len(got.Rows) != 1 || got.Rows[0].Repository != "app" || got.Rows[0].Task != "t1" {
+	if err != nil || got.Total.Attempts != 2 || got.ExcludedUnknownStart != 2 || len(got.Rows) != 2 || got.Rows[0].Repository != "app" || got.Rows[0].Task != "t1" || got.Rows[1].Task != "t1" || got.Rows[0].Rerun != "after-failure" || got.Rows[1].Rerun != "first" {
 		t.Fatalf("report=%+v err=%v", got, err)
 	}
 	got, err = readSpend(s, state, "", "", time.Time{})
