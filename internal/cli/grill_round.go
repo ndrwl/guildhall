@@ -420,6 +420,11 @@ func savePageDrafts(s *store.Store, p web.RoundPost, round int, ns []int, boxes 
 		if d.Mark == store.DraftWords && d.Text == "" {
 			d.Mark = store.DraftUnmarked
 		}
+		if p.Act == web.RoundAcceptAll && d.Mark == store.DraftUnmarked && d.Text == "" {
+			// Accept all recommendations takes the recommendation only where the box is empty: a question with
+			// words, marked or not, keeps them as the Guildmaster left them.
+			d.Mark = store.DraftAccept
+		}
 		if d.Mark != store.DraftPick {
 			d.Pick = ""
 		}

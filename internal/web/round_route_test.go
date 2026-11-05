@@ -29,11 +29,12 @@ func TestRoundPosts(t *testing.T) {
 		question int
 		location string
 	}{
-		"save":      {web.RoundSave, 0, "/guildhall/d122#grill-2"},
-		"send":      {web.RoundSend, 0, "/guildhall/d122#grill-2-talk"},
-		"accept-3":  {web.RoundAccept, 3, "/guildhall/d122#grill-2-q3"},
-		"words-1":   {web.RoundWords, 1, "/guildhall/d122#grill-2-q1"},
-		"change-30": {web.RoundChange, 30, "/guildhall/d122#grill-2-q30"},
+		"save":       {web.RoundSave, 0, "/guildhall/d122#grill-2"},
+		"send":       {web.RoundSend, 0, "/guildhall/d122#grill-2-talk"},
+		"accept-all": {web.RoundAcceptAll, 0, "/guildhall/d122#grill-2"},
+		"accept-3":   {web.RoundAccept, 3, "/guildhall/d122#grill-2-q3"},
+		"words-1":    {web.RoundWords, 1, "/guildhall/d122#grill-2-q1"},
+		"change-30":  {web.RoundChange, 30, "/guildhall/d122#grill-2-q30"},
 	} {
 		f := &fakeAnswerer{}
 		w := request(answering(t, f), http.MethodPost, "/guildhall/d122/round", gmAddr, roundForm(act, map[string]string{"text-1": "CSV only.", "text-3": "", "text-31": "never read"}), nil)
