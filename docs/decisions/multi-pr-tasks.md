@@ -4,7 +4,7 @@ date: 2026-10-31
 topic: delivery
 tasks: d88
 amends: task-cancel.md
-amended-by: stacked-prs-not-yet.md
+amended-by: stacked-prs-not-yet.md, one-pr-task-delivered.md
 ---
 
 # Large work is one multi-PR task: an accepted spec lists ordered slices, delivered one pull request each
@@ -31,7 +31,7 @@ The qualifier is `--s<k>` rather than a dot because step ids pass through `workf
 Slice k from 2 on runs on branch `guildhall/<task>.s<k>` (`interp.SliceBranch`), which no task can own, in a fresh worktree, `work.s<k>`, cut from main after the slice before it merged.
 
 Only the last slice's merge closes the task: deliver, the outside-merge rule and `task reconcile` close a slice before the last by recording its merge, telling the Director, retiring its workspace and leaving the merge queue, and the same advance starts the next slice.
-A slice whose work an earlier slice or a merged pull request already delivered has nothing to build and would never get a merge record, so the Director closes it with `slice delivered`, which records `delivered--s<k>-1-delivery` (d162, [a slice already delivered](../tasks.md#a-slice-already-delivered)).
+A slice whose work an earlier slice or a merged pull request already delivered has nothing to build and would never get a merge record, so the Director closes it with `slice delivered`, which records `delivered--s<k>-1-delivery` (d162, [a slice already delivered](../tasks.md#a-slice-already-delivered)); a one-PR task, slice 1 of 1, closes the same way ([one-PR task delivered](one-pr-task-delivered.md)).
 That delivery record counts as the slice's close wherever a merge record does for the slice position, the current slice still being the closed slices plus one, but it is not a `-merge` document, so nothing that reads merges, the hallmark baseline and the merged-slice count among them, takes it for one.
 `task cancel` is refused only while the current slice is merging; otherwise it closes the unmerged slices' pull requests and records the task cancelled, its merged slices standing.
 

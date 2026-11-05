@@ -178,3 +178,64 @@ func TestTaskCancelAfterADeliveredSlice(t *testing.T) {
 		t.Errorf("task state = %s, want cancelled", got.State)
 	}
 }
+
+// TestSliceDeliveredClosesAOnePRTask: d187's case. A one-PR task whose change another merged pull request of the
+// repository already shipped is closed with slice delivered --slice 1 --by-pr: --by-slice is refused, naming --by-pr,
+// and writes nothing; the close prints the done wait, the task is done, not cancelled, with no merge record, the
+// Director is sent a slice-delivered message in one-PR words, and director status shows what delivered it. Running it
+// again prints the same wait and writes nothing, and a cancel after the close is refused.
+func TestSliceDeliveredClosesAOnePRTask(t *testing.T) {
+	c := newCancelDirector(t)
+	head := strings.Repeat("e", 40)
+	c.forge.AddCommit(appRepo, head)
+	other, err := c.forge.Publish(context.Background(), forge.Change{Repository: appRepo, Remote: appRemote, Branch: "elsewhere", Head: head, Title: "Elsewhere"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged, err := c.forge.Merge(context.Background(), forge.Merge{Repository: appRepo, Remote: appRemote, Number: other.Number, Head: other.Head, Title: "Elsewhere"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := c.receipts(t)
+	if code, _, stderr := c.sliceDelivered(t, "--task", "t1", "--slice", "1", "--by-slice", "1", "--reason", "r"); code != 1 || !strings.Contains(stderr, "app/t1 delivers one pull request; name the PR that shipped it with --by-pr") {
+		t.Errorf("a one-PR task delivered by a slice: exit %d, %s", code, stderr)
+	}
+	if c.receipts(t) != before {
+		t.Error("a refused delivery wrote records")
+	}
+	args := []string{"--task", "t1", "--slice", "1", "--by-pr", merged.URL, "--reason", "#1 shipped the change"}
+	code, out, stderr := c.sliceDelivered(t, args...)
+	if code != 0 || out != `{"wait":"done","step":"deliver"}`+"\n" {
+		t.Fatalf("slice delivered: exit %d, %q %s", code, out, stderr)
+	}
+	if got := c.task(t, "t1"); got.State != store.TaskDone {
+		t.Errorf("task state = %s, want done", got.State)
+	}
+	docs, err := withStore(c.store, true, func(s *store.Store) ([]store.DocumentRef, error) { return s.Documents("app", "t1") })
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range docs {
+		if strings.HasSuffix(d.Name, "-merge") {
+			t.Errorf("document %s: nothing merged for the task", d.Name)
+		}
+	}
+	m, err := withStore(c.store, true, func(s *store.Store) (store.Message, error) {
+		return s.Message("app.t1.slice-delivered.delivered-1")
+	})
+	if err != nil || m.Type != store.MessageSliceDelivered || !strings.Contains(m.Text, "closed the task as already delivered by "+merged.URL) || strings.Contains(m.Text, "slice 1 of 1") {
+		t.Errorf("slice-delivered message = %+v, %v", m, err)
+	}
+	code, status, stderr := c.run(t, "director", "status", "--json", "--store", c.store, "--state", c.state, "--config", c.config)
+	if code != 0 || !strings.Contains(status, `"id":"t1"`) || !strings.Contains(status, `"delivered_by":"`+merged.URL+`"`) {
+		t.Errorf("director status: exit %d, %s\n%s", code, stderr, status)
+	}
+	before = c.receipts(t)
+	code, again, stderr := c.sliceDelivered(t, args...)
+	if code != 0 || again != out || c.receipts(t) != before {
+		t.Errorf("slice delivered again: exit %d, %q %s, %d new receipts", code, again, stderr, c.receipts(t)-before)
+	}
+	if code, _, stderr := c.cancel(t, "--reason", "Too late.", "t1"); code != 1 || !strings.Contains(stderr, "is done") {
+		t.Errorf("task cancel of the done task: exit %d, %s", code, stderr)
+	}
+}

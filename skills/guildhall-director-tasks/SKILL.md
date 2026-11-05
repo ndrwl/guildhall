@@ -234,6 +234,9 @@ See `docs/spend.md` for the first increment's attribution limits; do not infer m
 
 ## Cancelling a task
 
+Cancel is for abandoned work only.
+When another merged PR or an earlier slice already shipped a task's work, close it with `slice delivered` instead, as [Closing work already delivered](#closing-work-already-delivered) says; it ends `done`, not `cancelled`.
+
 Before cancelling any task, ask the Guildmaster in plain words, naming each task and the reason, such as "Cancel d105 and d102, as duplicates of d120?", and run nothing until they say yes to that question.
 Only an explicit yes to cancel counts: words like "transfer", "move" or "replace" are not one, even when they imply a cancel.
 In one session the Guildmaster said "transfer" without saying "cancel", and Claude Code's auto-mode safety check blocked a combined cancel of d105 and d102; the separate cancels ran only after the Guildmaster said it outright.
@@ -250,6 +253,20 @@ It is irreversible: it stops running attempts, closes the open PR with the reaso
 It refuses a done task and one whose work merged or is merging, and refuses when a running Artisan's stop cannot be proven; if it fails part-way, run the same command again.
 A PR merged on the forge refuses it too, and that task is recorded `done` instead, not cancelled.
 Report one cancel receipt per task to the Guildmaster.
+
+## Closing work already delivered
+
+A build that finds its work already shipped commits nothing and fails with a summary starting `Already delivered by <pr url>` or `Already delivered by slice <j>`.
+Check the evidence (the PR is this repository's, merged, and holds each item the summary names), then propose the close to the Guildmaster before any cancel or retry, such as "Close d187 as delivered by #351?".
+After the yes, close the task's current slice; a one-PR task is slice 1 and takes `--by-pr` only:
+
+```sh
+guildhall slice delivered --repo app --task a12 --slice 1 --by-pr https://github.com/o/app/pull/351 --reason "#351 shipped every item of the spec."
+```
+
+It records the delivery, sends a `slice-delivered` message and closes the slice; after the last, or for a one-PR task, the task is `done`, its dependents released, and `director status` shows `delivered_by`.
+It counts toward no hallmark.
+A forge that cannot read pull requests refuses `--by-pr`; there a multi-PR slice can still name an earlier slice with `--by-slice <j>`, and a one-PR task has only cancel left.
 
 ## Published PR conflicts and sending work back
 
@@ -268,6 +285,7 @@ You may choose any appropriate recovery; the available options are not a fixed p
   No attempt in the task may still be running when you make a new request.
   The next review keeps its previous evidence and scopes to the resolution only when the rebase classifier proves it appropriate; other changes receive full review, and republish updates the same open PR.
 - Hold a failed or stopped attempt on purpose with `guildhall step park` and a reason, or put a Guildmaster-requested `hold` on an existing merge decision.
+- Close the task as already delivered when another merged PR shipped its work, following [Closing work already delivered](#closing-work-already-delivered); propose this before any cancel.
 - Cancel the task, following [Cancelling a task](#cancelling-a-task).
   To replace a task, create the replacement and cancel the old one as that section says, then repoint each dependent named in a `dependency-cancelled` message:
   `guildhall task depends remove --repo app --reason "a12 was replaced by a14." a13 app/a12`, then

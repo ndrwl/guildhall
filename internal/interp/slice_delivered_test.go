@@ -186,7 +186,7 @@ type readerless struct{ interp.Forge }
 // TestSliceDeliveredRefusals: a slice-delivered event is refused, with nothing written, for a slice that is not current
 // or does not exist, a slice named that is not earlier or not merged, a pull request not merged or not the
 // repository's, no reason, both or neither piece of evidence, a running attempt, a forge that cannot read pull
-// requests given a pull request, a one-slice task and a closed task.
+// requests given a pull request, and a closed task. A one-PR task's refusals are in one_pr_delivered_test.go.
 func TestSliceDeliveredRefusals(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -248,15 +248,6 @@ func TestSliceDeliveredRefusals(t *testing.T) {
 		}
 		if len(e.documents(t)) != before {
 			t.Error("the refusal wrote a record")
-		}
-	})
-	t.Run("a one-slice task", func(t *testing.T) {
-		const one = "# One change\n\n## Summary\n\n- **Goal:** one pull request.\n\n## Goal\n\nOne pull request.\n\n## Open questions\n\nNone.\n"
-		e, _, _ := newSliceEnv(t, backends[1], true, sliceScript(t, one)...)
-		e.advance(t, interp.Event{Kind: interp.TaskCreated})
-		e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1})
-		if _, err := e.eng.Advance(t.Context(), interp.Event{Kind: interp.SliceDelivered, Repository: "app", Task: "t7", Slice: 1, PullRequest: "https://forge.invalid/1", Reason: "r"}); err == nil || !strings.Contains(err.Error(), "delivers one pull request") {
-			t.Errorf("a delivery of a one-slice task = %v", err)
 		}
 	})
 	t.Run("a closed task", func(t *testing.T) {

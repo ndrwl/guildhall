@@ -12,5 +12,6 @@ Leave no uncommitted tracked changes, staged or unstaged: Guildhall refuses them
 Untracked notes alone do not block intake.
 
 When an earlier slice or a merged pull request already delivered everything the current slice asks for, commit nothing and report `failed`.
+A task with no slices counts as one slice, so this applies when a merged pull request already delivered everything it asks for.
 Start the summary with `Already delivered by slice <j>` or `Already delivered by <pr url>`, then give the evidence: which item each named slice or pull request delivers.
-The Director confirms it with `guildhall slice delivered`, which closes the slice.
+The Director confirms it with `guildhall slice delivered`, which closes the slice, or the whole task when it has one slice.
