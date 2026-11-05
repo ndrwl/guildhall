@@ -38,7 +38,7 @@ In another terminal on this machine, run:
     codex login --device-auth
 
 Device-code sign-in must be enabled for your ChatGPT account first: in ChatGPT, Settings > Security, turn on device
-code authorization for Codex.
+code authorization for Codex (a workspace admin enables it for a workspace).
 Help: https://developers.openai.com/codex/auth
 Never copy ~/.codex/auth.json from another machine.
 '''
@@ -53,7 +53,7 @@ id = "gh-sign-in"
 title = "Sign in to GitHub"
 tag = "human"
 os = ["linux", "darwin"]
-check = ["gh", "auth", "status", "--hostname", "github.com"]
+check = ["env", "GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1", "gh", "auth", "status", "--hostname", "github.com"]
 instructions = '''
 In another terminal on this machine, run:
 

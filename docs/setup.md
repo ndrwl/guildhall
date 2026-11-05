@@ -82,7 +82,7 @@ dest = "${home}/.local/bin/herdr"
 | `new-copy` | `copy-free`, `clone-paths-free` (human) | No `config.toml` or `director.store` in `copy_dir`, and each of `clone_paths` (separated by `:`) absent or an empty directory. A provisioning plan runs it before it acts and before each clone, and refuses with `ErrCopyExists` on any gap, so its gaps never become plan steps; with no values both pass. |
 | `go` | `go` (fixable), `go-on-path` (human) | Go unpacked into `~/.local/go` from `go_url` and `go_sha256`, then put on `PATH` by hand, ahead of any other Go of another version. |
 | `git-and-claude` | `git`, `gh`, `claude` (human) | Administrator installs of Git and the GitHub CLI, and Claude Code. |
-| `sign-in` | `claude-sign-in`, `codex-sign-in`, `gh-sign-in` (human) | Each runtime's own status command as the check; the wizard prints the sign-in command, never a token ([sign-in](signin.md)). |
+| `sign-in` | `claude-sign-in`, `codex-sign-in`, `gh-sign-in` (human) | Each runtime's own status command as the check, `gh`'s run through `env` with gh's two variables set as `guildhall signin` sets them; the wizard prints the sign-in command, never a token ([sign-in](signin.md)). |
 | `wsl-settings` | `wsl-systemd`, `wsl-keep-running` (human) | systemd in `/etc/wsl.conf` and `vmIdleTimeout=-1` in `%UserProfile%\.wslconfig`; outside WSL both pass. |
 
 Step ids are unique across the built-ins, so a gap id names one step.

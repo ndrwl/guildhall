@@ -26,7 +26,7 @@ For each runtime it runs three steps (R1.48):
   | `codex` | `codex login status` | `codex exec --skip-git-repo-check --sandbox read-only "Reply with the single word OK."` |
   | `gh` | `gh auth status --hostname github.com` | `gh api user --jq .login` |
 
-  A probe runs in a new empty directory, so no copy's project settings or hooks load, and `gh` runs with `GH_PROMPT_DISABLED=1`.
+  A probe runs in a new empty directory, so no copy's project settings or hooks load, and `gh` runs with `GH_PROMPT_DISABLED=1` and `GH_NO_UPDATE_NOTIFIER=1`.
   The status command is bounded at 30 seconds and the real call at two minutes; a model call that prints nothing has failed.
   Codex keeps its login in a file or in the keyring, as `cli_auth_credentials_store` says, so the probe asks `codex login status` and never looks for `~/.codex/auth.json`.
 - **Act**, when the check fails, prints the exact command and link and waits for the Guildmaster to run it in their own terminal (R1.47); Guildhall runs and opens nothing:

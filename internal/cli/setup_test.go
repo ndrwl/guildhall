@@ -165,3 +165,14 @@ func TestSetupDoctorAllBuiltins(t *testing.T) {
 		}
 	}
 }
+
+func TestSetupUsageNamesEveryBuiltin(t *testing.T) {
+	app, stdout, _ := newTestApp(nil, nil)
+	if code := app.Run([]string{"setup", "help"}); code != 0 {
+		t.Fatalf("setup help exit = %d", code)
+	}
+	want := "--steps names a built-in step file (" + strings.Join(setup.Builtins(), ", ") + ")"
+	if !strings.Contains(stdout.String(), want) {
+		t.Errorf("usage lacks %q:\n%s", want, stdout)
+	}
+}
