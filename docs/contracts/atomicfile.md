@@ -10,7 +10,7 @@ A missing file (`fs.ErrNotExist`) and every other error are returned at once, an
 A reader that closes between reads leaves a republish its bound; a test that never closes is testing the platform, not this package.
 One implementation and no interface, like `digest` and `strictjson`.
 
-Consumers: `artisan`'s containment and heartbeat writers and heartbeat reader; `adapter.ReadResult`, so `WaitResult` does too; `interp`'s attempt-file writer; `artisan.ReadOutcome`; `launch.Files.Result`; `cilog`'s CI log cache and the file `guildhall ci log --out` writes; and the test helpers of `artisantest` and `interptest`, including `artisantest.Files.ValidResult`; and `release`'s install rename and `RemoveLocked`'s rename, through `Rename`.
+Consumers: `artisan`'s containment and heartbeat writers and heartbeat reader; `adapter.ReadResult`, so `WaitResult` does too; `interp`'s attempt-file writer; `artisan.ReadOutcome`; `launch.Files.Result`; `cilog`'s CI log cache and the file `guildhall ci log --out` writes; and the test helpers of `artisantest` and `interptest`, including `artisantest.Files.ValidResult`; and `release`'s install rename and `RemoveLocked`'s rename, and `setup`'s fetch and unpack renames, through `Rename`.
 The retry policy does not cover cancel-marker checks.
 `outcome.json` and adapter result files are still published once with a hard link (`os.Link`), which never replaces a file.
 Directory renames are covered by `Rename`, but `interp`'s prepared attempt directory is still published with a plain directory rename that does not use it.

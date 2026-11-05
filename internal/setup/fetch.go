@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/url"
@@ -21,10 +22,18 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/ndrwl/guildhall/internal/atomicfile"
 )
 
 // maxFetch bounds a download.
 const maxFetch = 1 << 30
+
+// rename and mkdirTemp are the filesystem calls a test makes fail.
+var (
+	rename    = atomicfile.Rename
+	mkdirTemp = os.MkdirTemp
+)
 
 func (e *env) fetch(ctx context.Context, f Fetch) error {
 	rawURL, want, dest := e.expand(f.URL), strings.ToLower(e.expand(f.SHA256)), filepath.Clean(e.expand(f.Dest))
@@ -82,7 +91,7 @@ func (e *env) fetch(ctx context.Context, f Fetch) error {
 	if err := os.Chmod(tmp.Name(), 0o755); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), dest)
+	return rename(tmp.Name(), dest)
 }
 
 func loopback(host string) bool {
@@ -101,17 +110,11 @@ func paramNames(s Steps) string {
 	return strings.Join(sortedStrings(names), ", ")
 }
 
-// unpackInto extracts the gzipped tar archive into a new directory dest, by way of a temporary directory beside it,
-// dropping strip leading elements of each name. Only directories and regular files are allowed, and no name may
-// leave dest.
+// unpackInto extracts the gzipped tar archive into a scratch directory beside dest, dropping strip leading elements
+// of each name, and only then puts it at dest. Only directories and regular files are allowed, and no name may leave
+// dest. A failed extraction leaves dest untouched.
 func unpackInto(archive, dest string, strip int) error {
-	if _, err := os.Lstat(dest); err == nil {
-		// claim has checked the manifest owns dest; an owned earlier install is replaced whole.
-		if err := os.RemoveAll(dest); err != nil {
-			return err
-		}
-	}
-	work, err := os.MkdirTemp(filepath.Dir(dest), ".setup-unpack-*")
+	work, err := mkdirTemp(filepath.Dir(dest), ".setup-unpack-*")
 	if err != nil {
 		return err
 	}
@@ -168,5 +171,44 @@ func unpackInto(archive, dest string, strip int) error {
 			return fmt.Errorf("unpack: entry %q is neither a directory nor a regular file", hdr.Name)
 		}
 	}
-	return os.Rename(work, dest)
+	return swapInto(work, dest)
+}
+
+// swapInto puts the fully extracted directory work at dest. An earlier install at dest (claim has checked the
+// manifest owns it) is moved aside first, put back if work cannot be moved into place, and removed only once it has
+// been replaced.
+func swapInto(work, dest string) error {
+	if _, err := os.Lstat(dest); errors.Is(err, fs.ErrNotExist) {
+		return rename(work, dest)
+	} else if err != nil {
+		return err
+	}
+	old, err := oldCopyName(dest)
+	if err != nil {
+		return err
+	}
+	if err := rename(dest, old); err != nil {
+		return fmt.Errorf("unpack: move the earlier install %s aside: %w", dest, err)
+	}
+	if err := rename(work, dest); err != nil {
+		if berr := rename(old, dest); berr != nil {
+			return fmt.Errorf("unpack: move the new install into %s: %w; the earlier install is at %s and could not be put back: %v", dest, err, old, berr)
+		}
+		return fmt.Errorf("unpack: move the new install into %s: %w; the earlier install was put back from %s", dest, err, old)
+	}
+	// The new install is in place; an old copy that cannot be removed is a harmless leftover.
+	_ = os.RemoveAll(old)
+	return nil
+}
+
+// oldCopyName is the first dest.old-<n>, from 1, that does not exist, so a leftover from an earlier crash is kept.
+func oldCopyName(dest string) (string, error) {
+	for n := 1; ; n++ {
+		p := fmt.Sprintf("%s.old-%d", dest, n)
+		if _, err := os.Lstat(p); errors.Is(err, fs.ErrNotExist) {
+			return p, nil
+		} else if err != nil {
+			return "", err
+		}
+	}
 }

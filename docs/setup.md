@@ -67,6 +67,7 @@ dest = "${home}/.local/bin/herdr"
   The engine sets `home`, `setup_dir`, `os`, `arch` and `exe` (`.exe` on Windows, else empty).
 - **A fixable step** acts with exactly one of `action` and `fetch`.
   `fetch` downloads `url` (https, or http to the loopback address), refuses it unless its sha256 is `sha256`, then puts it at `dest`, or with `unpack = "tar.gz"` unpacks it there, dropping `strip` leading path elements; an entry that is not a file or directory, or that leaves `dest`, is refused.
+  An earlier install at `dest` is replaced only after the new one is fully unpacked, and is put back if the replacement fails.
 - **A human step** has `instructions`, `[[step.prompt]]` entries (`kind = "confirm" | "ask" | "ask_secret"`, `name`, `text`) and an optional `run`.
   A confirm answered no fails the step. An `ask` answer is recorded; an `ask_secret` answer is read without echo, given to `run` only as `SETUP_<NAME>`, and never written: the journal and record name the prompt and redact its value from any output they keep.
   The engine never runs `sudo`: a step that needs administrator rights is a human step.
