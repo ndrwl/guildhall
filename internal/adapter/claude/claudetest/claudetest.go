@@ -9,6 +9,8 @@ package claudetest
 
 import (
 	"bufio"
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,6 +32,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter/fake"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/interp"
+	"github.com/ndrwl/guildhall/internal/store"
 )
 
 // Directive starts the prompt line that chooses the stub's behaviour.
@@ -64,6 +67,19 @@ const (
 	// LingerCancelOnStop is Linger that, when asked to stop, writes the attempt's cancel marker before exiting:
 	// a cancel racing the wrapper's own stop.
 	LingerCancelOnStop = "linger-cancel-on-stop"
+)
+
+// The nudge behaviours play a session that is about to stop with no draft yet, driving the Stop hook its settings
+// register (claude.ResultHookCommand), as Claude Code does as a turn ends: they are the only behaviours that run it,
+// so no other stub session starts a `guildhall`. Each stop runs the hook with stop_hook_active false at first and
+// true once a hook has blocked, as Claude Code's does, and each run is recorded (StopHooks).
+const (
+	// Nudged stops without a draft; when the Stop hook blocks, it goes on as the block reason asks: it acknowledges
+	// the nudge with `guildhall messages ack <task>.<attempt>.nudge.submit`, the guildhall on PATH, writes a
+	// succeeded draft and stops again. When the hook lets the stop through it exits without a result.
+	Nudged = "nudged"
+	// NudgedNoResult stops without a draft and, when the Stop hook blocks, stops again at once, still without one.
+	NudgedNoResult = "nudged-no-result"
 )
 
 // lingers reports whether b is one of the linger behaviours.
@@ -242,7 +258,7 @@ func stub(args []string) error {
 			return fmt.Errorf("%s is outside the added directories %q", f, added)
 		}
 	}
-	granted, err := settings(flags, added)
+	granted, stop, err := settings(flags, added)
 	if err != nil {
 		return err
 	}
@@ -299,6 +315,26 @@ func stub(args []string) error {
 	case adaptertest.WrongIdentity, LingerWrongIdentity:
 		result["attempt_id"] = id.AttemptID + "-other"
 	case adaptertest.NoResult:
+		return nil
+	case Nudged, NudgedNoResult:
+		modelDir := filepath.Dir(draft)
+		if !stopAt(stop, false, modelDir) {
+			return nil
+		}
+		if b == NudgedNoResult {
+			stopAt(stop, true, modelDir)
+			return nil
+		}
+		if err := ackMessage(store.SubmitNudgeID(id.TaskID, id.AttemptID)); err != nil {
+			fmt.Fprintf(os.Stderr, "claude stub: guildhall messages ack: %v\n", err)
+		}
+		if data, err = json.Marshal(result); err != nil {
+			return err
+		}
+		if err := os.WriteFile(draft, data, 0o600); err != nil {
+			return err
+		}
+		stopAt(stop, true, modelDir)
 		return nil
 	case adaptertest.Malformed:
 		return os.WriteFile(draft, []byte(malformed), 0o600)
@@ -414,27 +450,29 @@ func Granted(result string) ([]string, error) {
 
 // settings reads the allow rules of the one --settings file in flags: an absolute path outside the added
 // directories, holding a permissions allow list (possibly empty), optional skill-policy controls and, optionally,
-// the Artisan's steering PostToolUse hook (claude.SteeringHookCommand) as its only hook. No --settings grants none.
-func settings(flags, added []string) ([]string, error) {
+// the Artisan's steering PostToolUse hook (claude.SteeringHookCommand) and result Stop hook
+// (claude.ResultHookCommand), each the event's only hook and with a timeout, and no other hook. It also returns the
+// Stop hook, nil when there is none. No --settings grants none and registers no hook.
+func settings(flags, added []string) ([]string, *stopHook, error) {
 	i := slices.Index(flags, "--settings")
 	if i < 0 {
-		return []string{}, nil
+		return []string{}, nil, nil
 	}
 	if i+1 >= len(flags) || slices.Contains(flags[i+1:], "--settings") {
-		return nil, fmt.Errorf("want one --settings file, got %q", flags)
+		return nil, nil, fmt.Errorf("want one --settings file, got %q", flags)
 	}
 	path := flags[i+1]
 	if !filepath.IsAbs(path) {
-		return nil, fmt.Errorf("--settings %q must be an absolute file", path)
+		return nil, nil, fmt.Errorf("--settings %q must be an absolute file", path)
 	}
 	for _, d := range added {
 		if rel, err := filepath.Rel(d, path); err == nil && !strings.HasPrefix(rel, "..") {
-			return nil, fmt.Errorf("--settings %s is inside the added directory %s, which Claude may write", path, d)
+			return nil, nil, fmt.Errorf("--settings %s is inside the added directory %s, which Claude may write", path, d)
 		}
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var s struct {
 		DisableBundledSkills bool              `json:"disableBundledSkills"`
@@ -457,24 +495,125 @@ func settings(flags, added []string) ([]string, error) {
 	dec := json.NewDecoder(strings.NewReader(string(data)))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&s); err != nil {
-		return nil, fmt.Errorf("--settings %s: %w", path, err)
+		return nil, nil, fmt.Errorf("--settings %s: %w", path, err)
 	}
 	if s.Permissions.Allow == nil {
-		return nil, fmt.Errorf("--settings %s must declare an allow list, even when empty", path)
+		return nil, nil, fmt.Errorf("--settings %s must declare an allow list, even when empty", path)
 	}
 	if s.DisableAllHooks {
-		return nil, fmt.Errorf("--settings %s must not set disableAllHooks, which would switch off the steering hook", path)
+		return nil, nil, fmt.Errorf("--settings %s must not set disableAllHooks, which would switch off the Artisan's hooks", path)
 	}
 	if s.AutoMemoryEnabled == nil || *s.AutoMemoryEnabled {
-		return nil, fmt.Errorf("--settings %s must set autoMemoryEnabled false, since no user settings load to turn it off", path)
+		return nil, nil, fmt.Errorf("--settings %s must set autoMemoryEnabled false, since no user settings load to turn it off", path)
 	}
+	var stop *stopHook
 	for event, matchers := range s.Hooks {
-		if event != "PostToolUse" || len(matchers) != 1 || len(matchers[0].Hooks) != 1 ||
-			matchers[0].Hooks[0].Type != "command" || matchers[0].Hooks[0].Command != claude.SteeringHookCommand {
-			return nil, fmt.Errorf("--settings %s: hook %s is not the steering hook %q", path, event, claude.SteeringHookCommand)
+		want, ok := map[string]string{"PostToolUse": claude.SteeringHookCommand, "Stop": claude.ResultHookCommand}[event]
+		if !ok || len(matchers) != 1 || len(matchers[0].Hooks) != 1 ||
+			matchers[0].Hooks[0].Type != "command" || matchers[0].Hooks[0].Command != want || matchers[0].Hooks[0].Timeout <= 0 {
+			return nil, nil, fmt.Errorf("--settings %s: hook %s is not the Artisan's hook %q with a timeout (PostToolUse %q, Stop %q)",
+				path, event, want, claude.SteeringHookCommand, claude.ResultHookCommand)
+		}
+		if event == "Stop" {
+			h := matchers[0].Hooks[0]
+			stop = &stopHook{command: h.Command, timeout: time.Duration(h.Timeout) * time.Second}
 		}
 	}
-	return s.Permissions.Allow, nil
+	return s.Permissions.Allow, stop, nil
+}
+
+// stopHook is the Stop hook command a print-mode session's settings register, run with its timeout.
+type stopHook struct {
+	command string
+	timeout time.Duration
+}
+
+// StopHookFile is the record, in the model directory, of each Stop hook a print-mode stub session ran, one line
+// per run in order: the stop_hook_active it was given, then "block" when the hook blocked the stop, "pass" when it
+// let the stop through, or "error: <reason>" when it could not run or timed out, which Claude Code also lets through.
+const StopHookFile = "claude-stub-stop-hooks.txt"
+
+// StopHooks returns the lines of StopHookFile for the result file result; a session that ran no Stop hook has none.
+func StopHooks(result string) ([]string, error) {
+	data, err := os.ReadFile(filepath.Join(claude.ModelDir(result), StopHookFile))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return strings.Split(strings.TrimSuffix(string(data), "\n"), "\n"), nil
+}
+
+// stopAt plays Claude Code's Stop hook as the session is about to stop: it runs h, if any, from PATH, split into
+// words (shellWords), in the stub's working directory and environment with the hook input on stdin and h's timeout,
+// records the run in StopHookFile in modelDir, and reports whether the hook blocked the stop: printed a decision
+// "block" on stdout, or exited 2. A hook that cannot be found, fails otherwise or times out lets the stop through.
+func stopAt(h *stopHook, active bool, modelDir string) bool {
+	if h == nil {
+		return false
+	}
+	blocked, err := runStopHook(h, active)
+	outcome := map[bool]string{true: "block", false: "pass"}[blocked]
+	if err != nil {
+		outcome = "error: " + strings.ReplaceAll(err.Error(), "\n", " ")
+	}
+	line := fmt.Sprintf("stop_hook_active=%v %s\n", active, outcome)
+	f, ferr := os.OpenFile(filepath.Join(modelDir, StopHookFile), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	if ferr == nil {
+		_, ferr = f.WriteString(line)
+		ferr = errors.Join(ferr, f.Close())
+	}
+	if ferr != nil {
+		fmt.Fprintf(os.Stderr, "claude stub: stop hook record: %v\n", ferr)
+	}
+	return blocked
+}
+
+func runStopHook(h *stopHook, active bool) (bool, error) {
+	argv := shellWords(h.command)
+	if len(argv) == 0 {
+		return false, fmt.Errorf("empty stop hook command")
+	}
+	prog, err := exec.LookPath(argv[0])
+	if err != nil {
+		return false, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), h.timeout)
+	defer cancel()
+	input, _ := json.Marshal(map[string]any{"hook_event_name": "Stop", "stop_hook_active": active})
+	c := exec.CommandContext(ctx, prog, argv[1:]...)
+	c.Stdin = bytes.NewReader(input)
+	var stdout bytes.Buffer
+	c.Stdout, c.Stderr = &stdout, os.Stderr
+	err = c.Run()
+	if exit := (*exec.ExitError)(nil); errors.As(err, &exit) && exit.ExitCode() == 2 && ctx.Err() == nil {
+		return true, nil
+	}
+	if err != nil {
+		return false, errors.Join(err, ctx.Err())
+	}
+	if len(bytes.TrimSpace(stdout.Bytes())) == 0 {
+		return false, nil
+	}
+	var decision struct {
+		Decision string `json:"decision"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &decision); err != nil {
+		return false, fmt.Errorf("stop hook output: %w", err)
+	}
+	return decision.Decision == "block", nil
+}
+
+// ackMessage runs `guildhall messages ack id`, the guildhall on PATH, as a model obeying a steering message would.
+func ackMessage(id string) error {
+	prog, err := exec.LookPath("guildhall")
+	if err != nil {
+		return err
+	}
+	c := exec.Command(prog, "messages", "ack", id)
+	c.Stdout, c.Stderr = os.Stderr, os.Stderr
+	return c.Run()
 }
 
 // addDirs are the directories after each --add-dir.

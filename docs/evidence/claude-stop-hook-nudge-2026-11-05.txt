@@ -1,0 +1,50 @@
+d168 slice 2 (Claude Stop hook and live evidence): does a Claude Code Stop hook block continue a --print session?
+Spec Q2 asked what happens if it does not. It does: no wrapper-side resume is needed.
+
+Probe: TestLiveClaudeNudged (internal/cli/result_hook_live_test.go), one real Artisan session through the Claude
+wrapper (claude.Run), so `claude --print <instruction> --output-format stream-json --verbose --permission-mode
+acceptEdits --settings <attempt>/claude-settings.json ...`, in a test copy whose `live` profile is a claude profile,
+which grants the Guildhall rules (guildhall ci log, result submit, result check, messages). The test binary is
+`guildhall` on PATH, so the settings' hooks, `guildhall messages hook` (PostToolUse) and `guildhall result hook`
+(Stop), run Guildhall's own code against the test copy's store. The Claude Code was the machine's
+/home/andrew/.local/bin/claude, which passed the wrapper's version probe (2.1.310 or later).
+The prompt tells the model to run nothing, reply "stopping" and end its turn, and only after a steering message
+from Guildhall to acknowledge it and submit a succeeded result listing the pre-written spec.md.
+Pass criterion: the settings register the Stop hook; the store holds the one nudge from guildhall; the session goes
+on after "stopping", acknowledges the nudge and submits; the wrapper publishes a succeeded result.
+Run on 2026-11-05 by the d168 build--s2 attempt:
+
+$ go test ./internal/cli -run TestLiveClaudeNudged -v -count=1 -timeout 15m -claude-live -claude-program /home/andrew/.local/bin/claude
+=== RUN   TestLiveClaudeNudged
+    result_hook_live_test.go:85: wrapper output:
+        tool: Read /tmp/TestLiveClaudeNudged2393222971/001/director config/state/app/t1/plan-1/model/prompt.md
+        stopping
+        tool: Bash guildhall messages ack t1.plan-1.nudge.submit
+        tool: Write /tmp/TestLiveClaudeNudged2393222971/001/director config/state/app/t1/plan-1/model/draft.json
+        tool: Bash guildhall result submit "/tmp/TestLiveClaudeNudged2393222971/001/director config/state/app/t1/plan-1/model/draft.json"
+        Guildhall accepted the result for task t1, attempt plan-1. I first acknowledged the steering message `t1.plan-1.nudge.submit`. Then I wrote the draft with status "succeeded", summary "nudged" and the one output, `spec.md` (described as "spec"), and submitted it. I left `spec.md` unchanged, as the prompt said.
+        Guildhall accepted the result for task t1, attempt plan-1. I first acknowledged the steering message `t1.plan-1.nudge.submit`. Then I wrote the draft with status "succeeded", summary "nudged" and the one output, `spec.md` (described as "spec"), and submitted it. I left `spec.md` unchanged, as the prompt said.
+    result_hook_live_test.go:90: nudge t1.plan-1.nudge.submit: present true, sender guildhall, type nudge, acknowledged true
+    result_hook_live_test.go:102: published result: {Identity:{TaskID:t1 AttemptID:plan-1} Status:succeeded Summary:nudged Outputs:[{Path:spec.md Description:spec}] LandedRef:}, <nil>
+--- PASS: TestLiveClaudeNudged (10.34s)
+PASS
+ok  	github.com/ndrwl/guildhall/internal/cli	10.436s
+
+(The final summary appears twice because the wrapper streams the assistant text and then prints the session's result
+message, as it does for every session.)
+
+Reading:
+- The Stop hook fired. Only `guildhall result hook` sends `t1.plan-1.nudge.submit`, and the store holds it, from
+  guildhall, type nudge. The session ended its first turn with "stopping" and no draft, so the hook found no valid
+  result, sent the nudge and printed {"decision":"block","reason":...}.
+- The block continued the --print session. After "stopping", with no new input, the model ran the ack the nudge's
+  text names, wrote the draft and submitted it, so the block reason reached it as its next turn.
+- It ended after one nudge. At the second stop the draft was valid, so the hook printed nothing and the session
+  exited; the wrapper published the result. The test leaves no trace of the second hook run itself; the hook
+  tests (TestResultHookLeavesAValidDraft, TestResultHookStopHookActive) pin that path.
+- Q1's "acknowledge, then submit" text worked: the model acked before it submitted, and the submission was accepted.
+
+An earlier run the same day, with a prompt that asked for an empty outputs list, showed the same continuation
+("stopping", then the ack and a submit). Intake then rejected the submissions three times because the fixture's plan
+step requires a spec output. The wrapper published the 3rd rejection's draft, as it does without the nudge. The
+prompt was then changed to list the pre-written spec.md, which gave the run above.

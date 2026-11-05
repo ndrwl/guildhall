@@ -74,8 +74,9 @@ func TestSkillPolicyArtisanWithoutGrants(t *testing.T) {
 		DisableAllHooks *bool                      `json:"disableAllHooks"`
 		Hooks           map[string]json.RawMessage `json:"hooks"`
 	}
-	if err := json.Unmarshal(b, &hooks); err != nil || hooks.DisableAllHooks != nil || len(hooks.Hooks) != 1 {
-		t.Fatalf("launch settings want the steering hook alone and no disableAllHooks: %s (%v)", b, err)
+	if err := json.Unmarshal(b, &hooks); err != nil || hooks.DisableAllHooks != nil || len(hooks.Hooks) != 2 ||
+		hooks.Hooks["PostToolUse"] == nil || hooks.Hooks["Stop"] == nil {
+		t.Fatalf("launch settings want only the steering and result hooks and no disableAllHooks: %s (%v)", b, err)
 	}
 	if _, err := os.Stat(filepath.Join(filepath.Dir(spec.ResultFile), claude.SkillPolicyFile)); err != nil {
 		t.Fatal(err)
