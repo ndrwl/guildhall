@@ -312,7 +312,8 @@ func (a *App) preflight(copyDir, cfgPath, storePath, positional string) (startPl
 // artisanPermissions says what this Director's config at cfgPath grants each profile that runs the claude adapter,
 // its effective grant (grant.EffectiveGrant) grouped by source: the copy's allowed_tools, or else the shipped
 // default, or a note that the profile gets none; then each repository's additions, labelled with the repository id.
-// acceptEdits grants edits only but inherited settings, hooks and skill-scoped grants may allow more, so a build's
+// acceptEdits grants edits only and no user or project settings load, so only these grants and skill-scoped grants
+// from kept bundled skills allow more, and a build's
 // checks and commits depend on Bash permission (docs/adapters.md#artisan-permissions). A profile of another adapter
 // with allowed_tools or a repository grant is refused, since only the claude adapter grants them, and so is a
 // profile whose model or effort its runtime cannot honour (checkProfileSettings).
@@ -384,7 +385,7 @@ func artisanPermissions(cfg *config.Config, cfgPath string) (string, error) {
 	if len(grants) == 0 {
 		return whose + "no profile runs the claude adapter", nil
 	}
-	return whose + strings.Join(grants, "; ") + "; acceptEdits grants edits only, while inherited settings, hooks and skill-scoped grants may allow more; a build's checks and commits need Bash permission (docs/adapters.md#artisan-permissions)" +
+	return whose + strings.Join(grants, "; ") + "; acceptEdits grants edits only and no user or project settings load, so only these grants and skill-scoped grants from kept bundled skills allow more; a build's checks and commits need Bash permission (docs/adapters.md#artisan-permissions)" +
 		"; wrappers load grants by copy/profile/repository reference, never raw rule flags", nil
 }
 

@@ -56,9 +56,21 @@ const Subcommand = "claude-artisan"
 const Program = "claude"
 
 // PermissionMode grants edits in the working and model directories. Other tools
-// need permission; inherited settings, hooks and skill-scoped grants may supply it.
-// Non-interactive sessions cannot ask, and applicable deny rules still win.
+// need permission: the generated settings' allow list, or a skill-scoped grant from a
+// kept bundled skill, may supply it, since no user, project or local settings load
+// (SettingSources). Non-interactive sessions cannot ask, and managed-policy deny rules
+// still win.
 const PermissionMode = "acceptEdits"
+
+// SettingSources is the --setting-sources value: no user, project or local settings
+// file loads, so an Artisan inherits no hooks, permission rules, skills, agents or
+// other settings from the machine or the repository; the flag-scope generated settings
+// and managed policy still apply.
+const SettingSources = ""
+
+// MCPConfig is the inline --mcp-config an Artisan gets with --strict-mcp-config: no
+// MCP servers, so none from the user's or a project's configuration loads.
+const MCPConfig = `{"mcpServers":{}}`
 
 // OutputFormat requests incremental events, ending with the session's result
 // message carrying usage and cost (ParseUsage).
@@ -256,8 +268,13 @@ const SteeringHookCommand = "guildhall messages hook"
 const SteeringHookTimeout = 10
 
 // ArtisanSettings is the Claude Code settings file granting rules: a permissions object whose allow list is
-// rules, in order, and a PostToolUse hook running SteeringHookCommand after every tool, and nothing else, as JSON
-// with a trailing newline. A hook command is not a permission rule, so the hook grants the model nothing.
+// rules, in order, and a PostToolUse hook running SteeringHookCommand after every tool, as JSON with a trailing
+// newline. A hook command is not a permission rule, so the hook grants the model nothing. Because ClaudeArgs loads
+// no user, project or local settings file (SettingSources), the steering hook is the only hook outside managed
+// policy that runs; the settings do not set disableAllHooks, which would switch the steering hook off too.
+// autoMemoryEnabled is false: with no user settings loaded Claude Code would otherwise turn auto memory on, adding
+// about 675 prompt tokens and a memory directory under ~/.claude/projects that the Artisan reads and may write
+// (docs/evidence/artisan-isolation.md).
 func ArtisanSettings(rules []string) []byte {
 	if rules == nil {
 		rules = []string{}
@@ -274,11 +291,12 @@ func ArtisanSettings(rules []string) []byte {
 		Hooks []command `json:"hooks"`
 	}
 	data, _ := json.Marshal(struct {
-		Permissions permissions          `json:"permissions"`
-		Hooks       map[string][]matcher `json:"hooks"`
+		Permissions       permissions          `json:"permissions"`
+		Hooks             map[string][]matcher `json:"hooks"`
+		AutoMemoryEnabled bool                 `json:"autoMemoryEnabled"`
 	}{permissions{Allow: rules}, map[string][]matcher{
 		"PostToolUse": {{[]command{{Type: "command", Command: SteeringHookCommand, Timeout: SteeringHookTimeout}}}},
-	}})
+	}, false})
 	return append(data, '\n')
 }
 
@@ -363,14 +381,16 @@ func DisallowedToolsArgs() []string {
 // with Instruction as the prompt, OutputFormat, PermissionMode,
 // --disallowedTools with DisallowedTools, a's model and
 // effort as --model and --effort, each only when set, the settings file at
-// ArtisanSettingsPath on every attempt, and only the model directory
-// added for tool access.
+// ArtisanSettingsPath on every attempt, only the model directory added for
+// tool access, no settings file sources (SettingSources), and strictly no MCP
+// servers (MCPConfig).
 func ClaudeArgs(a Args) []string {
 	args := []string{"--print", Instruction(a), "--output-format", OutputFormat, "--verbose", "--permission-mode", PermissionMode}
 	args = append(args, DisallowedToolsArgs()...)
 	args = append(args, settingsArgs(a.Settings)...)
 	args = append(args, "--settings", ArtisanSettingsPath(a.ResultFile))
-	return append(args, "--add-dir", ModelDir(a.ResultFile))
+	args = append(args, "--add-dir", ModelDir(a.ResultFile))
+	return append(args, "--setting-sources", SettingSources, "--strict-mcp-config", "--mcp-config", MCPConfig)
 }
 
 // ParseUsage reads the usage Claude Code reports in its print-mode JSON output, the session's result message:
@@ -652,7 +672,7 @@ func withBoundTaskGrant(a Args, rules []string, stderr io.Writer) ([]string, err
 func report(a Args, output *limitedBuffer, stdout, stderr io.Writer) error {
 	if denied := Denials(output.buf.Bytes()); len(denied) > 0 {
 		plural := map[bool]string{true: "s"}[len(denied) > 1]
-		_, _ = fmt.Fprintf(stderr, "guildhall: %s: Claude was denied %d tool use%s: %s; acceptEdits grants edits only; inherited settings, hooks and skill-scoped grants may allow more; deny rules remain authoritative (docs/adapters.md#artisan-permissions)\n",
+		_, _ = fmt.Fprintf(stderr, "guildhall: %s: Claude was denied %d tool use%s: %s; acceptEdits grants edits only and the generated settings the allow list; skill-scoped grants from kept bundled skills may allow more; managed-policy deny rules remain authoritative (docs/adapters.md#artisan-permissions)\n",
 			Subcommand, len(denied), plural, strings.Join(denied, ", "))
 	}
 	u, err := ParseUsage(output.buf.Bytes())

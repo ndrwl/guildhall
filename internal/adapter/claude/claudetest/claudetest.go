@@ -211,6 +211,12 @@ func stub(args []string) error {
 	if !slices.Contains(flags, "--verbose") {
 		return fmt.Errorf("stream-json requires --verbose, got %q", flags)
 	}
+	if i := slices.Index(flags, "--setting-sources"); i < 0 || i+1 >= len(flags) || flags[i+1] != claude.SettingSources {
+		return fmt.Errorf("want --setting-sources %q, loading no settings file, got %q", claude.SettingSources, flags)
+	}
+	if i := slices.Index(flags, "--mcp-config"); !slices.Contains(flags, "--strict-mcp-config") || i < 0 || i+1 >= len(flags) || flags[i+1] != claude.MCPConfig {
+		return fmt.Errorf("want --strict-mcp-config --mcp-config %s, got %q", claude.MCPConfig, flags)
+	}
 	var promptFile, draft string
 	sc := bufio.NewScanner(strings.NewReader(instruction))
 	for sc.Scan() {
@@ -435,6 +441,8 @@ func settings(flags, added []string) ([]string, error) {
 		SyncClaudeAiSkills   bool              `json:"syncClaudeAiSkills"`
 		SkillOverrides       map[string]string `json:"skillOverrides"`
 		EnabledPlugins       map[string]bool   `json:"enabledPlugins"`
+		DisableAllHooks      bool              `json:"disableAllHooks"`
+		AutoMemoryEnabled    *bool             `json:"autoMemoryEnabled"`
 		Permissions          struct {
 			Allow []string `json:"allow"`
 		} `json:"permissions"`
@@ -453,6 +461,12 @@ func settings(flags, added []string) ([]string, error) {
 	}
 	if s.Permissions.Allow == nil {
 		return nil, fmt.Errorf("--settings %s must declare an allow list, even when empty", path)
+	}
+	if s.DisableAllHooks {
+		return nil, fmt.Errorf("--settings %s must not set disableAllHooks, which would switch off the steering hook", path)
+	}
+	if s.AutoMemoryEnabled == nil || *s.AutoMemoryEnabled {
+		return nil, fmt.Errorf("--settings %s must set autoMemoryEnabled false, since no user settings load to turn it off", path)
 	}
 	for event, matchers := range s.Hooks {
 		if event != "PostToolUse" || len(matchers) != 1 || len(matchers[0].Hooks) != 1 ||
