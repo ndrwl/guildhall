@@ -117,16 +117,41 @@ func TestValidateRerunFlake(t *testing.T) {
 	}
 }
 
+// lintLog is the tail of d231's failed job 127341005019 (d128's validate--s4 on PR 393): every test passed, then
+// the Lint step got HTTP 504 downloading golangci-lint and printed two ##[error] lines, and no "--- FAIL:" line.
+const lintLog = "2026-11-05T15:34:54.0000000Z ##[group]Run go test -json -timeout 20m ./internal/cli\r\n" +
+	"2026-11-05T15:34:54.1000000Z ok  \tgithub.com/ndrwl/guildhall/internal/cli\t125.336s\r\n" +
+	"2026-11-05T15:34:58.0000000Z ##[group]Run golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a\r\n" +
+	"2026-11-05T15:34:58.0100000Z with:\r\n" +
+	"2026-11-05T15:34:58.0200000Z ##[endgroup]\r\n" +
+	"2026-11-05T15:34:58.6657539Z Unexpected HTTP response: 504\r\n" +
+	"2026-11-05T15:35:21.7973766Z ##[error]Failed to run: Error: Unexpected HTTP response: 504, Error: Unexpected HTTP response: 504\r\n" +
+	"2026-11-05T15:35:21.7985325Z ##[error]Unexpected HTTP response: 504\r\n"
+
+// lintStep and lintError are the step and first error lintLog's rerun record keeps.
+const (
+	lintStep  = "golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a"
+	lintError = "Failed to run: Error: Unexpected HTTP response: 504, Error: Unexpected HTTP response: 504"
+)
+
 // TestValidateRerunFlakeConclusion: the rerun record keeps how the failed run finished, and the flake message says
 // it, so a cancelled job is not reported as a test failure whose test name went missing (d210); a record without a
-// conclusion, as the fake and older records have, gives the message as it was, byte for byte.
+// conclusion, as the fake and older records have, gives the message as it was, byte for byte. A failed job with no
+// failed test records the step of its first ##[error] line, and its message names that step and error (d231); a
+// record without failed_step, as a log with no ##[error] and every older record gives, renders as before.
 func TestValidateRerunFlakeConclusion(t *testing.T) {
 	const noFail = "2026-10-29T10:00:00.0000000Z ##[group]Run go test ./...\n2026-10-29T10:00:01.0000000Z ok\n"
+	lintTests := "passing run: %s\ntests: none failed; step " + lintStep + " failed: " + lintError + "\n"
 	for _, c := range []struct {
 		name, conclusion, log string
 		logErr                error
 		tests                 string
+		step                  bool
 	}{
+		{name: "failed step", conclusion: "failure", log: lintLog, tests: "conclusion: failure\n" + lintTests, step: true},
+		{name: "failed step without conclusion", log: lintLog, tests: lintTests, step: true},
+		{name: "cancelled with failed step", conclusion: "cancelled", log: lintLog, step: true,
+			tests: "conclusion: cancelled\npassing run: %s\ntests: none; the failed run was cancelled, not a test failure\n"},
 		{name: "cancelled", conclusion: "cancelled", logErr: &forge.LogUnavailableError{Reason: "gh: HTTP 404", Expired: true},
 			tests: "conclusion: cancelled\npassing run: %s\ntests: none; the failed run was cancelled, not a test failure (gh: HTTP 404)\n"},
 		{name: "timed out", conclusion: "timed_out", log: noFail,
@@ -152,6 +177,10 @@ func TestValidateRerunFlakeConclusion(t *testing.T) {
 			rec := e.pullRequestDoc(t, recordName(head, macos))
 			if got, ok := rec["conclusion"]; c.conclusion == "" && ok || c.conclusion != "" && got != c.conclusion {
 				t.Errorf("rerun record conclusion = %v (%v), want %q", got, ok, c.conclusion)
+			}
+			step, ok := rec["failed_step"].(map[string]any)
+			if c.step && (step["name"] != lintStep || step["error"] != lintError) || !c.step && ok {
+				t.Errorf("rerun record failed_step = %v (%v), want it %v", rec["failed_step"], ok, c.step)
 			}
 			passed := settle(t, f, head, forge.CheckPassed)
 			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-1"})

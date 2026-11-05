@@ -28,33 +28,18 @@ var escape = regexp.MustCompile("\x1b(\\[[0-?]*[ -/]*[@-~]|\\][^\x07\x1b]*(\x07|
 // ExcerptBytes. Before any line is matched, the log's byte order mark, each line's CR and timestamp, and every
 // ANSI escape sequence are removed. It depends on the text alone, so the same log always gives the same excerpt.
 func Excerpt(text []byte) string {
-	lines := strings.Split(strings.TrimSuffix(string(text), "\n"), "\n")
-	for i, l := range lines {
-		l = strings.TrimSuffix(l, "\r")
-		if i == 0 {
-			l = strings.TrimPrefix(l, bom)
-		}
-		lines[i] = escape.ReplaceAllString(Timestamp.ReplaceAllString(l, ""), "")
-	}
-	run := func(l string) bool { return strings.HasPrefix(l, "##[group]Run ") }
+	lines := normalise(text)
 	start, end := 0, len(lines)
-	for e, l := range lines {
-		if !strings.HasPrefix(l, "##[error]") {
-			continue
-		}
-		for i := e; i >= 0; i-- {
-			if run(lines[i]) {
-				start = i
-				break
-			}
+	if e, s := firstError(lines); e >= 0 {
+		if s >= 0 {
+			start = s
 		}
 		for i := e + 1; i < len(lines); i++ {
-			if run(lines[i]) {
+			if isRun(lines[i]) {
 				end = i
 				break
 			}
 		}
-		break
 	}
 	lines = lines[start:end]
 	if len(lines) > ExcerptLines {
@@ -78,4 +63,60 @@ func Excerpt(text []byte) string {
 		out = out[i:]
 	}
 	return out
+}
+
+// FirstError is the failing step of a job log, read as Excerpt reads it: step is the text of the last
+// ##[group]Run line before the log's first ##[error] line, or "" when no such line comes before it, and err is that
+// error line's text, each without its marker and surrounding space; ok is false when the log has no ##[error] line.
+// It depends on the text alone.
+func FirstError(text []byte) (step, err string, ok bool) {
+	lines := normalise(text)
+	e, s := firstError(lines)
+	if e < 0 {
+		return "", "", false
+	}
+	if s >= 0 {
+		step = strings.TrimSpace(strings.TrimPrefix(lines[s], runMarker))
+	}
+	return step, strings.TrimSpace(strings.TrimPrefix(lines[e], errorMarker)), true
+}
+
+// The markers GitHub Actions starts a step's group line and an error line with.
+const (
+	runMarker   = "##[group]Run "
+	errorMarker = "##[error]"
+)
+
+// normalise splits a job log into lines without the log's byte order mark, each line's CR and timestamp, or any
+// ANSI escape sequence.
+func normalise(text []byte) []string {
+	lines := strings.Split(strings.TrimSuffix(string(text), "\n"), "\n")
+	for i, l := range lines {
+		l = strings.TrimSuffix(l, "\r")
+		if i == 0 {
+			l = strings.TrimPrefix(l, bom)
+		}
+		lines[i] = escape.ReplaceAllString(Timestamp.ReplaceAllString(l, ""), "")
+	}
+	return lines
+}
+
+// isRun reports whether l starts a step's group.
+func isRun(l string) bool { return strings.HasPrefix(l, runMarker) }
+
+// firstError returns the index of the first ##[error] line of lines and of the last ##[group]Run line before it,
+// each -1 when there is none.
+func firstError(lines []string) (e, step int) {
+	for e, l := range lines {
+		if !strings.HasPrefix(l, errorMarker) {
+			continue
+		}
+		for i := e; i >= 0; i-- {
+			if isRun(lines[i]) {
+				return e, i
+			}
+		}
+		return e, -1
+	}
+	return -1, -1
 }

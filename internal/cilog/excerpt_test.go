@@ -112,3 +112,44 @@ func TestExcerptBounds(t *testing.T) {
 		t.Errorf("Excerpt of one long line is %d bytes, want its tail within %d from a rune boundary", len(got), cilog.ExcerptBytes)
 	}
 }
+
+// lintLog is the tail of d231's failed job 127341005019: every test passed, then the Lint step could not download
+// golangci-lint and printed two ##[error] lines.
+const lintLog = "\xef\xbb\xbf2026-11-05T15:34:54.0000000Z ##[group]Run go test -json -timeout 20m ./internal/cli\r\n" +
+	"2026-11-05T15:34:54.1000000Z ok  \tgithub.com/ndrwl/guildhall/internal/cli\t125.336s\r\n" +
+	"2026-11-05T15:34:58.0000000Z ##[group]Run golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a\r\n" +
+	"2026-11-05T15:34:58.0100000Z with:\r\n" +
+	"2026-11-05T15:34:58.0200000Z ##[endgroup]\r\n" +
+	"2026-11-05T15:34:58.6084111Z Downloading binary https://github.com/golangci/golangci-lint/releases/download/v2.15.0/golangci-lint-2.15.0-linux-amd64.tar.gz ...\r\n" +
+	"2026-11-05T15:34:58.6657539Z Unexpected HTTP response: 504\r\n" +
+	"2026-11-05T15:35:21.7973766Z \x1b[31m##[error]Failed to run: Error: Unexpected HTTP response: 504, Error: Unexpected HTTP response: 504\x1b[0m\r\n" +
+	"2026-11-05T15:35:21.7985325Z ##[error]Unexpected HTTP response: 504\r\n" +
+	"2026-11-05T15:35:22.0000000Z ##[group]Run actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9\r\n"
+
+// TestFirstError: the step and error FirstError gives are those of the first ##[error] line and the last
+// ##[group]Run line before it, read after the same normalisation as Excerpt's; a log with no error gives none, and
+// an error before any ##[group]Run line gives no step name.
+func TestFirstError(t *testing.T) {
+	for _, c := range []struct {
+		name, log, step, err string
+		ok                   bool
+	}{
+		{"lint download", lintLog, "golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a",
+			"Failed to run: Error: Unexpected HTTP response: 504, Error: Unexpected HTTP response: 504", true},
+		{"no error", "2026-10-29T10:00:00.0000000Z ##[group]Run go test ./...\n2026-10-29T10:00:01.0000000Z ok\n", "", "", false},
+		{"error before any step", "2026-10-29T10:00:00.0000000Z ##[error]No space left on device\n##[group]Run go test ./...\n", "", "No space left on device", true},
+		{"empty", "", "", "", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			step, err, ok := cilog.FirstError([]byte(c.log))
+			if step != c.step || err != c.err || ok != c.ok {
+				t.Errorf("FirstError = %q, %q, %v; want %q, %q, %v", step, err, ok, c.step, c.err, c.ok)
+			}
+		})
+	}
+	// Excerpt and FirstError agree on the step: the excerpt starts at the step FirstError names.
+	if got := cilog.Excerpt([]byte(lintLog)); !strings.HasPrefix(got, "##[group]Run golangci/golangci-lint-action@") ||
+		!strings.HasSuffix(got, "##[error]Unexpected HTTP response: 504") {
+		t.Errorf("Excerpt = %q", got)
+	}
+}

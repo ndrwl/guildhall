@@ -36,6 +36,11 @@ jobs:
           - os: macos-latest
             require: ksh,pwsh
     runs-on: ${{ matrix.os }}
+    # The one golangci-lint pin: the install step and its cache key both read
+    # it, so the cached binary never drifts from it
+    # (docs/decisions/ci-matrix-and-lint.md).
+    env:
+      GOLANGCI_LINT_VERSION: v2.15.0
     defaults:
       run:
         shell: bash
@@ -69,6 +74,32 @@ jobs:
           fi
           echo "docs_only=$docs_only"
           echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+      # golangci-lint comes from a cache keyed on its pin, OS and arch, so the
+      # release CDN is asked once per version per platform rather than on
+      # every run, and a 504 there no longer fails the check (d231). On a miss
+      # the install step downloads the release asset with retries, verifies
+      # its published sha256, and the save step stores it on any event: it is
+      # a pinned, checksum-verified binary, so the Go cache's main-only concern
+      # does not apply.
+      - name: Restore golangci-lint
+        id: lint-bin
+        if: steps.changes.outputs.docs_only != 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/golangci-lint
+          key: golangci-lint-${{ runner.os }}-${{ runner.arch }}-${{ env.GOLANGCI_LINT_VERSION }}
+      - name: Install golangci-lint
+        if: steps.changes.outputs.docs_only != 'true' && steps.lint-bin.outputs.cache-hit != 'true'
+        run: bash .github/install-golangci-lint.sh "$GOLANGCI_LINT_VERSION" "$RUNNER_TEMP/golangci-lint"
+      - name: Save golangci-lint
+        if: steps.changes.outputs.docs_only != 'true' && steps.lint-bin.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/golangci-lint
+          key: golangci-lint-${{ runner.os }}-${{ runner.arch }}-${{ env.GOLANGCI_LINT_VERSION }}
+      - name: Put golangci-lint on PATH
+        if: steps.changes.outputs.docs_only != 'true'
+        run: echo "$RUNNER_TEMP/golangci-lint" >> "$GITHUB_PATH"
       # setup-go's own cache is a snapshot keyed on go.sum; the rolling cache
       # below replaces it (docs/decisions/ci-go-cache.md).
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
@@ -216,11 +247,14 @@ jobs:
       - name: Lanterns presentation contracts
         if: matrix.os == 'ubuntu-latest' && steps.changes.outputs.docs_only != 'true'
         run: node --test internal/lanterns/plugin/tests/*.test.mjs
+      # install-mode: none runs the golangci-lint on PATH, the one the steps
+      # above installed from GOLANGCI_LINT_VERSION; the action resolves no
+      # version in that mode, so it takes no version input.
       - name: Lint
         if: steps.changes.outputs.docs_only != 'true'
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
-          version: v2.15.0
+          install-mode: none
       # Only main pushes and workflow_dispatch runs write entries; pull
       # requests restore main's entry and never save.
       - name: Save Go cache
