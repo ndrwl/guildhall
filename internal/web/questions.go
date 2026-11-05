@@ -27,6 +27,11 @@ type questionsView struct {
 	// Ask is the id of the ask the cards belong to, which a pick's radio ids carry so they are unique on a page of
 	// several asks.
 	Ask string
+	// Controls says the cards are a plan approval's, answered one at a time inside it with a grill round's controls
+	// (planDrafts), Answered of them so far; Form says the request may press them.
+	Controls bool
+	Form     bool
+	Answered int
 }
 
 // cardView is one question's card: its number and title, then its body and its option rows when it read cleanly
@@ -41,6 +46,15 @@ type cardView struct {
 	// Pick says the card's lettered rows are a radio group, pick-<N>, on the Guildmaster's form for an ask that
 	// offers taking every recommendation (withPicks).
 	Pick bool
+	// Rec is the recommended option as an answer names it, such as "(b) one route", "" with no lettered options.
+	Rec string
+	// Options are the lettered options as an answer names them, such as "(b) one route", by letter (planOptions).
+	Options map[string]string
+	// The fields below are a plan approval's card's controls (planDrafts): its anchor, the words in its box and its
+	// mark, folded to the one line Done and Gist once answered, or Saved, when unmarked words were saved.
+	ID, Words, Mark   string
+	Saved, Done, Gist string
+	Folded            bool
 }
 
 // rowView is one option row: its mark, such as "(b)" or "Alternative", its text and, on the recommended row, the
@@ -71,6 +85,7 @@ func newQuestionsView(q spec.Questions, ask string) *questionsView {
 		switch {
 		case it.Lettered():
 			v.Lettered = true
+			c.Rec, c.Options = planRecommended(it), planOptions(it)
 			for i, o := range it.Pick() {
 				r := rowView{Mark: "(" + o.Letter + ")", Text: inlineMarkdown(o.Text), Letter: o.Letter}
 				if i == 0 {

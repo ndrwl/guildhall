@@ -183,6 +183,9 @@ type tileView struct {
 	Tone               Tone
 	// Rec marks the recommended answer, which spans the row with the Recommended badge.
 	Rec bool
+	// Picked, on a plan approval's Approved and Changes requested, is the line CSS shows in place of Text while a
+	// pick on its open questions is changed, saying the picks go with the answer.
+	Picked string
 }
 
 type quoteView struct {
@@ -257,7 +260,7 @@ func (s *Server) taskView(t Task, st pageState) taskView {
 	talk := newTalkPlan(t, st)
 	for _, a := range t.Asks {
 		av := s.askView(t, a)
-		s.askState(&av, v.Base, st)
+		s.askState(t, &av, v.Base, st)
 		s.askTalk(t, talk, a, &av)
 		found = found || a.ID == st.Decision
 		if !a.Deferred {
@@ -710,16 +713,25 @@ func toNextPart(rest string) string {
 	return strings.TrimSpace(rest[end:])
 }
 
-// askState adds what the request brings to an ask: the form when it is from the Guildmaster's login, with picks on
-// the lettered cards of an ask that offers taking every recommendation, and the refusal, words and picks, or the sent
-// note, of the ask st is about.
-func (s *Server) askState(v *askView, base string, st pageState) {
+// askState adds what the request brings to an ask: the form when it is from the Guildmaster's login, and the
+// refusal, words and picks, or the sent note, of the ask st is about. On a plan approval on a page that answers, its
+// open questions get their drafts and controls, with the words a refused press kept; and on the form the lettered
+// cards of an ask that offers taking every recommendation are picks, a folded card showing none.
+func (s *Server) askState(t Task, v *askView, base string, st pageState) {
 	v.Answering, v.Form, v.Login = s.answering(), st.Answer, st.Login
 	if v.Form {
 		v.Action, v.Token = base+"/answer", st.Token
 	}
+	var boxes map[int]string
 	if v.ID == st.Decision {
 		v.Refused, v.Words, v.Sent = st.Refused, st.Words, st.Sent
+		if st.Refused != "" {
+			boxes = st.RoundBoxes
+		}
+	}
+	if q := v.Questions; v.Plan && v.Answering && q != nil && len(q.Cards) > 0 {
+		s.planDrafts(t, v, boxes)
+		q.Form = v.Form
 	}
 	if v.Form && v.Recommend && v.Questions != nil {
 		var picks map[int]string

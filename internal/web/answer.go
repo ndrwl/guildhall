@@ -26,6 +26,14 @@ type Answer struct {
 	Login                        string
 	Confirm                      int
 	Tag                          string
+	// Plan, on a plan approval whose spec has open questions on the page, are those questions, and Boxes the words
+	// of each question's box the form sent, by number: the answer saves the boxes as drafts and writes the answered
+	// questions into the one answer (PlanAnswersText), the others taking the recommendation.
+	Plan  []PlanQuestion
+	Boxes map[int]string
+	// Picks are the changed picks of Plan's questions the form sent (planPicks): each is saved as its question's
+	// answer, written once in the list, not as a "Qn (x)" line.
+	Picks map[int]string
 }
 
 // Answerer records what the Guildmaster gives on a task page. It never advances a task.
@@ -49,8 +57,14 @@ type Answer struct {
 // marks a question accepted, answered with its words or open again, or, for Send round, records the round's answers
 // on the task's conversation with a grill-answered message to the Director and wakes it. It refuses unless the round
 // is the latest of its attempt on an open task and not sent, and refuses, writing nothing, when the round has a draft
-// newer than p.Drafts, the highest draft number its form rendered, unless the press replays the same post; Send round with a question unanswered saves the boxes
-// and then refuses, naming them; a retry of a round already sent replays and returns nil.
+// newer than p.Drafts, the highest draft number its form rendered, unless the press replays the same post; Send round
+// with a question unanswered saves the boxes and then refuses, naming them; a retry of a round already sent replays
+// and returns nil. With p.Plan, p is a press of a plan approval's question controls instead: p.Tag is the decision,
+// bound to p.Subject, and the boxes and mark are saved as its drafts, refusing unless the decision is still open;
+// p.Drafts is not read, and there is no Send round, since the approval's answer sends them.
+//
+// With a.Plan, Answer first saves a.Boxes as the decision's drafts, then writes its answered questions after the
+// answer as PlanAnswersText; an answer that would then be over the limit is refused and the drafts are kept.
 //
 // A refusal is a *Refusal, with the reason the page shows; a store held by a writer is ErrBusy; anything else is
 // shown as a failure with no detail.
@@ -83,6 +97,13 @@ type RoundPost struct {
 	Question                int
 	Boxes                   map[int]string
 	Login                   string
+	// Subject and Plan are set on a press of a plan approval's question controls: the subject digest the page
+	// showed and the spec's open questions.
+	Subject string
+	Plan    []PlanQuestion
+	// Picks are a plan approval's changed picks the form sent, the letter by question number, each a letter of its
+	// question's options (planPicks); a press saves them as that question's answer, but its own question's.
+	Picks map[int]string
 }
 
 // Refusal is an Answerer's refusal: nothing was written, Status is the HTTP status the page is shown again with and
@@ -245,7 +266,8 @@ func (s *Server) failed(err error, what string, again func(int, string)) bool {
 //
 // Changed picks (readPicks) become "Qn (x)" lines before the words (withPicks) on Changes requested and on words
 // only; Approved with a changed pick is refused, since it would take the recommendation the pick changed; any other
-// answer ignores them. A malformed pick field is refused before the Answerer.
+// answer ignores them. A malformed pick field is refused before the Answerer. On a plan approval with open questions
+// on the page, Approved and Changes requested instead save each changed pick as its question's answer (Answer.Picks).
 func (s *Server) answer(w http.ResponseWriter, r *http.Request, repo, id string) {
 	if !s.readForm(w, r) {
 		return
@@ -259,8 +281,9 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, repo, id string)
 		a.Option = ""
 	}
 	confirm := r.PostForm.Get("confirm")
+	boxes := formBoxes(r, maxPlanBoxes)
 	who, status, reason := s.gate(r)
-	st := pageState{identity: who, Token: s.token, Decision: a.Decision, Words: a.Text}
+	st := pageState{identity: who, Token: s.token, Decision: a.Decision, Words: a.Text, RoundBoxes: boxes}
 	again := func(status int, reason string) {
 		st.Refused = reason
 		t, ok := s.read(w, repo, id)
@@ -279,6 +302,23 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, repo, id string)
 		return
 	}
 	st.Picks = picks
+	if act := r.PostForm.Get("act"); act != "" {
+		s.planPress(w, r, a, act, boxes, picks, who, again)
+		return
+	}
+	if a.Decision != "" && !words && (planOption(a.Option) || confirm != "") {
+		// A plan approval's answer carries its open questions' answers, read from the spec the page shows; its
+		// changed picks are answers of their questions, written once in that list, so they are no "Qn (x)" lines
+		// and Approved takes them.
+		t, ok := s.read(w, repo, id)
+		if !ok {
+			return
+		}
+		if plan := s.planQuestions(t, a.Decision); plan != nil {
+			a.Plan, a.Boxes, a.Picks = plan, boxes, planPicks(plan, picks)
+			picks = nil
+		}
+	}
 	if confirm != "" && !words {
 		n, err := strconv.Atoi(confirm)
 		if err != nil || n < 1 {
@@ -323,6 +363,11 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, repo, id string)
 		target += "?" + url.Values{"sent": {sent}, "ask": {a.Decision}}.Encode()
 	}
 	http.Redirect(w, r, target+"#"+url.PathEscape(a.Decision), http.StatusSeeOther)
+}
+
+// planOption reports whether option is one a plan approval's answer sends its open questions' answers with.
+func planOption(option string) bool {
+	return option == "approved" || option == "changes_requested"
 }
 
 // readPicks reads an answer's pick-<N> fields, the cards' radio groups: N a positive number as strconv.Itoa writes
@@ -423,12 +468,7 @@ func (s *Server) round(w http.ResponseWriter, r *http.Request, repo, id string) 
 	if !s.readForm(w, r) {
 		return
 	}
-	p := RoundPost{Repository: repo, TaskID: id, Tag: r.PostForm.Get("tag"), Boxes: map[int]string{}}
-	for n := 1; n <= MaxRoundQuestions; n++ {
-		if words, ok := r.PostForm["text-"+strconv.Itoa(n)]; ok && len(words) > 0 {
-			p.Boxes[n] = words[0]
-		}
-	}
+	p := RoundPost{Repository: repo, TaskID: id, Tag: r.PostForm.Get("tag"), Boxes: formBoxes(r, MaxRoundQuestions)}
 	who, status, reason := s.gate(r)
 	st := pageState{identity: who, Token: s.token, RoundBoxes: p.Boxes}
 	again := func(status int, reason string) {
@@ -443,7 +483,7 @@ func (s *Server) round(w http.ResponseWriter, r *http.Request, repo, id string) 
 		again(status, reason)
 		return
 	}
-	act, q, ok := roundAct(r.PostForm.Get("act"))
+	act, q, ok := roundAct(r.PostForm.Get("act"), MaxRoundQuestions)
 	n, err := strconv.Atoi(r.PostForm.Get("round"))
 	drafts, derr := 0, error(nil)
 	if _, posted := r.PostForm["drafts"]; posted {
@@ -480,16 +520,68 @@ func (s *Server) round(w http.ResponseWriter, r *http.Request, repo, id string) 
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
-// roundAct reads a round button's value: save or send, or accept-<n>, words-<n> or change-<n> for question n.
-func roundAct(v string) (act string, question int, ok bool) {
+// roundAct reads a round button's value: save or send, or accept-<n>, words-<n> or change-<n> for question n, from
+// 1 to most.
+func roundAct(v string, most int) (act string, question int, ok bool) {
 	switch v {
 	case RoundSave, RoundSend:
 		return v, 0, true
 	}
 	act, num, found := strings.Cut(v, "-")
 	n, err := strconv.Atoi(num)
-	if !found || err != nil || n < 1 || n > MaxRoundQuestions || (act != RoundAccept && act != RoundWords && act != RoundChange) {
+	if !found || err != nil || n < 1 || n > most || (act != RoundAccept && act != RoundWords && act != RoundChange) {
 		return "", 0, false
 	}
 	return act, n, true
+}
+
+// maxPlanBoxes bounds the question boxes a plan approval's form is read for; a spec's open questions are cut at
+// spec.QuestionsMax bytes, far fewer.
+const maxPlanBoxes = 100
+
+// formBoxes are the words of each question box r's form sent, text-<n> for n from 1 to most, by question number.
+func formBoxes(r *http.Request, most int) map[int]string {
+	boxes := map[int]string{}
+	for n := 1; n <= most; n++ {
+		if words, ok := r.PostForm["text-"+strconv.Itoa(n)]; ok && len(words) > 0 {
+			boxes[n] = words[0]
+		}
+	}
+	return boxes
+}
+
+// planPress is a press of a plan approval's question controls, posted with the approval's form: Accept
+// recommendation, Answer with my words or Change on one question, or Save on them all. It gives the Answerer the
+// boxes, the changed picks and the mark to save as the decision's drafts, read against the spec the page shows, and
+// redirects to the question, or to the ask; a refusal shows the page again with its reason on the ask and every
+// box's words and pick kept.
+func (s *Server) planPress(w http.ResponseWriter, r *http.Request, a Answer, act string, boxes, picks map[int]string, who identity, again func(int, string)) {
+	act, q, ok := roundAct(act, maxPlanBoxes)
+	switch {
+	case a.Decision == "":
+		again(http.StatusBadRequest, "the answer names no decision")
+		return
+	case !ok || act == RoundSend:
+		again(http.StatusBadRequest, "the form names no button of the open questions")
+		return
+	}
+	t, found := s.read(w, a.Repository, a.TaskID)
+	if !found {
+		return
+	}
+	plan := s.planQuestions(t, a.Decision)
+	if plan == nil {
+		again(http.StatusConflict, "changed since you loaded the page: #"+a.Decision+" has no open questions to answer here; reload it")
+		return
+	}
+	p := RoundPost{Repository: a.Repository, TaskID: a.TaskID, Tag: a.Decision, Round: PlanRound, Act: act, Question: q, Boxes: boxes,
+		Login: who.Login, Subject: a.Subject, Plan: plan, Picks: planPicks(plan, picks)}
+	if s.failed(s.o.Answerer.Round(p), "plan questions "+a.Repository+"/"+a.TaskID+" #"+a.Decision, again) {
+		return
+	}
+	target := taskHref(a.Repository, a.TaskID) + "#" + url.PathEscape(a.Decision)
+	if q > 0 {
+		target = taskHref(a.Repository, a.TaskID) + "#" + url.PathEscape(roundQuestionID(a.Decision, q))
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }

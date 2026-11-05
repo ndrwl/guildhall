@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -29,7 +30,7 @@ func TestConfirmPosts(t *testing.T) {
 		t.Fatalf("confirm: %d %q\n%s", w.Code, w.Header().Get("Location"), w.Body)
 	}
 	want := web.Answer{Repository: "guildhall", TaskID: "d122", Decision: "grant-1", Text: "Why does build-3 need the network?", Login: gmLogin, Confirm: 11}
-	if len(f.answers) != 1 || f.answers[0] != want {
+	if len(f.answers) != 1 || !reflect.DeepEqual(f.answers[0], want) {
 		t.Fatalf("answers = %+v, want %+v", f.answers, want)
 	}
 
@@ -63,7 +64,7 @@ func TestSayPosts(t *testing.T) {
 		t.Fatalf("say: %d %q\n%s", w.Code, loc, w.Body)
 	}
 	want := web.Answer{Repository: "guildhall", TaskID: "d122", Tag: "review--s2-2", Text: "Is F4 the only finding?", Login: gmLogin}
-	if len(f.said) != 1 || f.said[0] != want || len(f.answers) != 0 || len(f.sent) != 0 {
+	if len(f.said) != 1 || !reflect.DeepEqual(f.said[0], want) || len(f.answers) != 0 || len(f.sent) != 0 {
 		t.Fatalf("said = %+v, answers %+v, sent %+v", f.said, f.answers, f.sent)
 	}
 	body := request(h, http.MethodGet, w.Header().Get("Location"), gmAddr, nil, nil).Body.String()

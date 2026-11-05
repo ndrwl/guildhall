@@ -90,10 +90,13 @@ func ParseRound(text string) ([]RoundQuestion, error) {
 }
 
 // RoundAnswer is the Guildmaster's answer to one question of a round: Accepted says they accepted its recommendation,
-// and Words are their words, the answer itself when they did not accept, or words given with the acceptance.
+// and Words are their words, the answer itself when they did not accept, or words given with the acceptance. On a
+// plan approval's open question, Pick is the letter of the option picked on its card as the answer, with any words
+// after it.
 type RoundAnswer struct {
 	Accepted bool
 	Words    string
+	Pick     string
 }
 
 // The lines a question's answer starts with in a round's answers.

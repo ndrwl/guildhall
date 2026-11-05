@@ -138,13 +138,16 @@ type Draft struct {
 	Round, Question int
 	Number          int
 	Mark, Text      string
-	At              time.Time
+	// Pick is the letter a draft marked DraftPick picks.
+	Pick string
+	At   time.Time
 }
 
 // The marks of a Draft.
 const (
 	DraftAccept = "accept"
 	DraftWords  = "words"
+	DraftPick   = "pick"
 )
 
 // Where is a where-it-stands sentence: Lead, shown in bold, says who or what the task waits on, such as "Waiting for

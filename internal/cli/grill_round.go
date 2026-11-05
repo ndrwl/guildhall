@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -270,20 +271,17 @@ func showRound(s *store.Store, repo, task, tag string, k int) (string, error) {
 
 // Round implements web.Answerer: every box the form showed is saved as a draft of its question first, in one open
 // of the store with the rest, so no press loses words; then the button's mark is saved, or Send round records the
-// answers and the grill-answered message in one transaction and wakes the Director.
+// answers and the grill-answered message in one transaction and wakes the Director. A press of a plan approval's
+// question controls (p.Plan) saves its drafts the same way (pagePlanPress) and sends nothing.
 func (w webAnswerer) Round(p web.RoundPost) error {
-	boxes := map[int]string{}
-	for n, text := range p.Boxes {
-		t, err := normaliseText(fmt.Sprintf("your words on Q%d", n), []byte(text), store.MaxTextBytes)
-		if err != nil {
-			return web.Refuse(http.StatusRequestEntityTooLarge, err.Error())
-		}
-		if strings.TrimSpace(t) == "" {
-			t = ""
-		}
-		boxes[n] = t
+	boxes, err := pageBoxes(p.Boxes)
+	if err != nil {
+		return err
 	}
 	sent, err := withRecords(storeRecords{path: w.c.store, wait: webLockWait}, false, nil, func(s *store.Store) (string, error) {
+		if p.Plan != nil {
+			return "", pagePlanPress(s, p, boxes)
+		}
 		return pageRound(s, p, boxes)
 	})
 	if err != nil {
@@ -343,72 +341,13 @@ func pageRound(s *store.Store, p web.RoundPost, boxes map[int]string) (string, e
 	if p.Question > len(qs) {
 		return "", web.Refuse(http.StatusBadRequest, fmt.Sprintf("this round has no Q%d", p.Question))
 	}
-	saved, err := s.Drafts(p.Repository, p.TaskID)
-	if err != nil {
-		return "", err
-	}
-	// version is the highest draft number of this round, which the page's form posts as p.Drafts.
-	old := map[int]store.Draft{}
-	version := 0
-	for _, e := range saved {
-		if e.Tag == p.Tag && e.Round == round.Number {
-			old[e.Question] = e.Draft
-			version = max(version, e.Number)
-		}
-	}
-	drafts := make([]store.Draft, len(qs))
-	changed := false
+	ns := make([]int, len(qs))
 	for i, q := range qs {
-		d, ok := old[q.N]
-		if !ok {
-			d = store.Draft{Tag: p.Tag, Round: round.Number, Question: q.N}
-		}
-		if words, ok := boxes[q.N]; ok {
-			d.Text = words
-		}
-		if q.N == p.Question {
-			switch p.Act {
-			case web.RoundAccept:
-				d.Mark = store.DraftAccept
-			case web.RoundWords:
-				if d.Text != "" {
-					d.Mark = store.DraftWords
-				}
-			case web.RoundChange:
-				d.Mark = store.DraftUnmarked
-			}
-		}
-		if d.Mark == store.DraftWords && d.Text == "" {
-			d.Mark = store.DraftUnmarked
-		}
-		drafts[i] = d
-		// A question never saved and still empty is no change.
-		changed = changed || (d != old[q.N] && (ok || d.Mark != "" || d.Text != ""))
+		ns[i] = q.N
 	}
-	// The mutation names the drafts the page rendered, so the same words saved again after others replay nothing.
-	body, err := json.Marshal(drafts)
+	drafts, err := savePageDrafts(s, p, round.Number, ns, boxes, &p.Drafts)
 	if err != nil {
 		return "", err
-	}
-	mutation := mutationID("round-drafts", p.Repository, p.TaskID, p.Tag, strconv.Itoa(round.Number), strconv.Itoa(p.Drafts), digest.Of(body).Hex())
-	if version > p.Drafts {
-		// The page predates a draft of this round saved since, from another tab or window: its boxes and marks are
-		// not the round's, so the press writes nothing, unless it is a retry of the very post that saved.
-		if r, err := s.Receipt(mutation); err != nil || r.Repository != p.Repository || r.TaskID != p.TaskID {
-			return "", web.Refuse(http.StatusConflict, "changed since you loaded the page: its answers were saved from another tab or window; reload, your words there are kept")
-		}
-		changed = false
-	}
-	if changed {
-		if _, err := s.SaveDrafts(mutation, p.Repository, p.TaskID, drafts); err != nil {
-			if errors.Is(err, store.ErrInvalid) {
-				return "", web.Refuse(http.StatusConflict, err.Error())
-			}
-			return "", err
-		}
-	}
-	if p.Act == web.RoundWords && drafts[p.Question-1].Mark != store.DraftWords {
-		return "", web.Refuse(http.StatusBadRequest, fmt.Sprintf("Q%d has no words to answer with; write them in its box first. Your other words are saved", p.Question))
 	}
 	if p.Act != web.RoundSend {
 		return "", nil
@@ -425,6 +364,106 @@ func pageRound(s *store.Store, p web.RoundPost, boxes map[int]string) (string, e
 			left = append(left, qs[i].N)
 		}
 	}
+	return sendRound(s, p, talk, *round, qs, answers, left)
+}
+
+// savePageDrafts saves every box of a page form's questions, numbered ns, as drafts under p.Tag and round, with the
+// mark p's button gives its question, and returns each question's draft in order: the words box keeps its words,
+// Accept recommendation marks it accepted, Answer with my words marks it answered when it has words and Change
+// unmarks it. Only drafts that differ from the saved ones are written, under a mutation id naming the drafts saved
+// before, so the same words saved again replay. Answer with my words on an empty box saves the rest and refuses.
+// rendered is the highest draft number of the round the page's form rendered, for a grill round: a page older than
+// the round's newest draft writes nothing and is refused, unless it retries the same post. A plan approval's
+// controls pass nil and are not checked.
+//
+// On a plan approval, a question with a changed pick in p.Picks (only an open card has one to post) is marked picked
+// with that letter, unless p's button is on that question, which was pressed after the pick and so wins: each
+// question keeps the one answer of the control touched last.
+func savePageDrafts(s *store.Store, p web.RoundPost, round int, ns []int, boxes map[int]string, rendered *int) ([]store.Draft, error) {
+	saved, err := s.Drafts(p.Repository, p.TaskID)
+	if err != nil {
+		return nil, err
+	}
+	// version is the highest draft number of this round, which a grill round's form posts as p.Drafts.
+	old := map[int]store.Draft{}
+	version := 0
+	for _, e := range saved {
+		if e.Tag == p.Tag && e.Round == round {
+			old[e.Question] = e.Draft
+			version = max(version, e.Number)
+		}
+	}
+	drafts := make([]store.Draft, len(ns))
+	changed := false
+	for i, n := range ns {
+		d, ok := old[n]
+		if !ok {
+			d = store.Draft{Tag: p.Tag, Round: round, Question: n}
+		}
+		if words, ok := boxes[n]; ok {
+			d.Text = words
+		}
+		if n == p.Question {
+			switch p.Act {
+			case web.RoundAccept:
+				d.Mark = store.DraftAccept
+			case web.RoundWords:
+				if d.Text != "" {
+					d.Mark = store.DraftWords
+				}
+			case web.RoundChange:
+				d.Mark = store.DraftUnmarked
+			}
+		} else if l := p.Picks[n]; l != "" {
+			d.Mark, d.Pick = store.DraftPick, l
+		}
+		if d.Mark == store.DraftWords && d.Text == "" {
+			d.Mark = store.DraftUnmarked
+		}
+		if d.Mark != store.DraftPick {
+			d.Pick = ""
+		}
+		drafts[i] = d
+		// A question never saved and still empty is no change.
+		changed = changed || (d != old[n] && (ok || d.Mark != "" || d.Text != ""))
+	}
+	// The mutation names the drafts the page rendered, or for a plan's saved before it, so the same words saved again
+	// after others replay nothing.
+	body, err := json.Marshal(drafts)
+	if err != nil {
+		return nil, err
+	}
+	base := version
+	if rendered != nil {
+		base = *rendered
+	}
+	mutation := mutationID("round-drafts", p.Repository, p.TaskID, p.Tag, strconv.Itoa(round), strconv.Itoa(base), digest.Of(body).Hex())
+	if version > base {
+		// The page predates a draft of this round saved since, from another tab or window: its boxes and marks are
+		// not the round's, so the press writes nothing, unless it is a retry of the very post that saved.
+		if r, err := s.Receipt(mutation); err != nil || r.Repository != p.Repository || r.TaskID != p.TaskID {
+			return nil, web.Refuse(http.StatusConflict, "changed since you loaded the page: its answers were saved from another tab or window; reload, your words there are kept")
+		}
+		changed = false
+	}
+	if changed {
+		if _, err := s.SaveDrafts(mutation, p.Repository, p.TaskID, drafts); err != nil {
+			if errors.Is(err, store.ErrInvalid) {
+				return nil, web.Refuse(http.StatusConflict, err.Error())
+			}
+			return nil, err
+		}
+	}
+	if i := slices.Index(ns, p.Question); p.Act == web.RoundWords && i >= 0 && drafts[i].Mark != store.DraftWords {
+		return nil, web.Refuse(http.StatusBadRequest, fmt.Sprintf("Q%d has no words to answer with; write them in its box first. Your other words are saved", p.Question))
+	}
+	return drafts, nil
+}
+
+// sendRound is Send round of round, its questions qs answered as answers with left still unanswered: it refuses,
+// naming left, while any is, and otherwise records the answers with a grill-answered message to the Director,
+// returning the message's id.
+func sendRound(s *store.Store, p web.RoundPost, talk []store.ConversationEntry, round store.ConversationEntry, qs []web.RoundQuestion, answers []web.RoundAnswer, left []int) (string, error) {
 	if len(left) > 0 {
 		verb := "has"
 		if len(left) > 1 {
@@ -436,7 +475,7 @@ func pageRound(s *store.Store, p web.RoundPost, boxes map[int]string) (string, e
 	if len(text) > store.MaxTextBytes {
 		return "", web.Refuse(http.StatusRequestEntityTooLarge, fmt.Sprintf("the round's answers are over the limit of %d bytes (64 KiB); shorten some and send again. Your words are saved", store.MaxTextBytes))
 	}
-	k := roundOrdinal(talk, *round)
+	k := roundOrdinal(talk, round)
 	x := web.Answer{Repository: p.Repository, TaskID: p.TaskID}
 	env := webEnvelope(x, web.RoundID(p.Repository, p.TaskID, round.Number), store.MessageGrillAnswered,
 		fmt.Sprintf("Round %d of %s of %s/%s was sent on the task page: %d %s, %s; read the answers with guildhall grill round show --repo %s --task %s --attempt %s, then open the next round or finish the stage.",

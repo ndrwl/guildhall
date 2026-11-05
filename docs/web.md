@@ -93,6 +93,7 @@ Each ask has one box, **Your words**, and below it the answer tiles:
 - **Send words only**, under the dashed line, answers nothing: your words reach the Director as a note from you, naming the task and decision, shown to you in a toast as `messages send` shows a note, and the page says they were sent.
 
 On a plan or design approval, each open question with lettered options is a pick: tap an option on its card to change that answer, with the recommended option picked to begin with.
+On a plan approval whose open questions have [controls](#plan-open-questions), a changed pick is that question's answer, as described there; what follows is any other approval's.
 A changed pick shows "Your answer: Q2 → (b)" on its card, and the answer row hides Approved and puts **Changes requested** forward; this needs a browser with CSS `:has()`, and the page has no script.
 What is recorded:
 
@@ -198,6 +199,35 @@ A round that was never sent shows as "⊘ … not sent"; once its task closes it
 A round's buttons are refused as an answer is, with your words kept in the boxes, and also when the round was sent meanwhile, the Director opened a newer one or its attempt has finished, or its answers were saved from another tab or window since you loaded the page.
 Then nothing is saved: reload, and the words saved from the other tab are there; pressing the same button again after a dropped connection is not refused.
 A tab left open across an upgrade of Guildhall is refused in the same way once its round has any saved draft, and must be reloaded.
+
+## Plan open questions
+
+A plan approval asks its spec's open questions inside the approval, one at a time, with a grill round's controls.
+Under the Summary, "Open questions · *n* of *m* answered" heads the spec's question cards, and each card has a **Your words** box, **Accept recommendation**, naming the recommended option, and **Answer with my words**; an answered question folds to one line with **Change**, as a round's does, and **Save, answer later** saves every box.
+The controls are buttons of the approval's one form, posted to `/answer`, and each of them, and the approval's **Approved** and **Changes requested** tiles, saves every box first as drafts under the decision ([drafts](store.md#drafts)); **Send words only** answers nothing and saves no box.
+There is no Send round: the approval's answer sends them.
+
+A card that is not yet answered also keeps its [picks](#answering): picking another option is a third way to answer that question.
+Each question has one answer, from whichever you touched last: a changed pick becomes the question's answer, saved as a draft marked picked when you press any button, its card then folding to "✓ Picked (b) …" with **Change**, unless the button you press is that question's own **Accept recommendation** or **Answer with my words**, which wins over the pick; a folded card shows no picks, and **Change** reopens it with the recommendation picked.
+While a pick is changed, Approved stays, and its line and that of **Changes requested** read "with your picks and answers above; the rest take the recommendation".
+A pick is written once, as that question's line in the list below, never as a separate "Q2 (b)" line; **Send words only**, which answers nothing, still puts the pick lines before your words.
+
+**Approved** or **Changes requested** writes the answers into the one answer, after the option and your words, as a Markdown list under "Open questions, answered on the page:", one line per question:
+
+```text
+- Q1: accepted the recommendation (b) one route
+- Q2: 15 s, not 5 s.
+- Q3: picked (c) a table
+- Q4: no answer; takes the recommendation (a) list
+```
+
+Words in the box of an accepted or picked question follow its answer after a semicolon.
+
+A question with no answer takes the spec's recommendation, and the tiles say which, such as "with your 2 answers; Q3 and Q4 take the recommendation".
+Words saved in a box but not marked are not an answer.
+With no question answered the answer is the approval alone, which takes every recommendation, as before.
+An answer that would go over the 64 KiB limit with its list is refused, and your drafts are kept.
+Only the Guildmaster's login's page shows the controls; a read-only page shows the cards alone.
 
 ## The reader page
 
