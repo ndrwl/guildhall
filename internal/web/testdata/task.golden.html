@@ -38,7 +38,7 @@ button{font:inherit;color:inherit}
 .steps .back{border-color:#a78bfa}.steps .back b::before{content:"↩\FE0E  ";color:#c4b5fd}
 .steps .run{border-color:#5b9cff}.steps .run b::before{content:"▸ ";color:#8fbcff}
 .steps .bad{border-color:#ff6b6b}.steps .bad b::before{content:"✗ ";color:#ff9b9b}
-.steps .you{border-color:#f5b31c;background:#262116}.steps .you b{color:#ffd166}.steps .you b::before{content:"? "}
+.steps .you{border-color:#f5b31c;background:#262116}.steps .you b{color:#ffd166}.steps .you b::before{content:"● "}
 .steps .later b{color:var(--bandmut);font-weight:500}
 /* quiet text and status */
 .mut{color:var(--mut)}.faint{color:var(--faint)}
@@ -122,7 +122,7 @@ button{font:inherit;color:inherit}
 .node.bad::before{content:"✗";background:var(--bad)}
 .node.void::before{content:"⊘";background:var(--faint)}
 .node.later::before{content:"";background:var(--bg);box-shadow:0 0 0 4px var(--bg),inset 0 0 0 2px var(--line2)}
-.node.you::before{content:"?";background:var(--youdot);box-shadow:0 0 0 4px var(--bg),0 0 0 7px var(--youline)}
+.node.you::before{content:"";background:var(--youdot);box-shadow:0 0 0 4px var(--bg),0 0 0 7px var(--youline)}
 .nh{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;min-height:26px}
 .nh .t{font-weight:650;font-size:15px}
 .st{font-size:12px;font-weight:700;letter-spacing:.03em;padding:2px 8px;border-radius:999px;background:var(--okbg);color:var(--ok)}
@@ -383,14 +383,14 @@ tiles' line says the picks go with them */
 <header class="band">
 <div class="crumb"><a href="/">All tasks</a><span class="sep">/</span><span>guildhall</span><span class="sep">/</span><b>d122</b><span class="sep">·</span><span>open</span><span class="sep">·</span><span>linked from <a href="/guildhall/d105">d105</a></span><span class="sep">·</span><span>depends on <a href="/other/d7">other/d7</a></span></div>
 <h1>Guildmaster task page: one web page per task with context, status and answerable decisions</h1>
-<p class="ws you"><b>? Waiting for you on 2 asks:</b> whether to go on after the slice 2 review, and a grant for an attempt.<span class="m">Slice 2 of 2 · PR #251 open · CI passed</span></p>
+<p class="ws you"><b>Waiting for you on 2 asks:</b> whether to go on after the slice 2 review, and a grant for an attempt.<span class="m">Slice 2 of 2 · PR #251 open · CI passed</span></p>
 <ul class="chips"><li><a href="https://github.com/ndrwl/guildhall/pull/251">PR #251</a> open</li><li>CI <span class="c-ok">✓ passed</span></li></ul>
 <ol class="steps"><li class="ok"><b>Grill</b>3 rounds</li><li class="ok"><b>Research</b>1 round</li><li class="ok"><b>Plan</b>1 round</li><li class="ok" title="accept-2 approved"><b>Accept</b>plan approved</li><li class="ok"><b>Build</b>2 rounds</li><li class="you"><b>Review</b>waiting on you</li><li class="later"><b>Publish</b>later</li><li class="later"><b>Deliver</b>later</li></ol>
 </header>
 <div class="c2-body">
 <aside class="c2-rail">
 <section class="r-status"><h2>Status</h2>
-<dl class="kv"><dt>Where it stands</dt><dd><span class="tag you">? Waiting for you</span> · 2 asks</dd><dt>Step</dt><dd><b>Slice 2 review, round 2</b> · slice 2 of 2</dd><dt>Last attempt</dt><dd><span title="review--s2-2">Slice 2 review, attempt 2</span> · finished 4 Nov 14:20</dd><dt>Talk</dt><dd>11 messages · last 14:46</dd>
+<dl class="kv"><dt>Where it stands</dt><dd><span class="tag you">Waiting for you</span> · 2 asks</dd><dt>Step</dt><dd><b>Slice 2 review, round 2</b> · slice 2 of 2</dd><dt>Last attempt</dt><dd><span title="review--s2-2">Slice 2 review, attempt 2</span> · finished 4 Nov 14:20</dd><dt>Talk</dt><dd>11 messages · last 14:46</dd>
 <dt>PR</dt><dd><a href="https://github.com/ndrwl/guildhall/pull/251">#251</a> · open</dd>
 <dt>CI</dt><dd><span class="tag ok">✓ passed</span></dd><dt>Slices</dt><dd><ul class="sl"><li>1. Serve read-only task and reader pages on the tailnet · merged · <a href="https://github.com/ndrwl/guildhall/pull/247">#247</a></li><li class="cur">2. Answer decisions on the task page · current · <a href="https://github.com/ndrwl/guildhall/pull/251">#251</a></li></ul></dd><dt>linked from</dt><dd><a href="/guildhall/d105">d105</a></dd><dt>depends on</dt><dd><a href="/other/d7">other/d7</a></dd>
 </dl><p class="asof">Waiting on the Director:</p><ul class="waits"><li>checks of PR #251 are pending</li></ul>
@@ -409,7 +409,7 @@ tiles' line says the picks go with them */
 <section class="r-docs"><h2>Documents <span class="n">12</span></h2><ul class="dix"><li><span class="k">Review</span><a href="/guildhall/d122/doc/review--s2-2-outcome" title="review--s2-2-outcome">Slice 2 review, round 2</a><span class="d">4 Nov</span></li><li class="old"><span class="k"></span><a href="/guildhall/d122/doc/review-1-outcome" title="review-1-outcome">Review</a><span class="d">4 Nov</span></li><li><span class="k">Design</span><a href="/guildhall/d122/doc/designer-5-design-2" title="designer-5-design-2">Mock-up, round 5</a><span class="d">4 Nov</span></li><li class="old"><span class="k"></span><a href="/guildhall/d122/doc/designer-5-design" title="designer-5-design">Design, round 5</a><span class="d">4 Nov</span></li><li class="old"><span class="k"></span><a href="/guildhall/d122/doc/designer-4-design-2" title="designer-4-design-2">Mock-up, round 4</a><span class="d">4 Nov</span></li><li class="old"><span class="k"></span><a href="/guildhall/d122/doc/designer-4-design" title="designer-4-design">Design, round 4</a><span class="d">4 Nov</span></li><li class="old"><span class="k"></span><a href="/guildhall/d122/doc/design-1-design" title="design-1-design">Design</a><span class="d">31 Oct</span></li><li><span class="k">Spec</span><a href="/guildhall/d122/doc/plan-1-spec" title="plan-1-spec">Spec</a><span class="d">31 Oct</span></li><li><span class="k">Grill</span><a href="/guildhall/d122/doc/grill-3-notes" title="grill-3-notes">Grill notes, round 3</a><span class="d">31 Oct</span></li><li class="old"><span class="k"></span><a href="/guildhall/d122/doc/grill-2-notes" title="grill-2-notes">Grill notes, round 2</a><span class="d">31 Oct</span></li><li class="old"><span class="k"></span><a href="/guildhall/d122/doc/grill-1-notes" title="grill-1-notes">Grill notes, round 1</a><span class="d">31 Oct</span></li><li><span class="k">d105</span><a href="/guildhall/d105/doc/design-3-design" title="design-3-design">d105&#39;s design, round 3</a><span class="d">31 Oct</span></li></ul></section>
 </aside>
 <section class="c2-now"><ol class="spine"><li class="node you"><div class="nh"><span class="t">Now</span><span class="st">waiting on you · 2 asks</span><time>since 4 Nov 14:20</time></div>
-<p class="stage">? The Director runs grill with you in its session; answer it there.</p>
+<p class="stage">The Director runs grill with you in its session; answer it there.</p>
 
 <div class="ask" id="review--s2-x2">
 <div class="ah"><span class="kind">Loop exit</span><a class="aid" href="#review--s2-x2">#review--s2-x2</a><a class="tg" href="#review--s2-x2">review · review--s2-x2</a><span class="since">open since 4 Nov 14:20</span></div>
@@ -480,7 +480,7 @@ design-5 brief recorded
 </div></div></div>
 </li></ol></section>
 <section class="c2-story"><h2>The story · newest first</h2>
-<ul class="key"><li><span class="dot">✓</span>finished</li><li><span class="dot back">↩&#xFE0E;</span>sent back</li><li><span class="dot run">▸</span>running</li><li><span class="dot you">?</span>waiting on you</li><li><span class="dot later"></span>later</li></ul>
+<ul class="key"><li><span class="dot">✓</span>finished</li><li><span class="dot back">↩&#xFE0E;</span>sent back</li><li><span class="dot run">▸</span>running</li><li><span class="dot you"></span>waiting on you</li><li><span class="dot later"></span>later</li></ul>
 <ol class="spine">
 <li class="node later"><div class="nh"><span class="t">Publish and deliver come next</span><span class="st">not started</span></div></li><li class="node you" id="story-grant-1"><div class="nh"><span class="t" title="grant-1">An attempt asked for a grant</span><span class="st">waiting on you</span><time>4 Nov 14:31</time></div><div class="nb">Its talk is on Now, inside the ask: 3 messages.</div><div class="links"><a class="flag" href="#grant-1">Answer #grant-1 above ↑</a></div><details class="fold raw"><summary>Raw events · 1</summary><pre>14:31 decision grant-1 opened · grant</pre></details></li><li class="node you" id="story-review--s2-2"><div class="nh"><span class="t" title="review--s2-2">The slice 2 review asked for changes (round 2)</span><span class="st">changes requested · waiting on you</span><time>4 Nov 13:58–14:20</time></div><div class="nb">Its talk is on Now, under the asks.</div><div class="links"><a class="att" href="/guildhall/d122/doc/review--s2-2-outcome" title="review--s2-2-outcome">Slice 2 review, round 2</a><a class="flag" href="#review--s2-x2">Answer #review--s2-x2 above ↑</a></div><details class="fold raw"><summary>Raw events · 2</summary><pre>13:58 attempt review--s2-2 started · review
 14:20 attempt review--s2-2 succeeded</pre></details></li><li class="node ok" id="story-build--s2-1"><div class="nh"><span class="t" title="build--s2-1">Slice 2 was built (round 1)</span><span class="st">finished</span><time>4 Nov 12:10–13:52</time></div><details class="fold raw"><summary>Raw events · 2</summary><pre>12:10 attempt build--s2-1 started · build

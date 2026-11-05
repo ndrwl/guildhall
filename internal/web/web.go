@@ -72,7 +72,7 @@ const (
 	StateBack StepState = "back"
 	// StateRunning is a step whose attempt is at work (▸, blue).
 	StateRunning StepState = "run"
-	// StateYou is a step waiting on the Guildmaster: a decision of it is open (?, amber).
+	// StateYou is a step waiting on the Guildmaster: a decision of it is open (●, amber).
 	StateYou StepState = "you"
 	// StateLater is a step the workflow declares that has not started (hollow).
 	StateLater StepState = "later"

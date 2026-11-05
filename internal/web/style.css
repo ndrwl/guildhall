@@ -34,7 +34,7 @@ button{font:inherit;color:inherit}
 .steps .back{border-color:#a78bfa}.steps .back b::before{content:"↩\FE0E  ";color:#c4b5fd}
 .steps .run{border-color:#5b9cff}.steps .run b::before{content:"▸ ";color:#8fbcff}
 .steps .bad{border-color:#ff6b6b}.steps .bad b::before{content:"✗ ";color:#ff9b9b}
-.steps .you{border-color:#f5b31c;background:#262116}.steps .you b{color:#ffd166}.steps .you b::before{content:"? "}
+.steps .you{border-color:#f5b31c;background:#262116}.steps .you b{color:#ffd166}.steps .you b::before{content:"● "}
 .steps .later b{color:var(--bandmut);font-weight:500}
 /* quiet text and status */
 .mut{color:var(--mut)}.faint{color:var(--faint)}
@@ -118,7 +118,7 @@ button{font:inherit;color:inherit}
 .node.bad::before{content:"✗";background:var(--bad)}
 .node.void::before{content:"⊘";background:var(--faint)}
 .node.later::before{content:"";background:var(--bg);box-shadow:0 0 0 4px var(--bg),inset 0 0 0 2px var(--line2)}
-.node.you::before{content:"?";background:var(--youdot);box-shadow:0 0 0 4px var(--bg),0 0 0 7px var(--youline)}
+.node.you::before{content:"";background:var(--youdot);box-shadow:0 0 0 4px var(--bg),0 0 0 7px var(--youline)}
 .nh{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;min-height:26px}
 .nh .t{font-weight:650;font-size:15px}
 .st{font-size:12px;font-weight:700;letter-spacing:.03em;padding:2px 8px;border-radius:999px;background:var(--okbg);color:var(--ok)}

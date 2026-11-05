@@ -60,13 +60,13 @@ func TestTaskPageFixture(t *testing.T) {
 		`<b>d122</b>`, `linked from <a href="/guildhall/d105">d105</a>`, `depends on <a href="/other/d7">other/d7</a>`,
 		`<h1>Guildmaster task page: one web page per task with context, status and answerable decisions</h1>`,
 		// where it stands, then in grey the slice, PR and CI; the phone's chips keep only the PR and CI
-		`<p class="ws you"><b>? Waiting for you on 2 asks:</b> whether to go on after the slice 2 review, and a grant for an attempt.<span class="m">Slice 2 of 2 · PR #251 open · CI passed</span></p>`,
+		`<p class="ws you"><b>Waiting for you on 2 asks:</b> whether to go on after the slice 2 review, and a grant for an attempt.<span class="m">Slice 2 of 2 · PR #251 open · CI passed</span></p>`,
 		`<ul class="chips"><li><a href="https://github.com/ndrwl/guildhall/pull/251">PR #251</a> open</li><li>CI <span class="c-ok">✓ passed</span></li></ul>`,
 		`<li class="ok"><b>Grill</b>3 rounds</li>`, `<li class="you"><b>Review</b>waiting on you</li>`, `<li class="later"><b>Deliver</b>later</li>`,
 		// the stepper names a decision by its words, its record id kept in the title
 		`<li class="ok" title="accept-2 approved"><b>Accept</b>plan approved</li>`,
 		// status
-		`<dt>Where it stands</dt><dd><span class="tag you">? Waiting for you</span> · 2 asks</dd>`, `<b>Slice 2 review, round 2</b> · slice 2 of 2`,
+		`<dt>Where it stands</dt><dd><span class="tag you">Waiting for you</span> · 2 asks</dd>`, `<b>Slice 2 review, round 2</b> · slice 2 of 2`,
 		`<dt>Last attempt</dt><dd><span title="review--s2-2">Slice 2 review, attempt 2</span> · finished 4 Nov 14:20</dd>`,
 		`<a href="https://github.com/ndrwl/guildhall/pull/251">#251</a> · open`, `<span class="tag ok">✓ passed</span>`,
 		`1. Serve read-only task and reader pages on the tailnet · merged · <a href="https://github.com/ndrwl/guildhall/pull/247">#247</a>`,
@@ -92,7 +92,7 @@ func TestTaskPageFixture(t *testing.T) {
 		`<div class="plan md"><p class="ph">Mock-up</p><p>Run <code>task design</code>:</p>` + "\n" + `<pre><code>$ guildhall task design d122 --surface cli` + "\n" + `design-5 brief recorded` + "\n" + `</code></pre>` + "\n" + `</div>`,
 		// now: the asks in full, read-only, with anchors, meanings and tones
 		`<span class="st">waiting on you · 2 asks</span><time>since 4 Nov 14:20</time>`,
-		`? The Director runs grill with you in its session; answer it there.`,
+		`<p class="stage">The Director runs grill with you in its session; answer it there.`,
 		`<div class="ask" id="review--s2-x2">`, `<span class="since">open since 4 Nov 14:20</span>`,
 		// the readable headline, the Director's explanation under it, and the question's own first line folded
 		`<p class="q">The slice 2 review asks whether to go on.</p><div class="dx"><p class="dxh">From the Director · <time>4 Nov 14:22</time></p><div class="md"><p>The review still wants <strong>F4</strong> fixed`,
@@ -134,6 +134,17 @@ func TestTaskPageFixture(t *testing.T) {
 	for _, bad := range []string{"<script", "<form", "<iframe", "<textarea", "Send words only", "Answering as"} {
 		if strings.Contains(withoutOwnScripts(body), bad) {
 			t.Errorf("task page holds %q; a page with no Guildmaster identity is read-only, and carries no script but its own", bad)
+		}
+	}
+	// "?" is no longer the waiting-on-you mark (d224): running text carries none, and the marks are an amber dot.
+	for _, bad := range []string{`content:"?"`, "? Waiting", "? Needs", "? The Director"} {
+		if strings.Contains(body, bad) {
+			t.Errorf("task page holds %q; the waiting-on-you mark is an amber dot, not a question mark", bad)
+		}
+	}
+	for _, want := range []string{`.steps .you b::before{content:"● "}`, `.node.you::before{content:"";`, `<li><span class="dot you"></span>waiting on you</li>`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("task page lacks %s", want)
 		}
 	}
 	if m := externalURL.FindAllString(body, -1); len(m) != 4 {
@@ -302,7 +313,7 @@ func TestDocuments(t *testing.T) {
 	}
 	for _, want := range []string{`<a class="backto" href="/guildhall/d122">← Back to the task</a>`, `<p class="dname">plan-1-spec</p>`,
 		`<span>Spec · plan · 1</span>`, `recorded 31 Oct 16:10`, `✓ sha256 matches the record`, `<a href="/guildhall/d122/doc/plan-1-spec/raw">Raw</a>`,
-		`<a class="jn" href="#needs">? Needs you · 2 · below ↓</a>`, `<article class="md"><h1>The spec</h1>`, `<table>`, `<td>1</td>`,
+		`<a class="jn" href="#needs">Needs you · 2 · below ↓</a>`, `<article class="md"><h1>The spec</h1>`, `<table>`, `<td>1</td>`,
 		`<div class="ask" id="review--s2-x2">`, `<section id="needs">`, `<div class="endback">`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("reader page lacks %s", want)

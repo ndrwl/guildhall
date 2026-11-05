@@ -38,7 +38,7 @@ button{font:inherit;color:inherit}
 .steps .back{border-color:#a78bfa}.steps .back b::before{content:"↩\FE0E  ";color:#c4b5fd}
 .steps .run{border-color:#5b9cff}.steps .run b::before{content:"▸ ";color:#8fbcff}
 .steps .bad{border-color:#ff6b6b}.steps .bad b::before{content:"✗ ";color:#ff9b9b}
-.steps .you{border-color:#f5b31c;background:#262116}.steps .you b{color:#ffd166}.steps .you b::before{content:"? "}
+.steps .you{border-color:#f5b31c;background:#262116}.steps .you b{color:#ffd166}.steps .you b::before{content:"● "}
 .steps .later b{color:var(--bandmut);font-weight:500}
 /* quiet text and status */
 .mut{color:var(--mut)}.faint{color:var(--faint)}
@@ -122,7 +122,7 @@ button{font:inherit;color:inherit}
 .node.bad::before{content:"✗";background:var(--bad)}
 .node.void::before{content:"⊘";background:var(--faint)}
 .node.later::before{content:"";background:var(--bg);box-shadow:0 0 0 4px var(--bg),inset 0 0 0 2px var(--line2)}
-.node.you::before{content:"?";background:var(--youdot);box-shadow:0 0 0 4px var(--bg),0 0 0 7px var(--youline)}
+.node.you::before{content:"";background:var(--youdot);box-shadow:0 0 0 4px var(--bg),0 0 0 7px var(--youline)}
 .nh{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;min-height:26px}
 .nh .t{font-weight:650;font-size:15px}
 .st{font-size:12px;font-weight:700;letter-spacing:.03em;padding:2px 8px;border-radius:999px;background:var(--okbg);color:var(--ok)}
@@ -383,7 +383,7 @@ tiles' line says the picks go with them */
 <header class="band list">
 <div class="crumb"><b>All tasks</b></div>
 <h1>All tasks</h1>
-<p class="ws you"><b>? 3 tasks wait for you · 3 are moving · 2 wait on something else</b></p>
+<p class="ws you"><b>3 tasks wait for you · 3 are moving · 2 wait on something else</b></p>
 </header>
 <main class="tl">
 <section class="tg you"><h2>Waiting for you <span class="n you">3</span></h2><ul class="rows"><li class="row you"><a class="tid" href="/guildhall/d150">guildhall/d150</a><div class="tb"><p class="tt">Task page shows the human-readable version</p><p class="tw"><b>Waiting for you on 2 asks:</b> whether to go on after the slice 2 review, and a grant for an attempt.</p></div><time>since 4 Nov 14:20</time></li><li class="row you"><a class="tid" href="/guildhall/d153">guildhall/d153</a><div class="tb"><p class="tt">One ask card</p><p class="tw"><b>Waiting for you in the Director&#39;s session:</b> the grill runs there with you.</p></div><time>since 4 Nov 11:00</time></li><li class="row you"><a class="tid" href="/guildhall/d139">guildhall/d139</a><div class="tb"><p class="tt">Hallmark follow-ups</p><p class="tw"><b>Waiting for you, later:</b> 1 deferred ask, held until other tasks merge.</p></div><time>since 2 Nov 16:00</time></li></ul></section>
