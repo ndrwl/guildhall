@@ -17,6 +17,7 @@ Supported today, on a local store file named on the command line:
 - [waking the Director](#waking-the-director) when a message to it is stored;
 - [Steward messages](#steward-messages): the Steward telling an enrolled Director about an issue it found, which the Director's external inbox receives from the `steward` sender;
 - [Director-to-Director messages](#director-to-director-messages): a Director sending another Director, its [peer](#peers), a `handoff-offer`, `dependency-notice`, `question` or `answer`, over SSH between machines and in process on one machine and account;
+- [tickets](#tickets): a Director filing a `handoff-offer`, `dependency-notice` or `steward-report` as a ticket, whose `accept`/`decline` decision only the Guildmaster answers, and creating the task only after `accept`;
 - [steering a running attempt](#steering-an-attempt): every `guildhall` command the Artisan runs shows its unacknowledged messages, and intake refuses a succeeded result until each is acknowledged.
 
 Not provided yet:
@@ -26,7 +27,6 @@ Not provided yet:
 - [nudging](#guildhall-sent-steering) an Artisan about to stop without a valid result on a runtime with no stop hook: such a runtime's only delivery point is its next `guildhall` command, and an agent about to exit may run none, so it ends with no result and fails as before.
   Nor is there a nudge when `guildhall` itself cannot run, since the hook is that command;
 - finding the store from a Director's runtime context: every Director command takes `--store <path>` or a copy;
-- tickets from messages: a Director message informs only, and work still moves between Directors only by manual handoff (R1.15); filing a message as a ticket is [designed, not built](#director-messaging-designed-not-built);
 - authentication of a local sender: anyone who can write the store file can send a message. A peer on another machine is identified by its SSH key's forced command ([identity](#peer-identity)).
 
 ## Authority
@@ -423,7 +423,7 @@ A delivery that fails, such as an unreachable or sleeping machine, stays `pendin
 ## Director-to-Director messages
 
 A Director tells another Director, its **peer**, something with a Director message: an external message, as a Steward message is, built from the [Director messaging](#director-messaging-designed-not-built) design.
-It informs only, under the [authority](#authority) rule: it never creates a task, answers a decision or starts anything in the receiver, and only the Guildmaster's `accept` of a ticket will create a task from one (tickets are [designed, not built](#authority-1)).
+It informs only, under the [authority](#authority) rule: it never creates a task, answers a decision or starts anything in the receiver, and only the Guildmaster's `accept` of a [ticket](#tickets) lets a task be created from one.
 No Steward is needed: two standalone Directors message each other with no Steward anywhere.
 
 ### Peers
@@ -489,7 +489,7 @@ The Director reads, acknowledges and closes its inbox to a peer by the peer's na
 
 The receiving Director judges each Director message ([inbox skill](../skills/guildhall-director-inbox/SKILL.md)).
 It never creates a task, starts work or changes a decision because of one, whoever sent it; it tells the Guildmaster what a `handoff-offer` or `dependency-notice` says when it is worth doing, and it may reply to a `question` with an `answer`.
-Filing a message as a ticket, which opens an `accept`/`decline` decision only the Guildmaster answers, is the next step of this design and not built yet.
+When a `handoff-offer` or `dependency-notice` is worth doing, it files the message as a [ticket](#tickets), which opens an `accept`/`decline` decision only the Guildmaster answers.
 
 ### Peer identity
 
@@ -508,11 +508,32 @@ Filing a message as a ticket, which opens an `accept`/`decline` decision only th
 The public key is read from this machine's `~/.ssh/<key>.pub` when it exists and is a plain key line; until then the lines carry a placeholder and the notes say to run the command again.
 For a peer on this machine and account it prints `local: true`, no commands, and the peer's `[[peer]]` entry.
 
+## Tickets
+
+A **ticket** asks the Guildmaster whether the work an external message describes is worth doing ([authority](#authority-1)).
+It is not a task: it has no workflow revision, starts no step and launches no Artisan, and only the Guildmaster's answer `accept` lets the Director create the task.
+
+`guildhall ticket file --sender <sender> --from-message <id> --repo <repository> --title <text> [--copy <dir>]` files the external message `(sender, id)` as a ticket proposing a task titled `--title` in `--repo`, a repository of the copy's config:
+
+- Only a `handoff-offer` or `dependency-notice` from a [peer](#peers), or a `steward-report` from the Steward, may be filed; a `question` or `answer` is never a ticket, and a message not received is refused. The title follows `task new`'s limit of 100 characters on one line.
+- The ticket is `ticket-<n>`, the n-th of the copy, recorded with the mutation `ticket:<sender>:<id>`, so one message is filed at most once: filing it again with the same proposal prints the same ticket, and with another is refused.
+- It opens the ticket's decision on the reserved task `messages/ticket-<n>`, a `question` decision `ticket-<n>` with the options `accept` and `decline`, which `decide list` and `needs_me` show and only the Guildmaster answers: `decide answer` refuses it inside any session, as for an [inbox alert](#closing-the-inbox-to-a-sender). Its question names the message, the proposed task and the commands to read the message and answer.
+- It prints the ticket as one JSON document, as `ticket list` lists it.
+
+Filing acknowledges nothing: the Director still acknowledges the message once it has dealt with it.
+
+`guildhall ticket list [--copy <dir>]` prints `{"tickets": [...]}`, every ticket in filing order: its `id`, the source's `sender`, `message`, `type` and `kind`, the proposed `repository` and `title`, the `decision` (`messages/ticket-<n>/ticket-<n>`), the Guildmaster's `choice` once answered, a `state` and, once created, the `task`.
+The state is `proposed` until the Guildmaster answers, then `accepted` or `declined`, read from the decision, so it changes once.
+
+`guildhall task new ... --ticket ticket-<n>` creates the task the ticket proposes, in the ticket's repository, and records its id on the ticket with the mutation `ticket-task:ticket-<n>`.
+It is refused, creating nothing, while the decision waits, after `decline`, for another repository, and once the ticket has its task; an identical `task new` retried after a failure between the two records replays the same task and records it.
+A task of work a message describes is created only this way; nothing creates one when the ticket is accepted.
+
 ## Director messaging (designed, not built)
 
-Everything in this section is designed, not built, except the [local wake](#waking-the-director) and its wake record, and what [Steward messages](#steward-messages) and [Director-to-Director messages](#director-to-director-messages) build: the external message record, `steward` and peer senders, `[[peer]]`, `messages send --to`, `messages receive`, the four message types, the outbox with its supervisor retry, and the per-sender closed inbox.
-Where this design and those sections differ, those sections are the contract: the wake budget is dropped, the inbox closes per sender, a sender's supervisor retries its outbox, and the forced command fixes the whole receive command of one key per sender and peer.
-Tickets, `--as guildmaster` and Guildmaster messages over SSH are not built; later slices build each contract red-first, as [contracts](contracts.md#method) describes.
+Everything in this section is designed, not built, except the [local wake](#waking-the-director) and its wake record, and what [Steward messages](#steward-messages), [Director-to-Director messages](#director-to-director-messages) and [tickets](#tickets) build: the external message record, `steward` and peer senders, `[[peer]]`, `messages send --to`, `messages receive`, the four message types, the outbox with its supervisor retry, the per-sender closed inbox, and `ticket file` and `ticket list`.
+Where this design and those sections differ, those sections are the contract: the wake budget is dropped, the inbox closes per sender, a sender's supervisor retries its outbox, the forced command fixes the whole receive command of one key per sender and peer, a `steward-report` may be a ticket too, and a ticket's decision is on a reserved task of the `messages` repository rather than a new decision subject.
+`--as guildmaster` and Guildmaster messages over SSH are not built; later slices build each contract red-first, as [contracts](contracts.md#method) describes.
 The decision is recorded in [Director messaging](decisions/director-messaging.md).
 It extends the local inbox above so a Director can hear from the Guildmaster and from other Directors, without giving any message more authority than the local inbox has today.
 
@@ -693,8 +714,8 @@ The designed additions are:
 | `guildhall messages outbox [--retry]` | Lists the sender's outbox entries and their states; `--retry` retries pending ones. |
 | `guildhall messages inbox close --reason <text>` | Closes the director inbox and raises the system alert. |
 | `guildhall messages inbox open` | Reopens it; refused unless the Guildmaster answered the alert `reopen`. |
-| `guildhall ticket file --sender <sender> --from-message <id>` | Requires both identity fields; files a ticket from that sender's `handoff-offer` or `dependency-notice` and opens its Guildmaster decision. |
-| `guildhall ticket list` | Lists tickets and their states. |
+| `guildhall ticket file --sender <sender> --from-message <id>` | Requires both identity fields; files a ticket from that sender's `handoff-offer` or `dependency-notice` and opens its Guildmaster decision. Built, with `--repo` and `--title` and a `steward-report` admitted too: see [tickets](#tickets). |
+| `guildhall ticket list` | Lists tickets and their states. Built: see [tickets](#tickets). |
 
 Every command keeps the existing conventions: one JSON document on success, exit 1 on refusal or failure, exit 2 on a usage error, no messages command creates a store ([`store init`](store.md#guildhall-store-init) does).
 
@@ -736,14 +757,14 @@ All are new records in the receiver's or sender's existing store, keyed outside 
 | Ticket | repository, ticket id | The source message's full `(sender, message id)` reference, the proposed title and repository, its decision, and a state `proposed`, `accepted` or `declined`, changed once. `accepted` records the task id later created. |
 
 A ticket's decision is a decision of kind `question` with options `accept` and `decline`, and the inbox alert one with options `reopen` and `keep-closed`.
-Decisions are keyed by repository and task today, so both need the decision record's key to admit a ticket or the inbox as its subject; that is the first contract the ticket slice changes.
+Decisions are keyed by repository and task, so as built each is a decision of a reserved task in the store's own `messages` repository, `messages/ticket-<n>` and `messages/inbox-<sender>`, and the decision record's key is unchanged; a ticket is kept in the `director` bucket by its id, and its state is read from its decision ([tickets](#tickets)).
 
 ### Maintenance tickets to the Steward
 
 The [rails, not tracks decision](decisions/rails-not-tracks.md) extends the ticket model with Director-filed maintenance incidents: engine dead ends, unexpected states and workarounds, including incidents the Director resolved successfully.
 This is a separate maintenance intake, not a new sender or recipient accepted by today's local inbox or by the Director-to-Director envelope above.
-The existing proposed `ticket file --from-message` form admits only `handoff-offer` and `dependency-notice`; it does not file maintenance incidents.
-Local filing, listing and triage are built as the `incident` command, named so because `director maintenance` already means note audit and hallmark and `ticket` is the designed Director-messaging command; Steward [collection](steward.md#collection), its schedule and the Steward's [triage](steward.md#triage) are built too.
+The [`ticket file --from-message`](#tickets) command admits only a `handoff-offer`, `dependency-notice` or `steward-report`; it does not file maintenance incidents.
+Local filing, listing and triage are built as the `incident` command, named so because `director maintenance` already means note audit and hallmark and `ticket` is the Director-messaging command; Steward [collection](steward.md#collection), its schedule and the Steward's [triage](steward.md#triage) are built too.
 
 - `guildhall incident file <file|->` files a strict-JSON report, schema `guildhall.incident/1`, with the fields below, as `open`.
   Filing the same report again returns the same receipt, and another report under the same id is refused; a report over 64 KiB is refused with its size.

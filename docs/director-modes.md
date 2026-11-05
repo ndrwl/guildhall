@@ -176,6 +176,7 @@ For speed, CI runs the managed pass on Linux only (H3b of d178), so managed-copy
 | `guildhall lesson propose <lesson-file\|->` | Records a lesson for local adoption or Steward collection. |
 | `guildhall lesson list\|resolve` | Lists the copy's lessons, or records the Guildmaster's local decision on one not collected. |
 | `guildhall incident file\|observe\|list\|resolve` | Files a [maintenance incident](messaging.md#maintenance-tickets-to-the-steward), links later evidence, lists them, or records the local decision on one not collected. |
+| `guildhall ticket file\|list` | Files a peer's `handoff-offer` or `dependency-notice`, or a `steward-report`, as a [ticket](messaging.md#tickets) for the Guildmaster's `accept`/`decline`, or lists them. |
 | `guildhall director collected --copy <dir>` | Marks collected the items of the receipt a Steward's [collection](steward.md#collection) copied to the copy; run by the Steward over SSH. |
 
 | Store record | Contract |

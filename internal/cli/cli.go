@@ -220,6 +220,10 @@ Commands:
                  print the copy's incidents, or only those not yet collected
   incident resolve <id> accepted|deferred|declined --copy <dir>
                  record the Guildmaster's local decision on an incident not yet collected
+  ticket file --sender <sender> --from-message <id> --repo <id> --title <text> [--copy <dir>]
+                 file a handoff-offer, dependency-notice or steward-report as a ticket with an accept/decline decision
+  ticket list [--copy <dir>]
+                 list the copy's tickets and their states
   clerk guild|decisions|task|inspect|queue [--all] [<id>] [--copy <dir>]
                  print the Guildmaster's read-only answers behind the Clerk plugin's slash commands;
                  guild takes --all, task and inspect take a task id
@@ -478,6 +482,8 @@ func (a *App) Run(args []string) int {
 		return a.lesson(rest)
 	case "incident":
 		return a.incident(rest)
+	case "ticket":
+		return a.ticket(rest)
 	case "quality":
 		return a.qualityCmd(rest)
 	case "review":

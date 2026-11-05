@@ -127,6 +127,7 @@ func (s *Store) Doctor() (Report, error) {
 			{bucketOutbox, nil, func() any { return new(OutboxEntry) }},
 			{bucketCopyReach, nil, func() any { return new(CopyReach) }},
 			{bucketCopyConditions, nil, func() any { return new(CopyCondition) }},
+			{bucketTickets, nil, func() any { return new(Ticket) }},
 		} {
 			if b := directorBucket(tx, d.name); b != nil {
 				_ = b.ForEach(func(k, v []byte) error {
