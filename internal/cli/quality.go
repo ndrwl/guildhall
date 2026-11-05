@@ -11,6 +11,7 @@ import (
 	"strconv"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/git"
 	"github.com/ndrwl/guildhall/internal/quality"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
@@ -167,6 +168,7 @@ func (a *App) withJudge(f advanceFlags, task string, fn func(*quality.Judge) err
 		Records:  records,
 		Outbox:   outbox,
 		Launcher: taskLockedProcess(cfg, exe, f.store, state, copyDir, stall, f.wait, a.Stderr),
+		Git:      git.Program{},
 		Config:   cfg,
 		StateDir: state, DocumentDir: filepath.Join(state, "documents"), QualityDir: filepath.Join(copyDir, "quality"),
 		Role: baselineSource(filepath.Join(cfgDir, "baseline"), release, "roles/judge.md").Path,

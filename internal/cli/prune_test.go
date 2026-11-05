@@ -332,7 +332,7 @@ func TestPruneSelection(t *testing.T) {
 	})
 	selfReview := func(id, judge string) {
 		writeTree(t, filepath.Join(f.copy, "quality", "app", id, "self-review-1.json"),
-			`{"schema":"guildhall.self-review/1","repository":"app","task":"`+id+`","number":1,"head":"`+strings.Repeat("a", 40)+`","criteria":[{"id":"B2","kind":"score","judge":"`+judge+`"}]}`)
+			`{"schema":"guildhall.self-review/1","repository":"app","task":"`+id+`","number":1,"base":"`+strings.Repeat("b", 40)+`","head":"`+strings.Repeat("a", 40)+`","criteria":[{"id":"B2","kind":"score","judge":"`+judge+`"}]}`)
 	}
 	selfReview("t-review", "pending")
 	selfReview("t-reviewed", "model")

@@ -832,6 +832,15 @@ func buildRepository(t *testing.T, root string) (repository, remote, base string
 	return repository, remote, commit("b.txt")
 }
 
+// Git returns a runner of git in a directory, with the system configuration and every global setting excluded, that
+// commits as a fixed author and fails t; it returns git's trimmed output.
+func Git(t *testing.T) func(dir string, args ...string) string {
+	t.Helper()
+	global := filepath.Join(t.TempDir(), "gitconfig")
+	writeFile(t, global, "")
+	return repositoryGit(t, global)
+}
+
 // repositoryGit returns a runner of git in a directory, with the system configuration and every global setting
 // but global's excluded, that fails t.
 func repositoryGit(t *testing.T, global string) func(dir string, args ...string) string {
