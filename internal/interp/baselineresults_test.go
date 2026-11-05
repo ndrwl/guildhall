@@ -164,7 +164,8 @@ func TestHallmarkBaselineTestResultsBehind(t *testing.T) {
 			_, text := h.baseline(t)
 			s := section(t, text)
 			containsInOrder(t, s, "Run 40 (https://forge.invalid/runs/40) at `"+older+"`, 2 first-parent commits behind the current head; conclusion: success.\n", "### Packages (3)")
-			if strings.Contains(s, "44") {
+			// Anchored to how a run is rendered: a bare "44" also occurs inside commit ids, which vary run to run.
+			if strings.Contains(s, "Run 44 ") || strings.Contains(s, "/runs/44)") || strings.Contains(s, bare) {
 				t.Error("the section names the run with no test-timings artifact")
 			}
 			if got := h.forge.TestResultsCalls(); got != 3 {
