@@ -40,15 +40,20 @@ const summaryHeaders = 20
 // externalCopy finds the Director copy an external messages command acts on, from --copy or copy discovery, and
 // returns its directory and store; a Steward copy, which has no external inbox, is refused.
 func (a *App) externalCopy(name string, fl *flag.FlagSet, cp *copyFlags, args []string) (dir, storePath string, code int) {
+	return a.directorCopy(name, fl, cp, args, a.messagesUsage)
+}
+
+// directorCopy is externalCopy reporting a usage error with usage.
+func (a *App) directorCopy(name string, fl *flag.FlagSet, cp *copyFlags, args []string, usage func(string) int) (dir, storePath string, code int) {
 	if err := parseInterspersed(fl, args); err != nil {
-		return "", "", a.messagesUsage(name + ": " + err.Error())
+		return "", "", usage(name + ": " + err.Error())
 	}
 	var path string
 	switch err := cp.apply(a, &path, nil, nil); {
 	case err != nil:
-		return "", "", a.messagesUsage(name + ": " + err.Error())
+		return "", "", usage(name + ": " + err.Error())
 	case cp.dir == "":
-		return "", "", a.messagesUsage(name + ": " + cp.missing(a).Error())
+		return "", "", usage(name + ": " + cp.missing(a).Error())
 	case filepath.Base(path) == stewardStoreFile:
 		return "", "", a.fail(fmt.Errorf("%s: %s is a Steward copy; external messages reach a Director copy", name, cp.dir))
 	}

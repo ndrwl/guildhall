@@ -273,6 +273,13 @@ A Director session with a `[[peer]]` ticks `sessionPeerDeliveries`, a `workspace
 `messages peer setup <peer> [--copy <dir>]` prints a `peerSetup` and runs nothing ([setting up a peer](../messaging.md#setting-up-a-peer)).
 `messages_peer_test.go` was written with the change and not run red: `TestPeerMessages` drives `send --to` and `receive --from` over a fake SSH whose forced command fixes the key's `--from`, through an asleep peer, the retry, a resend, a conflict, an answer, a key whose forced `--from` differs from the envelope's (refused, never retried), the receiver's refusals, a closed inbox and a local peer; `TestPeerSetup` the printed commands with and without the public key, an unsafe key line and a local peer.
 
+### Tickets
+
+`ticket file --sender <sender> --from-message <id> --repo <id> --title <text> [--copy <dir>]` checks `--repo` with `config.ListedRepository`, files the ticket with `store.FileTicket` once per message, then creates the reserved task `messages/ticket-<n>` and opens its `accept`/`decline` question decision `ticket-<n>`, each once, and prints a `ticketView`; `ticket list [--copy <dir>]` prints `{"tickets": [ticketView...]}`, each ticket's `state` read from its decision ([tickets](../messaging.md#tickets)).
+`task new --ticket ticket-<n>` runs `ticketForTask` on the open store before admitting the workflow, refusing a ticket that waits, was declined, proposes another repository or has its task, and after creating the task records it with `store.TicketTask`.
+`decide answer` refuses a `messages` decision inside any session, naming a ticket's as the Guildmaster's.
+`ticket_test.go` was written with the change and not run red: `TestTicketFromMessage` files a `steward-report`, refiles it, refuses another proposal, shows the decision in `decide list`, refuses `task new --ticket` before the answer and the answer in a session, creates and records the task after `accept` and refuses a second; `TestTicketDeclined` refuses the task after `decline`; `TestTicketFileRefusals` the usage and lookup refusals.
+
 ### Steward takeover
 
 `guildhall steward takeover --config <steward.toml> --plan <dir>` with exactly one of `--dry-run`, `--apply` and `--abandon` ([takeover](../steward.md#takeover)).

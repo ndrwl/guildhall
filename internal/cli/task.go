@@ -23,7 +23,7 @@ import (
 )
 
 var taskUsage = `usage:
-  guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--detail <text> | --detail-file <file|->] [--kind feature|bug|hallmark] [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] [--override <key>=<value>... --override-quote <text>] [--grill live|unattended --grill-reason <text>]
+  guildhall task new --store <path> --config <director.toml> --repo <id> --title <text> [--detail <text> | --detail-file <file|->] [--kind feature|bug|hallmark] [--depends-on <repo>/<task>]... [--fixes <repo>/<task>] [--priority <level>] [--override <key>=<value>... --override-quote <text>] [--grill live|unattended --grill-reason <text>] [--ticket <ticket id>]
   guildhall task priority --store <path> --repo <id> <task> <level>
   guildhall task hold-merge --store <path> --repo <id> <task>
   guildhall task show --store <path> [--config <director.toml>] --repo <id> <task> --json
@@ -52,6 +52,8 @@ from a file or - for standard input
 --grill records the task's grill mode with --grill-reason, a one-line reason, which unattended requires: live, the
 Director interviewing the Guildmaster, or unattended, an Artisan writing the open decisions; without it the grill is
 live. It applies only to a workflow with a Director grill, so not to a bug
+--ticket creates the task a ticket proposes, only once the Guildmaster answered its decision accept, and records the
+task on the ticket; it is refused while the ticket waits, after decline, and once the ticket has its task
 --kind chooses what the task is created as, which chooses its workflow; --fixes without --kind means bug:
 ` + taskKindHelp
 
@@ -236,6 +238,7 @@ func (a *App) task(args []string) int {
 	wfName := flags.String("workflow", "", "list only tasks bound to this workflow name")
 	open := flags.Bool("open", false, "list only open tasks")
 	priority := flags.String("priority", "", "task priority, p0 to p5")
+	ticketID := flags.String("ticket", "", "the accepted ticket the task is created from")
 	var deps dependsOn
 	flags.Var(&deps, "depends-on", "task this one depends on")
 	var fixed fixes
@@ -254,7 +257,7 @@ func (a *App) task(args []string) int {
 	switch sub {
 	case "new":
 		want, allowed = 0, map[string]bool{"store": true, "config": true, "repo": true, "title": true, "detail": true, "detail-file": true, "kind": true, "depends-on": true, "fixes": true, "priority": true,
-			"override": true, "override-quote": true, "grill": true, "grill-reason": true}
+			"override": true, "override-quote": true, "grill": true, "grill-reason": true, "ticket": true}
 	case "priority":
 		want, allowed = 2, map[string]bool{"store": true, "repo": true}
 	case "hold-merge":
@@ -441,6 +444,12 @@ func (a *App) task(args []string) int {
 		if err = refuseWhileRecovering(s); err != nil {
 			break
 		}
+		// A task from a ticket is created only once the Guildmaster accepted the ticket (docs/messaging.md#tickets).
+		if *ticketID != "" {
+			if err = ticketForTask(s, *ticketID, task.Repository); err != nil {
+				break
+			}
+		}
 		if err = admitWorkflow(s, accepted); err != nil {
 			err = fmt.Errorf("%w; the Guildmaster approves this revision with guildhall workflow approve --config <director.toml> --repo %s", err, *repo)
 		} else if task.ID, err = assignTaskID(s, task, taskPrefix); err == nil {
@@ -449,6 +458,9 @@ func (a *App) task(args []string) int {
 			} else {
 				out, err = s.CreateTask(mutationID("task", task.Repository, task.ID), task)
 			}
+		}
+		if err == nil && *ticketID != "" {
+			_, err = s.TicketTask(*ticketID, task.ID)
 		}
 		if err == nil && *priority != "" {
 			_, err = s.SetTaskPriority(mutationID("priority", task.Repository, task.ID, "1"), task.Repository, task.ID, level)

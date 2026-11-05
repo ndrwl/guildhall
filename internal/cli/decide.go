@@ -122,10 +122,15 @@ func (a *App) decide(args []string) int {
 				return fail(fmt.Errorf("decision %s/%s/%s is the Guildmaster's triage, and only the Guildmaster answers it, outside any Guildhall session", *repo, *task, *id))
 			}
 		}
-		// An inbox alert is the Guildmaster's too: the Director that closed its inbox cannot reopen it on its own
-		// (docs/messaging.md#closing-the-inbox-to-a-sender).
+		// An inbox alert and a ticket are the Guildmaster's too: the Director that closed its inbox cannot reopen it on
+		// its own, nor accept the ticket it filed (docs/messaging.md#closing-the-inbox-to-a-sender,
+		// docs/messaging.md#tickets).
 		if *repo == config.MessagesRepository && filepath.Base(*path) != stewardStoreFile && a.inSession() {
-			return fail(fmt.Errorf("decision %s/%s/%s is an inbox alert, and only the Guildmaster answers it, outside any Guildhall session", *repo, *task, *id))
+			what := "an inbox alert"
+			if _, ok := store.TicketNumber(*task); ok {
+				what = "a ticket's accept or decline"
+			}
+			return fail(fmt.Errorf("decision %s/%s/%s is %s, and only the Guildmaster answers it, outside any Guildhall session", *repo, *task, *id, what))
 		}
 		var err error
 		if answer, err = a.readAnswer(*answerFile); err != nil {

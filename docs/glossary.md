@@ -119,6 +119,7 @@ A finished outcome without a readable result is refused, not guessed.
   Avoid "command" and "instruction" for it.
 - An **external message** is a message from outside the copy's own processes, kept by sender and id outside any repository: a Steward message or a Director message.
 - A **peer** is another Director a copy's `[[peer]]` config lists, which it exchanges **Director messages** with: a `handoff-offer`, `dependency-notice`, `question` or `answer`, which informs only, like a Steward message ([Director-to-Director messages](messaging.md#director-to-director-messages)).
+- A **ticket** is a `handoff-offer`, `dependency-notice` or `steward-report` the Director filed for the Guildmaster's `accept`/`decline` decision; it is not a task, and only `accept` lets the Director create the task it proposes ([tickets](messaging.md#tickets)).
 - A **closed inbox** is a Director's inbox refusing one sender's new messages until the Guildmaster answers its alert `reopen` ([closing the inbox](messaging.md#closing-the-inbox-to-a-sender)).
 - The **outbox** is a sender's record of each message it sends: `pending`, then `delivered` or `refused` ([the outbox](messaging.md#the-outbox)).
 
