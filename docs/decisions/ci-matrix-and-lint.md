@@ -18,6 +18,7 @@ CI runs build, vet, tests, a gofmt check and golangci-lint with its standard lin
 It runs for every pull request, every push to `main` and manual dispatches for any ref.
 Main runs have independent concurrency groups, so later pushes or dispatches neither replace pending runs nor cancel running ones; other refs share a per-ref group that cancels superseded runs.
 golangci-lint is pinned to an exact version so lint results do not change underneath a pull request.
+The pin is the `test` job's one `GOLANGCI_LINT_VERSION` value. The job takes the binary from an Actions cache keyed on that pin, the runner's OS and its arch, and the Lint step runs it with `install-mode: none`. Downloading the release asset on every run let a transient HTTP 504 from GitHub's release CDN fail `test (<os>)` after every test had passed (d231). On a cache miss, `.github/install-golangci-lint.sh` downloads the asset and the release's checksums file with five curl retries. It fails unless the asset's sha256 matches the published one, which keeps the supply-chain check the action no longer makes. Any event may save the entry, since it holds only that verified binary. The exact pin is unchanged.
 `.gitattributes` checks text out with LF endings so formatting checks agree on Windows.
 
 ## Consequences

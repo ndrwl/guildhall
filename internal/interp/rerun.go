@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ndrwl/guildhall/internal/cilog"
 	"github.com/ndrwl/guildhall/internal/config"
@@ -49,7 +50,53 @@ type rerunDoc struct {
 	Tests          []string      `json:"tests"`
 	Timeout        *rerunTimeout `json:"timeout,omitempty"`
 	LogUnavailable string        `json:"log_unavailable,omitempty"`
-	RequestedAt    time.Time     `json:"requested_at"`
+	// FailedStep is the step of the log's first ##[error] line, kept only when the log was read and holds neither
+	// a failed test nor a timeout, so a flake that failed outside go test still names its cause; nil in records
+	// written before it was kept.
+	FailedStep  *rerunStep `json:"failed_step,omitempty"`
+	RequestedAt time.Time  `json:"requested_at"`
+}
+
+// rerunStep is the failing step of a failed job's log, as cilog.FirstError reads it: its ##[group]Run line's text,
+// or "" when the error came before any, cut to maxStepName bytes, and its first ##[error] line's text, cut to
+// maxStepError bytes.
+type rerunStep struct {
+	Name  string `json:"name,omitempty"`
+	Error string `json:"error"`
+}
+
+// The bounds of a rerun record's failing step.
+const (
+	maxStepName  = 120
+	maxStepError = 200
+)
+
+// failedStep returns the failing step of log, or nil when it has no ##[error] line.
+func failedStep(log []byte) *rerunStep {
+	name, msg, ok := cilog.FirstError(log)
+	if !ok {
+		return nil
+	}
+	return &rerunStep{Name: leading(name, maxStepName), Error: leading(msg, maxStepError)}
+}
+
+// leading returns s, or its head of at most n bytes ending on a rune boundary.
+func leading(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
+}
+
+// text is how a flake message names the failing step.
+func (s *rerunStep) text() string {
+	if s.Name == "" {
+		return "a step before any named step failed: " + s.Error
+	}
+	return fmt.Sprintf("step %s failed: %s", s.Name, s.Error)
 }
 
 // rerunTimeout is a go test package timeout read from a failed job's log: the duration its panic names, the package
@@ -314,6 +361,9 @@ func (r *run) rerunFailed(s workflow.Step, repo config.Repository, pr *pullReque
 			}
 			d.Tests = failedTests(got.Text)
 			d.Timeout = testTimeout(got.Text)
+			if len(d.Tests) == 0 && d.Timeout == nil {
+				d.FailedStep = failedStep(got.Text)
+			}
 		}
 		name := rerunName(s.ID, h, ch.Name)
 		if err := r.putOnce(name, name, "rerun.json", d); err != nil {
@@ -405,6 +455,9 @@ func (r *run) notifyFlakes(s workflow.Step, id string, v validationDoc) error {
 			if d.Conclusion != "" && d.Conclusion != "failure" {
 				// A cancelled or timed-out job prints no failed test: no name is missing.
 				fmt.Fprintf(&b, "tests: none; the failed run was %s, not a test failure", d.Conclusion)
+			} else if d.FailedStep != nil {
+				// A record from before failed_step was kept has none, and renders as it always did.
+				fmt.Fprintf(&b, "tests: none failed; %s", d.FailedStep.text())
 			} else {
 				b.WriteString("tests: no test name found in the log")
 			}
