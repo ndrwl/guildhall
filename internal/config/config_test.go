@@ -401,6 +401,47 @@ func TestRebaseSettings(t *testing.T) {
 	}
 }
 
+// TestMergeBatchSize: merge_batch_size is unset by default, which like 1 is the serial queue; a size above 1 batches;
+// a size below 1 and a non-integer are refused; and a config without it encodes no merge_batch_size field, so its
+// digest is unchanged.
+func TestMergeBatchSize(t *testing.T) {
+	cfg, err := Parse([]byte(director(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := cfg.Repositories[1].Merge
+	if m.MergeBatchSize != nil || m.BatchSize() != 1 || m.Batching() {
+		t.Fatalf("default = %v, %d, batching %v", m.MergeBatchSize, m.BatchSize(), m.Batching())
+	}
+	if data, err := json.Marshal(m); err != nil || strings.Contains(string(data), "merge_batch_size") {
+		t.Fatalf("unset merge_batch_size encodes as %s (%v)", data, err)
+	}
+	for size, batching := range map[int]bool{1: false, 2: true, 4: true} {
+		data := strings.Replace(director(t), "[repository.merge.requires]\n", fmt.Sprintf("[repository.merge]\nmerge_batch_size = %d\n\n[repository.merge.requires]\n", size), 1)
+		cfg, err := Parse([]byte(data))
+		if err != nil {
+			t.Fatalf("%d: %v", size, err)
+		}
+		m := cfg.Repositories[1].Merge
+		if m.BatchSize() != size || m.Batching() != batching {
+			t.Errorf("merge_batch_size = %d: size %d, batching %v", size, m.BatchSize(), m.Batching())
+		}
+	}
+	for name, c := range map[string]struct{ section, want string }{
+		"zero":           {"merge_batch_size = 0", "merge_batch_size must be at least 1"},
+		"negative":       {"merge_batch_size = -2", "merge_batch_size must be at least 1"},
+		"not an integer": {"merge_batch_size = \"4\"", "merge_batch_size"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			data := strings.Replace(director(t), "[repository.merge.requires]\n", "[repository.merge]\n"+c.section+"\n\n[repository.merge.requires]\n", 1)
+			_, err := Parse([]byte(data))
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("error %v does not mention %q", err, c.want)
+			}
+		})
+	}
+}
+
 // TestRegenerateSettings: [[repository.merge.regenerate]] decodes in order under its repository; a config without it
 // encodes no regenerate field, so its digest is unchanged; and a path that is absolute, has .., lacks a trailing / or
 // is unclean, an entry without paths and an empty command are refused.

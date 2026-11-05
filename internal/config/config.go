@@ -66,7 +66,19 @@ type MergeOptions struct {
 	// [[repository.merge.regenerate]]: a rebase whose only conflicts lie under these paths is resolved by running the
 	// commands, with no model (docs/configuration.md#rebase-settings). Read it through RegenerateFor.
 	Regenerate []Regenerate `toml:"regenerate" json:"regenerate,omitempty"`
+	// MergeBatchSize is the most queued tasks the merge queue tests together on one combined head and lands at once
+	// (docs/configuration.md#merge-batches); nil, like 1, is today's serial queue. Read it through BatchSize.
+	MergeBatchSize *int `toml:"merge_batch_size" json:"merge_batch_size,omitempty"`
 }
+
+// DefaultMergeBatchSize is the effective merge_batch_size when unset: one task at a time, the serial queue.
+const DefaultMergeBatchSize = 1
+
+// BatchSize is the effective merge_batch_size, at least 1; 1 is the serial queue.
+func (m MergeOptions) BatchSize() int { return intOr(m.MergeBatchSize, DefaultMergeBatchSize) }
+
+// Batching reports whether the merge queue batches tasks: merge_batch_size is above 1.
+func (m MergeOptions) Batching() bool { return m.BatchSize() > 1 }
 
 // Regenerate is one [[repository.merge.regenerate]] entry: directory prefixes of generated files, each relative,
 // clean and ending in /, and the argv, run with no shell from the worktree root, that rewrites them.
@@ -1061,6 +1073,9 @@ func (c *Config) validate() []string {
 		}
 		if p := m.MinorConflictLines; p != nil && *p < 1 {
 			add("%s: merge.minor_conflict_lines must be at least 1", name)
+		}
+		if p := m.MergeBatchSize; p != nil && *p < 1 {
+			add("%s: merge.merge_batch_size must be at least 1", name)
 		}
 		for i, g := range m.Regenerate {
 			where := fmt.Sprintf("%s: merge.regenerate[%d]", name, i)

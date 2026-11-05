@@ -35,6 +35,8 @@ func TestCheckTaskOverrideMergeRequires(t *testing.T) {
 		{"merge.minor_conflict_lines", "7", "`[repository.merge]` is not overridable per task"},
 		{"minor_conflict_lines", "7", "`[repository.merge]` is not overridable per task"},
 		{"regenerate", "x", "`[repository.merge]` is not overridable per task"},
+		{"merge_batch_size", "4", "`[repository.merge]` is not overridable per task"},
+		{"merge.merge_batch_size", "4", "`[repository.merge]` is not overridable per task"},
 		{"merge.regenerate", "x", "`[repository.merge]` is not overridable per task"},
 		{"requires", "true", "`[repository.merge]` is not overridable per task"},
 		{"merge", "true", "`[repository.merge]` is not overridable per task"},

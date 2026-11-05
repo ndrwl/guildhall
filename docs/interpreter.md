@@ -347,6 +347,21 @@ Records that do not implement `MergeQueue` make every task its own queue's front
 
 A dependent task's [dependency gate](#the-dependency-gate) reads a queued dependency as `queued for merge` and a held one as `merge held`.
 
+### Merge batches
+
+A repository whose [`merge_batch_size`](configuration.md#merge-batches) is above 1 tests up to that many queued tasks together on one combined head (task d229, delivered in slices).
+So far the store keeps the batch record; the engine does not yet claim, assemble or land batches, so the queue stays serial whatever the setting.
+
+- **Record.** Beside the front, the `merge-queue` bucket holds one batch record per repository: the leader, its front stay, the ordered members (task, slice, stay and link head), the base tip the batch was assembled on, and a state, `assembling`, `testing`, `landing`, `landed` or `red`.
+- **Claim.** `ClaimMergeBatch` claims the front as `ClaimMergeFront` does and, with a size above 1, makes the claimer the leader: in the same mutation it claims the next queued tasks that are not held, in queue order, up to the size with the leader, counting each one's stay, and records the batch `assembling`.
+  A held task is skipped and keeps its place. A size of 1 or less claims the front alone and records no batch.
+  Claims stay idempotent by mutation id, and a member's own front claim is refused with `store.ErrMergeQueued`, since the leader holds the front.
+- **Links and state.** `SetMergeBatchLink` records a member's slice and link head; a changed link clears the links of the members after it, which replay onto it again.
+  `SetMergeBatchState` moves the batch, by its leader only, from `assembling` to `testing`; from `testing` to `assembling`, `landing` or `red`; from `landing` to `assembling` or `landed`; and from `red` to `assembling` or `landing`, recording the base tip when given.
+- **Leaving.** `LeaveMergeBatch` takes a member out and leaves it queued; `LeaveMergeQueue` takes it out of the batch too, and a member that closes drops out of the batch read.
+  The leader leaving the batch ends it but keeps the front, and the leader releasing the front, `ReleaseMergeFront`, or leaving the queue ends the batch.
+  `MergeQueue` reads the batch as `Batch` only while the front it was claimed with, the same task in the same stay, still stands.
+
 ## Tiered rebase
 
 A behind or conflicting PR at the front of the queue, or a conflicting one at [validate](#validate), is brought up to date by Guildhall, in one of three tiers chosen by measured conflicts with no Director turn ([decision](decisions/merge-queue-rebase.md)).
