@@ -139,7 +139,7 @@ type excludedEntry struct {
 var excludedRegistry = []excludedEntry{
 	{name: "`[repository.merge]`",
 		keys: []string{"repository.merge", "merge", "requires", "reapprove_after_rebase", "minor_conflict_files", "minor_conflict_lines",
-			"regenerate"},
+			"regenerate", "merge_batch_size"},
 		prefixes: []string{"repository.merge.", "merge."}},
 	{name: "`[director]`",
 		keys: []string{"director", "idle_after", "handoff_after_tasks", "handoff_context_percent", "handoff_idle",

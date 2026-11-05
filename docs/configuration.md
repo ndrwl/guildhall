@@ -249,6 +249,22 @@ minor_conflict_lines   = 50
 - `reapprove_after_rebase` matters only where `guildmaster_approval` is required; without it, Guildhall merges a rebased head by itself whenever the requirements hold.
 - Red checks and review findings on a rebased head always reach the Guildmaster, whatever the threshold.
 
+#### Merge batches
+
+One more key under `[repository.merge]` lets the merge queue test several queued tasks together on one combined head and land them at once ([merge batches](interpreter.md#merge-batches)):
+
+```toml
+[repository.merge]
+merge_batch_size = 4
+```
+
+| Key | Meaning |
+|---|---|
+| `merge_batch_size` | The most queued tasks, the front among them, that one batch holds. Unset or 1 is the serial queue, exactly: one task at a time, rebased, checked and merged before the next. At least 1. |
+
+- A size below 1 or a non-integer is refused when the config is parsed; a task override may not set it, as for every `[repository.merge]` key.
+- Batching is being delivered in slices: until the engine assembles and lands batches, a size above 1 is recorded but the queue still runs serially.
+
 A repository's generated files, such as committed digest goldens, may be declared with the commands that rewrite them, one `[[repository.merge.regenerate]]` table each:
 
 ```toml

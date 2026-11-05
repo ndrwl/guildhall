@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	bolt "go.etcd.io/bbolt"
@@ -21,6 +22,9 @@ var (
 // starts with a space.
 var mergeFrontKey = []byte(" front")
 
+// mergeBatchKey holds the queue's batch record in the merge-queue bucket, beside the front.
+var mergeBatchKey = []byte(" batch")
+
 // MergeQueueEntry is one task's place in its repository's merge queue. An entry outlives the task's stay in the
 // queue: a build send-back takes the task out but keeps the entry, so the task rejoins at its first ready time, and
 // only a merge or a cancellation removes it.
@@ -35,7 +39,7 @@ type MergeQueueEntry struct {
 	PR string `json:"pr,omitempty"`
 	// Queued reports whether the task waits in the queue now.
 	Queued bool `json:"queued"`
-	// Stays counts the times the task became the front.
+	// Stays counts the times the task became the front or a member of the front's batch.
 	Stays int `json:"stays"`
 }
 
@@ -69,11 +73,13 @@ type QueuedEntry struct {
 }
 
 // MergeQueue is a repository's merge queue as one read: the tasks waiting in it, front first and then in queue
-// order, and the front, nil when no task holds it. Out are the entries of tasks out of the queue that keep their
+// order, and the front, nil when no task holds it. Batch is the batch the standing front leads, nil when it leads
+// none, as always while batching is off. Out are the entries of tasks out of the queue that keep their
 // ready time, and Holds every task's hold-merge, held or not.
 type MergeQueue struct {
 	Entries []QueuedEntry     `json:"entries"`
 	Front   *MergeFront       `json:"front,omitempty"`
+	Batch   *MergeBatch       `json:"batch,omitempty"`
 	Out     []MergeQueueEntry `json:"-"`
 	Holds   map[string]bool   `json:"-"`
 }
@@ -169,7 +175,8 @@ func readyAt(tx *bolt.Tx, repository, taskID, record string) (time.Time, error) 
 	return at, err
 }
 
-// LeaveMergeQueue takes a task out of the queue, releasing the front if it holds it. With keepReady the entry is
+// LeaveMergeQueue takes a task out of the queue, releasing the front if it holds it, with the batch it leads, and
+// taking it out of a batch it is a member of. With keepReady the entry is
 // kept, so the task rejoins at its first ready time; without, as for a task that merged or was cancelled, it is
 // removed. Leaving a queue the task is not in changes nothing.
 func (s *Store) LeaveMergeQueue(mutationID, repository, taskID string, keepReady bool) (Receipt, error) {
@@ -193,6 +200,9 @@ func (s *Store) LeaveMergeQueue(mutationID, repository, taskID string, keepReady
 		if err := releaseFront(b, taskID); err != nil {
 			return err
 		}
+		if err := leaveBatch(b, taskID); err != nil {
+			return err
+		}
 		var e MergeQueueEntry
 		switch err := getJSON(b, []byte(taskID), &e); {
 		case errors.Is(err, ErrNotFound):
@@ -207,6 +217,7 @@ func (s *Store) LeaveMergeQueue(mutationID, repository, taskID string, keepReady
 	})
 }
 
+// releaseFront gives up the front taskID holds, with the batch it leads.
 func releaseFront(b *bolt.Bucket, taskID string) error {
 	var f MergeFront
 	switch err := getJSON(b, mergeFrontKey, &f); {
@@ -215,13 +226,16 @@ func releaseFront(b *bolt.Bucket, taskID string) error {
 	case err != nil:
 		return err
 	case f.TaskID == taskID:
+		if err := b.Delete(mergeBatchKey); err != nil {
+			return err
+		}
 		return b.Delete(mergeFrontKey)
 	}
 	return nil
 }
 
-// ReleaseMergeFront gives up the front a task holds, leaving it queued, as a held task does; a task not at the front
-// changes nothing.
+// ReleaseMergeFront gives up the front a task holds, with the batch it leads, leaving it queued, as a held task does;
+// a task not at the front changes nothing.
 func (s *Store) ReleaseMergeFront(mutationID, repository, taskID string) (Receipt, error) {
 	if err := validateIDs(repository, taskID); err != nil {
 		return Receipt{}, err
@@ -253,26 +267,259 @@ func (s *Store) ClaimMergeFront(mutationID, repository, taskID string) (Receipt,
 	}{repository, taskID}
 	return s.mutate(mutationID, "claim-merge-front", req, func(tx *bolt.Tx, rc *Receipt) error {
 		rc.Repository, rc.TaskID, rc.Record = repository, taskID, MergeQueueRecord
-		q, err := readMergeQueue(tx, repository)
+		return claimFront(tx, repository, taskID, 0, 1)
+	})
+}
+
+// ClaimMergeBatch claims the front for taskID as ClaimMergeFront does and, with size above 1, makes it the leader of
+// a batch (docs/interpreter.md#the-merge-queue): in the same write it claims the next tasks in queue order that are
+// not held, up to size members with the leader, each counting a stay, and records the batch assembling. Held tasks
+// are skipped and keep their place. slice is the leader's slice; the other members' are recorded with their links.
+// A size of 1 or less claims the front alone and records no batch, exactly as ClaimMergeFront. A claim by the task
+// at the front changes nothing, and a claim by any other task is refused with ErrMergeQueued, recording nothing.
+func (s *Store) ClaimMergeBatch(mutationID, repository, taskID string, slice, size int) (Receipt, error) {
+	if err := validateIDs(repository, taskID); err != nil {
+		return Receipt{}, err
+	}
+	if slice < 1 {
+		return Receipt{}, invalid("slice %d is below 1", slice)
+	}
+	req := struct {
+		Repository string `json:"repository"`
+		TaskID     string `json:"task_id"`
+		Slice      int    `json:"slice"`
+		Size       int    `json:"size"`
+	}{repository, taskID, slice, size}
+	return s.mutate(mutationID, "claim-merge-batch", req, func(tx *bolt.Tx, rc *Receipt) error {
+		rc.Repository, rc.TaskID, rc.Record = repository, taskID, MergeQueueRecord
+		return claimFront(tx, repository, taskID, slice, size)
+	})
+}
+
+// claimFront claims a free front for taskID, the first queued task not held, and, with size above 1, the batch it
+// leads with the next tasks not held, counting each one's stay. The task at the front claims nothing again.
+func claimFront(tx *bolt.Tx, repository, taskID string, slice, size int) error {
+	q, err := readMergeQueue(tx, repository)
+	if err != nil {
+		return err
+	}
+	if q.Front != nil && q.Front.TaskID == taskID {
+		return nil
+	}
+	// Held tasks keep their place but are skipped: the first task not held may claim a free front.
+	first := slices.IndexFunc(q.Entries, func(e QueuedEntry) bool { return !e.Held })
+	if q.Front != nil || first < 0 || q.Entries[first].TaskID != taskID {
+		return fmt.Errorf("%w: %s/%s is at place %d", ErrMergeQueued, repository, taskID, q.Position(taskID))
+	}
+	b := repoBucket(tx, repository, bucketMergeQueue)
+	// A batch whose front no longer stands is stale: a new batch replaces it, and a lone front clears it.
+	if err := b.Delete(mergeBatchKey); err != nil {
+		return err
+	}
+	var members []MergeBatchMember
+	for _, qe := range q.Entries[first:] {
+		if len(members) == max(size, 1) {
+			break
+		}
+		if qe.Held {
+			continue
+		}
+		e := qe.MergeQueueEntry
+		e.Stays++
+		if err := putJSON(b, []byte(e.TaskID), e); err != nil {
+			return err
+		}
+		m := MergeBatchMember{TaskID: e.TaskID, Stay: e.Stays}
+		if e.TaskID == taskID {
+			m.Slice = slice
+		}
+		members = append(members, m)
+	}
+	if err := putJSON(b, mergeFrontKey, MergeFront{TaskID: taskID, Stay: members[0].Stay}); err != nil {
+		return err
+	}
+	if size <= 1 {
+		return nil
+	}
+	return putJSON(b, mergeBatchKey, MergeBatch{Leader: taskID, Stay: members[0].Stay, Members: members, State: BatchAssembling})
+}
+
+// MergeBatchState is where a batch is in its run through the queue (docs/interpreter.md#the-merge-queue).
+type MergeBatchState string
+
+// The batch states. A batch is assembled by its members' replays, tested on its last link's checks, and landed or
+// found red; a red batch, or one whose base moved before it landed, is assembled again.
+const (
+	BatchAssembling MergeBatchState = "assembling"
+	BatchTesting    MergeBatchState = "testing"
+	BatchLanding    MergeBatchState = "landing"
+	BatchLanded     MergeBatchState = "landed"
+	BatchRed        MergeBatchState = "red"
+)
+
+// batchMoves are the states a batch may move to from each state; staying in a state is always allowed.
+var batchMoves = map[MergeBatchState][]MergeBatchState{
+	BatchAssembling: {BatchTesting},
+	BatchTesting:    {BatchAssembling, BatchLanding, BatchRed},
+	BatchLanding:    {BatchAssembling, BatchLanded},
+	BatchLanded:     {},
+	BatchRed:        {BatchAssembling, BatchLanding},
+}
+
+// MergeBatchMember is one task of a batch, in its stay'th time at or behind the front. Slice is the slice the member
+// merges, 0 until it is recorded; Link is the member's link head, its head replayed onto the previous member's link
+// (the first member's onto the base), empty until it is published.
+type MergeBatchMember struct {
+	TaskID string `json:"task_id"`
+	Slice  int    `json:"slice,omitempty"`
+	Stay   int    `json:"stay"`
+	Link   string `json:"link,omitempty"`
+}
+
+// MergeBatch is the batch the front leads: its members in queue order, the leader first; the base tip it was
+// assembled on, empty until recorded; and its state. Stay is the leader's front stay the batch was claimed in.
+type MergeBatch struct {
+	Leader  string             `json:"leader"`
+	Stay    int                `json:"stay"`
+	Base    string             `json:"base,omitempty"`
+	Members []MergeBatchMember `json:"members"`
+	State   MergeBatchState    `json:"state"`
+}
+
+// Member returns the 1-based place of task in the batch, 0 when it is not a member.
+func (b MergeBatch) Member(task string) int {
+	return slices.IndexFunc(b.Members, func(m MergeBatchMember) bool { return m.TaskID == task }) + 1
+}
+
+// leaveBatch takes taskID out of the batch: the leader's leaving ends the batch, and a member's removes it alone.
+func leaveBatch(b *bolt.Bucket, taskID string) error {
+	var mb MergeBatch
+	switch err := getJSON(b, mergeBatchKey, &mb); {
+	case errors.Is(err, ErrNotFound):
+		return nil
+	case err != nil:
+		return err
+	case mb.Leader == taskID:
+		return b.Delete(mergeBatchKey)
+	}
+	i := mb.Member(taskID)
+	if i == 0 {
+		return nil
+	}
+	mb.Members = slices.Delete(mb.Members, i-1, i)
+	return putJSON(b, mergeBatchKey, mb)
+}
+
+// standingBatch reads the standing batch of repository, failing with ErrInvalid when none stands or taskID is not
+// its member.
+func standingBatch(tx *bolt.Tx, repository, taskID string) (*bolt.Bucket, MergeBatch, error) {
+	q, err := readMergeQueue(tx, repository)
+	if err != nil {
+		return nil, MergeBatch{}, err
+	}
+	if q.Batch == nil || q.Batch.Member(taskID) == 0 {
+		return nil, MergeBatch{}, invalid("task %s/%s is not a member of a standing merge batch", repository, taskID)
+	}
+	return repoBucket(tx, repository, bucketMergeQueue), *q.Batch, nil
+}
+
+// LeaveMergeBatch takes a task out of its batch and leaves it queued, as a member does on conflicts, a hold, a cancel
+// or a running attempt; the leader's leaving ends the batch but keeps its front. A task in no batch changes nothing.
+func (s *Store) LeaveMergeBatch(mutationID, repository, taskID string) (Receipt, error) {
+	if err := validateIDs(repository, taskID); err != nil {
+		return Receipt{}, err
+	}
+	req := struct {
+		Repository string `json:"repository"`
+		TaskID     string `json:"task_id"`
+	}{repository, taskID}
+	return s.mutate(mutationID, "leave-merge-batch", req, func(tx *bolt.Tx, rc *Receipt) error {
+		rc.Repository, rc.TaskID, rc.Record = repository, taskID, MergeQueueRecord
+		if b := repoBucket(tx, repository, bucketMergeQueue); b != nil {
+			return leaveBatch(b, taskID)
+		}
+		return nil
+	})
+}
+
+// SetMergeBatchLink records a member's slice and link head in the standing batch. The task must be a member, the
+// slice at least 1 and the link a full commit id. A changed link clears the links of the members after it, since
+// they replay onto it again.
+func (s *Store) SetMergeBatchLink(mutationID, repository, taskID string, slice int, link string) (Receipt, error) {
+	if err := validateIDs(repository, taskID); err != nil {
+		return Receipt{}, err
+	}
+	if slice < 1 {
+		return Receipt{}, invalid("slice %d is below 1", slice)
+	}
+	if !isCommitID(link) {
+		return Receipt{}, invalid("link %q is not a full commit id", link)
+	}
+	req := struct {
+		Repository string `json:"repository"`
+		TaskID     string `json:"task_id"`
+		Slice      int    `json:"slice"`
+		Link       string `json:"link"`
+	}{repository, taskID, slice, link}
+	return s.mutate(mutationID, "set-merge-batch-link", req, func(tx *bolt.Tx, rc *Receipt) error {
+		rc.Repository, rc.TaskID, rc.Record = repository, taskID, MergeQueueRecord
+		b, mb, err := standingBatch(tx, repository, taskID)
 		if err != nil {
 			return err
 		}
-		if q.Front != nil && q.Front.TaskID == taskID {
-			return nil
+		i := mb.Member(taskID) - 1
+		if mb.Members[i].Link != link {
+			for j := i + 1; j < len(mb.Members); j++ {
+				mb.Members[j].Link = ""
+			}
 		}
-		// Held tasks keep their place but are skipped: the first task not held may claim a free front.
-		first := slices.IndexFunc(q.Entries, func(e QueuedEntry) bool { return !e.Held })
-		if q.Front != nil || first < 0 || q.Entries[first].TaskID != taskID {
-			return fmt.Errorf("%w: %s/%s is at place %d", ErrMergeQueued, repository, taskID, q.Position(taskID))
-		}
-		b := repoBucket(tx, repository, bucketMergeQueue)
-		e := q.Entries[first].MergeQueueEntry
-		e.Stays++
-		if err := putJSON(b, []byte(taskID), e); err != nil {
+		mb.Members[i].Slice, mb.Members[i].Link = slice, link
+		return putJSON(b, mergeBatchKey, mb)
+	})
+}
+
+// SetMergeBatchState moves the standing batch leader leads to state, along the moves batchMoves allows, and records
+// base, the tip the batch is assembled on, when it is not empty. A task that does not lead the batch, an unknown
+// state, a move not allowed and a base that is not a full commit id are ErrInvalid.
+func (s *Store) SetMergeBatchState(mutationID, repository, leader string, state MergeBatchState, base string) (Receipt, error) {
+	if err := validateIDs(repository, leader); err != nil {
+		return Receipt{}, err
+	}
+	if _, ok := batchMoves[state]; !ok {
+		return Receipt{}, invalid("unknown merge batch state %q", state)
+	}
+	if base != "" && !isCommitID(base) {
+		return Receipt{}, invalid("base %q is not a full commit id", base)
+	}
+	req := struct {
+		Repository string          `json:"repository"`
+		Leader     string          `json:"leader"`
+		State      MergeBatchState `json:"state"`
+		Base       string          `json:"base,omitempty"`
+	}{repository, leader, state, base}
+	return s.mutate(mutationID, "set-merge-batch-state", req, func(tx *bolt.Tx, rc *Receipt) error {
+		rc.Repository, rc.TaskID, rc.Record = repository, leader, MergeQueueRecord
+		b, mb, err := standingBatch(tx, repository, leader)
+		if err != nil {
 			return err
 		}
-		return putJSON(b, mergeFrontKey, MergeFront{TaskID: taskID, Stay: e.Stays})
+		if mb.Leader != leader {
+			return invalid("task %s/%s does not lead the merge batch of %s; %s does", repository, leader, repository, mb.Leader)
+		}
+		if mb.State != state && !slices.Contains(batchMoves[mb.State], state) {
+			return invalid("the merge batch of %s cannot move from %s to %s", repository, mb.State, state)
+		}
+		mb.State = state
+		if base != "" {
+			mb.Base = base
+		}
+		return putJSON(b, mergeBatchKey, mb)
 	})
+}
+
+// isCommitID reports whether id is a full 40- or 64-character lowercase hexadecimal commit id.
+func isCommitID(id string) bool {
+	return (len(id) == 40 || len(id) == 64) && strings.Trim(id, "0123456789abcdef") == ""
 }
 
 // MergeQueue reads a repository's merge queue in one transaction.
@@ -306,10 +553,15 @@ func readMergeQueue(tx *bolt.Tx, repository string) (MergeQueue, error) {
 		return q, nil
 	}
 	var front *MergeFront
+	var batch *MergeBatch
 	err := b.ForEach(func(k, v []byte) error {
-		if string(k) == string(mergeFrontKey) {
+		switch string(k) {
+		case string(mergeFrontKey):
 			front = &MergeFront{}
 			return json.Unmarshal(v, front)
+		case string(mergeBatchKey):
+			batch = &MergeBatch{}
+			return json.Unmarshal(v, batch)
 		}
 		var e MergeQueueEntry
 		if err := json.Unmarshal(v, &e); err != nil {
@@ -346,6 +598,13 @@ func readMergeQueue(tx *bolt.Tx, repository string) (MergeQueue, error) {
 		f.Front = true
 		q.Entries = append([]QueuedEntry{f}, slices.Delete(q.Entries, i, i+1)...)
 		q.Front = front
+		// A batch stands with the front stay it was claimed in; members that left the queue or closed drop out.
+		if batch != nil && batch.Leader == front.TaskID && batch.Stay == front.Stay {
+			batch.Members = slices.DeleteFunc(batch.Members, func(m MergeBatchMember) bool {
+				return !slices.ContainsFunc(q.Entries, func(e QueuedEntry) bool { return e.TaskID == m.TaskID })
+			})
+			q.Batch = batch
+		}
 	}
 	return q, nil
 }
