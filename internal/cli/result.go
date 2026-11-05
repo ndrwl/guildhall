@@ -25,6 +25,7 @@ import (
 )
 
 const resultHelp = `Usage: guildhall result check|submit [--copy <dir>] <file>
+       guildhall result hook
   --copy <dir>  Director copy (or the copy found from the current directory)
   --help        show this help
 Run inside an attempt, which GUILDHALL_ATTEMPT names, with the checks intake runs on the attempt's result, against
@@ -34,6 +35,10 @@ the attempt's own records and git state.
           one leaves the draft untouched and uses one of 2 resubmissions; the 3rd rejection becomes the draft, so
           intake fails the attempt with its reason. A rejection for unacknowledged steering messages uses none:
           acknowledge each with guildhall messages ack <id> and submit again.
+  hook    an agent's stop hook: when model/result.json is not a valid result for the attempt, sends the attempt
+          Guildhall's one nudge to submit and prints a Claude Code Stop hook block decision; otherwise prints
+          nothing. It reads the hook input on stdin, takes no --copy and always exits 0, a failure being one
+          warning line on stderr.
 Exit 0: ok; 1: rejected; 2: the file was not checked (no copy, no attempt, attempt not running, unreadable file).
 Examples:
   guildhall result check model/draft.json
@@ -46,6 +51,10 @@ const Resubmissions = 2
 
 // resultCmd is guildhall result check|submit (docs/contracts/cli.md).
 func (a *App) resultCmd(args []string) int {
+	// The stop hook never fails, inside an attempt or not.
+	if len(args) > 0 && args[0] == resultHookCommand {
+		return a.resultHook(args[1:])
+	}
 	if len(args) == 0 || args[0] != "check" && args[0] != "submit" {
 		if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
 			if _, err := io.WriteString(a.Stdout, resultHelp); err != nil {

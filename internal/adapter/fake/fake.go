@@ -218,6 +218,8 @@ type directives struct {
 	output, text string
 	// ack are the steering messages the fake acknowledges, with guildhall messages ack, before it writes its result.
 	ack []string
+	// nudge runs guildhall result hook before the result is written, as an agent's stop hook would.
+	nudge bool
 }
 
 // MaxAcks bounds the ack directive.
@@ -271,7 +273,7 @@ func parseDirectives(prompt []byte) (directives, error) {
 				return d, fmt.Errorf("grandchild-cmd %q must be fake or native", value)
 			}
 			d.native = value == "native"
-		case "ignore-cancel", "ignore-interrupt", "interactive":
+		case "ignore-cancel", "ignore-interrupt", "interactive", "nudge":
 			if value != "true" && value != "false" {
 				return d, fmt.Errorf("%s %q must be true or false", key, value)
 			}
@@ -281,6 +283,8 @@ func parseDirectives(prompt []byte) (directives, error) {
 				d.ignoreCancel = on
 			case "ignore-interrupt":
 				d.ignoreInterrupt = on
+			case "nudge":
+				d.nudge = on
 			default:
 				d.interactive = on
 			}
@@ -453,6 +457,26 @@ func Run(ctx context.Context, a Args, out io.Writer, sleep func(context.Context,
 			say("acknowledged steering message %s", id)
 		}
 	}
+	// The fake is about to stop with no draft result in its model directory, so the hook nudges it, once; it obeys
+	// the nudge by acknowledging it and writing its result, unless its fault is to exit without one.
+	if d.nudge {
+		blocked, err := ResultHook(ctx, out)
+		switch {
+		case err != nil:
+			say("guildhall result hook: %v", err)
+		case !blocked:
+			say("guildhall result hook sent no nudge")
+		case d.fault == "no-result":
+			say("nudged to submit; exiting without a result anyway (simulated fault)")
+		default:
+			id := store.SubmitNudgeID(a.TaskID, a.AttemptID)
+			if err := AckMessage(ctx, id, out); err != nil {
+				say("guildhall messages ack %s: %v", id, err)
+			} else {
+				say("nudged to submit; acknowledged %s", id)
+			}
+		}
+	}
 	result, err := newResult(a, d, prompt, play)
 	if errors.As(err, new(errScenario)) {
 		say("%v", err)
@@ -494,6 +518,32 @@ func AckMessage(ctx context.Context, id string, out io.Writer) error {
 	cmd := exec.CommandContext(ctx, prog, "messages", "ack", id)
 	cmd.Stdout, cmd.Stderr = out, out
 	return cmd.Run()
+}
+
+// ResultHook runs `guildhall result hook`, the guildhall on PATH, in the fake's working directory and environment
+// with no hook input, as an agent's stop hook would, and reports whether it blocked the stop: it printed a Stop hook
+// decision "block". Its stderr, any warning, goes to out.
+func ResultHook(ctx context.Context, out io.Writer) (bool, error) {
+	prog, err := exec.LookPath("guildhall")
+	if err != nil {
+		return false, err
+	}
+	var stdout bytes.Buffer
+	cmd := exec.CommandContext(ctx, prog, "result", "hook")
+	cmd.Stdout, cmd.Stderr = &stdout, out
+	if err := cmd.Run(); err != nil {
+		return false, err
+	}
+	if len(bytes.TrimSpace(stdout.Bytes())) == 0 {
+		return false, nil
+	}
+	var decision struct {
+		Decision string `json:"decision"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &decision); err != nil {
+		return false, fmt.Errorf("hook output: %w", err)
+	}
+	return decision.Decision == "block", nil
 }
 
 // newResult is the result the prompt asks for, or the scenario's when play is not nil.

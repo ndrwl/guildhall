@@ -35,8 +35,9 @@ func (a *App) steers(cmd string, args []string) bool {
 	if !steeringCommands[cmd] || a.getenv(artisan.AttemptEnv) == "" {
 		return false
 	}
-	// The hook shows the messages to the model itself, on stdout.
-	if cmd == "messages" && len(args) > 0 && args[0] == steeringHookCommand {
+	// The steering hook shows the messages to the model itself, on stdout; the result hook's stderr is for warnings.
+	if cmd == "messages" && len(args) > 0 && args[0] == steeringHookCommand ||
+		cmd == "result" && len(args) > 0 && args[0] == resultHookCommand {
 		return false
 	}
 	for _, arg := range args {
