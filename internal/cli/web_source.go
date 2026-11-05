@@ -194,7 +194,7 @@ func (b webBuilder) task() web.Task {
 			Kind: e.Kind, Text: e.Text, At: e.At, Option: e.Option, Words: e.Words, Confirms: e.Confirms, Round: e.Round})
 	}
 	for _, d := range b.h.Drafts {
-		t.Drafts = append(t.Drafts, web.Draft{Tag: d.Tag, Round: d.Round, Question: d.Question, Mark: d.Mark, Text: d.Text, At: d.At})
+		t.Drafts = append(t.Drafts, web.Draft{Tag: d.Tag, Round: d.Round, Question: d.Question, Number: d.Number, Mark: d.Mark, Text: d.Text, At: d.At})
 	}
 	if n := len(b.tl.Attempts); n > 0 && v.State == store.TaskOpen {
 		at := b.tl.Attempts[n-1]

@@ -48,6 +48,21 @@ func TestRoundPosts(t *testing.T) {
 	}
 }
 
+// TestRoundPostsDrafts: the route passes the posted drafts number to Round, a form with none as 0.
+func TestRoundPostsDrafts(t *testing.T) {
+	for drafts, want := range map[string]int{"": 0, "0": 0, "42": 42} {
+		f := &fakeAnswerer{}
+		v := roundForm("save", nil)
+		if drafts != "" {
+			v.Set("drafts", drafts)
+		}
+		w := request(answering(t, f), http.MethodPost, "/guildhall/d122/round", gmAddr, v, nil)
+		if w.Code != http.StatusSeeOther || len(f.rounds) != 1 || f.rounds[0].Drafts != want {
+			t.Errorf("drafts %q: %d, rounds = %+v; want Drafts %d", drafts, w.Code, f.rounds, want)
+		}
+	}
+}
+
 // TestRoundRefusals: the round route passes the same gate as every POST, and each refusal shows the page again with
 // its status, its reason and the boxes' words kept.
 func TestRoundRefusals(t *testing.T) {
@@ -67,6 +82,9 @@ func TestRoundRefusals(t *testing.T) {
 		"no tag":            {form: url.Values{"tag": {""}}, status: 400, reason: "the round names no attempt"},
 		"no round":          {form: url.Values{"round": {"x"}}, status: 400, reason: "the form names no round"},
 		"unknown button":    {form: url.Values{"act": {"accept-0"}}, status: 400, reason: "the form names no button of the round"},
+		"bad drafts":        {form: url.Values{"drafts": {"x"}}, status: 400, reason: "the form&#39;s drafts number does not read"},
+		"empty drafts":      {form: url.Values{"drafts": {""}}, status: 400, reason: "the form&#39;s drafts number does not read"},
+		"negative drafts":   {form: url.Values{"drafts": {"-1"}}, status: 400, reason: "the form&#39;s drafts number does not read"},
 		"unanswered":        {err: web.Refuse(409, "Q9 and Q10 have no answer yet; your words are saved"), status: 409, reason: "Q9 and Q10 have no answer yet; your words are saved"},
 		"busy":              {err: web.ErrBusy, status: 503, reason: "the store is busy"},
 		"failure":           {err: errors.New("open /secret: denied"), status: 500, reason: "Guildhall could not record it"},

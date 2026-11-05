@@ -17,6 +17,9 @@ type roundView struct {
 	Stage string
 	// Number is the round's conversation entry, which the form posts; K is its place among its attempt's rounds.
 	Number, K int
+	// Drafts is the highest draft entry number among the open round's drafts the page renders, 0 with none, which
+	// the form posts so a press from a page older than a saved draft is refused.
+	Drafts    int
 	Questions []roundQuestionView
 	// Total is how many questions it asks and Left how many have no answer yet.
 	Total, Left int
@@ -86,6 +89,7 @@ func (s *Server) openRound(t Task, p *talkPlan, base string, st pageState) *roun
 	for _, d := range t.Drafts {
 		if d.Tag == m.Tag && d.Round == m.Number {
 			drafts[d.Question] = d
+			v.Drafts = max(v.Drafts, d.Number)
 		}
 	}
 	v.Total = len(qs)
