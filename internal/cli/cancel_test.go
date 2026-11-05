@@ -560,7 +560,7 @@ func TestTellDependentsSendsOnce(t *testing.T) {
 	c.write(t, func(s *store.Store) (store.Receipt, error) {
 		return s.SetTaskState("done-t3", "app", "t3", store.TaskDone)
 	})
-	cfg, err := config.Load(c.config)
+	cfg, err := config.LoadUnadmitted(c.config)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -227,7 +227,7 @@ func checkedValue(s string) (string, error) {
 
 // loadSecrets is the secrets push over the Steward copy's private config checkout.
 func (a *App) loadSecrets(cfgPath string) (*steward.Secrets, error) {
-	cfg, err := config.Load(cfgPath)
+	cfg, err := config.LoadUnadmitted(cfgPath)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", cfgPath, err)
 	}

@@ -82,11 +82,14 @@ func InlineManaged(local []byte) (bool, error) {
 	return md.IsDefined("managed"), nil
 }
 
-// Load reads the config at filename and the managed.toml in the same directory.
+// LoadUnadmitted reads the config at filename and the managed.toml in the same directory, merging any managed.toml
+// whose checksum is valid without asking whether the copy has authorized it: it never reads director.store.
+// It is for reporting and for package admit only; anything that acts on settings uses admit.Applied (or admit.Admit),
+// so a managed.toml the copy has not authorized is never applied.
 // An unreadable config file is returned as its read error.
 // Only a managed.toml that does not exist falls back to Parse, which accepts legacy inline managed settings;
 // any other read error, or a managed.toml that ParseCombined refuses, is returned and never falls back.
-func Load(filename string) (*Config, error) {
+func LoadUnadmitted(filename string) (*Config, error) {
 	local, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err

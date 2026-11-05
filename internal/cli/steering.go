@@ -6,8 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
@@ -51,7 +53,7 @@ func attemptRecipient(key artisan.AttemptKey) store.Recipient {
 }
 
 // attemptStore is the store of the copy running the attempt key, found from the working directory (attemptCopy),
-// and the copy's lock wait: its config's lock_wait, or storeWait when that does not load.
+// and the copy's lock wait (attemptWait). It never fails for the lock wait.
 func (a *App) attemptStore(key artisan.AttemptKey) (storeRecords, error) {
 	dir, err := attemptCopy(a.Getwd, key)
 	if err != nil {
@@ -60,14 +62,79 @@ func (a *App) attemptStore(key artisan.AttemptKey) (storeRecords, error) {
 	if dir == "" {
 		return storeRecords{}, fmt.Errorf("no Guildhall copy runs attempt %s from this directory", key)
 	}
-	// The lock wait is a local setting, read without admission, which itself opens the store.
-	wait := storeWait
-	if cfg, err := config.Load(filepath.Join(dir, "config.toml")); err == nil {
-		if w, err := cfg.LockWait(); err == nil && w > 0 {
-			wait = w
-		}
+	return storeRecords{path: copyStore(dir), wait: a.attemptWait(dir)}, nil
+}
+
+// attemptWait is the lock wait of the copy in dir: its admitted config's lock_wait (appliedConfig), so a managed.toml
+// the copy has not authorized is not applied and config.toml's is used, with the refusal as one warning line. A
+// config that does not read or load waits storeWait, and an admission that cannot be read waits config.toml's lock
+// wait, each with a warning line; neither fails the command.
+//
+// Admission is skipped when there is no managed setting to admit, no managed.toml and no inline [managed], since
+// appliedConfig is then config.toml alone whatever the verdict. Otherwise the store is first opened at config.toml's
+// lock wait, since admission waits a fixed storeWait for it, which would hold every in-attempt command past the
+// copy's own lock wait while the store is locked; a store that does not open then waits config.toml's lock wait with
+// no warning of its own, as the command's read of the same store reports it. The probe narrows but does not close
+// the window: a writer that takes the lock between the probe and admission's own open can still hold the command up
+// to admission's fixed storeWait.
+func (a *App) attemptWait(dir string) time.Duration {
+	cfgPath := filepath.Join(dir, "config.toml")
+	f, err := readCopyFiles(cfgPath)
+	var local *config.Config
+	if err == nil {
+		local, err = config.Parse(f.Local)
 	}
-	return storeRecords{path: copyStore(dir), wait: wait}, nil
+	if err != nil {
+		a.warnAttemptWait(fmt.Sprintf("the copy's lock_wait not read, waiting %s: %s", storeWait, err))
+		return storeWait
+	}
+	inline, err := config.InlineManaged(f.Local)
+	local.Managed = nil
+	wait := lockWaitOr(local, storeWait)
+	if f.Managed == nil && err == nil && !inline {
+		return wait
+	}
+	if path := filepath.Join(dir, directorStoreFile); pathExists(path) {
+		s, err := store.Open(path, store.Options{ReadOnly: true, RequireStore: true, LockTimeout: wait})
+		if err != nil {
+			// The command's own read of this store reports it, in one line.
+			return wait
+		}
+		_ = s.Close()
+	}
+	cfg, refusal, err := appliedConfig(cfgPath)
+	switch {
+	case err != nil:
+		a.warnAttemptWait("managed settings not checked, using config.toml alone: " + err.Error())
+		return wait
+	case refusal != "":
+		a.warnAttemptWait("managed settings not applied, using config.toml alone: " + refusal)
+	}
+	return lockWaitOr(cfg, wait)
+}
+
+// pathExists reports whether path names a file that can be stat'ed.
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// lockWaitOr is cfg's lock_wait, or fallback when it is unset, invalid or not positive.
+func lockWaitOr(cfg *config.Config, fallback time.Duration) time.Duration {
+	if w, err := cfg.LockWait(); err == nil && w > 0 {
+		return w
+	}
+	return fallback
+}
+
+// warnAttemptWait prints why attemptStore's lock wait is not the copy's managed one as one guildhall: warning line,
+// once per command.
+func (a *App) warnAttemptWait(why string) {
+	if a.attemptWaitWarned {
+		return
+	}
+	a.attemptWaitWarned = true
+	_, _ = fmt.Fprintf(a.Stderr, "guildhall: warning: %s\n", oneLine(stripControls(why)))
 }
 
 // showSteering prints, when the command runs inside an attempt, the attempt's unacknowledged steering messages to

@@ -135,7 +135,7 @@ func TestCodexRefusedOnEveryWorkflowStep(t *testing.T) {
 
 func TestShippedDirectorSelectsRealArtisan(t *testing.T) {
 	root := filepath.Join("..", "..", "examples")
-	c, err := Load(filepath.Join(root, "director.toml"))
+	c, err := LoadUnadmitted(filepath.Join(root, "director.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}

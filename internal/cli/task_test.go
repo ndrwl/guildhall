@@ -134,7 +134,7 @@ func runTask(t *testing.T, args ...string) (int, string, string) {
 // assigned: the repository's task_prefix followed by the next number, t1 for app's first and l1 for lib's.
 func newTask(t *testing.T, storePath, cfg, repo, title string, deps ...string) store.Receipt {
 	t.Helper()
-	c, err := config.Load(cfg)
+	c, err := config.LoadUnadmitted(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +179,7 @@ func readTask(t *testing.T, path, repo, id string) store.Task {
 // configDigest is the contract's configuration digest: sha256 of the loaded configuration's canonical JSON.
 func configDigest(t *testing.T, path string) string {
 	t.Helper()
-	cfg, err := config.Load(path)
+	cfg, err := config.LoadUnadmitted(path)
 	if err != nil {
 		t.Fatal(err)
 	}

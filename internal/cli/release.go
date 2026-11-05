@@ -154,9 +154,10 @@ func (a *App) releaseInstall(args []string) int {
 }
 
 // releaseSource is the source release install builds a missing release from: given, its --source, when set;
-// else the release_source setting of the copy cp selects (--copy or copy discovery), reading no other setting and
-// neither store nor pin; else release.DefaultSource, also when no copy is found. A copy whose config cannot be read
-// refuses, naming --source, rather than build from another source than the copy names.
+// else the release_source setting of the copy cp selects (--copy or copy discovery), through the admission boundary
+// (appliedConfig), so a managed.toml the copy has not authorized is not applied and its refusal is printed on stderr;
+// else release.DefaultSource, also when no copy is found. A copy whose config cannot be read refuses, naming
+// --source, rather than build from another source than the copy names.
 func (a *App) releaseSource(given string, cp copyFlags) (string, error) {
 	if given != "" {
 		return given, nil
@@ -168,9 +169,14 @@ func (a *App) releaseSource(given string, cp copyFlags) (string, error) {
 	if cp.dir == "" {
 		return release.DefaultSource, nil
 	}
-	cfg, err := config.Load(cfgPath)
+	cfg, refusal, err := appliedConfig(cfgPath)
 	if err != nil {
 		return "", fmt.Errorf("reading %s for %s: %w; pass --source <url> to name the source", cfgPath, config.ReleaseSourceKey, err)
+	}
+	if refusal != "" {
+		if _, err := fmt.Fprintf(a.Stderr, "release install: managed settings not applied, using config.toml alone: %s\n", refusal); err != nil {
+			return "", err
+		}
 	}
 	if s, ok := cfg.ReleaseSource(); ok {
 		return s, nil

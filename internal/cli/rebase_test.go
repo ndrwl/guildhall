@@ -37,7 +37,7 @@ func reviewAfterRebase(t *testing.T, requestedFull bool) {
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	t.Setenv("GIT_CONFIG_GLOBAL", global)
 	d, dir := newRunCopyOn(t, "fake-review", "config.toml")
-	cfg, err := config.Load(d.config)
+	cfg, err := config.LoadUnadmitted(d.config)
 	if err != nil {
 		t.Fatal(err)
 	}

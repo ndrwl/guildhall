@@ -173,7 +173,7 @@ func readWebStatus(cfgPath, state string, session statusSession) *webStatus {
 	if cfgPath == "" {
 		return nil
 	}
-	cfg, err := config.Load(cfgPath)
+	cfg, err := reportedConfig(cfgPath)
 	if err != nil {
 		return nil
 	}
@@ -218,12 +218,17 @@ func (a *App) web(args []string) int {
 	if err != nil {
 		return fail(err)
 	}
-	cfg, err := config.Load(c.config)
+	cfg, refusal, err := appliedConfig(c.config)
 	if errors.Is(err, fs.ErrNotExist) {
 		return fail(fmt.Errorf("the copy has no config at %s", c.config))
 	}
 	if err != nil {
 		return fail(err)
+	}
+	if refusal != "" {
+		if _, err := fmt.Fprintf(a.Stderr, "web: managed settings not applied, using config.toml alone: %s\n", refusal); err != nil {
+			return 1
+		}
 	}
 	if cfg.Web == nil {
 		return fail(errors.New("the copy's config has no [web] table; add one with its address (docs/web.md)"))

@@ -191,7 +191,7 @@ func TestTellDependentsReadsEffectiveDependencies(t *testing.T) {
 	c.write(t, func(s *store.Store) (store.Receipt, error) {
 		return s.AddTaskDependency("dep-t3", "app", "t3", store.TaskDependencyAdd, store.TaskRef{Repository: "app", ID: "t1"}, 0, "Needs it.")
 	})
-	cfg, err := config.Load(c.config)
+	cfg, err := config.LoadUnadmitted(c.config)
 	if err != nil {
 		t.Fatal(err)
 	}

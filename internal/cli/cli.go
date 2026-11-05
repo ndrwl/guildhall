@@ -355,6 +355,9 @@ type App struct {
 	// endedForReload, when set, is called once the runtime of session n has ended for a reload, before the
 	// supervisor records the session reloaded, so a test can record a stop in that window.
 	endedForReload func(n int)
+	// attemptWaitWarned is set once attemptStore has warned that the copy's managed settings were not applied to
+	// its lock wait, so a command that reads the attempt's store twice warns once.
+	attemptWaitWarned bool
 }
 
 // New returns an App wired to the real process environment.

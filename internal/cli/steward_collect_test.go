@@ -253,7 +253,7 @@ func TestStewardCollectBusy(t *testing.T) {
 func TestScheduledCollect(t *testing.T) {
 	cs := newCollectSetup(t)
 	app, _, _ := cs.app()
-	cfg, err := config.Load(filepath.Join(cs.steward, "config.toml"))
+	cfg, err := config.LoadUnadmitted(filepath.Join(cs.steward, "config.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +308,7 @@ func TestScheduledCollect(t *testing.T) {
 func TestScheduledCollectLockBusy(t *testing.T) {
 	cs := newCollectSetup(t)
 	app, _, _ := cs.app()
-	cfg, err := config.Load(filepath.Join(cs.steward, "config.toml"))
+	cfg, err := config.LoadUnadmitted(filepath.Join(cs.steward, "config.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}

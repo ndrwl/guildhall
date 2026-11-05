@@ -64,7 +64,7 @@ func (a *App) backupCopy(sub string, args []string) int {
 		_, _ = fmt.Fprintf(a.Stderr, "guildhall: backup %s: %v\n", sub, err)
 		return 1
 	}
-	cfg, err := config.Load(cfgPath)
+	cfg, err := config.LoadUnadmitted(cfgPath)
 	if err != nil {
 		return fail(err)
 	}
@@ -250,7 +250,7 @@ func (a *App) restoreRepo(target string) (string, error) {
 	}
 	cfgs = append(cfgs, filepath.Join(target, "config.toml"))
 	for _, p := range cfgs {
-		if cfg, err := config.Load(p); err == nil && cfg.Backup != nil {
+		if cfg, err := config.LoadUnadmitted(p); err == nil && cfg.Backup != nil {
 			return cfg.Backup.Repo, nil
 		}
 	}

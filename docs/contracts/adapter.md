@@ -4,7 +4,7 @@
 
 The spec, identity, capabilities and versioned result file, completion only from that file (`docs/adapters.md`).
 `Spec.Copy` and `Spec.Profile` reference the Director's profile ([Artisan permissions](../adapters.md#artisan-permissions)); no rule list is transported.
-`ProfileTools` loads that copy's `config.toml` via `config.Load`, refuses undeclared profiles and returns exactly their configured rules; without both fields it returns none.
+`ProfileTools` loads that copy's `config.toml` through `admit.Admit`, refuses undeclared profiles and returns exactly their configured rules; without both fields it returns none.
 Claude resolves this reference at settings creation, and the fake refuses a referenced profile granting rules.
 `Spec.Settings`, an `adapter.Settings`, is the profile's model and effort, passed by value and to the runtime as given, empty meaning its default ([runtime settings](../adapters.md#runtime-settings)); a runtime that cannot honour one refuses it before it starts anything with an error wrapping `ErrUnsupportedSetting`, never ignoring it.
 `Spec.Validate` does not check them: what is honoured is each runtime's.

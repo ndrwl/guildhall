@@ -71,7 +71,7 @@ func (a *App) storeExport(path, dir, copyDir string) int {
 	}
 	wait := config.DefaultLockWait
 	if copyDir != "" {
-		cfg, err := config.Load(filepath.Join(copyDir, "config.toml"))
+		cfg, err := config.LoadUnadmitted(filepath.Join(copyDir, "config.toml"))
 		if err != nil {
 			return fail(err)
 		}

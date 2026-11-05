@@ -64,7 +64,7 @@ func (a *App) messagesSendPeer(args []string) int {
 	if fl.NArg() != 1 {
 		return a.messagesUsage(name + " --to takes one envelope file or - for standard input")
 	}
-	cfg, err := config.Load(filepath.Join(dir, "config.toml"))
+	cfg, err := config.LoadUnadmitted(filepath.Join(dir, "config.toml"))
 	if err != nil {
 		return a.fail(fmt.Errorf("%s: %w", name, err))
 	}
@@ -201,7 +201,7 @@ func (a *App) receiveLocalPeer(peer config.Peer, from string, envelope []byte) (
 	if _, err := os.Stat(storePath); errors.Is(err, fs.ErrNotExist) {
 		return messaging.ReceiveResult{}, noStore(storePath)
 	}
-	cfg, err := config.Load(filepath.Join(dir, "config.toml"))
+	cfg, err := config.LoadUnadmitted(filepath.Join(dir, "config.toml"))
 	if err != nil {
 		return messaging.ReceiveResult{}, fmt.Errorf("peer %s: %w", peer.Name, err)
 	}
@@ -298,7 +298,7 @@ func (a *App) messagesPeerCmd(args []string) int {
 	if fl.NArg() != 1 {
 		return a.messagesUsage(name + " takes the peer's name")
 	}
-	cfg, err := config.Load(filepath.Join(dir, "config.toml"))
+	cfg, err := config.LoadUnadmitted(filepath.Join(dir, "config.toml"))
 	if err != nil {
 		return a.fail(fmt.Errorf("%s: %w", name, err))
 	}

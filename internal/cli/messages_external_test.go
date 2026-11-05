@@ -10,6 +10,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/session"
 	"github.com/ndrwl/guildhall/internal/steward"
@@ -230,6 +231,25 @@ func TestMessagesReceiveMailboxFull(t *testing.T) {
 	}
 	if _, r, _ := receive(t, dir, stewardEnvelope("r-2", "s", "t"), nil); r.Status != messaging.ReceiveDelivered {
 		t.Errorf("after an ack: %+v", r)
+	}
+}
+
+// TestMessagesReceiveIgnoresAnUnauthorizedManagedMailboxMax: an enrolled copy whose managed.toml no reload
+// authorized caps the mailbox by config.toml alone, here the default mailbox_max, not the managed mailbox_max 1,
+// printing only the receipt on stdout and the refusal on stderr. (A local mailbox_max beside a managed one that is
+// not overridable is an invalid combined config, and an overridable one wins anyway, so the local cap is the
+// default.)
+func TestMessagesReceiveIgnoresAnUnauthorizedManagedMailboxMax(t *testing.T) {
+	dir := newCopy(t)
+	d := writeManaged(t, dir, map[string]config.ManagedSetting{config.MailboxMaxKey: {Value: "1"}})
+	if !managedRun() { // A managed run's copy is already enrolled, with another digest authorized.
+		recordEvent(t, dir, store.Enrolment{Event: store.Enrolled, Steward: "hq", Digest: d})
+	}
+	refusal := "messages receive: managed settings not applied, using config.toml alone: managed.toml " + d + " is not authorized"
+	for _, id := range []string{"r-1", "r-2"} {
+		if code, r, stderr := receive(t, dir, stewardEnvelope(id, "s", "t"), nil); code != 0 || r.Status != messaging.ReceiveDelivered || !strings.Contains(stderr, refusal) {
+			t.Errorf("receive %s: exit %d, %+v, stderr %q; want delivered under the local cap of %d", id, code, r, stderr, config.DefaultMailboxMax)
+		}
 	}
 }
 

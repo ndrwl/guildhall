@@ -37,14 +37,14 @@ func encodeManaged(t *testing.T, settings map[string]ManagedSetting) []byte {
 }
 
 func TestLoadMissingConfig(t *testing.T) {
-	_, err := Load(filepath.Join(t.TempDir(), "config.toml"))
+	_, err := LoadUnadmitted(filepath.Join(t.TempDir(), "config.toml"))
 	if !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("missing config: %v", err)
 	}
 }
 
 func TestLoadWithoutManagedFileAcceptsLegacyInlineSettings(t *testing.T) {
-	cfg, err := Load(loadDir(t, loadLocal+"[managed.style]\nvalue = 'inline'\n", nil))
+	cfg, err := LoadUnadmitted(loadDir(t, loadLocal+"[managed.style]\nvalue = 'inline'\n", nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,14 +54,14 @@ func TestLoadWithoutManagedFileAcceptsLegacyInlineSettings(t *testing.T) {
 }
 
 func TestLoadWithoutManagedFileValidatesConfig(t *testing.T) {
-	if _, err := Load(loadDir(t, loadLocal+"unknown = 1\n", nil)); err == nil {
+	if _, err := LoadUnadmitted(loadDir(t, loadLocal+"unknown = 1\n", nil)); err == nil {
 		t.Fatal("accepted unknown key")
 	}
 }
 
 func TestLoadCombinesManagedFile(t *testing.T) {
 	managed := encodeManaged(t, map[string]ManagedSetting{"style": {Value: "central"}, "tone": {Value: "plain", Overridable: true}})
-	cfg, err := Load(loadDir(t, loadLocal+"[local]\ntone = 'local'\n", managed))
+	cfg, err := LoadUnadmitted(loadDir(t, loadLocal+"[local]\ntone = 'local'\n", managed))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestLoadRefusesUnusableManagedFile(t *testing.T) {
 		{"forbidden override", loadLocal + "[local]\nstyle = 'local'\n", valid, "invalid combined config"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			if _, err := Load(loadDir(t, c.local, c.managed)); err == nil || !strings.Contains(err.Error(), c.want) {
+			if _, err := LoadUnadmitted(loadDir(t, c.local, c.managed)); err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("want %q, got %v", c.want, err)
 			}
 		})
@@ -107,7 +107,7 @@ func TestLoadRefusesUnreadableManagedFile(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(filepath.Dir(path), "managed.toml"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	_, err := Load(path)
+	_, err := LoadUnadmitted(path)
 	if err == nil || errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("directory managed.toml: %v", err)
 	}

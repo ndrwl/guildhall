@@ -139,7 +139,7 @@ type Files struct {
 func (f Files) Dir() string { return filepath.Dir(f.CfgPath) }
 
 // ReadFiles reads the config at cfgPath and the managed.toml beside it. An unreadable config is its read error,
-// as config.Load returns it, and so is a managed.toml that exists but cannot be read.
+// as config.LoadUnadmitted returns it, and so is a managed.toml that exists but cannot be read.
 func ReadFiles(cfgPath string) (Files, error) {
 	f := Files{CfgPath: cfgPath}
 	var err error
@@ -150,7 +150,8 @@ func ReadFiles(cfgPath string) (Files, error) {
 	return f, err
 }
 
-// Load is config.Load of the files read: the combined config with a managed.toml, and the config alone without.
+// Load is config.LoadUnadmitted of the files read: the combined config with a managed.toml, and the config alone
+// without.
 func (f Files) Load() (*config.Config, error) {
 	if f.Managed == nil {
 		return config.Parse(f.Local)
@@ -258,7 +259,7 @@ func Judge(f Files, v store.ManagedView) Admission {
 }
 
 // Inspect is the boundary's report form, for commands that report and never refuse: the admission of the Director
-// copy whose config is at cfgPath, and its config as config.Load gives it, with its load error.
+// copy whose config is at cfgPath, and its config as config.LoadUnadmitted gives it, with its load error.
 func Inspect(cfgPath string) (Admission, *config.Config, error) {
 	f, err := ReadFiles(cfgPath)
 	if err != nil {
@@ -273,8 +274,8 @@ func Inspect(cfgPath string) (Admission, *config.Config, error) {
 }
 
 // Reported is the config of the Director copy whose config is at cfgPath, through the boundary's report form, for
-// commands that only read and show it: config.Load's result, whatever the copy's mode or revision trust, so it reads
-// only the files and never the store. Nothing that acts on settings may use it; Applied is for those.
+// commands that only read and show it: config.LoadUnadmitted's result, whatever the copy's mode or revision trust,
+// so it reads only the files and never the store. Nothing that acts on settings may use it; Applied is for those.
 func Reported(cfgPath string) (*config.Config, error) {
 	f, err := ReadFiles(cfgPath)
 	if err != nil {
@@ -287,7 +288,7 @@ func Reported(cfgPath string) (*config.Config, error) {
 // refuses inline [managed] in every mode, loads and validates the files, applies the mode table and refuses a
 // managed revision the copy's store has not authorized, and otherwise returns the effective config with the
 // admission. A refusal is a RefusalError naming the state and the command that fixes it; a config that does not
-// read or load is its error, as config.Load returns it.
+// read or load is its error, as config.LoadUnadmitted returns it.
 //
 // On first load of a managed digest the store has not authorized, Admit records it observed-untrusted, once per
 // digest and enrolment, and opens one approve/reject alert decision for the Guildmaster on the reserved task

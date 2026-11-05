@@ -13,6 +13,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/release"
 	"github.com/ndrwl/guildhall/internal/release/releasetest"
+	"github.com/ndrwl/guildhall/internal/store"
 )
 
 const (
@@ -156,6 +157,11 @@ func TestReleaseInstallSourcePrecedence(t *testing.T) {
 			args := []string{"release", "install", buildVersion}
 			if c.name != "no copy found" {
 				dir := sourceCopy(t, c.local, c.mngd)
+				if c.mngd != "" {
+					// Enrolled and authorized, so the managed setting applies; unauthorized, it does not
+					// (TestReleaseInstallIgnoresAnUnauthorizedManagedSource).
+					enrolManaged(t, dir)
+				}
 				if c.discover {
 					wd = dir
 				}
@@ -177,6 +183,9 @@ func TestReleaseInstallSourcePrecedence(t *testing.T) {
 			if r.Source != c.want || len(f.Fetched) != 1 || f.Fetched[0] != c.want || !strings.HasPrefix(stdout.String(), "building "+buildVersion+" from "+c.want+" at ") {
 				t.Errorf("release = %+v, fetched %q, printed %q; want built from %s", r, f.Fetched, stdout, c.want)
 			}
+			if strings.Contains(stderr.String(), "managed settings not applied") {
+				t.Errorf("an authorized managed.toml was refused: %s", stderr)
+			}
 		})
 	}
 
@@ -186,6 +195,47 @@ func TestReleaseInstallSourcePrecedence(t *testing.T) {
 	app.Getwd = func() (string, error) { return dir, nil }
 	if code := app.Run([]string{"release", "install", buildVersion, "--no-build"}); code != 1 || !strings.Contains(stderr.String(), "builds it from "+fork) || len(f.Fetched) != 0 {
 		t.Errorf("release install --no-build = %d, %q, fetched %q; want a refusal naming %s", code, stderr, f.Fetched, fork)
+	}
+}
+
+// TestReleaseInstallIgnoresAnUnauthorizedManagedSource: a copy whose managed.toml no reload authorized builds from
+// config.toml's release_source, or release.DefaultSource when it sets none, never from the managed one, and says
+// the managed settings were not applied.
+func TestReleaseInstallIgnoresAnUnauthorizedManagedSource(t *testing.T) {
+	const fork, mirror = "https://example.com/fork/guildhall", "https://example.com/mirror/guildhall"
+	for _, c := range []struct{ name, local, want string }{
+		{name: "a local setting", local: "release_source = \"" + fork + "\"\n", want: fork},
+		{name: "no local setting", want: release.DefaultSource},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			app, f, home, stdout, stderr := buildTestApp(t, buildReport)
+			f.Sources[fork] = buildCommits
+			f.Sources[mirror] = buildCommits
+			dir := sourceCopy(t, c.local, "")
+			d := writeManaged(t, dir, map[string]config.ManagedSetting{config.ReleaseSourceKey: {Value: mirror, Overridable: true}})
+			s, err := store.Open(filepath.Join(dir, directorStoreFile), store.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			recordEvent(t, dir, store.Enrolment{Event: store.Enrolled, Steward: "hq", Digest: d})
+			app.Getwd = func() (string, error) { return dir, nil }
+			if code := app.Run([]string{"release", "install", buildVersion}); code != 0 {
+				t.Fatalf("release install = %d; stderr %s", code, stderr)
+			}
+			r, err := (release.Home{Dir: home, GOOS: runtime.GOOS}).Check(buildVersion)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if r.Source != c.want || len(f.Fetched) != 1 || f.Fetched[0] != c.want || !strings.HasPrefix(stdout.String(), "building "+buildVersion+" from "+c.want+" at ") {
+				t.Errorf("release = %+v, fetched %q, printed %q; want built from %s", r, f.Fetched, stdout, c.want)
+			}
+			if want := "release install: managed settings not applied, using config.toml alone: managed.toml " + d + " is not authorized"; !strings.Contains(stderr.String(), want) {
+				t.Errorf("stderr = %q, want %q", stderr, want)
+			}
+		})
 	}
 }
 

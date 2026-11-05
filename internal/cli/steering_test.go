@@ -12,6 +12,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/adapter/fake"
 	"github.com/ndrwl/guildhall/internal/artisan"
+	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/release"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -90,6 +91,44 @@ func TestArtisanMessagesListAndAck(t *testing.T) {
 	}
 	if code, _, stderr := c.run(t, env, "messages", "ack", "q-1"); code != 1 || !strings.Contains(stderr, "addressed to director") {
 		t.Errorf("ack of the Director's message: exit %d, %s", code, stderr)
+	}
+}
+
+// TestAttemptLockWaitIgnoresAnUnauthorizedManagedRevision: an in-attempt command on a copy whose managed.toml no
+// reload authorized still succeeds, waits config.toml's lock wait rather than the managed lock_wait, and says so in
+// one warning line; once a reload authorizes the digest, the managed lock_wait applies and nothing is printed.
+func TestAttemptLockWaitIgnoresAnUnauthorizedManagedRevision(t *testing.T) {
+	c := newResultCopy(t)
+	d := writeManaged(t, c.dir, map[string]config.ManagedSetting{config.LockWaitKey: {Value: "2s"}})
+	if !managedRun() { // A managed run's copy is already enrolled, with another digest authorized.
+		recordEvent(t, c.dir, store.Enrolment{Event: store.Enrolled, Steward: "hq", Digest: d})
+	}
+	app, _, stderr := newTestApp(nil, nil)
+	app.Getwd = func() (string, error) { return c.work, nil }
+	app.Getenv = func(k string) string { return map[string]string{artisan.AttemptEnv: c.key.String()}[k] }
+	if code := app.Run([]string{"messages"}); code != 0 {
+		t.Fatalf("messages: exit %d, %s", code, stderr)
+	}
+	want := "guildhall: warning: managed settings not applied, using config.toml alone: managed.toml " + d + " is not authorized"
+	if got := stderr.String(); strings.Count(got, "\n") != 1 || !strings.HasPrefix(got, want) {
+		t.Errorf("stderr = %q, want one line %q", got, want)
+	}
+	if r, err := app.attemptStore(c.key); err != nil || r.wait != storeWait {
+		t.Errorf("unauthorized: wait %v (%v), want config.toml's %v", r.wait, err, storeWait)
+	}
+	s, err := store.Open(filepath.Join(c.dir, directorStoreFile), store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = s.RecordManagedRevision(store.ManagedRevision{Source: store.SourceReload, Digest: d})
+	_ = s.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, _, stderr = newTestApp(nil, nil)
+	app.Getwd = func() (string, error) { return c.work, nil }
+	if r, err := app.attemptStore(c.key); err != nil || r.wait != 2*time.Second || stderr.Len() != 0 {
+		t.Errorf("authorized: wait %v (%v), stderr %q; want the managed 2s", r.wait, err, stderr)
 	}
 }
 
