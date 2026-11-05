@@ -124,6 +124,7 @@ Only the Guildmaster answers it, outside any session: `decide answer` refuses it
 An answer of `approve` lets the session apply that one plan with `--approve`; `decline`, or a plan with another digest, does not.
 A [takeover](#takeover) plan is approved the same way: `steward approval request --plan <dir>` sees it is a setup plan and opens `setup-<first 12 hex digits>` on the reserved task `steward/setup` instead, which `decide answer` likewise refuses from inside a session, and every takeover needs it.
 A [secrets](#secrets) plan opens `secrets-<first 12 hex digits>` on the reserved task `steward/secrets` the same way, and every secrets push needs it.
+A [retire](#secrets) plan opens `retire-<first 12 hex digits>` on the same task, and every retirement needs it.
 Outside any session, `--approve` stands on the Guildmaster's word as before, and the plan and apply digests, the lock, the receipts, the [managed publication](decisions/managed-publication-separate-from-director-config.md) rule and the refusal of changed copies are unchanged.
 
 ### Moving the Steward to another host
@@ -270,7 +271,7 @@ Applying an unchanged plan performs no remote writes and runs no remote command,
 
 The [managed-file checksum framing](configuration.md#config-file) makes combined loading explicitly refuse incomplete or corrupted transfers, including syntactically valid truncated TOML.
 This is integrity detection, not atomic publication: non-atomic scp may transiently refuse reads and does not prove uninterrupted config availability.
-The `.rollout.lock` file in the private config directory excludes concurrent applies, [collections](#collection), takeovers and [secrets](secrets.md#the-steward-pushes-them) sets and applies using that directory on this Steward.
+The `.rollout.lock` file in the private config directory excludes concurrent applies, [collections](#collection), takeovers, [secrets](secrets.md#the-steward-pushes-them) sets and applies, and [machine retirements](secrets.md#retiring-a-machine) and their rotated marks using that directory on this Steward.
 It does not protect against another host, another private directory or a manual managed-file writer; designate one Steward writer for each fleet and do not edit managed files during rollout.
 The lock holds its owner's record: the PID and OS start token of the process that took it, its command line and when it took it. A refusal names that owner, or an unknown owner since the file's modification time when the lock has no readable record, as an older binary's has.
 If a writer crashes, stop competing invocations and confirm that the owning process has exited before manually removing its stale lock.
@@ -376,6 +377,14 @@ guildhall steward secrets apply --config <steward.toml> --machine <label> [--mac
 `set` reads a value from the terminal or standard input, never the command line, encrypts it at once and commits and pushes only ciphertext.
 `plan` and `apply` push a machine's committed ciphertext with `scp`, read it back by digest and run the read-only [remote command](#remote-commands) `secrets check` there, after the Guildmaster approves the plan's exact digest on the reserved task `steward/secrets`; plans and receipts hold names and digests, never a value.
 It is a separate command from [rollouts](#apply), which stay credential-free; [secrets](secrets.md#the-steward-pushes-them) describes it in full.
+
+```sh
+guildhall steward machine retire --config <steward.toml> --plan <dir> [--approve <plan digest>] <machine>
+guildhall steward machine retire --config <steward.toml> --status <machine>
+guildhall steward machine retire --config <steward.toml> --rotated <NAME> <machine>
+```
+
+`machine retire` revokes a lost or retired machine: a plan the Guildmaster approves by digest on `steward/secrets` removes its `age_recipient` and secrets file, prints every value it could read to rotate and its own credentials to revoke, and records the retirement in `retired/<machine>.json`, open until every value is rotated: `secrets set` gives a new value on each machine that holds it, and the Guildmaster marks each name no other machine holds with `--rotated`, outside a session ([retiring a machine](secrets.md#retiring-a-machine)).
 
 ## Steward messages
 

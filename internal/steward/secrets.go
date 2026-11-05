@@ -111,6 +111,10 @@ type SetResult struct {
 	SHA256  string   `json:"sha256"`
 	Commit  string   `json:"commit"`
 	Pushed  bool     `json:"pushed"`
+	// Rotated are the retired machines whose rotation of this name on this machine the set closed; Unrotated those
+	// still waiting, as the value set is the one the retired machine could read.
+	Rotated   []string `json:"rotated,omitempty"`
+	Unrotated []string `json:"unrotated,omitempty"`
 }
 
 // Set gives machine's secrets file name with value: it decrypts the committed file, if there is one, with the
@@ -156,6 +160,35 @@ func (s *Secrets) Set(ctx context.Context, machine, name, value, recoveryKey str
 	names, _, _ := secrets.Ciphertext(ciphertext)
 	res := &SetResult{Machine: machine, Name: name, File: file, Names: names, SHA256: digest.Of(ciphertext).Hex()}
 	files := map[string][]byte{file: ciphertext, SopsConfigFile: sopsConfig}
+	// A retirement waiting for a new value of name on this machine closes that rotation in the same commit, unless
+	// the value is one the retired machine could read: the one this machine held, or the one in the retired machine's
+	// own file, decrypted at the commit its plan read it at (docs/secrets.md#retiring-a-machine).
+	retirements, err := s.openRetirements(ctx, head)
+	if err != nil {
+		return nil, err
+	}
+	old, held := values.Get(name)
+	for _, r := range retirements {
+		stale := false
+		if r.waits(name, machine) {
+			stale = held && old == value
+			if !stale && r.FileCommit != "" {
+				retired, err := s.decryptCommitted(ctx, r.FileCommit, r.File, recoveryKey)
+				if err != nil {
+					return nil, fmt.Errorf("reading %s as retired machine %s held it: %w", r.File, r.Machine, err)
+				}
+				was, ok := retired.Get(name)
+				stale = ok && was == value
+			}
+		}
+		switch {
+		case stale:
+			res.Unrotated = append(res.Unrotated, r.Machine)
+		case r.close(name, machine, ClosedBySet, s.Now().UTC()):
+			files[RetiredFile(r.Machine)] = r.encode()
+			res.Rotated = append(res.Rotated, r.Machine)
+		}
+	}
 	if res.Commit, err = s.Private.CommitFiles(ctx, files, fmt.Sprintf("Set secret %s for %s", name, machine), s.signature()); err != nil {
 		return nil, fmt.Errorf("committing %s: %w", file, err)
 	}

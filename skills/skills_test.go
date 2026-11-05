@@ -883,6 +883,7 @@ var notAskedOfTheDirector = map[string]string{
 	"steward secrets set":      "the Guildmaster types each value at their own terminal; no model ever holds one",
 	"steward secrets plan":     "the Steward's command, not the Director's",
 	"steward secrets apply":    "the Steward's command, not the Director's",
+	"steward machine retire":   "the Steward's command, not the Director's",
 	"director start":           "the Guildmaster starts the Director; a session cannot start itself",
 	"artisan start":            "task start and step retry launch every attempt",
 	"fake-artisan":             "a test wrapper artisan start runs",

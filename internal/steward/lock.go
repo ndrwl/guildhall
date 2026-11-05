@@ -15,7 +15,8 @@ import (
 )
 
 // lockName is the private config directory's writer lock, which a rollout apply, a collection round, a takeover
-// apply or abandon, and a secrets set or apply take, and privateLock alone names.
+// apply or abandon, a secrets set or apply, and a machine retirement or its rotated mark take, and privateLock alone
+// names.
 const lockName = ".rollout.lock"
 
 // maxLockRecord bounds how much of a lock file readLockOwner reads.
