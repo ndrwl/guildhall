@@ -262,6 +262,49 @@ func TestMergeBatchLeaving(t *testing.T) {
 	}
 }
 
+// TestMergeBatchLeavingClearsLaterLinks: a member leaving the batch clears the links of the members after it, which
+// replayed onto its link, and keeps those before; a member that closes clears them in the read, until a member after
+// it records a new link.
+func TestMergeBatchLeavingClearsLaterLinks(t *testing.T) {
+	s := queueStore(t, "a", "b", "c", "d")
+	for _, id := range []string{"a", "b", "c", "d"} {
+		authorize(t, s, id, 1)
+	}
+	if _, err := s.ClaimMergeBatch("batch-a", "app", "a", 1, 4); err != nil {
+		t.Fatal(err)
+	}
+	links := map[string]string{"a": linkA, "b": linkB, "c": linkC, "d": strings.Repeat("d", 40)}
+	for _, id := range []string{"a", "b", "c", "d"} {
+		if _, err := s.SetMergeBatchLink("link-"+id, "app", id, 1, links[id]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.LeaveMergeBatch("leave-c", "app", "c"); err != nil {
+		t.Fatal(err)
+	}
+	q, _ := s.MergeQueue("app")
+	if l := q.Batch.Members; len(l) != 3 || l[0].Link != linkA || l[1].Link != linkB || l[2].TaskID != "d" || l[2].Link != "" {
+		t.Fatalf("links after c left = %+v", l)
+	}
+	if _, err := s.SetMergeBatchLink("link-d-2", "app", "d", 1, linkC); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetTaskState("cancel-b", "app", "b", TaskCancelled); err != nil {
+		t.Fatal(err)
+	}
+	q, _ = s.MergeQueue("app")
+	if l := q.Batch.Members; len(l) != 2 || l[0].Link != linkA || l[1].TaskID != "d" || l[1].Link != "" {
+		t.Fatalf("links after b closed = %+v", l)
+	}
+	if _, err := s.SetMergeBatchLink("link-d-3", "app", "d", 1, linkB); err != nil {
+		t.Fatal(err)
+	}
+	q, _ = s.MergeQueue("app")
+	if l := q.Batch.Members; len(l) != 2 || l[1].Link != linkB {
+		t.Fatalf("d's new link = %+v", l)
+	}
+}
+
 func second(_ Receipt, err error) error { return err }
 
 func batchEqual(a, b MergeBatch) bool {

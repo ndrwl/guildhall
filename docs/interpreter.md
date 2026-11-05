@@ -350,17 +350,26 @@ A dependent task's [dependency gate](#the-dependency-gate) reads a queued depend
 ### Merge batches
 
 A repository whose [`merge_batch_size`](configuration.md#merge-batches) is above 1 tests up to that many queued tasks together on one combined head (task d229, delivered in slices).
-So far the store keeps the batch record; the engine does not yet claim, assemble or land batches, so the queue stays serial whatever the setting.
+So far the engine claims and assembles batches but does not land them: the leader still merges alone, as the serial queue does, which ends the batch, and the next front claims a new one. Batching stays off unless the setting is above 1.
 
 - **Record.** Beside the front, the `merge-queue` bucket holds one batch record per repository: the leader, its front stay, the ordered members (task, slice, stay and link head), the base tip the batch was assembled on, and a state, `assembling`, `testing`, `landing`, `landed` or `red`.
 - **Claim.** `ClaimMergeBatch` claims the front as `ClaimMergeFront` does and, with a size above 1, makes the claimer the leader: in the same mutation it claims the next queued tasks that are not held, in queue order, up to the size with the leader, counting each one's stay, and records the batch `assembling`.
   A held task is skipped and keeps its place. A size of 1 or less claims the front alone and records no batch.
   Claims stay idempotent by mutation id, and a member's own front claim is refused with `store.ErrMergeQueued`, since the leader holds the front.
-- **Links and state.** `SetMergeBatchLink` records a member's slice and link head; a changed link clears the links of the members after it, which replay onto it again.
+- **Links and state.** `SetMergeBatchLink` records a member's slice and link head; a changed link clears the links of the members after it, which replay onto it again, and so does a member's leaving, or closing, for the members after it.
   `SetMergeBatchState` moves the batch, by its leader only, from `assembling` to `testing`; from `testing` to `assembling`, `landing` or `red`; from `landing` to `assembling` or `landed`; and from `red` to `assembling` or `landing`, recording the base tip when given.
 - **Leaving.** `LeaveMergeBatch` takes a member out and leaves it queued; `LeaveMergeQueue` takes it out of the batch too, and a member that closes drops out of the batch read.
   The leader leaving the batch ends it but keeps the front, and the leader releasing the front, `ReleaseMergeFront`, or leaving the queue ends the batch.
   `MergeQueue` reads the batch as `Batch` only while the front it was claimed with, the same task in the same stay, still stands.
+
+Assembly runs one task at a time, each member in its own advance under its own task lock:
+
+- **Leader.** Under a size above 1, the first task not held claims the front with `ClaimMergeBatch`, mutation `merge-batch:<repo>:<task>:<stay>` for slice 1 and `merge-batch:<repo>:<task>:<deliver>--s<k>:<stay>` for a later slice, keyed as the front claim is, and is the batch's member 1. It is brought up to date as any front is; its link is its rebased head once that is pushed, so the members replay onto it while its checks run, or its head when the pull request is clear. Once every member has a link it moves the batch to `testing`, recording the base tip. Until batches land it then merges alone.
+- **Member.** A member behind the leader waits until the member before it has a link, then replays its own head (the head its own rebases, if any, end at) onto that link with the [tiered rebase](#tiered-rebase)'s replay, recorded once as `<step>-<k>-link-<n>` (schema `guildhall.batch-link/1`, naming the leader and its stay). A `no_conflicts` replay is pushed to the member's pull request, whose checks then run on the batch so far, recorded as `<link>-pr` with a `batch-link.<link>` message, and recorded as its link with `SetMergeBatchLink`. The push leaves the member's worktree on its own head, and a link is never one of the task's own rebases, so its later rebases start from its own head.
+- **Leaving.** A replay with minor or major conflicts, a hold, an attempt of the task still running, or an approval that would not carry over a `no_conflicts` replay (`guildmaster_approval` with `reapprove_after_rebase = no_conflicts`) takes the member out with `LeaveMergeBatch` and one `batch-left.<leader>.<stay>` message saying why; a cancel takes it out of the queue and so of the batch. It keeps its place and is rebased as any front is when it reaches the front. The members after it replay onto its predecessor's link.
+- **Its own head back.** A task at the front whose pull request may still hold a link it pushed, in a batch it no longer waits in, pushes its own head back before its checks are read or it merges, with the publish step's title and body for the published head, and records `<link>-restored` for each such link.
+- **Order.** The [merge-queue watcher](director.md#merge-queue) advances the tasks it lists in queue order within each repository, so a batch assembles in one round: each member replays onto the link the one before it made earlier in the round.
+- **Display.** A member's merge-queue entry in `director status` and `task list` carries `batch` (`place`, `size`, `leader` and `state`), and [Clerk](clerk.md#where-it-stands) and the all-tasks page say `in batch <place>/<size> (<state>)` in place of its place number.
 
 ## Tiered rebase
 

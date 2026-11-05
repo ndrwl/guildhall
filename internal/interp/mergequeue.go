@@ -27,6 +27,12 @@ type MergeQueue interface {
 	LeaveMergeQueue(mutationID, repository, taskID string, keepReady bool) (store.Receipt, error)
 	ClaimMergeFront(mutationID, repository, taskID string) (store.Receipt, error)
 	ReleaseMergeFront(mutationID, repository, taskID string) (store.Receipt, error)
+	// ClaimMergeBatch claims the front as ClaimMergeFront does and, with size above 1, the batch the claimer leads
+	// (docs/interpreter.md#merge-batches); LeaveMergeBatch, SetMergeBatchLink and SetMergeBatchState change it.
+	ClaimMergeBatch(mutationID, repository, taskID string, slice, size int) (store.Receipt, error)
+	LeaveMergeBatch(mutationID, repository, taskID string) (store.Receipt, error)
+	SetMergeBatchLink(mutationID, repository, taskID string, slice int, link string) (store.Receipt, error)
+	SetMergeBatchState(mutationID, repository, leader string, state store.MergeBatchState, base string) (store.Receipt, error)
 	// SetMergeHold holds or releases a task's merge; the engine only releases one, for a task merged outside Guildhall.
 	SetMergeHold(mutationID, repository, taskID string, held bool) (store.Receipt, error)
 }
@@ -458,9 +464,10 @@ func (r *run) frontMutation(kind string, s workflow.Step, stay int) string {
 	return r.mutation(kind, strconv.Itoa(stay))
 }
 
-// claim claims the front for the task, running step s, when it is first in the queue. The task is the front only
-// when the store's front record names it afterwards, so a claim that replays an earlier receipt makes no front.
-func (r *run) claim(s workflow.Step, q *queue) error {
+// claim claims the front for the task, running step s, when it is first in the queue: under repo's merge_batch_size
+// above 1, with the batch it then leads (docs/interpreter.md#merge-batches). The task is the front only when the
+// store's front record names it afterwards, so a claim that replays an earlier receipt makes no front.
+func (r *run) claim(s workflow.Step, repo config.Repository, q *queue) error {
 	if q.front || q.q == nil {
 		return nil
 	}
@@ -469,7 +476,13 @@ func (r *run) claim(s workflow.Step, q *queue) error {
 		return fmt.Errorf("task %s is not in the merge queue of %s", r.task.ID, r.task.Repository)
 	}
 	stay := q.view.Entries[i].Stays + 1
-	_, err := q.q.ClaimMergeFront(r.frontMutation("merge-front", s, stay), r.task.Repository, r.task.ID)
+	var err error
+	if repo.Merge.Batching() {
+		_, slice := workflow.ParseSliceStep(s.ID)
+		_, err = q.q.ClaimMergeBatch(r.frontMutation("merge-batch", s, stay), r.task.Repository, r.task.ID, slice, repo.Merge.BatchSize())
+	} else {
+		_, err = q.q.ClaimMergeFront(r.frontMutation("merge-front", s, stay), r.task.Repository, r.task.ID)
+	}
 	switch {
 	case errors.Is(err, store.ErrMergeQueued):
 		return nil
@@ -496,6 +509,10 @@ func (r *run) queued(s workflow.Step, q queue, held bool) (Next, error) {
 		front = "task " + f.TaskID
 	}
 	text := fmt.Sprintf("Task %s/%s is authorized to merge and waits in the merge queue at place %d of %d; %s holds the front.", r.task.Repository, r.task.ID, pos, len(q.view.Entries), front)
+	if b := q.view.Batch; b != nil && b.Member(r.task.ID) > 1 {
+		text = fmt.Sprintf("Task %s/%s is authorized to merge and waits in the merge queue at place %d of %d, in batch %d/%d that task %s leads from the front; its head is replayed onto the link of task %s before it.",
+			r.task.Repository, r.task.ID, pos, len(q.view.Entries), b.Member(r.task.ID), len(b.Members), b.Leader, b.Members[b.Member(r.task.ID)-2].TaskID)
+	}
 	if held {
 		text = fmt.Sprintf("The merge of task %s/%s is held (task hold-merge): it stays authorized and keeps its place by ready time, but the queue skips it until it is unheld.", r.task.Repository, r.task.ID)
 	}

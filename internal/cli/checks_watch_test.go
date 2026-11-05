@@ -302,6 +302,44 @@ func TestMergeQueueWaitingListsAHeldFront(t *testing.T) {
 	}
 }
 
+// TestMergeQueueWaitingInQueueOrder: the merge-queue watcher lists the tasks waiting in a merge queue in queue order,
+// not task order, so a batch's members advance after the members before them; a task waiting in the queue whose
+// entry is gone comes last.
+func TestMergeQueueWaitingInQueueOrder(t *testing.T) {
+	d := newRunDirector(t)
+	newTask(t, d.store, d.config, "app", "Second")
+	newTask(t, d.store, d.config, "app", "Third")
+	newTask(t, d.store, d.config, "app", "Gone")
+	_, err := withStore(d.store, false, func(s *store.Store) (store.Receipt, error) {
+		// t3 is urgent and t2 high, so the queue is t3, t2, t1 whatever the ready times.
+		for id, p := range map[string]store.Priority{"t3": store.PriorityUrgent, "t2": store.PriorityHighest} {
+			if _, err := s.SetTaskPriority("priority-"+id, "app", id, p); err != nil {
+				return store.Receipt{}, err
+			}
+		}
+		for _, id := range []string{"t1", "t2", "t3"} {
+			if _, err := s.PutDocument("auth-"+id, store.DocumentRef{Repository: "app", TaskID: id, Name: "deliver-1-authorized", Path: "tasks/app/" + id + "/a.json", SHA256: strings.Repeat("0", 64)}); err != nil {
+				return store.Receipt{}, err
+			}
+			if _, err := s.JoinMergeQueue("join-"+id, "app", id, "deliver-1", "document/deliver-1-authorized", ""); err != nil {
+				return store.Receipt{}, err
+			}
+		}
+		return s.ClaimMergeBatch("batch", "app", "t3", 1, 3)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordSession(t, d.store, false)
+	for _, id := range []string{"t1", "t2", "t3", "t4"} {
+		writeNext(t, d.state, id, `{"wait":"merge-queue","step":"deliver"}`+"\n")
+	}
+	got, err := mergeQueueWaiting(d.store, d.state)()
+	if want := []taskRef{{"app", "t3"}, {"app", "t2"}, t1, {"app", "t4"}}; err != nil || !slices.Equal(got, want) {
+		t.Errorf("waiting = %v, %v; want %v", got, err, want)
+	}
+}
+
 // validateCopy is a short-pathed Director copy on the fake-validate workflow whose fake Director says it is ready
 // and then waits on its input, over forge f, with task app/t1 driven by the test to its validate step, where its
 // published head's checks are pending.

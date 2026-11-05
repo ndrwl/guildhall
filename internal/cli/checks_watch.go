@@ -1,12 +1,14 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -104,9 +106,47 @@ func dependenciesWaiting(path, state string) func() ([]taskRef, error) {
 
 // mergeQueueWaiting lists, as checksWaiting does, the open tasks whose next.json says they wait in their
 // repository's merge queue (docs/interpreter.md#the-merge-queue), and then each repository's held front, whatever
-// its next.json waits on, so its advance releases the front to the next task; each task is listed once.
+// its next.json waits on, so its advance releases the front to the next task; each task is listed once. They are
+// listed in queue order within each repository, so a merge batch assembles in one round: each member replays onto
+// the link the one before it made earlier in the same round (docs/interpreter.md#merge-batches).
 func mergeQueueWaiting(path, state string) func() ([]taskRef, error) {
-	return waitingAlso(path, state, interp.WaitMergeQueue, heldFronts)
+	list := waitingAlso(path, state, interp.WaitMergeQueue, heldFronts)
+	return func() ([]taskRef, error) {
+		tasks, err := list()
+		if err != nil || len(tasks) < 2 {
+			return tasks, err
+		}
+		places, err := withStore(path, true, func(s *store.Store) (map[taskRef]int, error) { return queuePlaces(s, tasks) })
+		if err != nil {
+			return nil, err
+		}
+		slices.SortStableFunc(tasks, func(a, b taskRef) int {
+			return cmp.Or(cmp.Compare(a.repo, b.repo), cmp.Compare(places[a], places[b]))
+		})
+		return tasks, nil
+	}
+}
+
+// queuePlaces is the 1-based place of each of tasks in its repository's merge queue, or the largest int for a task
+// not in it, which therefore comes last.
+func queuePlaces(s *store.Store, tasks []taskRef) (map[taskRef]int, error) {
+	out := map[taskRef]int{}
+	queues := map[string]store.MergeQueue{}
+	for _, t := range tasks {
+		q, ok := queues[t.repo]
+		if !ok {
+			var err error
+			if q, err = s.MergeQueue(t.repo); err != nil {
+				return nil, err
+			}
+			queues[t.repo] = q
+		}
+		out[t] = math.MaxInt
+		if p := q.Position(t.task); p > 0 {
+			out[t] = p
+		}
+	}
+	return out, nil
 }
 
 // heldFronts lists, for each repository of s, the task holding its merge queue's front when that task's merge is

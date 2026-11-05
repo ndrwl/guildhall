@@ -84,8 +84,8 @@ Each task's position is one plain phrase:
 | `wait: decision`, the decision still open | `waiting for your approval` (or `waiting for your answer` for a question, and `waiting for your pick` for a hallmark's `follow-ups` decision) |
 | `wait: decision`, the decision answered but the task not yet continued | `waiting for the Director` |
 | `wait: director` / `director-stage` | `waiting for the Director` |
-| `wait: checks` | `CI pending, PR #<n>` |
-| `wait: merge-queue` | `in merge queue <pos>/<len>`, plus `rebasing`, `CI pending` or `waiting for your answer` when the front waits on one (for example `in merge queue 1/3, rebasing`) |
+| `wait: checks` | `CI pending, PR #<n>`, after `in batch <place>/<size> (<state>), ` for the front leading a [merge batch](interpreter.md#merge-batches) |
+| `wait: merge-queue` | `in merge queue <pos>/<len>`, or `in batch <place>/<size> (<state>)` for a member of the front's [merge batch](interpreter.md#merge-batches), plus `rebasing`, `CI pending` or `waiting for your answer` when the front waits on one (for example `in merge queue 1/3, rebasing`) |
 | `wait: queued` | `queued <pos>` |
 | `wait: paused` | `paused` |
 | `wait: dependencies` | `waiting on <task ids>` |

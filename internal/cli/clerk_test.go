@@ -341,6 +341,72 @@ func TestClerkWhereItStands(t *testing.T) {
 	}
 }
 
+// TestClerkMergeBatch: the members of the front's merge batch say `in batch k/n` with the batch's state, in the
+// Tasks table and in place of a bare place number in clerk queue, and director status and task list carry the batch
+// place; a held task the batch skipped keeps its place number.
+func TestClerkMergeBatch(t *testing.T) {
+	dir := clerkFixture(t)
+	s, err := store.Open(filepath.Join(dir, "director.store"), store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ReleaseMergeFront("release-q1", "app", "a-q1"); err != nil {
+		t.Fatal(err)
+	}
+	// a-q2 is held, so the batch is a-q1 and a-q3.
+	if _, err := s.ClaimMergeBatch("batch-q1", "app", "a-q1", 1, 3); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	code, out, stderr := runClerk(t, dir, "guild")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, stderr)
+	}
+	tasks, _, _ := strings.Cut(out, "\nNeeds you\n")
+	for id, want := range map[string]string{
+		"app/a-q1": "in batch 1/2 (assembling), rebasing",
+		"app/a-q2": "in merge queue 2/3",
+		"app/a-q3": "in batch 2/2 (assembling)",
+	} {
+		if line := clerkLine(tasks, id); !strings.HasSuffix(line, "  "+want) {
+			t.Errorf("%s: line %q, want it to end %q", id, line, want)
+		}
+	}
+	code, out, stderr = runClerk(t, dir, "queue")
+	if code != 0 {
+		t.Fatalf("queue: exit %d, stderr %s", code, stderr)
+	}
+	app := out[strings.Index(out, "\napp\n"):]
+	for _, want := range []string{"in batch 1/2 (assembling)  a-q1 ", "\n2  ", "in batch 2/2 (assembling)  a-q3 "} {
+		if !strings.Contains(app, want) {
+			t.Errorf("queue: want %q in:\n%s", want, app)
+		}
+	}
+	code, out, stderr = directorCmd(t, nil, "status", "--store", filepath.Join(dir, "director.store"), "--state", filepath.Join(dir, "state"), "--json")
+	st := decodeJSON[struct {
+		MergeQueues []mergeQueue `json:"merge_queues"`
+	}](t, out)
+	if code != 0 {
+		t.Fatalf("status: exit %d, stderr %s", code, stderr)
+	}
+	i := slices.IndexFunc(st.MergeQueues, func(q mergeQueue) bool { return q.Repository == "app" })
+	if i < 0 || len(st.MergeQueues[i].Entries) != 3 {
+		t.Fatalf("status queues = %+v", st.MergeQueues)
+	}
+	e := st.MergeQueues[i].Entries
+	if b := e[0].Batch; b == nil || *b != (batchPlace{Place: 1, Size: 2, Leader: "a-q1", State: store.BatchAssembling}) {
+		t.Errorf("leader's batch = %+v", b)
+	}
+	if e[1].Batch != nil {
+		t.Errorf("held a-q2's batch = %+v, want none", e[1].Batch)
+	}
+	if b := e[2].Batch; b == nil || b.Place != 2 || b.Size != 2 {
+		t.Errorf("a-q3's batch = %+v", b)
+	}
+}
+
 // answerClerkDecision answers decision id of repo/task in the copy dir's store.
 func answerClerkDecision(t *testing.T, dir, repo, task, id, answer string) {
 	t.Helper()

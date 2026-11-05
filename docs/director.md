@@ -293,7 +293,7 @@ A third watcher of the same kind as the [checks watcher](#checks), on the same i
 A held front's advance releases the front, so the next task claims it in the same or the next round.
 The advance claims the front for the first task in queue order, and the front then rebases, pushes, waits for CI and merges with no model turn; the others send nothing new, since `merge-queued` is sent once per place.
 A paused or stopping Director pauses the queue: the watcher advances nothing, and nothing else advances a queued task but `task start`.
-The order is not the watcher's: the front is chosen in one store mutation from priority, ready time and task id, so the order in which the watcher advances tasks does not matter.
+The order is not the watcher's: the front is chosen in one store mutation from priority, ready time and task id. The watcher still advances the tasks in queue order within each repository, so a [merge batch](interpreter.md#merge-batches) assembles in one round, each member after the one whose link it replays onto.
 A failed advance is appended to `merge-queue.log` in the session's directory and tried again the next round.
 [`needs_me`](#status) lists such a task as a `merge-queue` item, after the `dependencies` ones; like them it is the supervisor's, so it neither counts nor wakes the Director on resume.
 The Director hears of a queued task through `merge-queued`, `rebased`, `rebase-escalated`, `approval-carried`, `merged` and, for a front that rebased three times, `rebase-stuck`.

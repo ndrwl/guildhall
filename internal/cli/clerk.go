@@ -462,6 +462,10 @@ func (d clerkData) stands(ct clerkTask) string {
 		if ct.checks == store.MessageChecksMissing {
 			state = strings.TrimSpace("no CI run for " + ct.missingHead)
 		}
+		if e := t.MergeQueue; e != nil && e.Batch != nil {
+			// The front leading a batch waits for the checks of its own link.
+			state = e.Batch.String() + ", " + state
+		}
 		if ct.pr != nil {
 			return fmt.Sprintf("%s, PR #%d", state, ct.pr.Number)
 		}
@@ -472,6 +476,9 @@ func (d clerkData) stands(ct clerkTask) string {
 			return "in merge queue"
 		}
 		out := fmt.Sprintf("in merge queue %d/%d", e.Position, d.queueLength(t.Repository))
+		if e.Batch != nil {
+			out = e.Batch.String()
+		}
 		if e.WaitingOn != "queue" {
 			out += ", " + ct.waitingOn(e.WaitingOn)
 		}
@@ -754,7 +761,12 @@ func (d clerkData) queue() string {
 			if e.Held {
 				held = "held"
 			}
-			rows = append(rows, []string{strconv.Itoa(e.Position), e.Task, e.Priority.String(), oneLine(ct.view.Title), pr,
+			pos := strconv.Itoa(e.Position)
+			if e.Batch != nil {
+				// A member of the front's batch shows its place in the batch and the batch's state.
+				pos = e.Batch.String()
+			}
+			rows = append(rows, []string{pos, e.Task, e.Priority.String(), oneLine(ct.view.Title), pr,
 				clerkSince(d.now, e.ReadyAt), held, ct.waitingOn(e.WaitingOn)})
 		}
 		clerkTable(&b, []string{"POS", "TASK", "PRI", "TITLE", "PR", "READY FOR", "HELD", "WAITING ON"}, rows, 3)
