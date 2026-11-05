@@ -268,17 +268,23 @@ func TestStewardCollectBusy(t *testing.T) {
 // the Steward's inbox one triage-opened message per kind, tagged director, and a round with nothing new sends none.
 func TestScheduledCollect(t *testing.T) {
 	cs := newCollectSetup(t)
-	app, _, _ := cs.app()
+	app, _, terminal := cs.app()
+	defer func() {
+		if terminal.Len() != 0 {
+			t.Errorf("the scheduled collect wrote %q to the terminal", terminal)
+		}
+	}()
 	cfg, err := config.LoadUnadmitted(filepath.Join(cs.steward, "config.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	storePath := filepath.Join(cs.steward, stewardStoreFile)
-	if w, err := app.stewardCollection(cfg, storePath); err != nil || w != nil {
+	log := newTestSupervisorLog(t)
+	if w, err := app.stewardCollection(cfg, storePath, log.writer()); err != nil || w != nil {
 		t.Fatalf("collect_every unset: %v, %v; want no round", w, err)
 	}
 	cfg.Steward.CollectEvery = "1h"
-	w, err := app.stewardCollection(cfg, storePath)
+	w, err := app.stewardCollection(cfg, storePath, log.writer())
 	if err != nil || w == nil {
 		t.Fatalf("collect_every 1h: %v, %v", w, err)
 	}
@@ -331,7 +337,7 @@ func TestScheduledCollectLockBusy(t *testing.T) {
 	cfg.Steward.CollectEvery = "1h"
 	storePath := filepath.Join(cs.steward, stewardStoreFile)
 	schedule := func() func() {
-		w, err := app.stewardCollection(cfg, storePath)
+		w, err := app.stewardCollection(cfg, storePath, supervisorLog(t.TempDir()))
 		if err != nil || w == nil {
 			t.Fatalf("collect_every 1h: %v, %v", w, err)
 		}

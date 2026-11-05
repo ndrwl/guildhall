@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -723,7 +724,7 @@ func TestPruneKeepsAWorktreeRetireKeeps(t *testing.T) {
 			before := listFiles(t, w.Dir)
 
 			p := f.pruner()
-			d := &dailyPrune{p: p, stderr: f.stderr}
+			d := &dailyPrune{p: p, log: f.stderr}
 			got, err := p.run(context.Background(), "", "", false, d.report)
 			if err != nil || len(got) != 1 || got[0].Worktree != store.WorktreeKept || !strings.Contains(got[0].Kept, tc.want) || got[0].complete() {
 				t.Fatalf("prune = %+v, %v; want the worktree kept for %q", got, err, tc.want)
@@ -1122,16 +1123,17 @@ func TestPruneKeepsPaneFilesTheSweepStillCloses(t *testing.T) {
 }
 
 // TestDailyPrune: with prune_daily on, the supervisor's daily prune runs at session start and again a day later,
-// not before, across sessions; with it off, the default, there is none.
+// not before, across sessions, writing its report to supervisor.log; with it off, the default, there is none.
 func TestDailyPrune(t *testing.T) {
 	f := newPruneFixture(t)
-	if d, err := f.app.dailyPrune(f.cfg, f.copy); err != nil || d != nil {
+	log := supervisorLog(f.state)
+	if d, err := f.app.dailyPrune(f.cfg, f.copy, log); err != nil || d != nil {
 		t.Fatalf("dailyPrune with prune_daily unset = %v, %v; want none", d, err)
 	}
-	if d, err := f.app.dailyPrune(directorConfig(t, `prune_daily = "false"`+"\n"), f.copy); err != nil || d != nil {
+	if d, err := f.app.dailyPrune(directorConfig(t, `prune_daily = "false"`+"\n"), f.copy, log); err != nil || d != nil {
 		t.Fatalf("dailyPrune with prune_daily false = %v, %v; want none", d, err)
 	}
-	d, err := f.app.dailyPrune(directorConfig(t, `prune_daily = "true"`+"\n"), f.copy)
+	d, err := f.app.dailyPrune(directorConfig(t, `prune_daily = "true"`+"\n"), f.copy, log)
 	if err != nil || d == nil {
 		t.Fatalf("dailyPrune with prune_daily true = %v, %v", d, err)
 	}
@@ -1148,15 +1150,16 @@ func TestDailyPrune(t *testing.T) {
 	if left := listFiles(t, k.Dir(f.state)); len(left) != len(keptFiles) {
 		t.Fatalf("after the start round, t1 left %q", left)
 	}
-	if !strings.Contains(f.stderr.String(), "guildhall: daily prune: pruned app/t1: ") {
-		t.Errorf("supervisor log %q", f.stderr.String())
+	logged, _ := os.ReadFile(filepath.Join(f.state, supervisorLogFile))
+	if !regexp.MustCompile(`(?m)^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ guildhall: daily prune: pruned app/t1: `).Match(logged) || f.stderr.Len() != 0 {
+		t.Errorf("supervisor.log %q, stderr %q", logged, f.stderr.String())
 	}
 
 	// An hour later, and a new session's start within the day: nothing, though t2 is now due.
 	f.close("app", "t2")
 	f.now = f.now.Add(time.Hour)
 	d.run()
-	next, err := f.app.dailyPrune(directorConfig(t, `prune_daily = "true"`+"\n"), f.copy)
+	next, err := f.app.dailyPrune(directorConfig(t, `prune_daily = "true"`+"\n"), f.copy, log)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1169,6 +1172,121 @@ func TestDailyPrune(t *testing.T) {
 	next.run()
 	if rec, err := f.record("t2"); err != nil || !rec.Complete {
 		t.Fatalf("t2 after the day's tick = %+v, %v", rec, err)
+	}
+}
+
+// pruneDailyFixture is f with prune_daily on in its config file and config.
+func pruneDailyFixture(t *testing.T) *pruneFixture {
+	t.Helper()
+	f := newPruneFixture(t)
+	path := filepath.Join(f.copy, "config.toml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = []byte(strings.Replace(string(data), "[local]\n", "[local]\n"+`prune_daily = "true"`+"\n", 1))
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if f.cfg, err = config.Parse(data); err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+
+// TestSessionPruneWritesNothingToTerminal: a Director session's start-of-session prune, with prune_daily on, writes
+// nothing to the terminal the session's runtime draws, and its report goes to the copy's supervisor.log (d220).
+func TestSessionPruneWritesNothingToTerminal(t *testing.T) {
+	f := pruneDailyFixture(t)
+	f.task("app", "t1")
+	k := f.attempt("app", "t1", "build", store.AttemptSucceeded, nil)
+	f.close("app", "t1")
+
+	start, err := f.app.directorSessionStart(startPlan{cfg: f.cfg, cfgPath: filepath.Join(f.copy, "config.toml")}, f.copy, f.store, f.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start.wait()
+	if left := listFiles(t, k.Dir(f.state)); len(left) != len(keptFiles) {
+		t.Fatalf("after the session's start, t1 left %q", left)
+	}
+	if f.stdout.Len() != 0 || f.stderr.Len() != 0 {
+		t.Errorf("the session's terminal got stdout %q, stderr %q; want nothing", f.stdout.String(), f.stderr.String())
+	}
+	log, err := os.ReadFile(filepath.Join(f.state, "supervisor.log"))
+	if err != nil || !strings.Contains(string(log), " guildhall: daily prune: pruned app/t1: ") {
+		t.Errorf("supervisor.log = %q, %v; want the prune's report", log, err)
+	}
+}
+
+// TestDailyPruneFailure: a failed daily prune writes its error to supervisor.log, not the terminal, records the
+// failure in prune-failed.json and stamps no run, and director status lists a prune needs_me item naming the log; the
+// next successful run removes the failure and the item.
+func TestDailyPruneFailure(t *testing.T) {
+	f := pruneDailyFixture(t)
+	f.task("app", "t1")
+	f.attempt("app", "t1", "build", store.AttemptSucceeded, nil)
+	f.close("app", "t1")
+	d, err := f.app.dailyPrune(f.cfg, f.copy, supervisorLog(f.state))
+	if err != nil || d == nil {
+		t.Fatalf("dailyPrune = %v, %v", d, err)
+	}
+	// The prune cannot read its store.
+	d.p.storePath = filepath.Join(t.TempDir(), "missing", "director.store")
+	d.run()
+	if f.stdout.Len() != 0 || f.stderr.Len() != 0 {
+		t.Errorf("a failed prune wrote stdout %q, stderr %q; want nothing", f.stdout.String(), f.stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(f.state, pruneStamp)); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("a failed prune stamped a run: %v", err)
+	}
+	logPath := filepath.Join(f.state, supervisorLogFile)
+	failure, ok := readPruneFailure(f.state)
+	if !ok || failure.Error == "" || failure.Log != logPath || !failure.FailedAt.Equal(f.now) {
+		t.Fatalf("failure stamp = %+v, %v", failure, ok)
+	}
+	if logged, _ := os.ReadFile(logPath); !strings.Contains(string(logged), " guildhall: daily prune: ") || !strings.Contains(string(logged), failure.Error) {
+		t.Errorf("supervisor.log %q; want the failure", logged)
+	}
+	pruneItems := func() []needsMeItem {
+		t.Helper()
+		status, err := readDirectorStatus(t.Context(), f.store, f.state, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var items []needsMeItem
+		for _, it := range status.NeedsMe {
+			if it.Kind == pruneKind {
+				items = append(items, it)
+			}
+		}
+		return items
+	}
+	items := pruneItems()
+	want := "the daily prune at " + f.now.Format(time.RFC3339) + " failed: "
+	if len(items) != 1 || !strings.HasPrefix(items[0].Reason, want) || !strings.HasSuffix(items[0].Reason, "; its log is "+logPath) ||
+		items[0].Command != "guildhall prune --dry-run" {
+		t.Fatalf("prune needs_me = %+v", items)
+	}
+
+	// The next round, an hour later, retries and succeeds: the failure and its item are gone, and the run stamped.
+	d.p.storePath = f.store
+	f.now = f.now.Add(pruneDailyEvery)
+	d.run()
+	if _, ok := readPruneFailure(f.state); ok {
+		t.Error("a successful prune left the failure stamp")
+	}
+	if items := pruneItems(); len(items) != 0 {
+		t.Errorf("prune needs_me after a good run = %+v", items)
+	}
+	if rec, err := f.record("t1"); err != nil || !rec.Complete {
+		t.Errorf("t1 after the retry = %+v, %v", rec, err)
+	}
+	if d.due(f.now) {
+		t.Error("a successful retry stamped no run")
+	}
+	if f.stderr.Len() != 0 {
+		t.Errorf("stderr %q", f.stderr.String())
 	}
 }
 

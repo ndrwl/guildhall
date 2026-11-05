@@ -161,7 +161,7 @@ func TestNoBackupTable(t *testing.T) {
 		t.Fatal(err)
 	}
 	app, _, _ := newTestApp(nil, nil)
-	if sb, err := app.sessionBackup(cfg, f.dir, f.storePath); err != nil || sb != nil {
+	if sb, err := app.sessionBackup(cfg, f.dir, f.storePath, supervisorLog(filepath.Join(f.dir, "state"))); err != nil || sb != nil {
 		t.Fatalf("sessionBackup with no table = %v, %v; want none", sb, err)
 	}
 	if code, _, stderr := runIn(t, "", "backup", "now", "--copy", f.dir); code != 1 || !strings.Contains(stderr, "has no [backup] table") {
@@ -184,8 +184,9 @@ func TestNoBackupTable(t *testing.T) {
 	}
 }
 
-// TestSessionBackup: the supervisor's round backs up, writing a guildhall: backup: line; a failed push keeps the
-// commit, and director status names the failed backup in needs_me until a run succeeds.
+// TestSessionBackup: the supervisor's round backs up, writing a guildhall: backup: line to supervisor.log and
+// nothing to the terminal; a failed push keeps the commit, and director status names the failed backup in needs_me
+// until a run succeeds.
 func TestSessionBackup(t *testing.T) {
 	f := newBackupFixture(t)
 	f.addTable(t, filepath.Join(t.TempDir(), "offline.git"))
@@ -194,15 +195,20 @@ func TestSessionBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 	app, _, stderr := newTestApp(nil, nil)
-	sb, err := app.sessionBackup(cfg, f.dir, f.storePath)
+	state := filepath.Join(f.dir, "state")
+	sb, err := app.sessionBackup(cfg, f.dir, f.storePath, supervisorLog(state))
 	if err != nil || sb == nil || sb.every != config.DefaultBackupEvery || sb.opts.PushTimeout != backup.SupervisorPushTimeout {
 		t.Fatalf("sessionBackup = %+v, %v", sb, err)
+	}
+	log := func() string {
+		b, _ := os.ReadFile(filepath.Join(state, supervisorLogFile))
+		return string(b)
 	}
 	w := &workspaceCloseWatch{every: sb.every, round: sb.run}
 	w.tick(time.Now())
 	w.wait()
-	if !strings.Contains(stderr.String(), "guildhall: backup: read branch laptop/alpha") {
-		t.Fatalf("stderr = %q; want the failed run", stderr.String())
+	if !strings.Contains(log(), " guildhall: backup: read branch laptop/alpha") || stderr.Len() != 0 {
+		t.Fatalf("supervisor.log = %q, stderr %q; want the failed run in the log only", log(), stderr.String())
 	}
 	needs := backupNeeds(filepath.Join(f.dir, "state"))
 	if len(needs) != 1 || needs[0].Kind != backupKind || !strings.Contains(needs[0].Reason, "failed") || needs[0].Command != "guildhall backup status" {
@@ -221,10 +227,13 @@ func TestSessionBackup(t *testing.T) {
 	}
 
 	sb.opts.Config.Repo = f.remote
-	stderr.Reset()
 	sb.run()
-	if !strings.Contains(stderr.String(), "guildhall: backup: committed and pushed ") {
-		t.Fatalf("stderr = %q", stderr.String())
+	if !strings.Contains(log(), " guildhall: backup: committed and pushed ") || stderr.Len() != 0 {
+		t.Fatalf("supervisor.log = %q, stderr %q", log(), stderr.String())
+	}
+	// The log is not backed up, so an idle copy's next backup, after the log's new line, commits nothing.
+	if res, err := backup.Run(t.Context(), sb.opts); err != nil || res.Commit != "" {
+		t.Fatalf("idle backup after a logged one = %+v, %v; want nothing committed", res, err)
 	}
 	if needs := backupNeeds(filepath.Join(f.dir, "state")); len(needs) != 0 {
 		t.Fatalf("needs_me after a good backup = %+v", needs)

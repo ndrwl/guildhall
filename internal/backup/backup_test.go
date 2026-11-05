@@ -331,6 +331,7 @@ func TestExcluded(t *testing.T) {
 		"director.store": true, "backup.git": true, "state/backup-last.json": true, "state/app/t-1/attempt.lock": true,
 		"state/app/t-1/work": true, "state/app/t-1/ci-logs": true, "state/app/t-1/build-1/model/x.jsonl": false,
 		"state/documents/tasks/work": false, "a/.git": true, "config.toml": false, "state/prune-last.json": false,
+		"state/supervisor.log": true, "state/app/t-1/supervisor.log": false,
 	} {
 		dir := !strings.Contains(filepath.Base(rel), ".") || strings.HasSuffix(rel, ".git")
 		if got := excluded(rel, dir); got != want {

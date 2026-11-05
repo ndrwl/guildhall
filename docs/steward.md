@@ -359,7 +359,7 @@ The `guildhall-steward-triage` skill presents each decision.
 ### Scheduled collection
 
 With `[steward] collect_every` set, the Steward session runs a round at its start and then every `collect_every`, as the supervisor's deterministic code off its decision path, the way a Director runs its daily prune.
-Rounds run one at a time, a round that finds the lock busy is skipped, and failures are reported on the supervisor's standard error.
+Rounds run one at a time, a round that finds the lock busy is skipped, and failures are reported in the copy's [`<state>/supervisor.log`](running.md#pruning), not on the terminal the session draws.
 The third busy round in a row sends the Steward's inbox one `lock-busy` message, with the [`director` sender tag](#inbox), naming the lock's owner and since when it has held the lock, which wakes the session; any round that is not busy starts the count again.
 Its id is a digest of the owner record, so a reload, which also starts the count again, sends no second message for the same owner.
 Its owner is a live process, since the OS releases a crashed one's [lock](#publication-and-writer-containment): possibly a takeover apply, which can hold the lock for 30 minutes, or a hung command; stopping that process is the way to recover, and nothing removes the file.
@@ -415,7 +415,7 @@ With the span `[steward] report_director_after` (one hour by default, at least a
 - `release-behind`: the session runs a release older than the copy's pin, by semantic version order, and the Steward has found it so for the span.
 
 The Steward store keeps each condition per copy with the time it first found it and a mark naming what holds, such as the release and pin, and the report's id is made from both, so one condition is one message, however many runs find it, until a run sees it clear; a condition that clears and returns, or holds with a new mark, is a new message.
-A copy whose status cannot be read keeps its conditions as they were, and the failure goes to the supervisor's standard error, as does a copy whose `guildhall` predates the `health` block; a copy on a `guildhall` that knows Steward messages but not these kinds refuses them, which the outbox records as a final refusal.
+A copy whose status cannot be read keeps its conditions as they were, and the failure goes to `<state>/supervisor.log`, as does a copy whose `guildhall` predates the `health` block; a copy on a `guildhall` that knows Steward messages but not these kinds refuses them, which the outbox records as a final refusal.
 The `director-stuck` check compares the copy's times with the Steward's clock, so it relies on the machines' clocks agreeing; a runtime with no turn hooks records no last turn, so its Director counts as stuck once a message has waited the span unacknowledged.
 
 ## Takeover

@@ -67,8 +67,8 @@ type workspaceCloseSweep struct {
 }
 
 // workspaceCloseSweep is the sweep of session n's supervisor over the copy's store and state with cfg, cfg being
-// read when the supervisor admits it.
-func (a *App) workspaceCloseSweep(cfg *config.Config, storePath, state string) (*workspaceCloseSweep, error) {
+// read when the supervisor admits it, writing what it did to log, the copy's supervisor.log.
+func (a *App) workspaceCloseSweep(cfg *config.Config, storePath, state string, log io.Writer) (*workspaceCloseSweep, error) {
 	session, err := cfg.HerdrSession()
 	if err != nil {
 		return nil, err
@@ -79,7 +79,7 @@ func (a *App) workspaceCloseSweep(cfg *config.Config, storePath, state string) (
 	}
 	sw := &workspaceCloseSweep{storePath: storePath, state: state, session: session, after: after,
 		open: a.ArtisanWorkspaces, gone: func(o store.Ownership) bool { return reconcile.ProbeOwner(o).Gone() },
-		lock: lockWorkspaceOrder, now: a.Now, stderr: a.Stderr, timeout: herdrTimeout}
+		lock: lockWorkspaceOrder, now: a.Now, stderr: log, timeout: herdrTimeout}
 	for _, r := range cfg.Repositories {
 		sw.repositories = append(sw.repositories, r.ID)
 	}

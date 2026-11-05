@@ -238,8 +238,9 @@ func (a *App) deliverPeerOutbox(ctx context.Context, cfg *config.Config, storePa
 }
 
 // sessionPeerDeliveries is a Director session's retry of its pending peer messages, every peerDeliveryEvery off the
-// decision path: deterministic code with no model turn. It is nil for a copy with no [[peer]].
-func (a *App) sessionPeerDeliveries(cfg *config.Config, storePath string) *workspaceCloseWatch {
+// decision path: deterministic code with no model turn, writing what it could not deliver to log, the copy's
+// supervisor.log. It is nil for a copy with no [[peer]].
+func (a *App) sessionPeerDeliveries(cfg *config.Config, storePath string, log io.Writer) *workspaceCloseWatch {
 	if len(cfg.Peers) == 0 {
 		return nil
 	}
@@ -247,7 +248,7 @@ func (a *App) sessionPeerDeliveries(cfg *config.Config, storePath string) *works
 		ctx, cancel := context.WithTimeout(context.Background(), peerDeliveryEvery)
 		defer cancel()
 		for _, p := range a.deliverPeerOutbox(ctx, cfg, storePath) {
-			_, _ = fmt.Fprintf(a.Stderr, "guildhall: peer messages: %s\n", p)
+			_, _ = fmt.Fprintf(log, "guildhall: peer messages: %s\n", p)
 		}
 	}}
 }

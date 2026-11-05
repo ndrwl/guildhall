@@ -72,7 +72,13 @@ func receiveRuns(cs *collectSetup) int {
 // gets an unreachable-recovered report once it is reached again. messages outbox shows what is not delivered.
 func TestScheduledStewardMessages(t *testing.T) {
 	cs := newCollectSetup(t)
-	app, _, stderr := cs.app()
+	app, _, terminal := cs.app()
+	stderr := newTestSupervisorLog(t)
+	defer func() {
+		if terminal.Len() != 0 {
+			t.Errorf("the scheduled run wrote %q to the terminal", terminal)
+		}
+	}()
 	now := time.Date(2026, 11, 4, 10, 0, 0, 0, time.UTC)
 	app.Now = func() time.Time { return now }
 	cfg, err := config.LoadUnadmitted(filepath.Join(cs.steward, "config.toml"))
@@ -82,7 +88,7 @@ func TestScheduledStewardMessages(t *testing.T) {
 	cfg.Steward.CollectEvery = "1h"
 	// The copy's messages arrive by the wall clock, not this run's; the Director health checks have their own test.
 	cfg.Steward.ReportDirectorAfter = "100000h"
-	w, err := app.stewardCollection(cfg, filepath.Join(cs.steward, stewardStoreFile))
+	w, err := app.stewardCollection(cfg, filepath.Join(cs.steward, stewardStoreFile), stderr.writer())
 	if err != nil || w == nil {
 		t.Fatalf("schedule: %v %v", w, err)
 	}

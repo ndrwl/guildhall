@@ -265,7 +265,8 @@ type sessionBackup struct {
 	stderr io.Writer
 }
 
-func (a *App) sessionBackup(cfg *config.Config, copyDir, storePath string) (*sessionBackup, error) {
+// sessionBackup writes what it did to log, the copy's supervisor.log.
+func (a *App) sessionBackup(cfg *config.Config, copyDir, storePath string, log io.Writer) (*sessionBackup, error) {
 	if cfg.Backup == nil {
 		return nil, nil
 	}
@@ -278,10 +279,10 @@ func (a *App) sessionBackup(cfg *config.Config, copyDir, storePath string) (*ses
 		return nil, err
 	}
 	t := backupTarget{dir: copyDir, storePath: storePath, cfg: cfg, lockWait: wait}
-	return &sessionBackup{opts: backupOptions(t, a.Now, backup.SupervisorPushTimeout), every: every, stderr: a.Stderr}, nil
+	return &sessionBackup{opts: backupOptions(t, a.Now, backup.SupervisorPushTimeout), every: every, stderr: log}, nil
 }
 
-// run is one round: a backup, with what it did written to the supervisor's stderr.
+// run is one round: a backup, with what it did written to the supervisor's log, supervisor.log.
 func (sb *sessionBackup) run() {
 	res, err := backup.Run(context.Background(), sb.opts)
 	for _, l := range res.LeftOut {

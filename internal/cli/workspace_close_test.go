@@ -653,7 +653,7 @@ func TestWorkspaceCloseSweepWithoutASessionCallsNoHerdr(t *testing.T) {
 		t.Error("a sweep without herdr_session opened Herdr")
 		return f.host, nil
 	}
-	built, err := a.workspaceCloseSweep(cfg, f.storePath, f.state)
+	built, err := a.workspaceCloseSweep(cfg, f.storePath, f.state, supervisorLog(f.state))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -759,7 +759,7 @@ func TestWorkspaceCloseSweepAfterARestartClosesWhatBecameDue(t *testing.T) {
 	a.Now = func() time.Time { return f.finished.Add(time.Hour) }
 	a.ArtisanWorkspaces = func(context.Context, string) (WorkspaceCloseHost, error) { return f.host, nil }
 	cfg := directorConfig(t, "herdr_session = \""+sweepSession+"\"\n")
-	sw, err := a.workspaceCloseSweep(cfg, f.storePath, f.state)
+	sw, err := a.workspaceCloseSweep(cfg, f.storePath, f.state, supervisorLog(f.state))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -770,8 +770,35 @@ func TestWorkspaceCloseSweepAfterARestartClosesWhatBecameDue(t *testing.T) {
 	w := &workspaceCloseWatch{every: workspaceCloseEvery, round: sw.run}
 	w.tick(time.Now())
 	w.wait()
-	if !f.marked(k) || !slices.Equal(f.host.closed, []string{"workspace w2"}) {
+	if !f.marked(k) || !slices.Equal(f.host.closed, []string{"workspace w2"}) || stderr.Len() != 0 {
 		t.Errorf("after a restart: marked %v, closed %q, stderr %q", f.marked(k), f.host.closed, stderr)
+	}
+}
+
+// TestWorkspaceCloseSweepLogsToSupervisorLog: the session's sweep writes what went wrong to the copy's
+// supervisor.log, not to the supervisor's terminal (d220).
+func TestWorkspaceCloseSweepLogsToSupervisorLog(t *testing.T) {
+	f := newSweepFixture(t)
+	k := f.attempt("t1", "build", store.AttemptSucceeded, nil)
+	f.writeRecord(k, f.presented(k, "w2", launch.WorkspaceLabel(k)))
+	a, stdout, stderr := newTestApp(nil, nil)
+	a.Now = func() time.Time { return f.finished.Add(time.Hour) }
+	a.ArtisanWorkspaces = func(context.Context, string) (WorkspaceCloseHost, error) {
+		return nil, errors.New("herdr stopped")
+	}
+	cfg := directorConfig(t, "herdr_session = \""+sweepSession+"\"\n")
+	sw, err := a.workspaceCloseSweep(cfg, f.storePath, f.state, supervisorLog(f.state))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sw.gone, sw.lock = func(store.Ownership) bool { return true }, func(string) (func(), error) { return func() {}, nil }
+	sw.run()
+	if stdout.Len() != 0 || stderr.Len() != 0 {
+		t.Errorf("the sweep wrote stdout %q, stderr %q; want nothing", stdout, stderr)
+	}
+	log, err := os.ReadFile(filepath.Join(f.state, supervisorLogFile))
+	if err != nil || !strings.Contains(string(log), " guildhall: workspace close sweep: herdr session ") || !strings.Contains(string(log), "herdr stopped") {
+		t.Errorf("supervisor.log = %q, %v", log, err)
 	}
 }
 

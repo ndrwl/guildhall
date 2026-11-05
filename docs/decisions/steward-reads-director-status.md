@@ -30,6 +30,6 @@ Each condition is recorded in the Steward store with the time it was first found
 ## Consequences
 
 The allow-list's shape is unchanged: fixed arguments, the copy directory as the one variable, no shell, no standard input.
-A copy whose guildhall predates the health block is reported on the supervisor's standard error and sent nothing, and a copy on slice 1's guildhall refuses the three new kinds as invalid, a refusal the outbox records and never retries.
+A copy whose guildhall predates the health block is reported in the supervisor's log, `<state>/supervisor.log`, and sent nothing, and a copy on slice 1's guildhall refuses the three new kinds as invalid, a refusal the outbox records and never retries.
 `director-stuck` compares the copy's times with the Steward's clock, so it relies on the machines' clocks agreeing to within the span.
 A runtime with no turn hooks records no last turn, so its Director counts as stuck once a message has waited the span unacknowledged.
