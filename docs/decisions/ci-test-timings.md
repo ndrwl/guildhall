@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-11-04
 topic: ci
-tasks: d194
+tasks: d194, d217
 ---
 
 # CI pipes its two `go test` steps through a timing summariser that keeps the plain log
@@ -17,7 +17,8 @@ The `test` job's Test step runs `go test -count=1 -timeout 20m` on `./...` on Li
 - **Both steps add `-json` to their `go test` command, with the same packages, env and flags, and pipe it into [`.github/tests/timings`](../../.github/tests/timings/main.go)**, a standard-library Go program, since Go is on every leg and Python only on ubuntu.
   It saves every input line unchanged to `-json-out`, and at EOF appends a section headed `-title` to `$GITHUB_STEP_SUMMARY`: the run's package, cached-package and top-level test counts, then tables of the 20 slowest packages (the package result's `Elapsed`, build excluded) and the 20 slowest top-level tests with their package.
   Subtests are not ranked; they stay in the JSON.
-  Packages whose result line says `(cached)`, and their replayed tests, are counted but not ranked; with the [`-count=1`](ci-go-cache.md) both steps carry, a CI run normally has none.
+  Packages whose result line says `(cached)`, and their replayed tests, are counted but not ranked.
+  Neither step carries `-count=1` any more ([cached test results](ci-cached-test-results.md)): a main push or `workflow_dispatch` run expires the test cache first, so it normally has no cached package, while a pull request replays main's passes for the packages it does not change.
 - **The log reads like plain `go test`.**
   It prints each package's result line, compile errors as they arrive and non-JSON lines unchanged, and holds each test's output, without the `=== RUN`/`PAUSE`/`CONT`/`NAME` framing, until that name ends.
   A failing test or subtest prints its output once, when it fails, so a leaf comes before its parent.
@@ -42,3 +43,9 @@ The `test` job's Test step runs `go test -count=1 -timeout 20m` on `./...` on Li
 The `test (ubuntu-latest)` run shows two summary sections, Test and Test Director suites managed, and the Windows and macOS runs show the Test section only; every leg keeps 30 days of raw timings, for re-sizing the CI-speed follow-ups.
 The summariser's tests and recorded streams in `.github/tests/timings/testdata/` must be kept in step with `go test -json` output when the Go version changes.
 Running the summariser costs one small build per leg.
+The artifacts are now a contract Guildhall reads (d217): the [hallmark baseline](../interpreter.md#report-only-workflows) renders the latest completed main push run's `test-timings-*` artifacts, `test.json` and `managed.json`, through [`forge.GitHub.TestResults`](../contracts/forge.md), and walks back to an earlier main commit within the 30-day retention when the newest has none.
+A change to the artifact names, the file names, the `go test -json` format the summariser saves or the retention must update that reader and its tests in the same change.
+
+## History
+
+- 2026-11-05, d217: the artifacts became a contract the hallmark baseline reads (Consequences), and the Decision's claim that both steps carry `-count=1` was corrected: [cached test results](ci-cached-test-results.md) had dropped it from the Test and managed steps.

@@ -35,5 +35,5 @@ It checks exact evidence, immutable returned slices, repeated reads, malformed r
 `TestFakeTestResults` in `internal/forge/testresults_test.go` pins its "not configured" answer, `SetTestResultsError` and `TestResultsCalls`; it and the test results contract cases were written with the implementation, not red first.
 `TestFakeMergeabilityContract` and `TestGitHubMergeabilityEvidence` run the same `RunMergeabilityContract` suite against both sources.
 
-Run by `internal/forge/forge_test.go` against `Fake` and `forge.GitHub`; `Fake` is the double in `internal/interp/deliver_test.go` and `internal/cli/advance_test.go`.
+Run by `internal/forge/forge_test.go` against `Fake` and `forge.GitHub`; `Fake` is the double in `internal/interp/deliver_test.go` and `internal/cli/advance_test.go`, and its test results reader the one in `internal/interp/baseline_test.go` and `baselineresults_test.go`, where a baseline that never set a run shows its "not configured" line.
 Both were red first against stubs, as recorded in [`internal/forge`](forge.md#tests).

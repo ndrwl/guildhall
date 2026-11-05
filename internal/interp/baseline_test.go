@@ -31,6 +31,18 @@ type checksForge struct {
 	calls  int
 	fail   map[string]error
 	during func()
+	// results, when set, answers TestResults in place of the Fake's runs.
+	results func(ctx context.Context, c forge.Commit) (forge.TestResults, error)
+}
+
+func (f *checksForge) TestResults(ctx context.Context, c forge.Commit) (forge.TestResults, error) {
+	f.mu.Lock()
+	results := f.results
+	f.mu.Unlock()
+	if results != nil {
+		return results(ctx, c)
+	}
+	return f.Fake.TestResults(ctx, c)
 }
 
 func (f *checksForge) Checks(ctx context.Context, c forge.Commit) ([]forge.Check, error) {
@@ -317,6 +329,7 @@ func TestHallmarkBaseline(t *testing.T) {
 				"| status | failed |  |  |",
 				"| test (ubuntu) | passed | https://example.invalid/runs/1 |  |",
 				"### t4 `"+older+"`\n\nNo checks reported.",
+				"\n## Test results\n\ntest results unavailable: not configured\n",
 				"## Failed jobs\n\n```json\n",
 			)
 			// Look for t1's row, pull request and job by their markers: a bare "t1" or "1111" can also occur in
@@ -682,7 +695,7 @@ func TestHallmarkBaselineNoForge(t *testing.T) {
 			want(t, h.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 1})
 			_, text := h.baseline(t)
 			containsInOrder(t, text, "- Previous hallmark: none\n", "## Merged tasks (22, newest first)", "| m22 |", "| m03 |", "| m02 |", "| m01 |", "The 2 oldest merges list only failed or pending checks (limit 20).")
-			for _, absent := range []string{"not listed", "## Checks", "## Failed jobs"} {
+			for _, absent := range []string{"not listed", "## Checks", "## Test results", "## Failed jobs"} {
 				if strings.Contains(text, absent) {
 					t.Errorf("baseline has %q", absent)
 				}
@@ -700,7 +713,8 @@ func TestHallmarkBaselineNoWorkspaces(t *testing.T) {
 			h.eng.Workspaces = nil
 			want(t, h.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 1})
 			_, text := h.baseline(t)
-			containsInOrder(t, text, "- Current: unknown\n", "merged tasks unavailable: no workspaces\n", "## Checks\n\nNo merged task to check.\n", "\"jobs\":[]")
+			containsInOrder(t, text, "- Current: unknown\n", "merged tasks unavailable: no workspaces\n", "## Checks\n\nNo merged task to check.\n",
+				"## Test results\n\ntest results unavailable: the current head is unknown\n", "\"jobs\":[]")
 		})
 	}
 }
@@ -716,7 +730,7 @@ func TestHallmarkBaselineRelaunch(t *testing.T) {
 			h.merged(t, "t5", 105)
 			want(t, h.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 1})
 			d, _ := h.baseline(t)
-			calls := h.forge.checksCalls()
+			calls, reads := h.forge.checksCalls(), h.forge.TestResultsCalls()
 			want(t, h.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "hallmark", Attempt: 1}), interp.Next{Wait: interp.WaitDirector, Step: "hallmark", Attempt: 1})
 			h.merged(t, "t8", 108)
 			want(t, h.advance(t, interp.Event{Kind: interp.AttemptRetried, Step: "hallmark", Attempt: 1}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 2})
@@ -725,6 +739,9 @@ func TestHallmarkBaselineRelaunch(t *testing.T) {
 			}
 			if got := h.forge.checksCalls(); got != calls {
 				t.Fatalf("Checks calls = %d after the relaunch, want %d", got, calls)
+			}
+			if got := h.forge.TestResultsCalls(); got != reads || reads == 0 {
+				t.Fatalf("TestResults calls = %d after the relaunch, want the first attempt's %d", got, reads)
 			}
 			if _, text := h.baseline(t); strings.Contains(text, "t8") {
 				t.Fatal("the baseline moved with a later merge")

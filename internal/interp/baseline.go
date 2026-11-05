@@ -260,6 +260,9 @@ func (r *run) renderBaseline(s workflow.Step, n int) ([]byte, error) {
 			return nil, err
 		}
 	}
+	if err := r.testResultsSection(&b, repo, current); err != nil {
+		return nil, err
+	}
 	block, err := json.Marshal(jobs)
 	if err != nil {
 		return nil, err

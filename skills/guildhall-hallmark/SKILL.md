@@ -54,6 +54,7 @@ Report findings in terms of locality and leverage, never "cleaner".
 6. Tests: run the suite fresh twice and with the race detector where it is supported, and list the slowest tests, the named skips, the sleeps and the platform-only files.
    Run each permitted command on its own line, with no `; echo $?`, no redirection outside the working directory and no chaining of an ungranted command; the command's result reports its exit code.
    A command the permission policy refuses is missing evidence: record it with the refusal and do not retry it.
+   When you cannot run the suite, take its pass/fail state, slowest tests and skips from the baseline's `## Test results` section, naming the run and commit it names; fresh runs, two runs and `-race` stay missing evidence unless you ran them.
    Classify each failed check in the baseline from its full log, as a code defect, a test portability problem, an infrastructure failure or a demonstrated flake.
    Read the log with the `guildhall ci log` command the baseline names, with `--out` into your working directory for a long log; a log that is unavailable or expired is missing evidence.
    Find two suites for one contract and test packages that repeat the same cases, and never propose deleting a case until the retained boundary proves it.

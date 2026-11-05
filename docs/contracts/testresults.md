@@ -2,7 +2,7 @@
 
 ## Contract
 
-The reader of a `go test -json` (test2json) stream, as CI's [test timings](../decisions/ci-test-timings.md) upload it in each `test-timings-*` artifact; [`forge.GitHub.TestResults`](forge.md) summarises each stream it downloads through it.
+The reader of a `go test -json` (test2json) stream, as CI's [test timings](../decisions/ci-test-timings.md) upload it in each `test-timings-*` artifact; [`forge.GitHub.TestResults`](forge.md) summarises each stream it downloads through it, and the [hallmark baseline](../interpreter.md#report-only-workflows) renders the summaries, `Slowest(20)` per leg.
 It uses only the standard library, since `.github/tests/timings` is a `main` package that cannot be imported.
 
 `Parse(r, limit)` reads the stream one line at a time into a `Summary`, with memory bounded by the stream's packages, top-level tests and skips, not by its output:

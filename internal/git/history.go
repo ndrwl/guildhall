@@ -90,3 +90,26 @@ func (p Program) Behind(ctx context.Context, repo, rev, ref string) (int, []stri
 	}
 	return count, subjects, nil
 }
+
+// FirstParents returns head, a full commit id, and at most n of its first-parent ancestors, newest first: `git
+// rev-list --first-parent --max-count=<n+1> <head>`, read with no network call. A commit the repository lacks and any
+// git failure are errors.
+func (p Program) FirstParents(ctx context.Context, repo, head string, n int) ([]string, error) {
+	if !digest.ValidHead(head) {
+		return nil, fmt.Errorf("%q is not a full commit id", head)
+	}
+	out, err := p.git(ctx, repo, "rev-list", "--first-parent", "--max-count="+strconv.Itoa(max(n, 0)+1), head, "--")
+	if err != nil {
+		return nil, err
+	}
+	commits := strings.Fields(string(out))
+	if len(commits) == 0 || commits[0] != head {
+		return nil, fmt.Errorf("git rev-list of %s did not start at it", head)
+	}
+	for _, c := range commits {
+		if !digest.ValidHead(c) {
+			return nil, fmt.Errorf("git rev-list printed %q, not a commit id", c)
+		}
+	}
+	return commits, nil
+}
