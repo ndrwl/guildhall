@@ -35,6 +35,9 @@ const (
 	RepoDir = "backup.git"
 	// StampFile is the run stamp in the copy's state directory; it is never itself backed up.
 	StampFile = "backup-last.json"
+	// SupervisorLogFile is the session supervisor's log in the copy's state directory. It is never backed up: each
+	// backup writes a line to it, so backing it up would give every backup of an idle copy something to commit.
+	SupervisorLogFile = "supervisor.log"
 	// DefaultSizeLimit is the largest copy file a backup holds, and the size store export files are split at: 32 MiB.
 	DefaultSizeLimit = store.DefaultExportPartSize
 	// SupervisorPushTimeout bounds the session supervisor's push; `guildhall backup now` has no bound.
@@ -353,7 +356,7 @@ func checkDocuments(dir string, docs []store.DocumentRef) error {
 }
 
 // CopyFiles lists the slash-separated paths of the copy files a backup holds: every regular file under the copy
-// but its store, its backup repository, the stamp, worktrees and CI log caches under state/<repo>/<task>/, lock
+// but its store, its backup repository, the stamp, the supervisor's log, worktrees and CI log caches under state/<repo>/<task>/, lock
 // files and anything named .git. Files over limit are left out and returned apart.
 func CopyFiles(copyDir string, limit int64) (paths []string, left []LeftOut, err error) {
 	err = filepath.WalkDir(copyDir, func(p string, d fs.DirEntry, err error) error {
@@ -404,7 +407,7 @@ func excluded(rel string, dir bool) bool {
 		return true
 	}
 	switch rel {
-	case "director.store", RepoDir, "state/" + StampFile:
+	case "director.store", RepoDir, "state/" + StampFile, "state/" + SupervisorLogFile:
 		return true
 	}
 	if !dir && strings.HasSuffix(rel, ".lock") {

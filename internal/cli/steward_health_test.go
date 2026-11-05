@@ -121,10 +121,17 @@ func healthFeed(t *testing.T, h steward.DirectorHealth) []byte {
 
 // TestScheduledDirectorHealth: the scheduled run reads each enrolled copy's director status and sends one
 // director-stuck, director-unhealthy or release-behind report per condition until it clears; release-behind waits
-// for report_director_after; a copy whose guildhall reports no health is reported on standard error and sent nothing.
+// for report_director_after; a copy whose guildhall reports no health is reported in supervisor.log, not on the
+// terminal, and sent nothing.
 func TestScheduledDirectorHealth(t *testing.T) {
 	cs := newCollectSetup(t)
-	app, _, stderr := cs.app()
+	app, _, terminal := cs.app()
+	stderr := newTestSupervisorLog(t)
+	defer func() {
+		if terminal.Len() != 0 {
+			t.Errorf("the scheduled collect wrote %q to the terminal", terminal)
+		}
+	}()
 	now := time.Date(2026, 11, 4, 10, 0, 0, 0, time.UTC)
 	app.Now = func() time.Time { return now }
 	cfg, err := config.LoadUnadmitted(filepath.Join(cs.steward, "config.toml"))
@@ -132,7 +139,7 @@ func TestScheduledDirectorHealth(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg.Steward.CollectEvery = "1h"
-	w, err := app.stewardCollection(cfg, filepath.Join(cs.steward, stewardStoreFile))
+	w, err := app.stewardCollection(cfg, filepath.Join(cs.steward, stewardStoreFile), stderr.writer())
 	if err != nil || w == nil {
 		t.Fatalf("schedule: %v %v", w, err)
 	}
@@ -193,7 +200,7 @@ func TestScheduledDirectorHealth(t *testing.T) {
 		}
 	}
 
-	// A copy whose guildhall predates the health checks is reported on standard error, and sent nothing.
+	// A copy whose guildhall predates the health checks is reported in the supervisor's log, and sent nothing.
 	cs.status = func([]string) ([]byte, bool, error) { return []byte(`{"session":{"state":"running"}}`), true, nil }
 	stderr.Reset()
 	before := len(directorExternal(t, cs.director))

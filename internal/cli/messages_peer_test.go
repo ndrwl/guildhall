@@ -135,21 +135,31 @@ func TestPeerMessages(t *testing.T) {
 		t.Fatalf("outbox: exit %d, %s", code, out)
 	}
 
-	// It wakes: the session supervisor's retry delivers it, once.
-	accounts.down["guild-web"] = false
+	// The session supervisor's retry while it still sleeps writes the problem to supervisor.log, not the terminal.
 	cfg, err := config.LoadUnadmitted(filepath.Join(alpha, "config.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	app, _, _ := newTestApp(nil, nil)
+	app, _, terminal := newTestApp(nil, nil)
 	app.PeerRunner = accounts
 	alphaStore := filepath.Join(alpha, directorStoreFile)
-	deliveries := app.sessionPeerDeliveries(cfg, alphaStore)
+	log := newTestSupervisorLog(t)
+	deliveries := app.sessionPeerDeliveries(cfg, alphaStore, log.writer())
 	if deliveries == nil {
 		t.Fatal("a copy with peers has no retry")
 	}
 	deliveries.round()
-	if problems := app.deliverPeerOutbox(context.Background(), cfg, alphaStore); len(problems) != 0 || len(accounts.ran) != 2 {
+	if got := log.String(); !strings.Contains(got, " guildhall: peer messages: web: q-1: ") || terminal.Len() != 0 {
+		t.Errorf("retry while down: supervisor.log %q, terminal %q", got, terminal)
+	}
+
+	// It wakes: the session supervisor's retry delivers it, once.
+	accounts.down["guild-web"] = false
+	deliveries.round()
+	if terminal.Len() != 0 {
+		t.Errorf("the session's retry wrote %q to the terminal", terminal)
+	}
+	if problems := app.deliverPeerOutbox(context.Background(), cfg, alphaStore); len(problems) != 0 || len(accounts.ran) != 3 {
 		t.Fatalf("second retry: %q, ran %q", problems, accounts.ran)
 	}
 	code, out, _ := runMessages(t, "", "outbox", "--copy", alpha, "--all")
@@ -172,7 +182,7 @@ func TestPeerMessages(t *testing.T) {
 	}
 
 	// Sending it again prints its entry and runs nothing; another envelope under its id is refused.
-	if code, e, _ := sendPeer(t, accounts, alpha, "web", question); code != 0 || e.State != store.OutboxDelivered || len(accounts.ran) != 2 {
+	if code, e, _ := sendPeer(t, accounts, alpha, "web", question); code != 0 || e.State != store.OutboxDelivered || len(accounts.ran) != 3 {
 		t.Fatalf("resend: exit %d, %+v, ran %d", code, e, len(accounts.ran))
 	}
 	if code, _, stderr := sendPeer(t, accounts, alpha, "web", peerEnvelope("q-1", "alpha", "web", store.MessageQuestion, "", "Other.")); code != 1 || !strings.Contains(stderr, "choose a new id") {
@@ -265,7 +275,7 @@ func TestPeerMessages(t *testing.T) {
 	}
 
 	// No peers, no retry.
-	if plain, err := config.LoadUnadmitted(filepath.Join(newCopy(t), "config.toml")); err != nil || app.sessionPeerDeliveries(plain, alphaStore) != nil {
+	if plain, err := config.LoadUnadmitted(filepath.Join(newCopy(t), "config.toml")); err != nil || app.sessionPeerDeliveries(plain, alphaStore, log.writer()) != nil {
 		t.Errorf("a copy with no peers has a retry: %v", err)
 	}
 }

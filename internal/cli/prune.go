@@ -804,17 +804,29 @@ const (
 // a new session prunes at its start only when the last run was more than a day ago. It is never read as task state.
 const pruneStamp = "prune-last.json"
 
+// pruneFailedStamp is the presentation-only file in the state directory that records the daily prune's last failure,
+// removed by its next successful run; director status reads it as a prune needs_me item (pruneNeeds).
+const pruneFailedStamp = "prune-failed.json"
+
+// pruneFailure is what pruneFailedStamp holds: when the daily prune failed, its error, and the log it wrote to.
+type pruneFailure struct {
+	FailedAt time.Time `json:"failed_at"`
+	Error    string    `json:"error"`
+	Log      string    `json:"log"`
+}
+
 // dailyPrune is the session supervisor's prune of its copy, run off the decision path once a day when prune_daily
-// is on (docs/running.md#pruning). It writes what it did to stderr, the supervisor's log, and tells the Director
-// once per task whose worktree it left.
+// is on (docs/running.md#pruning). It writes what it did to log, the copy's supervisor.log, never to the terminal
+// the session's runtime draws; it records a failure in prune-failed.json, and tells the Director once per task whose
+// worktree it left.
 type dailyPrune struct {
-	p      *pruner
-	stderr io.Writer
+	p   *pruner
+	log io.Writer
 }
 
 // dailyPrune is the daily prune of session's supervisor over copyDir with cfg, cfg being read when the supervisor
-// admits it, or nil when prune_daily is off.
-func (a *App) dailyPrune(cfg *config.Config, copyDir string) (*dailyPrune, error) {
+// admits it, writing what it did to log; nil when prune_daily is off.
+func (a *App) dailyPrune(cfg *config.Config, copyDir string, log io.Writer) (*dailyPrune, error) {
 	on, err := cfg.PruneDaily()
 	if err != nil || !on {
 		return nil, err
@@ -823,7 +835,7 @@ func (a *App) dailyPrune(cfg *config.Config, copyDir string) (*dailyPrune, error
 	if err != nil {
 		return nil, err
 	}
-	return &dailyPrune{p: p, stderr: a.Stderr}, nil
+	return &dailyPrune{p: p, log: log}, nil
 }
 
 // due reports whether a day has passed since the stamp's last run, or no run is stamped.
@@ -838,7 +850,9 @@ func (d *dailyPrune) due(now time.Time) bool {
 	return json.Unmarshal(data, &stamp) != nil || now.Sub(stamp.RanAt) >= pruneDailyGap
 }
 
-// run is one round: a prune when one is due, its report written to stderr and its time stamped.
+// run is one round: a prune when one is due, its report written to the log and its time stamped. A failed round,
+// in the prune or its stamp, is recorded in prune-failed.json and stamps no run, so the next hour's round retries
+// it; a successful one removes the failure.
 func (d *dailyPrune) run() {
 	now := d.p.clock()
 	if !d.due(now) {
@@ -852,6 +866,7 @@ func (d *dailyPrune) run() {
 	}
 	if err != nil {
 		d.warn("%v", err)
+		d.failed(now, err)
 		return
 	}
 	stamp, err := json.Marshal(struct {
@@ -865,7 +880,36 @@ func (d *dailyPrune) run() {
 	}
 	if err != nil {
 		d.warn("stamp: %v", err)
+		d.failed(now, fmt.Errorf("stamp: %w", err))
+		return
 	}
+	if err := os.Remove(filepath.Join(d.p.state, pruneFailedStamp)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		d.warn("failure stamp: %v", err)
+	}
+}
+
+// failed records the round at now as failed with err, naming the supervisor's log.
+func (d *dailyPrune) failed(now time.Time, err error) {
+	data, merr := json.Marshal(pruneFailure{FailedAt: now.UTC(), Error: err.Error(), Log: filepath.Join(d.p.state, supervisorLogFile)})
+	if merr == nil {
+		merr = os.MkdirAll(d.p.state, 0o755)
+	}
+	if merr == nil {
+		merr = atomicfile.Write(filepath.Join(d.p.state, pruneFailedStamp), append(data, '\n'))
+	}
+	if merr != nil {
+		d.warn("failure stamp: %v", merr)
+	}
+}
+
+// readPruneFailure reads the daily prune's failure stamp in stateDir; ok is false when there is none or it cannot
+// be read.
+func readPruneFailure(stateDir string) (f pruneFailure, ok bool) {
+	data, err := os.ReadFile(filepath.Join(stateDir, pruneFailedStamp))
+	if err != nil || json.Unmarshal(data, &f) != nil || f.FailedAt.IsZero() {
+		return pruneFailure{}, false
+	}
+	return f, true
 }
 
 // pruneKeptMessage is the Director message reporting that the daily prune left r's worktree. Its id depends only on
@@ -896,7 +940,7 @@ func (d *dailyPrune) report(r pruneResult) error {
 }
 
 func (d *dailyPrune) warn(format string, args ...any) {
-	if d.stderr != nil {
-		_, _ = fmt.Fprintf(d.stderr, "guildhall: daily prune: "+format+"\n", args...)
+	if d.log != nil {
+		_, _ = fmt.Fprintf(d.log, "guildhall: daily prune: "+format+"\n", args...)
 	}
 }

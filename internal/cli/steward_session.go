@@ -296,7 +296,7 @@ func (a *App) stewardSessionStart(p startPlan, copyDir, storePath, state string)
 				d.Repository, d.TaskID, d.ID, strings.Join(d.Options, ", ")))
 		}
 	}
-	if out.collects, err = a.stewardCollection(p.cfg, storePath); err != nil {
+	if out.collects, err = a.stewardCollection(p.cfg, storePath, supervisorLog(state)); err != nil {
 		return sessionStart{}, err
 	}
 	out.collects.tick(time.Now())

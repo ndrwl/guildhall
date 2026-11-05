@@ -296,8 +296,9 @@ type scheduledCollect struct {
 // lockBusyRounds is how many busy rounds in a row send the Steward's inbox a lock-busy message.
 const lockBusyRounds = 3
 
-// stewardCollection is the session's scheduled collection, nil when collect_every is unset, the default.
-func (a *App) stewardCollection(cfg *config.Config, storePath string) (*workspaceCloseWatch, error) {
+// stewardCollection is the session's scheduled collection, writing what it did to log, the copy's supervisor.log;
+// nil when collect_every is unset, the default.
+func (a *App) stewardCollection(cfg *config.Config, storePath string, log io.Writer) (*workspaceCloseWatch, error) {
 	if cfg.Steward == nil {
 		return nil, nil
 	}
@@ -305,7 +306,7 @@ func (a *App) stewardCollection(cfg *config.Config, storePath string) (*workspac
 	if err != nil || !on {
 		return nil, err
 	}
-	sc := &scheduledCollect{a: a, cfg: cfg, storePath: storePath, stderr: a.Stderr}
+	sc := &scheduledCollect{a: a, cfg: cfg, storePath: storePath, stderr: log}
 	return &workspaceCloseWatch{every: every, round: sc.run}, nil
 }
 

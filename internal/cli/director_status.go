@@ -1157,7 +1157,7 @@ func readDirectorStatusRecords(ctx context.Context, p storeRecords, stateDir, cf
 	}
 	var due []needsMeItem
 	out.Maintenance, due = maintenanceStatus(v, hallmarks)
-	if out.NeedsMe = slices.Concat(out.NeedsMe, wait, held, checks, deps, queued, due, backupNeeds(stateDir)); out.NeedsMe == nil {
+	if out.NeedsMe = slices.Concat(out.NeedsMe, wait, held, checks, deps, queued, due, backupNeeds(stateDir), pruneNeeds(stateDir)); out.NeedsMe == nil {
 		out.NeedsMe = []needsMeItem{}
 	}
 	return out, nil
@@ -1190,6 +1190,25 @@ func backupNeeds(stateDir string) []needsMeItem {
 		return nil
 	}
 	return []needsMeItem{{Kind: backupKind, Reason: strings.Join(reasons, "; "), Command: "guildhall backup status"}}
+}
+
+// pruneKind is the needs_me kind of the daily prune's last run, when it failed (docs/running.md#pruning).
+const pruneKind = "prune"
+
+// pruneNeeds is the needs_me item of the daily prune's last failure, read from its stamp in stateDir, naming its error
+// and the supervisor's log; none when the last run succeeded or there was none. Like a backup, a prune belongs to no
+// task, so the copy's status carries it, not a store message or a wake.
+func pruneNeeds(stateDir string) []needsMeItem {
+	f, ok := readPruneFailure(stateDir)
+	if !ok {
+		return nil
+	}
+	log := f.Log
+	if log == "" {
+		log = filepath.Join(stateDir, supervisorLogFile)
+	}
+	return []needsMeItem{{Kind: pruneKind, Reason: fmt.Sprintf("the daily prune at %s failed: %s; its log is %s",
+		f.FailedAt.Format(time.RFC3339), oneLine(f.Error), log), Command: "guildhall prune --dry-run"}}
 }
 
 // repoHallmarks is a repository's last hallmark and its running one, each nil when there is none; followUpsAnswered

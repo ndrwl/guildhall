@@ -247,7 +247,14 @@ A catch-up prune of a completely pruned task's CI log cache is recorded as the n
 The output lists each task pruned (or with `--dry-run`, that would be) with the space freed, each task skipped with its reason, and a total; a dry run counts a work directory with a `.git` file as a worktree Retire removes, so only the real run can find a worktree it keeps.
 It exits 0 when the prune ran, a partial prune included, 1 when the config or store cannot be read or a removal step failed, and 2 on a usage error.
 
-With [`prune_daily`](configuration.md#settings) `"true"`, the session supervisor runs the same prune, off its decision path, at session start when the copy's last prune, stamped in `<state>/prune-last.json`, was a day ago or more, and then once a day; its output goes to the supervisor's standard error.
+With [`prune_daily`](configuration.md#settings) `"true"`, the session supervisor runs the same prune, off its decision path, at session start when the copy's last prune, stamped in `<state>/prune-last.json`, was a day ago or more, and then once a day.
+Its output goes to `<state>/supervisor.log`, never to the terminal: during a session that terminal is the one the Director's runtime draws, such as Claude Code's interface in its Herdr pane.
+`<state>` is the copy's state directory, the one that holds `prune-last.json`, so the log lasts across reloads.
+Each line is a UTC time stamp followed by `guildhall: daily prune: …`; `tail <state>/supervisor.log` shows the last run.
+The session's other background jobs, the [workspace close sweep](director.md#artisan-herdr-workspace-cleanup), the [backup](#backups), [peer message](messaging.md#the-outbox) retries and the Steward's [scheduled collection](steward.md#scheduled-collection), write their `guildhall: <job>: …` lines to the same log.
+The log is not rotated, and a backup leaves it out.
+A failed daily prune writes `<state>/prune-failed.json`, stamps no run, so the next hour's round retries it, and shows in `guildhall director status` as a `prune` `needs_me` item naming the time, the error and the log, with `guildhall prune --dry-run` as its command; the next successful run removes it.
+`guildhall prune` run by hand prints its report to standard output, as above.
 For a task whose worktree it leaves it sends the Director one unread `prune-workspace-kept` message per task, not one a day, which does not wake it.
 Claude Code's own transcripts, `director/session-<n>/` directories and caches outside the task directory are not pruned.
 Installed releases are not either: `guildhall release prune` removes those, after each pin change and by hand, as [pruning releases](releases.md#pruning) describes.
@@ -280,7 +287,7 @@ The backup tree mirrors the copy: it holds **every regular file in the copy, min
 |---|---|
 | Worktrees, `state/<repo>/<task>/work/` | Their work is on forge branches |
 | CI log caches, `state/<repo>/<task>/ci-logs/` | A cache of forge data that [`ci log`](ci-logs.md) fetches again |
-| `director.store` itself, `backup.git/`, the `state/backup-last.json` stamp, `*.lock` files, anything named `.git`, symbolic links, sockets and other non-regular files | Exported instead, the backup itself, or not data |
+| `director.store` itself, `backup.git/`, the `state/backup-last.json` stamp, the supervisor's `state/supervisor.log`, `*.lock` files, anything named `.git`, symbolic links, sockets and other non-regular files | Exported instead, the backup itself, or not data |
 | Claude Code's session logs in its config directory (`~/.claude/projects`) | Outside the copy, large and growing daily, and may hold secrets from tool output; a restore does not need them |
 | The machine's age key and secrets file, and on the Steward machine the recovery key, in `~/.config/guildhall` | Outside every copy, so never in the backup; a start refuses either inside its copy ([secrets](secrets.md#where-they-live)) |
 | The Steward's `steward.store`, `rollouts/` and config checkout | Not a Director's; a Steward backup is a follow-up |
@@ -294,7 +301,7 @@ A run, by the supervisor or `backup now`, takes the copy's backup lock (`backup.
 
 1. Exports the store in one read-only transaction, waiting at most the copy's [`lock_wait`](configuration.md#settings) for a writer, so the export is one consistent snapshot and holds no writer off for longer.
 2. Checks every recorded document's file under `state/documents/` against its sha256. A missing or mismatched document fails the run with no commit, so a damaged document never replaces a good backup.
-3. Stages the copy's files, by the exclusion list, into a bare repository at `<copy>/backup.git`, outside `state/` and `director/`, through a private index (`backup.git/guildhall-index`) with `git update-index`, whose stat cache means an unchanged file is not read again; nothing is checked out. **The size guard** leaves out a copy file over 32 MiB, backs up everything else, and names the file in `backup status`, the supervisor's standard error and `director status`. Store export files over 32 MiB are [split into parts](store.md#store-export-and-import) instead, so no file nears GitHub's 50 MB warning or 100 MB limit.
+3. Stages the copy's files, by the exclusion list, into a bare repository at `<copy>/backup.git`, outside `state/` and `director/`, through a private index (`backup.git/guildhall-index`) with `git update-index`, whose stat cache means an unchanged file is not read again; nothing is checked out. **The size guard** leaves out a copy file over 32 MiB, backs up everything else, and names the file in `backup status`, `<state>/supervisor.log` and `director status`. Store export files over 32 MiB are [split into parts](store.md#store-export-and-import) instead, so no file nears GitHub's 50 MB warning or 100 MB limit.
 4. Adds the `.gitattributes`.
 5. Commits only when the tree differs from the last commit's, with a message naming the branch, the store's receipt sequence and the time, as `Guildhall backup <backup@guildhall.invalid>`; `git gc --auto` runs after a commit. A copy whose `backup.git` has no commit yet, such as a new machine's, first reads the branch from the backup repository and continues its history when it is there.
 6. Pushes `<commit>:refs/heads/<branch>`, with no `+`: a branch that does not fast-forward is refused by git and reported, never forced. A failed push keeps the commit, and the next run pushes it with every commit after it.
@@ -303,7 +310,7 @@ Each run is recorded in `<state>/backup-last.json`, written atomically and never
 
 ### The supervisor's backups
 
-With a `[backup]` table, the [session supervisor](director.md#the-session-supervisor) backs the copy up at session start and then every `[backup] every`, default an hour, off its decision path and with no model spend, writing a `guildhall: backup:` line to its standard error for each commit, file left out and failure.
+With a `[backup]` table, the [session supervisor](director.md#the-session-supervisor) backs the copy up at session start and then every `[backup] every`, default an hour, off its decision path and with no model spend, writing a `guildhall: backup:` line to [`<state>/supervisor.log`](#pruning), not the terminal, for each commit, file left out and failure.
 Its push is bounded at 10 minutes; a push that times out keeps its commit for the next run.
 The session's end waits for a running backup.
 The table is read again at each reload.

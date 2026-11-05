@@ -132,9 +132,12 @@ func (a *App) directorReadmit(p *startPlan, copyDir string) error {
 // directorSessionStart is the Director's steps at the start of every session.
 func (a *App) directorSessionStart(p startPlan, copyDir, storePath, state string) (sessionStart, error) {
 	var out sessionStart
+	// The session's background jobs write to the copy's supervisor.log, never to the supervisor's terminal, which the
+	// runtime draws once it starts (docs/running.md#pruning).
+	log := supervisorLog(state)
 	// Every session, the first and each reload's, starts with a workspace close sweep, so a Herdr workspace that
 	// became due while no supervisor ran is closed; the session's end waits for a running sweep.
-	sweep, err := a.workspaceCloseSweep(p.cfg, storePath, state)
+	sweep, err := a.workspaceCloseSweep(p.cfg, storePath, state, log)
 	if err != nil {
 		return out, err
 	}
@@ -142,7 +145,7 @@ func (a *App) directorSessionStart(p startPlan, copyDir, storePath, state string
 	out.closes.tick(time.Now())
 	// With prune_daily on, the session prunes at its start when the copy's last prune was a day ago or more, and
 	// then once a day, off the decision path; the session's end waits for a running prune.
-	daily, err := a.dailyPrune(p.cfg, copyDir)
+	daily, err := a.dailyPrune(p.cfg, copyDir, log)
 	if err != nil {
 		out.wait()
 		return sessionStart{}, err
@@ -158,7 +161,7 @@ func (a *App) directorSessionStart(p startPlan, copyDir, storePath, state string
 	}
 	// With a [backup] table, the session backs the copy up at its start and then every [backup] every, off the
 	// decision path; the session's end waits for a running backup, whose push is bounded.
-	bk, err := a.sessionBackup(p.cfg, copyDir, storePath)
+	bk, err := a.sessionBackup(p.cfg, copyDir, storePath, log)
 	if err != nil {
 		return fail(err)
 	}
@@ -168,7 +171,7 @@ func (a *App) directorSessionStart(p startPlan, copyDir, storePath, state string
 	}
 	// With a [[peer]], the session retries its pending peer messages at its start and then every minute, off the
 	// decision path and with no model turn, so a message to a sleeping machine is delivered once it wakes.
-	if out.deliveries = a.sessionPeerDeliveries(p.cfg, storePath); out.deliveries != nil {
+	if out.deliveries = a.sessionPeerDeliveries(p.cfg, storePath, log); out.deliveries != nil {
 		out.deliveries.tick(time.Now())
 	}
 	status, err := readDirectorStatusConfig(context.Background(), storePath, state, p.cfgPath, a.Now)

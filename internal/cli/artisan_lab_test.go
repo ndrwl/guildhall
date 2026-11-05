@@ -178,7 +178,7 @@ func TestWorkflowArtisanHerdrLab(t *testing.T) {
 		t.Fatal(err)
 	}
 	app, _, sweepErr := newTestApp(nil, nil)
-	sweep, err := app.workspaceCloseSweep(cfg, d.store, d.state)
+	sweep, err := app.workspaceCloseSweep(cfg, d.store, d.state, sweepErr)
 	if err != nil {
 		t.Fatal(err)
 	}
