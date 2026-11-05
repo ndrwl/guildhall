@@ -296,7 +296,8 @@ func TestTakeoverApply(t *testing.T) {
 	if files := fx.git(fx.checkout, "show", "--name-only", "--format=", "HEAD"); files != "roster.toml" {
 		t.Errorf("roster commit holds %q, want roster.toml alone", files)
 	}
-	if status := fx.git(fx.checkout, "status", "--porcelain"); status != "M managed.toml" {
+	// .rollout.lock stays as an untracked file after release, which is not the Guildmaster's.
+	if status := fx.git(fx.checkout, "status", "--porcelain", "--untracked-files=no"); status != "M managed.toml" {
 		t.Errorf("the Guildmaster's edit was not kept: status %q", status)
 	}
 	roster, err := steward.ParseRoster([]byte(fx.git(fx.checkout, "show", "HEAD:roster.toml") + "\n"))
@@ -489,9 +490,7 @@ func TestTakeoverBusy(t *testing.T) {
 	fx := newTakeoverFixture(t, "running")
 	planDir := filepath.Join(t.TempDir(), "plan")
 	p := fx.dryRun(t, planDir)
-	if err := os.WriteFile(filepath.Join(fx.checkout, ".rollout.lock"), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	holdLock(t, fx.checkout)
 	if _, err := fx.setup().ApplySetup(context.Background(), planDir, p.Digest); !errors.Is(err, steward.ErrBusy) {
 		t.Errorf("apply under a held lock: %v, want ErrBusy", err)
 	}

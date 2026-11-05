@@ -202,8 +202,8 @@ type pendingIncidents struct {
 // Collect runs one round on the Director copies of the named machines, every enrolled machine when none is named:
 //
 //  1. it reads each copy's pending lessons and incidents with the fixed read-only commands;
-//  2. it takes .rollout.lock in the private config, and stops with a *BusyError (ErrBusy) naming its owner,
-//     changing nothing, when it is held;
+//  2. it takes the kernel lock on .rollout.lock in the private config, and stops with a *BusyError (ErrBusy) naming
+//     its owner, changing nothing, when a live process holds it;
 //  3. it writes each item not yet committed to lessons/<machine>/<origin>-<id>.md or
 //     incidents/<machine>/<origin>-<id>.json and commits only those files, one commit per machine, and writes each
 //     answer into its item's file in one more commit;

@@ -132,7 +132,7 @@ Outside any session, `--approve` stands on the Guildmaster's word as before, and
 The Steward copy is self-contained, so moving it, such as from a laptop to a Linux VDS, needs no code change:
 
 1. Stop the session with `guildhall steward stop` and wait for it to stop.
-2. Confirm no rollout is applying: the private checkout holds no `.rollout.lock`, or its writer has stopped.
+2. Confirm no rollout is applying: no Steward command is running.
 3. Copy the Steward copy, its `steward.store`, `rollouts/` and private config checkout, to the new host, and give the new host's Steward user the SSH config behind every roster `ssh_alias`.
 4. Start the session on the new host with `guildhall steward start --copy <dir>`, and never again on the old one: there is one Steward writer per fleet.
 
@@ -273,9 +273,11 @@ The [managed-file checksum framing](configuration.md#config-file) makes combined
 This is integrity detection, not atomic publication: non-atomic scp may transiently refuse reads and does not prove uninterrupted config availability.
 The `.rollout.lock` file in the private config directory excludes concurrent applies, [collections](#collection), takeovers, [secrets](secrets.md#the-steward-pushes-them) sets and applies, and [machine retirements](secrets.md#retiring-a-machine) and their rotated marks using that directory on this Steward.
 It does not protect against another host, another private directory or a manual managed-file writer; designate one Steward writer for each fleet and do not edit managed files during rollout.
-The lock holds its owner's record: the PID and OS start token of the process that took it, its command line and when it took it. A refusal names that owner, or an unknown owner since the file's modification time when the lock has no readable record, as an older binary's has.
-If a writer crashes, stop competing invocations and confirm that the owning process has exited before manually removing its stale lock.
-Never remove a lock held by another live writer; there is no automatic stale-lock deletion.
+The lock is a kernel lock on the file (`flock` on Unix, `LockFileEx` on Windows), so the OS releases a crashed writer's lock, and a refusal always means a live process holds it.
+While the lock is held, the file holds its owner's record: the PID and OS start token of the process that took it, its command line and when it took it. A refusal names that owner, or an unknown owner since the file's modification time when the lock has no readable record, as briefly just after a holder takes it or while it releases it.
+The file stays in place with the last owner's record; it is not a lock by itself, so never delete it: a writer waiting on the deleted file and one creating a new file could then both run.
+Every Steward command on a machine must run the same `guildhall` version: an older binary treats the persisted file as held, and a newer one does not see an older one's lock.
+The Guildmaster may add `.rollout.lock` to the private config's `.gitignore`, where it otherwise shows as untracked; the Steward does not edit that file, and its own Git operations ignore untracked files.
 Keep the plan directory private while applying.
 
 ### Approval
@@ -360,7 +362,7 @@ With `[steward] collect_every` set, the Steward session runs a round at its star
 Rounds run one at a time, a round that finds the lock busy is skipped, and failures are reported on the supervisor's standard error.
 The third busy round in a row sends the Steward's inbox one `lock-busy` message, with the [`director` sender tag](#inbox), naming the lock's owner and since when it has held the lock, which wakes the session; any round that is not busy starts the count again.
 Its id is a digest of the owner record, so a reload, which also starts the count again, sends no second message for the same owner.
-It does not say the owner crashed, since a takeover apply can hold the lock for 30 minutes, and nothing removes the lock: recovery stays [manual](#publication-and-writer-containment).
+Its owner is a live process, since the OS releases a crashed one's [lock](#publication-and-writer-containment): possibly a takeover apply, which can hold the lock for 30 minutes, or a hung command; stopping that process is the way to recover, and nothing removes the file.
 A round that opens triage decisions sends the Steward's inbox one `triage-opened` message per kind, with the [`director` sender tag](#inbox), which wakes the session; a round with nothing new sends nothing and wakes nothing.
 Unset, the default, nothing is collected on a schedule, and nothing polls or spends model tokens because an item is queued (R1.7).
 Each scheduled run then sends its [Steward messages](#steward-messages), even when the round found the lock busy.

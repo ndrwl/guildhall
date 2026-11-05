@@ -172,9 +172,7 @@ func TestRolloutRefusals(t *testing.T) {
 					t.Fatal(p.Copies[0].Problem)
 				}
 			case "lock":
-				if err := os.WriteFile(filepath.Join(r.privateDir, ".rollout.lock"), []byte("live writer"), 0o600); err != nil {
-					t.Fatal(err)
-				}
+				holdLock(t, r.privateDir)
 			}
 			s.calls()
 			if _, err := r.Apply(context.Background(), p.StageDir, approve, machines...); err == nil {
@@ -190,9 +188,8 @@ func TestRolloutRefusals(t *testing.T) {
 				t.Fatal("transport before refusal")
 			}
 			if scenario == "lock" {
-				b, err := os.ReadFile(filepath.Join(r.privateDir, ".rollout.lock"))
-				if err != nil || string(b) != "live writer" {
-					t.Fatal("removed live lock")
+				if !lockHeld(t, r) || readLockOwner(lockPath(r)).PID != os.Getpid() {
+					t.Fatal("refused apply released or rewrote the live lock")
 				}
 			}
 		})

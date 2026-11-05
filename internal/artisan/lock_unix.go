@@ -12,7 +12,8 @@ import (
 // SIGINT reaches the whole group.
 const interruptGraceful = true
 
-func lockFile(f *os.File, nonblocking bool) error {
+// lockFile flocks the whole of f; Unix ignores offset.
+func lockFile(f *os.File, _ int64, nonblocking bool) error {
 	flags := unix.LOCK_EX
 	if nonblocking {
 		flags |= unix.LOCK_NB

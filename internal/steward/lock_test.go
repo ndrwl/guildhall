@@ -14,32 +14,51 @@ import (
 	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
-// The rollout writer lock is .rollout.lock in the private config directory, on real files.
-// Apply creates it exclusively before any transport, refuses while it exists without touching it,
-// and removes it when Apply returns. A lock left by a writer that stopped stays until an operator removes it.
+// The rollout writer lock is a kernel lock on .rollout.lock in the private config directory, on real files.
+// Apply takes it before any transport, refuses while a live process holds it without touching it, and releases it
+// when Apply returns. A writer that is killed loses the lock with its process; the file stays and is never removed.
 
 func lockPath(r *Rollout) string { return filepath.Join(r.privateDir, ".rollout.lock") }
 
-func lockExists(t *testing.T, r *Rollout) bool {
+// dirLockHeld reports whether a live holder has the private lock in dir: a fresh privateLock is refused, or it
+// succeeds and is released at once.
+func dirLockHeld(t *testing.T, dir string) bool {
 	t.Helper()
-	_, err := os.Stat(lockPath(r))
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+	release, err := privateLock(dir, lockTime)
+	if errors.Is(err, ErrBusy) {
+		return true
+	}
+	if err != nil {
 		t.Fatal(err)
 	}
-	return err == nil
+	release()
+	return false
 }
 
-// checkLockRefusal checks that Apply was refused by a held lock, before any transport and without removing the lock.
+func lockHeld(t *testing.T, r *Rollout) bool { t.Helper(); return dirLockHeld(t, r.privateDir) }
+
+// holdLock takes the private lock in dir with a live privateLock, released when the test ends.
+func holdLock(t *testing.T, dir string) {
+	t.Helper()
+	release, err := privateLock(dir, lockTime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(release)
+}
+
+// checkLockRefusal checks that Apply was refused by a held lock, before any transport and leaving the lock held.
 func checkLockRefusal(t *testing.T, s *stub, r *Rollout, err error) {
 	t.Helper()
-	if !errors.Is(err, fs.ErrExist) || !strings.Contains(err.Error(), lockPath(r)) || !strings.Contains(err.Error(), "confirm the writer has stopped") {
-		t.Errorf("Apply error = %v, want the held lock %s and the recovery advice", err, lockPath(r))
+	if !errors.Is(err, fs.ErrExist) || !errors.Is(err, ErrBusy) || !strings.HasPrefix(err.Error(), "rollout writer busy: ") ||
+		!strings.Contains(err.Error(), lockPath(r)) {
+		t.Errorf("Apply error = %v, want the rollout writer busy on %s", err, lockPath(r))
 	}
 	if calls := s.calls(); len(calls) != 0 {
 		t.Errorf("refused Apply ran scp %q", calls)
 	}
-	if !lockExists(t, r) {
-		t.Error("refused Apply removed the held lock")
+	if !lockHeld(t, r) {
+		t.Error("refused Apply released the held lock")
 	}
 }
 
@@ -77,7 +96,7 @@ func TestApplyWriterLockExcludesASecondWriter(t *testing.T) {
 	case <-time.After(testenv.Ceiling(30 * time.Second)):
 		t.Fatal("first Apply did not reach transport")
 	}
-	if !lockExists(t, r) {
+	if !lockHeld(t, r) {
 		t.Fatal("running Apply holds no lock")
 	}
 
@@ -93,7 +112,7 @@ func TestApplyWriterLockExcludesASecondWriter(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatalf("first Apply: %v", err)
 	}
-	if lockExists(t, r) {
+	if lockHeld(t, r) {
 		t.Error("lock left after the first Apply returned")
 	}
 }
@@ -127,7 +146,7 @@ func TestApplyReleasesWriterLock(t *testing.T) {
 			if _, err := r.Apply(context.Background(), p.StageDir, approve, p.Machines...); !errors.Is(err, c.want) {
 				t.Fatalf("Apply error = %v, want %v", err, c.want)
 			}
-			if lockExists(t, r) {
+			if lockHeld(t, r) {
 				t.Error("lock left after Apply returned")
 			}
 		})
@@ -143,7 +162,7 @@ func TestApplyRefusedBeforeLockingLeavesNoLock(t *testing.T) {
 	if _, err := r.Apply(context.Background(), filepath.Join(t.TempDir(), "no-plan"), p.Digest, p.Machines...); err == nil {
 		t.Fatal("Apply accepted a missing plan")
 	}
-	if lockExists(t, r) {
+	if lockHeld(t, r) {
 		t.Error("refused Apply left a lock")
 	}
 }
@@ -173,7 +192,9 @@ func lockOwner(private, plan string) int {
 	return 1
 }
 
-func TestStaleWriterLockNeedsManualRecoveryAfterOwnerStops(t *testing.T) {
+// TestWriterLockDiesWithItsOwner (red-first): a writer killed while holding the lock does not block the next one,
+// and no one removes the file.
+func TestWriterLockDiesWithItsOwner(t *testing.T) {
 	s, r := fleet(t)
 	p := dryRun(t, r, "workstation")
 	exe, err := os.Executable()
@@ -189,8 +210,10 @@ func TestStaleWriterLockNeedsManualRecoveryAfterOwnerStops(t *testing.T) {
 	}
 	exited := make(chan error, 1)
 	go func() { exited <- owner.Wait() }()
+	// The owner writes its record only once it holds the lock, so its PID in the record means the lock is held.
+	// Polling the record, not taking the lock, leaves the owner's own attempt uncontended.
 	deadline := time.Now().Add(testenv.Ceiling(30 * time.Second))
-	for !lockExists(t, r) {
+	for readLockOwner(lockPath(r)).PID != owner.Process.Pid {
 		select {
 		case err := <-exited:
 			t.Fatalf("owner exited before locking: %v: %s", err, stderr.String())
@@ -201,32 +224,33 @@ func TestStaleWriterLockNeedsManualRecoveryAfterOwnerStops(t *testing.T) {
 			t.Fatalf("owner did not take the lock within %v", testenv.Ceiling(30*time.Second))
 		}
 	}
-
-	if err := owner.Process.Kill(); err != nil {
-		t.Fatal(err)
-	}
-	<-exited //nolint:errcheck // Killing the owner is expected to return an exit error.
-	if !lockExists(t, r) {
-		t.Fatal("killed owner's lock disappeared")
+	if !lockHeld(t, r) {
+		_ = owner.Process.Kill()
+		t.Fatal("the owner's record is written but its lock is free")
 	}
 	s.calls()
 	_, err = r.Apply(context.Background(), p.StageDir, p.Digest, p.Machines...)
 	checkLockRefusal(t, s, r, err)
 
-	// The operator has confirmed the owner stopped, so removes its lock by hand.
-	if err := os.Remove(lockPath(r)); err != nil {
+	if err := owner.Process.Kill(); err != nil {
 		t.Fatal(err)
 	}
+	<-exited //nolint:errcheck // Killing the owner is expected to return an exit error.
+
+	// Nothing removes the file: the killed owner's lock died with it.
 	receipt, err := r.Apply(context.Background(), p.StageDir, p.Digest, p.Machines...)
 	if err != nil {
-		t.Fatalf("Apply after recovery: %v", err)
+		t.Fatalf("Apply after the owner was killed: %v", err)
 	}
 	for _, c := range receipt.Copies {
 		if c.Status != StatusApplied {
-			t.Errorf("receipt after recovery: %+v", c)
+			t.Errorf("receipt after the owner was killed: %+v", c)
 		}
 	}
-	if lockExists(t, r) {
-		t.Error("lock left after recovery Apply")
+	if lockHeld(t, r) {
+		t.Error("lock held after the Apply returned")
+	}
+	if _, err := os.Stat(lockPath(r)); err != nil {
+		t.Errorf("the lock file is gone: %v", err)
 	}
 }

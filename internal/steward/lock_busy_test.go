@@ -24,6 +24,21 @@ func holdLock(t *testing.T, dir string) {
 	t.Cleanup(release)
 }
 
+// lockHeld reports whether a live holder has the private lock in dir: a fresh privateLock is refused, or it
+// succeeds and is released at once.
+func lockHeld(t *testing.T, dir string) bool {
+	t.Helper()
+	release, err := steward.PrivateLock(dir, time.Date(2026, 11, 4, 10, 0, 0, 0, time.UTC))
+	if errors.Is(err, steward.ErrBusy) {
+		return true
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	release()
+	return false
+}
+
 // checkBusyOwner checks that err is busy on a lock this process holds, and names its pid and command.
 func checkBusyOwner(t *testing.T, err error) {
 	t.Helper()
@@ -49,8 +64,8 @@ func TestCollectBusyNamesOwner(t *testing.T) {
 	if res == nil || len(res.Copies) != 3 {
 		t.Errorf("a busy round returned %+v, want the three copies it read", res)
 	}
-	if _, err := os.Stat(filepath.Join(fx.checkout, ".rollout.lock")); err != nil {
-		t.Errorf("a busy round removed the lock: %v", err)
+	if !lockHeld(t, fx.checkout) {
+		t.Error("a busy round released the lock")
 	}
 }
 

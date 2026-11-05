@@ -397,11 +397,10 @@ type Step struct {
 // A copy that fails does not stop the others; the receipt, written to stageDir, records every outcome.
 //
 // Apply is the private config directory's single writer: after checking the machine set and before any transport
-// it creates .rollout.lock there exclusively with its owner record (LockOwner), and removes it when it returns,
-// whether it succeeded or failed. While the lock exists Apply is refused with an error wrapping a *BusyError, which
-// matches fs.ErrExist and ErrBusy and names the lock's owner, and the lock is left as it is.
-// A lock left by a writer that stopped without returning is not removed automatically;
-// an operator removes it once they have confirmed that writer has stopped.
+// it takes the kernel lock on .rollout.lock there (privateLock) and writes its owner record (LockOwner), and
+// releases it when it returns, whether it succeeded or failed. While a live process holds the lock Apply is refused
+// with an error wrapping a *BusyError, which matches fs.ErrExist and ErrBusy and names the lock's owner. A writer
+// that stops without returning loses the lock with its process, so it never blocks the next one; the file stays.
 func (r *Rollout) Apply(ctx context.Context, stageDir, approve string, machines ...string) (*Receipt, error) {
 	saved, err := ReadPlan(stageDir)
 	if err != nil {
@@ -414,7 +413,7 @@ func (r *Rollout) Apply(ctx context.Context, stageDir, approve string, machines 
 	}
 	release, err := privateLock(r.privateDir, r.Now())
 	if err != nil {
-		return nil, fmt.Errorf("rollout writer %w; confirm the writer has stopped before stale-lock recovery", err)
+		return nil, fmt.Errorf("rollout writer %w", err)
 	}
 	defer release()
 	if abs, err := filepath.Abs(stageDir); err != nil || abs != saved.StageDir {
