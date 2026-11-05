@@ -1,0 +1,32 @@
+{"Time":"2026-11-05T10:01:20.04667705Z","Action":"start","Package":"probe/skip"}
+{"Time":"2026-11-05T10:01:20.051554681Z","Action":"run","Package":"probe/skip","Test":"TestSkipped"}
+{"Time":"2026-11-05T10:01:20.052272961Z","Action":"output","Package":"probe/skip","Test":"TestSkipped","Output":"=== RUN   TestSkipped\n","OutputType":"frame"}
+{"Time":"2026-11-05T10:01:20.052368928Z","Action":"output","Package":"probe/skip","Test":"TestSkipped","Output":"    skip_test.go:6: setting up\n"}
+{"Time":"2026-11-05T10:01:20.052385409Z","Action":"output","Package":"probe/skip","Test":"TestSkipped","Output":"    skip_test.go:7: needs docker; set GUILDHALL_CI_REQUIRE=docker to fail instead\n"}
+{"Time":"2026-11-05T10:01:20.052459155Z","Action":"output","Package":"probe/skip","Test":"TestSkipped","Output":"--- SKIP: TestSkipped (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-05T10:01:20.052471929Z","Action":"skip","Package":"probe/skip","Test":"TestSkipped","Elapsed":0}
+{"Time":"2026-11-05T10:01:20.05248344Z","Action":"run","Package":"probe/skip","Test":"TestTable"}
+{"Time":"2026-11-05T10:01:20.052488169Z","Action":"output","Package":"probe/skip","Test":"TestTable","Output":"=== RUN   TestTable\n","OutputType":"frame"}
+{"Time":"2026-11-05T10:01:20.052498789Z","Action":"run","Package":"probe/skip","Test":"TestTable/linux"}
+{"Time":"2026-11-05T10:01:20.052502676Z","Action":"output","Package":"probe/skip","Test":"TestTable/linux","Output":"=== RUN   TestTable/linux\n","OutputType":"frame"}
+{"Time":"2026-11-05T10:01:20.052508266Z","Action":"output","Package":"probe/skip","Test":"TestTable/linux","Output":"--- PASS: TestTable/linux (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-05T10:01:20.052514839Z","Action":"pass","Package":"probe/skip","Test":"TestTable/linux","Elapsed":0}
+{"Time":"2026-11-05T10:01:20.052519217Z","Action":"run","Package":"probe/skip","Test":"TestTable/symlink"}
+{"Time":"2026-11-05T10:01:20.052525298Z","Action":"output","Package":"probe/skip","Test":"TestTable/symlink","Output":"=== RUN   TestTable/symlink\n","OutputType":"frame"}
+{"Time":"2026-11-05T10:01:20.052530047Z","Action":"output","Package":"probe/skip","Test":"TestTable/symlink","Output":"    skip_test.go:12: symlinks unsupported:\n"}
+{"Time":"2026-11-05T10:01:20.052534214Z","Action":"output","Package":"probe/skip","Test":"TestTable/symlink","Output":"        second line\n"}
+{"Time":"2026-11-05T10:01:20.052545926Z","Action":"output","Package":"probe/skip","Test":"TestTable/symlink","Output":"--- SKIP: TestTable/symlink (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-05T10:01:20.052551547Z","Action":"skip","Package":"probe/skip","Test":"TestTable/symlink","Elapsed":0}
+{"Time":"2026-11-05T10:01:20.052556195Z","Action":"output","Package":"probe/skip","Test":"TestTable","Output":"--- PASS: TestTable (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-05T10:01:20.052560824Z","Action":"pass","Package":"probe/skip","Test":"TestTable","Elapsed":0}
+{"Time":"2026-11-05T10:01:20.052564871Z","Action":"run","Package":"probe/skip","Test":"TestBare"}
+{"Time":"2026-11-05T10:01:20.052568548Z","Action":"output","Package":"probe/skip","Test":"TestBare","Output":"=== RUN   TestBare\n","OutputType":"frame"}
+{"Time":"2026-11-05T10:01:20.052574269Z","Action":"output","Package":"probe/skip","Test":"TestBare","Output":"--- SKIP: TestBare (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-05T10:01:20.052590719Z","Action":"skip","Package":"probe/skip","Test":"TestBare","Elapsed":0}
+{"Time":"2026-11-05T10:01:20.052598043Z","Action":"run","Package":"probe/skip","Test":"TestRuns"}
+{"Time":"2026-11-05T10:01:20.052602691Z","Action":"output","Package":"probe/skip","Test":"TestRuns","Output":"=== RUN   TestRuns\n","OutputType":"frame"}
+{"Time":"2026-11-05T10:01:20.052610546Z","Action":"output","Package":"probe/skip","Test":"TestRuns","Output":"--- PASS: TestRuns (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-11-05T10:01:20.052615285Z","Action":"pass","Package":"probe/skip","Test":"TestRuns","Elapsed":0}
+{"Time":"2026-11-05T10:01:20.052633047Z","Action":"output","Package":"probe/skip","Output":"PASS\n","OutputType":"frame"}
+{"Time":"2026-11-05T10:01:20.052703127Z","Action":"output","Package":"probe/skip","Output":"ok  \tprobe/skip\t0.005s\n"}
+{"Time":"2026-11-05T10:01:20.055219646Z","Action":"pass","Package":"probe/skip","Elapsed":0.009}

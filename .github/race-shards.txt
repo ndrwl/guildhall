@@ -66,6 +66,7 @@
 3 github.com/ndrwl/guildhall/internal/steward/stewardtest
 3 github.com/ndrwl/guildhall/internal/strictjson
 3 github.com/ndrwl/guildhall/internal/testenv
+3 github.com/ndrwl/guildhall/internal/testresults
 3 github.com/ndrwl/guildhall/internal/web
 3 github.com/ndrwl/guildhall/internal/web/webtest
 3 github.com/ndrwl/guildhall/internal/workbench

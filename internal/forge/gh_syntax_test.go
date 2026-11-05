@@ -35,6 +35,10 @@ func validateGHArgs(args []string) error {
 		"api jobs-logs": {values: []string{"--hostname"}, bools: []string{"--allow-escape-sequences"}},
 		// gh api <endpoint> --method POST: the only endpoint written is a job's rerun.
 		"api jobs-rerun": {values: []string{"--hostname", "--method"}},
+		// TestResults' REST GETs: a head's runs, a run's artifacts and an artifact's zip.
+		"api runs":          {values: []string{"--hostname"}},
+		"api run-artifacts": {values: []string{"--hostname"}},
+		"api artifact-zip":  {values: []string{"--hostname"}},
 	}
 	cmd := ghCommand(args)
 	s, ok := shapes[cmd]
@@ -69,14 +73,28 @@ var jobLogsEndpoint = regexp.MustCompile(`^repos/([^/]+)/([^/]+)/actions/jobs/([
 // jobRerunEndpoint is the REST endpoint that re-runs one Actions job.
 var jobRerunEndpoint = regexp.MustCompile(`^repos/([^/]+)/([^/]+)/actions/jobs/([0-9]+)/rerun$`)
 
-// ghCommand names the command of args: its first two words, with a job logs endpoint named api jobs-logs and a
-// job rerun endpoint api jobs-rerun.
+// runsEndpoint lists a head's completed push runs, runArtifactsEndpoint a run's artifacts, and artifactZipEndpoint
+// downloads one artifact's zip.
+var (
+	runsEndpoint         = regexp.MustCompile(`^repos/([^/]+)/([^/]+)/actions/runs\?(.*)$`)
+	runArtifactsEndpoint = regexp.MustCompile(`^repos/([^/]+)/([^/]+)/actions/runs/([0-9]+)/artifacts\?per_page=100$`)
+	artifactZipEndpoint  = regexp.MustCompile(`^repos/([^/]+)/([^/]+)/actions/artifacts/([0-9]+)/zip$`)
+)
+
+// ghCommand names the command of args: its first two words, with a job logs endpoint named api jobs-logs, a
+// job rerun endpoint api jobs-rerun, and the test results endpoints api runs, api run-artifacts and api artifact-zip.
 func ghCommand(args []string) string {
 	switch {
 	case args[0] == "api" && jobLogsEndpoint.MatchString(args[1]):
 		return "api jobs-logs"
 	case args[0] == "api" && jobRerunEndpoint.MatchString(args[1]):
 		return "api jobs-rerun"
+	case args[0] == "api" && runsEndpoint.MatchString(args[1]):
+		return "api runs"
+	case args[0] == "api" && runArtifactsEndpoint.MatchString(args[1]):
+		return "api run-artifacts"
+	case args[0] == "api" && artifactZipEndpoint.MatchString(args[1]):
+		return "api artifact-zip"
 	}
 	return strings.Join(args[:2], " ")
 }
@@ -96,6 +114,9 @@ func ghCallShapes() [][]string {
 		{"api", "repos/acme/widgets/actions/jobs/123/rerun", "--method", "POST", "--hostname", "github.com"},
 		{"pr", "reopen", "1", "--repo", "github.com/acme/widgets"},
 		{"api", "graphql", "--hostname", "github.com", "-f", "query=query { viewer { login } }", "-f", "owner=acme", "-f", "name=widgets", "-F", "number=1"},
+		{"api", "repos/acme/widgets/actions/runs?head_sha=" + strings.Repeat("a", 40) + "&event=push&status=completed&per_page=10", "--hostname", "github.com"},
+		{"api", "repos/acme/widgets/actions/runs/41/artifacts?per_page=100", "--hostname", "github.com"},
+		{"api", "repos/acme/widgets/actions/artifacts/4101/zip", "--hostname", "github.com"},
 	}
 }
 
