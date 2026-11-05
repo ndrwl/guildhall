@@ -83,7 +83,7 @@ func TestGrillRoundOpen(t *testing.T) {
 		"closed task":      {testRound, []string{"round", "open", "--store", path, "--repo", "app", "--task", "a-merged2", "--attempt", "grill-1", "--questions-file", "-"}, 1, "is done"},
 		"no questions":     {"", []string{"round", "open", "--store", path, "--repo", "app", "--task", "a-grill", "--attempt", "grill-1"}, 2, "requires --questions-file"},
 		"round with open":  {testRound, append(slices.Clone(args), "--round", "1"), 2, "--round goes with round show"},
-		"not a subcommand": {"", []string{"round", "close"}, 2, "grill takes round open or round show"},
+		"not a subcommand": {"", []string{"round", "close"}, 2, "grill takes round open, round show, summary open or summary show"},
 		"bad attempt":      {testRound, []string{"round", "open", "--store", path, "--repo", "app", "--task", "a-grill", "--attempt", "Grill 1", "--questions-file", "-"}, 2, "must be ids"},
 	} {
 		t.Run(name, func(t *testing.T) {

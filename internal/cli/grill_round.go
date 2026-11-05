@@ -22,16 +22,23 @@ import (
 
 const grillUsage = `usage: guildhall grill round open --store <path> --repo <id> --task <id> --attempt <step-n> --questions-file <path|->
        guildhall grill round show --store <path> --repo <id> --task <id> --attempt <step-n> [--round <k>]
+       guildhall grill summary open --store <path> --repo <id> --task <id> --attempt <step-n> --summary-file <path|->
+       guildhall grill summary show --store <path> --repo <id> --task <id> --attempt <step-n> [--summary <k>]
 --copy <dir>, or the copy found from the current directory, may stand in for --store: the copy's director.store
 round open puts a grill round on the task page, under the running Director stage attempt --attempt names, such as
 grill-2: the questions file is the round in the guildhall-grill format, each question a **Q<n>. <title>** line, its
 body and a last line "Recommended: <answer>", numbered from Q1; - reads it from standard input. The page asks it as
-one form, and the Guildmaster's Send round sends a grill-answered message. A new round opens only once the
-attempt's previous round is sent. Running the same command again prints the original receipt and writes nothing.
-round show prints the attempt's latest sent round, or its round k, with the Guildmaster's answers, as Markdown.`
+one form, and the Guildmaster's Send round sends a grill-answered message.
+round show prints the attempt's latest sent round, or its round k, with the Guildmaster's answers, as Markdown.
+summary open puts the grill's closing summary, Markdown from the summary file, on the task page under the running
+attempt, for the Guildmaster to Confirm or Request changes; either sends a grill-answered message.
+summary show prints the attempt's latest answered summary, or its summary k, with its outcome and the Guildmaster's
+words, as Markdown.
+An attempt has one open ask at a time: a round or a summary opens only once the attempt's previous round is sent and
+its previous summary answered. Running the same open command again prints the original receipt and writes nothing.`
 
-// grill runs `guildhall grill round open|show` (docs/web.md#grill-rounds). It exits 0 on success, 1 when the store
-// refuses or fails and 2 on a usage error.
+// grill runs `guildhall grill round open|show` and `guildhall grill summary open|show` (docs/web.md#grill-rounds).
+// It exits 0 on success, 1 when the store refuses or fails and 2 on a usage error.
 func (a *App) grill(args []string) int {
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
 		if _, err := fmt.Fprintln(a.Stdout, grillUsage); err != nil {
@@ -39,9 +46,12 @@ func (a *App) grill(args []string) int {
 		}
 		return 0
 	}
-	if len(args) < 2 || args[0] != "round" || (args[1] != "open" && args[1] != "show") {
-		_, _ = fmt.Fprintf(a.Stderr, "guildhall: grill takes round open or round show\n%s\n", grillUsage)
+	if len(args) < 2 || (args[0] != "round" && args[0] != "summary") || (args[1] != "open" && args[1] != "show") {
+		_, _ = fmt.Fprintf(a.Stderr, "guildhall: grill takes round open, round show, summary open or summary show\n%s\n", grillUsage)
 		return 2
+	}
+	if args[0] == "summary" {
+		return a.grillSummary(args[1], args[2:])
 	}
 	return a.grillRound(args[1], args[2:])
 }
@@ -131,10 +141,17 @@ func (a *App) grillRound(sub string, args []string) int {
 	return 0
 }
 
-// checkRoundOpen refuses a round unless tag names a running Director stage attempt of the open task repo/task and
-// the attempt's previous round, if any, is sent. A rerun of the round already opened under mutation passes, so it
-// replays its receipt.
+// checkRoundOpen refuses a round unless tag names a running Director stage attempt of the open task repo/task with
+// no open ask: its previous round, if any, is sent and its previous summary, if any, answered. A rerun of the round
+// already opened under mutation passes, so it replays its receipt.
 func checkRoundOpen(s *store.Store, repo, task, tag, mutation string) error {
+	return checkAskOpen(s, repo, task, tag, mutation, "a new round")
+}
+
+// checkAskOpen refuses what, a new round or summary of tag, unless tag names a running Director stage attempt of the
+// open task repo/task whose latest round is sent and latest summary answered, so the attempt has one open ask at a
+// time. A rerun of the ask already opened under mutation passes, so it replays its receipt.
+func checkAskOpen(s *store.Store, repo, task, tag, mutation, what string) error {
 	if r, err := s.Receipt(mutation); err == nil && r.Repository == repo && r.TaskID == task {
 		return nil
 	}
@@ -153,7 +170,10 @@ func checkRoundOpen(s *store.Store, repo, task, tag, mutation string) error {
 		return err
 	}
 	if last, ok := latestRound(talk, tag); ok && !roundSent(talk, last.Number) {
-		return fmt.Errorf("%w: round %d of %s is not sent yet; a new round opens once the Guildmaster sends it", store.ErrInvalid, roundOrdinal(talk, last), tag)
+		return fmt.Errorf("%w: round %d of %s is not sent yet; %s opens once the Guildmaster sends it", store.ErrInvalid, roundOrdinal(talk, last), tag, what)
+	}
+	if last, ok := latestSummary(talk, tag); ok && !summaryAnswered(talk, last.Number) {
+		return fmt.Errorf("%w: grill summary %d of %s is not answered yet; %s opens once the Guildmaster confirms it or requests changes", store.ErrInvalid, summaryOrdinal(talk, last), tag, what)
 	}
 	return nil
 }
@@ -170,9 +190,9 @@ func runningDirectorAttempt(s *store.Store, repo, task, tag string) error {
 		}
 		switch {
 		case !at.Director:
-			return fmt.Errorf("%w: attempt %s of %s/%s is an Artisan's; a round goes under a Director stage, such as a grill", store.ErrInvalid, tag, repo, task)
+			return fmt.Errorf("%w: attempt %s of %s/%s is an Artisan's; a round or summary goes under a Director stage, such as a grill", store.ErrInvalid, tag, repo, task)
 		case at.Outcome != "":
-			return fmt.Errorf("%w: attempt %s of %s/%s has finished (%s); a round goes under the running attempt", store.ErrInvalid, tag, repo, task, at.Outcome)
+			return fmt.Errorf("%w: attempt %s of %s/%s has finished (%s); a round or summary goes under the running attempt", store.ErrInvalid, tag, repo, task, at.Outcome)
 		}
 		return nil
 	}
