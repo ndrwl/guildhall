@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/adapter/codex"
+	"github.com/ndrwl/guildhall/internal/adapter/codex/codextest"
 	"github.com/ndrwl/guildhall/internal/adapter/fake"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/artisan/artisantest"
@@ -20,7 +22,13 @@ import (
 	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
+// TestMain lets the test binary act as each process an attempt starts: the artisantest worker, the fake runtime,
+// the stub `codex` and the shipped `guildhall codex-artisan` wrapper over it, and the guildhall CLI.
 func TestMain(m *testing.M) {
+	codextest.RunIfStub()
+	if len(os.Args) > 1 && os.Args[1] == codex.Subcommand {
+		os.Exit(codex.Main(os.Args[2:], cli.CodexAnswers, os.Stdout, os.Stderr))
+	}
 	store.SkipSyncForTests()
 	artisantest.MainIfWorker()
 	mainIfDyingLauncher()

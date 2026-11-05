@@ -97,11 +97,20 @@ const SelfReview = `{"schema": "guildhall.self-review/1", "repository": "app", "
 func Attempt(t *testing.T, prompt string) adapter.Spec {
 	t.Helper()
 	dir := t.TempDir()
+	spec := Lay(t, adapter.Identity{TaskID: "task-1", AttemptID: "quality-judge-1"}, dir, prompt)
+	spec.ResultFile = filepath.Join(dir, "result.json")
+	return spec
+}
+
+// Lay lays out a quality judge attempt for id in dir as Attempt does, the prompt, carrying prompt, in dir/prompt
+// with the self-review in its inputs and an empty working directory dir/work, and returns its spec with no result
+// file, for a caller whose result file lives elsewhere, such as a launched attempt's.
+func Lay(t *testing.T, id adapter.Identity, dir, prompt string) adapter.Spec {
+	t.Helper()
 	spec := adapter.Spec{
-		Identity:   adapter.Identity{TaskID: "task-1", AttemptID: "quality-judge-1"},
+		Identity:   id,
 		WorkDir:    filepath.Join(dir, "work"),
 		PromptFile: filepath.Join(dir, "prompt", render.PromptFile),
-		ResultFile: filepath.Join(dir, "result.json"),
 	}
 	for _, f := range []struct{ path, data string }{
 		{spec.PromptFile, prompt},
