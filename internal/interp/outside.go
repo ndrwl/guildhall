@@ -143,6 +143,7 @@ func (r *run) mergedOutside() (bool, Next, error) {
 
 // readMergedOutside reads each pull request the task's -pr documents record from the forge, when deliver recorded no
 // merge, and records the first the forge reports merged as outside-<number>-merge; it returns nil when none merged.
+// The train pull request of a merge batch the task is a member of is never one.
 func (r *run) readMergedOutside() (*pullRequestDoc, error) {
 	reader, ok := r.e.Forge.(PullRequestReader)
 	if !ok {
@@ -159,8 +160,16 @@ func (r *run) readMergedOutside() (*pullRequestDoc, error) {
 	if err != nil {
 		return nil, err
 	}
+	train, err := r.batchTrain()
+	if err != nil {
+		return nil, err
+	}
 	for _, rec := range prs {
 		if rec.Slice != r.slice.current {
+			continue
+		}
+		// A merge train's pull request merges inside Guildhall, and its batch's members record it.
+		if train != nil && rec.Remote == train.Remote && rec.Number == train.Number {
 			continue
 		}
 		got, err := reader.PullRequest(r.ctx, forge.View{Repository: repo.Path, Remote: rec.Remote, Number: rec.Number})

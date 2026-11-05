@@ -57,6 +57,13 @@ func MergeRecord(docs []store.DocumentRef, read func(store.DocumentRef) ([]byte,
 	if !digest.ValidHead(pr.Head) {
 		return nil, fmt.Errorf("merge record %s names no valid head", last.Name)
 	}
+	if pr.Train != nil {
+		// A merge in a merge train: the task's work is safe at its own head; the train's head is the batch's.
+		if !digest.ValidHead(pr.Train.Head) {
+			return nil, fmt.Errorf("merge record %s names no valid head of its own", last.Name)
+		}
+		pr.Head = pr.Train.Head
+	}
 	return &RecordedMerge{Document: last.Name, Remote: pr.Remote, PullRequest: pr.PullRequest}, nil
 }
 

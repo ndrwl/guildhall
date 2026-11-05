@@ -125,6 +125,27 @@ func (r *run) batchMember(s workflow.Step, repo config.Repository, dl deliverHea
 		if _, err := q.q.SetMergeBatchLink(r.batchMutation("merge-batch-link", *b, l.name), r.task.Repository, r.task.ID, slice, l.head()); err != nil {
 			return Next{}, err
 		}
+		return r.queued(s, q, false)
+	}
+	// Once the train's checks passed, the member runs its merge gates against its link and marks itself ready.
+	if b.State == store.BatchLanding && b.Train != nil && !me.Ready {
+		wait, why, err := r.authorizeLink(s, repo, dl, id, l, own, *b)
+		switch {
+		case err != nil:
+			return Next{}, err
+		case wait != nil:
+			return *wait, nil
+		case why != "":
+			return r.leftBatch(s, q, why)
+		}
+		if _, err := q.q.SetMergeBatchReady(r.batchMutation("merge-batch-ready", *b, batchRound(*b)), r.task.Repository, r.task.ID, l.head()); err != nil {
+			return Next{}, err
+		}
+		view, err := q.q.MergeQueue(r.task.Repository)
+		if err != nil {
+			return Next{}, err
+		}
+		q.view = view
 	}
 	return r.queued(s, q, false)
 }
@@ -221,8 +242,8 @@ func (r *run) leaveBatch(q queue, why string) error {
 }
 
 // leadLink records head x as the leader's link when the task, at the front, leads a standing batch, base being the
-// tip it is up to date with; once every member has its link, the batch moves to testing. Until batches land, the
-// leader then merges alone as the serial queue does, which ends the batch.
+// tip it is up to date with; once every member has its link, the batch moves to testing, and the leader's merge
+// lands the batch's train pull request (leadTrain).
 func (r *run) leadLink(s workflow.Step, q *queue, x, base string) error {
 	b := q.view.Batch
 	if q.q == nil || b == nil || b.Leader != r.task.ID {
@@ -248,7 +269,8 @@ func (r *run) leadLink(s workflow.Step, q *queue, x, base string) error {
 	if !digest.ValidHead(base) {
 		base = ""
 	}
-	if _, err := q.q.SetMergeBatchState(r.batchMutation("merge-batch-state", *b, string(store.BatchTesting)), r.task.Repository, r.task.ID, store.BatchTesting, base); err != nil {
+	// Keyed on the links, so a batch assembled again after a member left is tested again.
+	if _, err := q.q.SetMergeBatchState(r.batchMutation("merge-batch-state", *b, string(store.BatchTesting)+":"+batchRound(*b)), r.task.Repository, r.task.ID, store.BatchTesting, base); err != nil {
 		return err
 	}
 	view, err := q.q.MergeQueue(r.task.Repository)

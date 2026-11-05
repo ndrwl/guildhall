@@ -227,7 +227,7 @@ Cancel never records `cancelled` for a task whose work landed.
 
 A task's pull request may be merged on the forge by hand, outside Guildhall.
 The task has then **landed outside Guildhall** when it has no `-merge` document, so deliver has not merged it, and the forge now reports one of the pull requests its `-pr` documents record as merged, at whatever head; every recorded pull request is read, not only the latest, so an earlier one merged by hand counts though a later one was closed; a [multi-PR task](#multi-pr-tasks) reads only its current slice's pull requests.
-A pull request only closed never counts.
+A pull request only closed never counts, and neither does the train pull request of a [merge batch](interpreter.md#the-train) the task is in, whose members record its merge themselves.
 A merge of deliver's own whose record a crash lost, the pull request merged at the head of deliver's latest merge, not rebased and not held, is left to deliver, which records it as before.
 
 When a task has landed outside Guildhall, Guildhall, in order:
