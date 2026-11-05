@@ -850,21 +850,9 @@ func watchResult(ctx context.Context, stopClaude context.CancelCauseFunc, a Args
 	}
 }
 
-// readyDraft returns a's draft when it is a valid result for a, no larger than a result may be.
+// readyDraft returns a's draft when it is a valid result for a (adapter.ReadyDraft).
 func readyDraft(a Args) ([]byte, bool) {
-	f, err := os.Open(DraftFile(a.ResultFile))
-	if err != nil {
-		return nil, false
-	}
-	data, err := io.ReadAll(io.LimitReader(f, adapter.MaxResultBytes+1))
-	_ = f.Close()
-	if err != nil || len(data) > adapter.MaxResultBytes {
-		return nil, false
-	}
-	if _, err := adapter.ParseResult(data, a.Identity); err != nil {
-		return nil, false
-	}
-	return data, true
+	return adapter.ReadyDraft(DraftFile(a.ResultFile), a.Identity)
 }
 
 // publish links the draft's bytes into place as a's result file: a reader

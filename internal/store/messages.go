@@ -70,11 +70,19 @@ var ArtisanSenders = []string{SenderDirector, SenderGuildhall}
 // submitting its result before the session ends.
 const MessageNudge = "nudge"
 
+// SubmitNudgeID is the id of the one nudge `guildhall result hook` sends the attempt attemptID ("<step>-<n>") of
+// task taskID when it is about to stop without a valid result: "<task>.<step>-<n>.nudge.submit". The message's
+// presence in the store is the record that the attempt was nudged, so it is nudged at most once.
+func SubmitNudgeID(taskID, attemptID string) string {
+	return taskID + "." + attemptID + ".nudge.submit"
+}
+
 // ArtisanMessageTypes is the registry of message types Guildhall itself sends to an Artisan's inbox, each with what
 // it tells the Artisan (docs/messaging.md#guildhall-sent-steering). The labels are vocabulary only: Guildhall does
 // not act on them, and an Artisan acknowledges each as any steering message. interp.GuildhallOutbox refuses an
 // artisan message of any other type; the Director's `messages send` may use any type. A type is added here by the
-// change that sends it.
+// change that sends it: MessageNudge by `guildhall result hook`, which sends it once to an attempt about to stop
+// without a valid result (SubmitNudgeID).
 var ArtisanMessageTypes = map[string]string{
 	MessageNudge: "finish the stage's work, such as writing or submitting the result, before the session ends",
 }

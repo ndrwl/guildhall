@@ -39,6 +39,49 @@ func TestAckDirectiveRunsGuildhallMessagesAck(t *testing.T) {
 	}
 }
 
+// TestNudgeDirectiveRunsGuildhallResultHook: the nudge directive runs guildhall result hook, the guildhall on PATH,
+// before the result is written. When the hook blocks, the fake acknowledges the nudge and writes its result, or, with
+// fault=no-result, exits without one anyway; when it prints nothing or fails, the fake writes its result unacked.
+func TestNudgeDirectiveRunsGuildhallResultHook(t *testing.T) {
+	nudgeID := "task-1.attempt-1.nudge.submit"
+	cases := []struct {
+		name, hook, fault string
+		calls             string
+		result            bool
+		says              string
+	}{
+		{"blocked", `echo '{"decision":"block","reason":"submit"}'`, "", "result hook\nmessages ack " + nudgeID + "\n", true, "acknowledged " + nudgeID},
+		{"blocked, no-result", `echo '{"decision":"block","reason":"submit"}'`, "guildhall-fake: fault=no-result\n", "result hook\n", false, "exiting without a result anyway"},
+		{"not blocked", `:`, "", "result hook\n", true, "guildhall result hook sent no nudge"},
+		{"hook fails", `exit 1`, "", "result hook\n", true, "guildhall result hook: exit status 1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bin := t.TempDir()
+			calls := filepath.Join(t.TempDir(), "calls")
+			script := "#!/bin/sh\necho \"$*\" >> '" + calls + "'\nif [ \"$1\" = result ]; then " + tc.hook + "; fi\n"
+			if err := os.WriteFile(filepath.Join(bin, "guildhall"), []byte(script), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+			args := setup(t, "guildhall-fake: nudge=true\n"+tc.fault)
+			out, err := run(t, args)
+			if err != nil {
+				t.Fatalf("Run = %v", err)
+			}
+			if got, err := os.ReadFile(calls); err != nil || string(got) != tc.calls {
+				t.Fatalf("guildhall ran %q, %v; want %q", got, err, tc.calls)
+			}
+			if !strings.Contains(out, tc.says) {
+				t.Errorf("output %q does not say %q", out, tc.says)
+			}
+			if _, err := os.Stat(args.ResultFile); (err == nil) != tc.result {
+				t.Errorf("result present = %v, want %v", err == nil, tc.result)
+			}
+		})
+	}
+}
+
 func TestIgnoreInterrupt(t *testing.T) {
 	for _, ignore := range []bool{false, true} {
 		inv := t.TempDir()

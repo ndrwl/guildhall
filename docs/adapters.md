@@ -115,6 +115,7 @@ Prompt lines of the form `guildhall-fake: <key>=<value>` choose its behaviour; e
 | `inventory=<absolute dir>` | Every fake process records its identity there with `artisan.RecordProcess` ([inventory](artisan.md#harness)), and the worker records each native grandchild |
 | `output=<path>:<text>` | Before the result, write `<text>`, each `\n` in it read as a line break, and a newline to `<path>`, a relative slash-separated path in the working directory, and list it as the result's one output, as a stage's output port needs |
 | `ack=<id>[,<id>...]` | Before the result, run `guildhall messages ack <id>`, the `guildhall` on `PATH`, for each of up to 8 [steering messages](messaging.md#steering-an-attempt), in order, as a model would; a failed ack is reported and the result still written, for intake to refuse |
+| `nudge=true` | After any acks and before the result, run `guildhall result hook`, the `guildhall` on `PATH`, as an agent's stop hook would ([submit nudge](messaging.md#guildhall-sent-steering)). The fake has written no draft yet, so the hook nudges it once; when it blocks, the fake acknowledges the nudge, `<task>.<attempt>.nudge.submit`, and writes its result, or with `fault=no-result` exits without one anyway. A hook that fails or sends no nudge is reported and the result still written |
 
 Unless `ignore-cancel` is set, the cancel marker (the result file's `.cancelled` sidecar) ends a fake process's work without a result, except that `result=after-cancel` makes the worker publish a late result even with `ignore-cancel=true`.
 

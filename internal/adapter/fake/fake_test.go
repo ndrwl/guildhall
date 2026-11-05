@@ -200,6 +200,7 @@ func TestRunRefusesBadDirectivesBeforeActing(t *testing.T) {
 		"guildhall-fake: ack=a,,b\n",
 		"guildhall-fake: ack=../x\n",
 		"guildhall-fake: ack=1,2,3,4,5,6,7,8,9\n",
+		"guildhall-fake: nudge=yes\n",
 	} {
 		args := setup(t, prompt)
 		if _, err := run(t, args); err == nil {

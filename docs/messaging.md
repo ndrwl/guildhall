@@ -23,6 +23,8 @@ Not provided yet:
 
 - showing a running Artisan a message between its `guildhall` commands on a runtime with no hook: only Claude has the [after-tool-use hook](#steering-an-attempt).
   An Artisan elsewhere that runs no `guildhall` command for a long stretch sees a message at its next one, or when its result is refused;
+- [nudging](#guildhall-sent-steering) an Artisan about to stop without a valid result on a runtime with no stop hook: such a runtime's only delivery point is its next `guildhall` command, and an agent about to exit may run none, so it ends with no result and fails as before.
+  Nor is there a nudge when `guildhall` itself cannot run, since the hook is that command;
 - finding the store from a Director's runtime context: every Director command takes `--store <path>` or a copy;
 - tickets from messages: a Director message informs only, and work still moves between Directors only by manual handoff (R1.15); filing a message as a ticket is [designed, not built](#director-messaging-designed-not-built);
 - authentication of a local sender: anyone who can write the store file can send a message. A peer on another machine is identified by its SSH key's forced command ([identity](#peer-identity)).
@@ -213,14 +215,36 @@ The Director's [`guildhall-director-inbox`](../skills/guildhall-director-inbox/S
 
 Guildhall itself steers an attempt through its outbox (`interp.GuildhallOutbox`), as sender `guildhall`, only with a type in the registry `store.ArtisanMessageTypes`; the outbox refuses any other type to an `artisan:` inbox and sends nothing.
 
-| Type | What it tells the Artisan |
-|---|---|
-| `nudge` | Finish the stage's work, such as writing or submitting the result, before the session ends. |
+| Type | What it tells the Artisan | Sent by |
+|---|---|---|
+| `nudge` | Finish the stage's work, such as writing or submitting the result, before the session ends. | `guildhall result hook`, once per attempt, when the Artisan is about to stop without a valid result |
 
 The types are vocabulary only: Guildhall does not act on them, and the Artisan acknowledges each like any steering message.
 A type is added by the change that sends it; the Director's `messages send` may use any type.
 
-Steering is a runtime capability, `runtimes.Runtime.Steerable` ([adapters](adapters.md#running-an-attempt)): it covers stage attempts whose runtime is steerable, `claude` and `fake`; the fake's `ack` [directive](adapters.md#scenarios) acknowledges as a model would.
+**The submit nudge.**
+`guildhall result hook` ([CLI](contracts/cli.md)) is an agent's stop hook: run as the agent is about to end its session, with `GUILDHALL_ATTEMPT` set.
+When the attempt's draft result, `model/result.json`, is missing or is not a parseable result for the attempt, and the attempt is not cancelled, it sends the attempt one `nudge` with the id `<task>.<step>-<n>.nudge.submit` and prints a Claude Code Stop hook `block` decision whose reason is that message in its frame, so the agent goes on instead of stopping:
+
+```text
+==== guildhall: steering message t-1.plan-1.nudge.submit from guildhall (nudge) ====
+| You are about to stop without a valid result for this attempt, and an attempt that ends without one fails.
+| 1. Acknowledge this message first: guildhall messages ack t-1.plan-1.nudge.submit (a succeeded result is refused while it is unacknowledged).
+| 2. Write your result to the draft file, <attempt>/model/draft.json, and run: guildhall result submit <attempt>/model/draft.json
+|    On a rejection, fix what it names and submit again.
+| 3. If you cannot finish the work, submit a result with status failed and a summary saying why.
+| Guildhall sends this reminder once per attempt.
+==== act on it, then acknowledge it: guildhall messages ack t-1.plan-1.nudge.submit ====
+```
+
+The message's presence in the store is the record that the attempt was nudged, so the hook sends at most one per attempt, and the Director sees it in `guildhall messages list`.
+An accepted submission, a valid result written directly and the 3rd rejection's draft each count as a result, so a session that submitted ends at once, with no store write and no block.
+A second stop, or one Claude Code marks `stop_hook_active`, is let through: there are no retries beyond the one nudge, and an Artisan that still stops without a result fails with "worker exited without a result" as before, leaving the nudge unacknowledged.
+The hook decides on the draft, not on the message type, and correctness stays outside it: a missing, failing or timed-out hook prints nothing on standard output, at most one warning line, and always exits 0, so intake and the end-of-attempt check stand without it.
+The nudge itself is a steering message, so the Artisan acknowledges it before a succeeded result is accepted; the text says so.
+The fake's `nudge` [directive](adapters.md#scenarios) runs the hook as an agent's stop hook would.
+
+Steering is a runtime capability, `runtimes.Runtime.Steerable` ([adapters](adapters.md#running-an-attempt)): it covers stage attempts whose runtime is steerable, `claude` and `fake`; the fake's `ack` [directive](adapters.md#scenarios) acknowledges as a model would, and its `nudge` directive runs the stop hook.
 `messages send` to an attempt on any other runtime, today `codex`, is refused with `attempt <n> of <step> runs on the codex runtime, which cannot be steered; nothing was sent` and records nothing, and intake does not check that attempt's inbox.
 Both resolve the attempt's runtime the same way, from its step's effective profile in the task's bound workflow and that profile's `adapter` in the current config, not from a record made at launch, so a hand edit of the profile's `adapter` between launch and intake changes the answer.
 Codex runs no stage step yet, and a quality judge has no steering inbox.

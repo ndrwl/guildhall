@@ -185,6 +185,26 @@ func ReadResult(path string, want Identity) (Result, error) {
 	return r, nil
 }
 
+// ReadyDraft returns the draft result at path when it is a valid result for id: no larger than MaxResultBytes and
+// accepted by ParseResult. It runs none of intake's checks. A model-run Artisan's wrapper publishes such a draft, and
+// `guildhall result hook` counts one as the attempt's result, so it sends no nudge; a missing, unreadable, oversized,
+// malformed or misidentified draft is not ready.
+func ReadyDraft(path string, id Identity) ([]byte, bool) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, false
+	}
+	data, err := io.ReadAll(io.LimitReader(f, MaxResultBytes+1))
+	_ = f.Close()
+	if err != nil || len(data) > MaxResultBytes {
+		return nil, false
+	}
+	if _, err := ParseResult(data, id); err != nil {
+		return nil, false
+	}
+	return data, true
+}
+
 // Cancelled reports whether the cancel marker of the attempt id is present:
 // the `.cancelled` sidecar beside the result file resultFile. A missing
 // sidecar is false; one naming another attempt is an error matching

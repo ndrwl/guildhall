@@ -36,6 +36,38 @@ func TestParseResultAcceptsValidResult(t *testing.T) {
 	}
 }
 
+// TestReadyDraft: a draft is ready only when it is a parseable result for the identity no larger than
+// MaxResultBytes; a missing, malformed, misidentified or oversized one is not.
+func TestReadyDraft(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, content string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	if data, ok := ReadyDraft(write("valid.json", validResult), testID); !ok || string(data) != validResult {
+		t.Errorf("valid draft: %q, %v", data, ok)
+	}
+	failed := strings.Replace(validResult, `"succeeded"`, `"failed"`, 1)
+	if _, ok := ReadyDraft(write("failed.json", failed), testID); !ok {
+		t.Error("a failed result is not ready")
+	}
+	padded := strings.Replace(validResult, `"did the work"`, `"`+strings.Repeat("x", MaxResultBytes)+`"`, 1)
+	for name, path := range map[string]string{
+		"missing":        filepath.Join(dir, "absent.json"),
+		"malformed":      write("malformed.json", `{"schema": "guildhall.artisan-result", "version": 1, "task_id": `),
+		"other identity": write("other.json", strings.Replace(validResult, `"attempt-1"`, `"attempt-2"`, 1)),
+		"oversized":      write("big.json", padded),
+		"directory":      dir,
+	} {
+		if data, ok := ReadyDraft(path, testID); ok || data != nil {
+			t.Errorf("%s draft is ready: %d bytes", name, len(data))
+		}
+	}
+}
+
 func TestParseResultRejectsMalformed(t *testing.T) {
 	cases := map[string]string{
 		"empty":            ``,
