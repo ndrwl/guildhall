@@ -389,11 +389,9 @@ type SliceItem struct {
 	PullRequest *forge.PullRequest
 }
 
-// TaskSlices reads a task's slice progress from its bound definition and its records, the documents read from
-// documentDir with their digests checked. A one-slice task, which includes every task whose workflow has no slice
-// range or whose spec is not yet accepted, returns Total 1 and no items.
-func TaskSlices(def *workflow.Definition, repository, task string, docs []store.DocumentRef, decisions []store.Decision, documentDir string) (SliceProgress, error) {
-	read := func(d store.DocumentRef) ([]byte, error) {
+// checkedReader reads a document below documentDir, checking it against its recorded digest.
+func checkedReader(documentDir string) func(store.DocumentRef) ([]byte, error) {
+	return func(d store.DocumentRef) ([]byte, error) {
 		data, err := os.ReadFile(filepath.Join(documentDir, filepath.FromSlash(d.Path)))
 		if err != nil {
 			return nil, err
@@ -403,6 +401,33 @@ func TaskSlices(def *workflow.Definition, repository, task string, docs []store.
 		}
 		return data, nil
 	}
+}
+
+// TaskDeliveredBy is what delivered a one-PR task closed as already delivered (docs/tasks.md#a-slice-already-delivered):
+// the merged pull request's URL its delivery record, delivered-1-delivery, names, read from documentDir with its
+// digest checked. ok is false when docs hold no such record. Only a one-PR task's caller should ask: a multi-PR task's
+// slice 1 has the same record name, and TaskSlices reports it as a slice.
+func TaskDeliveredBy(docs []store.DocumentRef, documentDir string) (by string, ok bool, err error) {
+	i := slices.IndexFunc(docs, func(d store.DocumentRef) bool { return d.Name == DeliveryRecord(1) })
+	if i < 0 {
+		return "", false, nil
+	}
+	data, err := checkedReader(documentDir)(docs[i])
+	if err != nil {
+		return "", false, err
+	}
+	var d deliveryDoc
+	if err := json.Unmarshal(data, &d); err != nil {
+		return "", false, fmt.Errorf("delivery record %s: %w", docs[i].Name, err)
+	}
+	return d.by(), true, nil
+}
+
+// TaskSlices reads a task's slice progress from its bound definition and its records, the documents read from
+// documentDir with their digests checked. A one-slice task, which includes every task whose workflow has no slice
+// range or whose spec is not yet accepted, returns Total 1 and no items.
+func TaskSlices(def *workflow.Definition, repository, task string, docs []store.DocumentRef, decisions []store.Decision, documentDir string) (SliceProgress, error) {
+	read := checkedReader(documentDir)
 	h := newHistory(repository, task, def, read, nil, docs, decisions)
 	st, err := slicesOf(def, h)
 	if err != nil || !st.multi() {

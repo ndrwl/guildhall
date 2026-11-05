@@ -661,6 +661,7 @@ The document has these sections:
     A latest attempt with a counting park, as listed under `parked`, has `"parked": true`, which is why its failed or stopped step is not in `needs_me`.
   - `spend`: the [spend total](#spend-totals) of the task's attempts.
   - `overrides`: `true` when the task has a [task override](tasks.md#task-overrides) in effect, absent otherwise; `task show` lists them.
+  - `delivered_by`: for a done one-PR task the Director closed as [already delivered](tasks.md#a-slice-already-delivered), the URL of the merged pull request that shipped its change, absent otherwise; a multi-PR task's delivered slices show it in `slices`.
 - `merge_queues`: each repository's [merge queue](interpreter.md#the-merge-queue), `[{repository, entries}]` in repository order, with the entries front first and then in queue order.
   Each entry has its `task`, `priority`, `ready_at` (the commit time of the receipt that first authorized its merge), `pr` (the pull request URL), `held` (a [`task hold-merge`](tasks.md#holding-a-merge)), `front`, and `waiting_on`: `rebase` while the front's head is being rebased or resolved, `ci` while the front waits for the checks of its rebased head, `decision` while a new merge decision for it is open, and `queue` for a task behind the front.
   `task list --json` gives each queued task the same entry as `merge_queue`.

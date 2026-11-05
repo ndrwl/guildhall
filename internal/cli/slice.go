@@ -17,18 +17,20 @@ import (
 
 const sliceDeliveredUsage = `usage: guildhall slice delivered --repo <id> --task <id> --slice <k> (--by-slice <j> | --by-pr <url>) --reason <text>
   [--copy <dir> | --store <path> --config <file> --state <dir>]
-Close a multi-PR task's current slice as already delivered by an earlier slice or a merged pull request.
+Close a task's current slice as already delivered by an earlier slice or a merged pull request.
 --by-slice names an earlier slice of the task with a merge record; --by-pr a pull request of the task's repository
 that the forge reports merged. The slice closes with nothing merged for it: the task moves to the next slice, or is
-done after its last. A one-slice task, a slice that is not current or has merged, and a running attempt are refused.
+done after its last. A one-PR task is slice 1 of 1: --slice 1 --by-pr closes it done, and --by-slice is refused.
+A slice that is not current or has merged, and a running attempt, are refused.
 Prints the task's next wait as task start does; running it again after the close prints where the task waits.
 Examples (run inside the copy):
   guildhall slice delivered --repo app --task t-12 --slice 2 --by-slice 1 --reason "Slice 1 shipped every slice 2 item"
   guildhall slice delivered --repo app --task t-12 --slice 3 --by-pr https://github.com/o/app/pull/296 --reason "#296 shipped it"
+  guildhall slice delivered --repo app --task t-13 --slice 1 --by-pr https://github.com/o/app/pull/351 --reason "#351 shipped the change"
 Flags: --repo, --task, --slice, --reason and one of --by-slice or --by-pr are required; --copy, --store, --config,
 --state default to the selected copy; --help needs no store.`
 
-// slice runs `guildhall slice`: the Director's verbs on one slice of a multi-PR task.
+// slice runs `guildhall slice`: the Director's verbs on one slice of a task, a one-PR task's being slice 1 of 1.
 func (a *App) slice(args []string) int {
 	if len(args) > 0 && args[0] == "delivered" {
 		return a.sliceDelivered(args[1:])
@@ -36,8 +38,8 @@ func (a *App) slice(args []string) int {
 	return a.usageError("slice: the command is delivered")
 }
 
-// sliceDelivered runs `guildhall slice delivered`: it feeds slice-delivered for the Director's close of a multi-PR
-// task's current slice whose work an earlier slice or a merged pull request already delivered
+// sliceDelivered runs `guildhall slice delivered`: it feeds slice-delivered for the Director's close of a task's
+// current slice, or a one-PR task, whose work an earlier slice or a merged pull request already delivered
 // (docs/running.md#slice-delivered). It advances the task under its lock, as task start does, and prints its next
 // wait. A task the close already finished prints done.
 func (a *App) sliceDelivered(args []string) int {

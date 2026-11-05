@@ -18,8 +18,9 @@ import (
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
-// A multi-PR task's slice whose work an earlier slice or a merged pull request already shipped has nothing left to
-// build, so its build can only fail, and no merge record will ever close it. The Director closes it with `guildhall
+// A multi-PR task's slice whose work an earlier slice or a merged pull request already shipped, or a one-PR task whose
+// work a merged pull request already shipped, has nothing left to build, so its build can only fail, and no merge
+// record will ever close it. The Director closes it with `guildhall
 // slice delivered` (docs/tasks.md#a-slice-already-delivered), which feeds the SliceDelivered event: the engine checks
 // the evidence it names and records delivered--s<k>-1-delivery, which counts as slice k's close wherever a merge
 // record does for the slice position (history.sliceClosed). It is deliberately not a -merge document, so the hallmark
@@ -87,15 +88,14 @@ func (h *history) sliceDelivery(k int) int {
 }
 
 // sliceDelivered validates the Director's SliceDelivered event and records the slice's delivery. It is refused, with
-// nothing written, unless the task has more than one slice, ev.Slice is its current slice with no merge record, none
-// of its attempts runs, a reason is given and exactly one piece of evidence: an earlier slice with a merge record, or
-// a pull request of the task's repository that the forge, read through PullRequestReader, reports merged. A slice
-// that already has a delivery record is a replay, which records nothing and lets the advance go on.
+// nothing written, unless ev.Slice is the task's current slice with no merge record, none of its attempts runs, a
+// reason is given and exactly one piece of evidence: an earlier slice with a merge record, or a pull request of the
+// task's repository that the forge, read through PullRequestReader, reports merged. A one-PR task is slice 1 of 1, so
+// only a pull request can have delivered it. A slice that already has a delivery record is a replay, which records
+// nothing and lets the advance go on.
 func (r *run) sliceDelivered(ev Event) error {
 	k := ev.Slice
 	switch {
-	case !r.slice.multi():
-		return fmt.Errorf("interp: %w: %s/%s delivers one pull request, so it has no slice to close as delivered", ErrEvent, r.task.Repository, r.task.ID)
 	case k < 1 || k > r.slice.total:
 		return fmt.Errorf("interp: %w: %s/%s has slices 1 to %d, not %d", ErrEvent, r.task.Repository, r.task.ID, r.slice.total, k)
 	case r.sliceDelivery(k) >= 0:
@@ -106,6 +106,8 @@ func (r *run) sliceDelivered(ev Event) error {
 		return fmt.Errorf("interp: %w: slice %d has a merge record, so it closes as merged", ErrEvent, k)
 	case strings.TrimSpace(ev.Reason) == "":
 		return fmt.Errorf("interp: %w: a slice delivery needs a reason", ErrEvent)
+	case !r.slice.multi() && ev.BySlice > 0:
+		return fmt.Errorf("interp: %w: %s/%s delivers one pull request; name the PR that shipped it with --by-pr", ErrEvent, r.task.Repository, r.task.ID)
 	case (ev.BySlice > 0) == (ev.PullRequest != ""):
 		return fmt.Errorf("interp: %w: a slice delivery names one earlier slice or one pull request", ErrEvent)
 	}
@@ -146,6 +148,9 @@ func (r *run) runningAttempt() *store.StageAttempt {
 func (r *run) mergedPullRequest(url string) (*deliveredPullRequest, error) {
 	reader, ok := r.e.Forge.(PullRequestReader)
 	if !ok {
+		if !r.slice.multi() {
+			return nil, fmt.Errorf("interp: %w: the forge does not read pull requests, so a one-PR task cannot be closed as delivered; only cancel remains", ErrUnsupported)
+		}
 		return nil, fmt.Errorf("interp: %w: the forge does not read pull requests, so name the earlier slice instead", ErrUnsupported)
 	}
 	n, err := strconv.Atoi(path.Base(strings.TrimRight(url, "/")))
@@ -204,7 +209,7 @@ func (r *run) delivery(k int) (deliveryDoc, error) {
 // event, or before a crash that left the last slice's close undone. A slice before the last closes and the run moves
 // on to the next; the last closes the task done, which done reports, with next the wait.
 func (r *run) closeDelivered() (done bool, next Next, err error) {
-	if !r.slice.multi() || r.sliceDelivery(r.slice.current) < 0 {
+	if r.sliceDelivery(r.slice.current) < 0 {
 		return false, Next{}, nil
 	}
 	k := r.slice.current
@@ -224,7 +229,11 @@ func (r *run) closeDelivered() (done bool, next Next, err error) {
 		return false, Next{}, nil
 	}
 	s := r.closingStep()
-	if err := r.closeTask(fmt.Sprintf("Task done: slice %d, the last, already delivered by %s", k, doc.by())); err != nil {
+	text := fmt.Sprintf("Task done: slice %d, the last, already delivered by %s", k, doc.by())
+	if !r.slice.multi() {
+		text = "Task done: already delivered by " + doc.by()
+	}
+	if err := r.closeTask(text); err != nil {
 		return false, Next{}, err
 	}
 	return true, Next{Wait: WaitDone, Step: s.ID}, nil
@@ -237,6 +246,9 @@ func (r *run) closeDelivered() (done bool, next Next, err error) {
 // slice is the caller's.
 func (r *run) closeSliceDelivered(k int, id string, repo config.Repository, doc *deliveryDoc) error {
 	reason := fmt.Sprintf("Slice %d already delivered by %s: %s", k, doc.by(), doc.Reason)
+	if !r.slice.multi() {
+		reason = fmt.Sprintf("Already delivered by %s: %s", doc.by(), doc.Reason)
+	}
 	for i := range r.decisions {
 		d := &r.decisions[i]
 		if !d.Open() {
@@ -252,6 +264,9 @@ func (r *run) closeSliceDelivered(k int, id string, repo config.Repository, doc 
 		next = "it was the last, so the task is done."
 	}
 	text := fmt.Sprintf("The Director closed %s as already delivered by %s, with nothing merged for it: %s. %s", r.slice.of(k), doc.by(), strings.TrimRight(doc.Reason, ". "), upper(next))
+	if !r.slice.multi() {
+		text = fmt.Sprintf("The Director closed the task as already delivered by %s, with nothing merged for it: %s. The task is done.", doc.by(), strings.TrimRight(doc.Reason, ". "))
+	}
 	if err := r.notify("slice-delivered."+id, store.MessageSliceDelivered, text); err != nil {
 		return err
 	}
