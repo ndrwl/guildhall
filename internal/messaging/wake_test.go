@@ -220,7 +220,7 @@ func TestWakeRefusesWhatIsNotAMessageToTheDirector(t *testing.T) {
 	}
 	a := h.StartAttempt(t, "app", "t-1", "build")
 	e := messaging.Envelope{Schema: "guildhall.message/1", ID: "n-1", Recipient: store.RecipientArtisan, Repository: "app", Task: "t-1", Step: "build", Attempt: a, Type: "note", Text: "Rebase."}
-	if _, err := h.Mailbox().Send(store.Recipient{Role: store.RecipientArtisan, Repository: "app", TaskID: "t-1", Step: "build", Attempt: a}, store.SenderGuildhall, e); err != nil {
+	if _, err := h.Mailbox().Send(store.Recipient{Role: store.RecipientArtisan, Repository: "app", TaskID: "t-1", Step: "build", Attempt: a}, store.SenderDirector, e); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := messaging.Wake(context.Background(), h.s, pane, "n-1", messaging.SenderLocal); !errors.Is(err, store.ErrInvalid) {

@@ -2,7 +2,6 @@ package interp
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/ndrwl/guildhall/internal/forge"
 	"github.com/ndrwl/guildhall/internal/messaging"
@@ -102,23 +101,19 @@ type Records interface {
 var _ Records = (*store.Store)(nil)
 
 // Outbox is how the engine tells the Director what changed: the send half of messaging.Mailbox, with the sender
-// fixed to store.SenderGuildhall, since every Outbox send is Guildhall's own (GuildhallOutbox).
+// fixed to store.SenderGuildhall, since every Outbox send is Guildhall's own (GuildhallOutbox). The store, not the
+// Outbox, refuses a Guildhall message to an Artisan whose type is not in store.ArtisanMessageTypes.
 // Resending the same envelope returns the original receipt, so a replayed advance sends nothing new.
 type Outbox interface {
 	Send(to store.Recipient, e messaging.Envelope) (store.Receipt, error)
 }
 
 // GuildhallOutbox is the Outbox that sends through a Mailbox as store.SenderGuildhall.
-// It refuses a message to an Artisan's inbox whose type is not in store.ArtisanMessageTypes, the registry of what
-// Guildhall itself steers an attempt with, sending nothing.
+// The store refuses its message to an Artisan's inbox whose type is not in store.ArtisanMessageTypes, the registry
+// of what Guildhall itself steers an attempt with (store.ValidateMessage), so this adapter adds no check of its own.
 type GuildhallOutbox struct{ Mailbox messaging.Mailbox }
 
 func (o GuildhallOutbox) Send(to store.Recipient, e messaging.Envelope) (store.Receipt, error) {
-	if to.Role == store.RecipientArtisan {
-		if _, ok := store.ArtisanMessageTypes[e.Type]; !ok {
-			return store.Receipt{}, fmt.Errorf("%w: interp: artisan message type %q is not in store.ArtisanMessageTypes", store.ErrInvalid, e.Type)
-		}
-	}
 	return o.Mailbox.Send(to, store.SenderGuildhall, e)
 }
 

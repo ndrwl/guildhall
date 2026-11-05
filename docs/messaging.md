@@ -213,7 +213,7 @@ The Director's [`guildhall-director-inbox`](../skills/guildhall-director-inbox/S
 
 ### Guildhall-sent steering
 
-Guildhall itself steers an attempt through its outbox (`interp.GuildhallOutbox`), as sender `guildhall`, only with a type in the registry `store.ArtisanMessageTypes`; the outbox refuses any other type to an `artisan:` inbox and sends nothing.
+Guildhall itself steers an attempt through its outbox, as sender `guildhall`, only with a type in the registry `store.ArtisanMessageTypes`; the store refuses a `guildhall`-sent message of any other type to an `artisan:` inbox (`store.ValidateMessage`) and writes nothing.
 
 | Type | What it tells the Artisan | Sent by |
 |---|---|---|
