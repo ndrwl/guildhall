@@ -13,6 +13,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/adapter/codex"
 	"github.com/ndrwl/guildhall/internal/adapter/codex/codextest"
+	"github.com/ndrwl/guildhall/internal/git/gittest"
 	"github.com/ndrwl/guildhall/internal/quality"
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -20,9 +21,15 @@ import (
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
+// The placeholder commits of judgedSelfReview, which deliver replaces with the copy's repository's.
+const (
+	judgedBase = "4f1c2a9e0b7d6c5a4f3e2d1c0b9a8f7e6d5c4b3a"
+	judgedHead = "9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b"
+)
+
 // judgedSelfReview is self-review 1 of app/t1 with D1 a pending score; its brief tells the fake judge what to write.
 const judgedSelfReview = `{"schema": "guildhall.self-review/1", "repository": "app", "task": "t1", "number": 1,
- "head": "9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b",
+ "base": "` + judgedBase + `", "head": "` + judgedHead + `",
  "criteria": [{"id": "D1", "kind": "score", "judge": "pending", "score": null, "evidence": "nontest_lines: 140"}]}`
 
 const judgedBrief = "Score D1 against docs/quality.md.\n" +
@@ -51,7 +58,9 @@ func shortCopyWith(t *testing.T, judges, profiles string) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	if err := os.CopyFS(dir, os.DirFS(filepath.Dir(writeDirector(t, strings.Replace(directorTOML, "[local]\n", "[local]\nquality_judge_profiles = \""+judges+"\"\n", 1)+"\n"+profiles)))); err != nil {
+	repo := judgedRepository(t, dir)
+	toml := strings.Replace(directorTOML, `path = "/srv/app"`, `path = "`+filepath.ToSlash(repo)+`"`, 1)
+	if err := os.CopyFS(dir, os.DirFS(filepath.Dir(writeDirector(t, strings.Replace(toml, "[local]\n", "[local]\nquality_judge_profiles = \""+judges+"\"\n", 1)+"\n"+profiles)))); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Mkdir(filepath.Join(dir, "state"), 0o700); err != nil {
@@ -62,6 +71,28 @@ func shortCopyWith(t *testing.T, judges, profiles string) string {
 		t.Fatalf("store init: exit %d, stderr %s", code, stderr)
 	}
 	return dir
+}
+
+// judgedRepository makes app's repository in the copy dir: a base commit, then the delivered change, which adds the
+// rubric and changes a file, at HEAD.
+func judgedRepository(t *testing.T, dir string) string {
+	t.Helper()
+	repo := filepath.Join(dir, "repo")
+	git := gittest.Git(t)
+	if err := os.MkdirAll(filepath.Join(repo, "docs"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	git(repo, "init", "-q", "--initial-branch", "main")
+	for i, files := range []map[string]string{{"list.go": "package list\n"}, {"list.go": "package list\n\n// Sorted.\n", "docs/quality.md": "# Quality\n"}} {
+		for name, text := range files {
+			if err := os.WriteFile(filepath.Join(repo, filepath.FromSlash(name)), []byte(text), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		git(repo, "add", "-A")
+		git(repo, "commit", "-q", "-m", "commit "+strconv.Itoa(i))
+	}
+	return repo
 }
 
 // judgeCopy is a Director over the copy dir.
@@ -88,7 +119,9 @@ func deliver(t *testing.T, d runDirector, dir, task, brief string) {
 	if err := os.MkdirAll(reviews, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for name, text := range map[string]string{"self-review-1.json": strings.Replace(judgedSelfReview, `"t1"`, `"`+task+`"`, 1), "self-review-1-judge.md": brief} {
+	git, repo := gittest.Git(t), filepath.Join(dir, "repo")
+	sr := strings.NewReplacer(`"t1"`, `"`+task+`"`, judgedBase, git(repo, "rev-parse", "HEAD~1"), judgedHead, git(repo, "rev-parse", "HEAD")).Replace(judgedSelfReview)
+	for name, text := range map[string]string{"self-review-1.json": sr, "self-review-1-judge.md": brief} {
 		if err := os.WriteFile(filepath.Join(reviews, name), []byte(text), 0o600); err != nil {
 			t.Fatal(err)
 		}

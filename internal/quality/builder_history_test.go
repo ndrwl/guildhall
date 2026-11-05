@@ -25,7 +25,7 @@ func TestJudgeDoesNotInferHistoricalFamilyFromCurrentConfig(t *testing.T) {
 			}
 			e.write(filepath.Join(k.Dir(e.judge.StateDir), "prompt", "manifest.json"), string(data))
 			changed := strings.Replace(original, "[profile.builder-claude]\nadapter = \"claude\"", "[profile.builder-claude]\nadapter = \"fake\"", 1)
-			e.judge.Config, err = config.Parse([]byte(changed))
+			e.judge.Config, err = config.Parse([]byte(strings.Replace(changed, "/srv/app", filepath.ToSlash(e.repo), 1)))
 			if err != nil {
 				t.Fatal(err)
 			}

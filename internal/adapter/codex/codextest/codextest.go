@@ -86,7 +86,7 @@ func Prompt(b adaptertest.Behaviour) string {
 // SelfReview is the self-review the attempts Attempt lays out give the judge: one score, B2, and one gate, G2,
 // pending.
 const SelfReview = `{"schema": "guildhall.self-review/1", "repository": "app", "task": "task-1", "number": 1,
- "head": "0123456789abcdef0123456789abcdef01234567",
+ "base": "fedcba9876543210fedcba9876543210fedcba98", "head": "0123456789abcdef0123456789abcdef01234567",
  "criteria": [{"id": "B2", "kind": "score", "judge": "pending"}, {"id": "G2", "kind": "gate", "judge": "pending"},
   {"id": "A1", "kind": "score", "judge": "done"}]}
 `

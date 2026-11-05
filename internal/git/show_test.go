@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/ndrwl/guildhall/internal/git"
@@ -67,5 +69,46 @@ func TestShowAndChanges(t *testing.T) {
 	}
 	if _, err := p.Changes(ctx, repository, "-x", other, path); err == nil {
 		t.Error("Changes from an option succeeded")
+	}
+}
+
+// TestChangedFiles: the paths a change adds, changes and deletes since its merge-base with the base, sorted, with
+// nothing the base side changed after the merge-base; a symbolic link is listed, and Show refuses it as not a
+// regular file.
+func TestChangedFiles(t *testing.T) {
+	ctx := context.Background()
+	global := isolate(t)
+	repository, _, _ := gittest.Repository(t)
+	r := repo{t, repository, global}
+	p := git.Program{}
+	fork := r.commit("Fork", map[string]string{"changed.txt": "before\n", "deleted.txt": "gone\n", "same.txt": "same\n"})
+	r.run("switch", "-q", "-c", "change")
+	if err := os.MkdirAll(filepath.Join(repository, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r.run("rm", "-q", "deleted.txt")
+	if err := os.Symlink("same.txt", filepath.Join(repository, "link")); err != nil {
+		t.Skipf("no symbolic links here: %v", err)
+	}
+	r.run("add", "link")
+	head := r.commit("Change", map[string]string{"changed.txt": "after\n", "sub/added.txt": "new\n"})
+	r.run("switch", "-q", "trunk")
+	base := r.commit("Base moves on", map[string]string{"same.txt": "moved\n", "base-only.txt": "x\n"})
+
+	got, err := p.ChangedFiles(ctx, repository, base, head)
+	if want := []string{"changed.txt", "deleted.txt", "link", "sub/added.txt"}; err != nil || !slices.Equal(got, want) {
+		t.Errorf("ChangedFiles = %q, %v; want %q", got, err, want)
+	}
+	if got, err := p.ChangedFiles(ctx, repository, fork, fork); err != nil || got == nil || len(got) != 0 {
+		t.Errorf("ChangedFiles of no change = %#v, %v; want empty", got, err)
+	}
+	if _, err := p.Show(ctx, repository, head, "link"); !errors.Is(err, git.ErrNotRegularFile) {
+		t.Errorf("Show of a symbolic link = %v, want ErrNotRegularFile", err)
+	}
+	if _, err := p.ChangedFiles(ctx, repository, "--output=x", head); err == nil {
+		t.Error("ChangedFiles from an option succeeded")
+	}
+	if _, err := p.ChangedFiles(ctx, repository, strings.Repeat("0", 40), head); err == nil {
+		t.Error("ChangedFiles from a commit the repository lacks succeeded")
 	}
 }

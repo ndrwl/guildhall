@@ -17,6 +17,8 @@ import (
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
+	"github.com/ndrwl/guildhall/internal/git"
+	"github.com/ndrwl/guildhall/internal/git/gittest"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/quality"
@@ -25,7 +27,11 @@ import (
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
-const head = "9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b"
+// base and head are the selfReview constant's placeholder object ids, which newEnv replaces with its repository's.
+const (
+	base = "4f1c2a9e0b7d6c5a4f3e2d1c0b9a8f7e6d5c4b3a"
+	head = "9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b"
+)
 
 // selfReview is a self-review document of app/t-1 number 1 with D1 and B2 pending scores and G2 a pending gate.
 const selfReview = `{
@@ -33,7 +39,7 @@ const selfReview = `{
   "repository": "app",
   "task": "t-1",
   "number": 1,
-  "base": "4f1c2a9e0b7d6c5a4f3e2d1c0b9a8f7e6d5c4b3a",
+  "base": "` + base + `",
   "head": "` + head + `",
   "pull_request": "https://github.com/example/app/pull/7",
   "settings": {"size_budget_lines": 400, "size_budget_files": 15},
@@ -59,8 +65,8 @@ func TestReadSelfReview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := quality.SelfReview{Repository: "app", Task: "t-1", Number: 1, Head: head, Pending: pending}
-	if got.Repository != want.Repository || got.Task != want.Task || got.Number != want.Number || got.Head != want.Head || !mapsEqual(got.Pending, want.Pending) {
+	want := quality.SelfReview{Repository: "app", Task: "t-1", Number: 1, Base: base, Head: head, Pending: pending}
+	if got.Repository != want.Repository || got.Task != want.Task || got.Number != want.Number || got.Base != want.Base || got.Head != want.Head || !mapsEqual(got.Pending, want.Pending) {
 		t.Errorf("ReadSelfReview = %+v, want %+v", got, want)
 	}
 	for name, edit := range map[string][2]string{
@@ -68,6 +74,8 @@ func TestReadSelfReview(t *testing.T) {
 		"no task":        {`"task": "t-1"`, `"task": ""`},
 		"no number":      {`"number": 1`, `"number": 0`},
 		"a short head":   {head, "9a8b7c"},
+		"a short base":   {base, "4f1c2a"},
+		"no base":        {`"base": "` + base + `",`, ``},
 		"not json":       {`"schema"`, `schema`},
 	} {
 		if _, err := quality.ReadSelfReview([]byte(strings.Replace(selfReview, edit[0], edit[1], 1))); !errors.Is(err, quality.ErrSelfReview) {
@@ -187,13 +195,64 @@ func (o *outbox) types() []string {
 	return out
 }
 
-// env is a delivered task app/t-1, built under profile builder-claude, with self-review 1 written, over a real store.
+// env is a delivered task app/t-1, built under profile builder-claude, with self-review 1 written, over a real store
+// and a real repository at app's configured path, in which the change from base to head is the one the self-review
+// names.
 type env struct {
 	t     *testing.T
 	s     *store.Store
 	judge *quality.Judge
 	l     *recorder
 	o     *outbox
+	// repo is app's repository; base and head are the self-review's commits in it.
+	repo, base, head string
+}
+
+// The files of env's change: head adds the rubric and sub/added.txt, changes changed.txt and deletes deleted.txt,
+// and leaves same.txt as base has it.
+const (
+	rubric      = "# Quality\n\nD1 scores the size of the change.\n"
+	changedBase = "before\n"
+	changedHead = "after\n"
+	addedHead   = "new\n"
+)
+
+// repository makes app's repository in dir with env's change, committed as base and then head.
+func (e *env) repository(dir string) {
+	e.t.Helper()
+	git := gittest.Git(e.t)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		e.t.Fatal(err)
+	}
+	git(dir, "init", "-q", "--initial-branch", "main")
+	e.write(filepath.Join(dir, "changed.txt"), changedBase)
+	e.write(filepath.Join(dir, "deleted.txt"), "gone\n")
+	e.write(filepath.Join(dir, "same.txt"), "same\n")
+	git(dir, "add", "-A")
+	git(dir, "commit", "-q", "-m", "base")
+	e.base = git(dir, "rev-parse", "HEAD")
+	e.write(filepath.Join(dir, "docs", "quality.md"), rubric)
+	e.write(filepath.Join(dir, "changed.txt"), changedHead)
+	e.write(filepath.Join(dir, "sub", "added.txt"), addedHead)
+	git(dir, "rm", "-q", "deleted.txt")
+	git(dir, "add", "-A")
+	git(dir, "commit", "-q", "-m", "head")
+	e.head = git(dir, "rev-parse", "HEAD")
+	e.repo = dir
+}
+
+// selfReview is the selfReview constant naming env's base and head.
+func (e *env) selfReview() string {
+	return strings.Replace(strings.Replace(selfReview, base, e.base, 1), head, e.head, 1)
+}
+
+// document records a document of app/t-1 named name at path under the document directory, holding text.
+func (e *env) document(name, path, text string) {
+	e.t.Helper()
+	e.write(filepath.Join(e.judge.DocumentDir, filepath.FromSlash(path)), text)
+	if _, err := e.s.PutDocument("doc-"+name, store.DocumentRef{Repository: "app", TaskID: "t-1", Name: name, Path: path, SHA256: digest.Of([]byte(text)).Hex()}); err != nil {
+		e.t.Fatal(err)
+	}
 }
 
 const judgeConfig = `schema_version = 1
@@ -227,7 +286,9 @@ func newEnv(t *testing.T, cfgText string, beforeDelivery ...func(*env)) *env {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
-	cfg, err := config.Parse([]byte(cfgText))
+	e := &env{t: t, s: s, l: &recorder{}, o: &outbox{}}
+	e.repository(filepath.Join(root, "app"))
+	cfg, err := config.Parse([]byte(strings.Replace(cfgText, "/srv/app", filepath.ToSlash(e.repo), 1)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,8 +296,7 @@ func newEnv(t *testing.T, cfgText string, beforeDelivery ...func(*env)) *env {
 	if _, err := s.CreateTask("task", store.Task{Repository: "app", ID: "t-1", Title: "Task", Workflow: workflow.Revision{Name: "default", Digest: d}, ConfigDigest: d}); err != nil {
 		t.Fatal(err)
 	}
-	e := &env{t: t, s: s, l: &recorder{}, o: &outbox{}}
-	e.judge = &quality.Judge{Records: s, Outbox: e.o, Launcher: e.l, Config: cfg,
+	e.judge = &quality.Judge{Records: s, Outbox: e.o, Launcher: e.l, Git: git.Program{}, Config: cfg,
 		StateDir: filepath.Join(root, "state"), DocumentDir: filepath.Join(root, "state", "documents"),
 		QualityDir: filepath.Join(root, "quality"), Role: e.write(filepath.Join(root, "judge.md"), "You are the judge.\n"),
 		ProfileRole: func(string) string { return "" }}
@@ -248,7 +308,7 @@ func newEnv(t *testing.T, cfgText string, beforeDelivery ...func(*env)) *env {
 		t.Fatal(err)
 	}
 	dir := filepath.Join(e.judge.QualityDir, "app", "t-1")
-	e.write(filepath.Join(dir, "self-review-1.json"), selfReview)
+	e.write(filepath.Join(dir, "self-review-1.json"), e.selfReview())
 	e.write(filepath.Join(dir, "self-review-1-judge.md"), "Score D1, B2 and G2 against docs/quality.md.\n")
 	e.write(filepath.Join(dir, "self-review-1.diff"), "diff --git a/x b/x\n")
 	return e
@@ -544,7 +604,7 @@ func TestTakeRecordsTheJudgement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if j.Repository != "app" || j.Task != "t-1" || j.Review != 1 || j.Head != head || j.Attempt != 1 ||
+	if j.Repository != "app" || j.Task != "t-1" || j.Review != 1 || j.Head != e.head || j.Attempt != 1 ||
 		j.Judge.Profile != "judge-fake" || j.Judge.SeparateFamily || j.Judge.Builder != "" || j.MergeAsIs != "yes" || len(j.Criteria) != 3 {
 		t.Errorf("judgement %+v", j)
 	}

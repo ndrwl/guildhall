@@ -22,6 +22,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/atomicfile"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
+	"github.com/ndrwl/guildhall/internal/git"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/render"
@@ -33,6 +34,8 @@ import (
 var (
 	// ErrSelfReview reports a self-review document the judge cannot be given.
 	ErrSelfReview = errors.New("self-review document refused")
+	// ErrInputs reports a rubric, changed file or task document the judge cannot be given.
+	ErrInputs = errors.New("judge inputs refused")
 	// ErrAnswer reports a judge's judgement.json that breaks its contract.
 	ErrAnswer = errors.New("judgement refused")
 	// ErrJudgement reports a recorded judgement that cannot be read.
@@ -59,7 +62,8 @@ type SelfReview struct {
 	Repository string
 	Task       string
 	Number     int
-	Head       string
+	// Base and Head are the commits the reviewed change was compared from and merged at.
+	Base, Head string
 	// Pending maps each criterion whose judge is pending to its kind, KindScore or KindGate.
 	Pending map[string]string
 }
@@ -78,6 +82,7 @@ func ReadSelfReview(data []byte) (SelfReview, error) {
 		Repository string `json:"repository"`
 		Task       string `json:"task"`
 		Number     int    `json:"number"`
+		Base       string `json:"base"`
 		Head       string `json:"head"`
 		Criteria   []struct {
 			ID    string `json:"id"`
@@ -98,10 +103,12 @@ func ReadSelfReview(data []byte) (SelfReview, error) {
 		return refuse("repository %q and task %q must be ids", doc.Repository, doc.Task)
 	case doc.Number < 1:
 		return refuse("number %d must be positive", doc.Number)
+	case !digest.ValidHead(doc.Base):
+		return refuse("base %q is not a 40 or 64 lowercase hex object id", doc.Base)
 	case !digest.ValidHead(doc.Head):
 		return refuse("head %q is not a 40 or 64 lowercase hex object id", doc.Head)
 	}
-	sr := SelfReview{Repository: doc.Repository, Task: doc.Task, Number: doc.Number, Head: doc.Head, Pending: map[string]string{}}
+	sr := SelfReview{Repository: doc.Repository, Task: doc.Task, Number: doc.Number, Base: doc.Base, Head: doc.Head, Pending: map[string]string{}}
 	for _, c := range doc.Criteria {
 		if c.Judge != "pending" {
 			continue
@@ -213,6 +220,12 @@ type Launcher interface {
 	LaunchFiles(ctx context.Context, k artisan.AttemptKey, adapterName, profile string, settings adapter.Settings, promptFile, workDir string) (interp.Handle, error)
 }
 
+// Git reads a repository's files at a commit and the files a change touches; git.Program implements it.
+type Git interface {
+	Show(ctx context.Context, repo, rev, path string) (git.Shown, error)
+	ChangedFiles(ctx context.Context, repo, base, head string) ([]string, error)
+}
+
 // Judge starts and takes the judge attempts of delivered tasks.
 type Judge struct {
 	Records interface {
@@ -222,7 +235,9 @@ type Judge struct {
 	}
 	Outbox   interp.Outbox
 	Launcher Launcher
-	// Config gives the quality settings and the profiles.
+	// Git reads the rubric and the changed files from the repository the change merged into.
+	Git Git
+	// Config gives the quality settings, the profiles and the repositories' paths.
 	Config *config.Config
 	// StateDir holds attempt directories, <repo>/<task>/<step>-<n>, and DocumentDir the recorded documents.
 	StateDir, DocumentDir string
@@ -290,13 +305,19 @@ func (j *Judge) Start(ctx context.Context, repository, task string, review int) 
 			return Started{}, fmt.Errorf("%w: attempt %d of %s/%s", ErrJudgeRunning, k.Attempt, repository, task)
 		}
 		// Recorded but never marked launched: the start stopped between the two, so it launches the same attempt.
-		p, err := j.prepare(k, review, func() (config.JudgeChoice, error) { return j.choose(repository, task, review, attempts) })
+		p, err := j.prepare(ctx, k, review, func() (config.JudgeChoice, error) { return j.choose(repository, task, review, attempts) }, nil)
 		if err != nil {
 			return Started{}, err
 		}
 		return j.launch(ctx, k, p)
 	}
-	if _, err := j.selfReview(repository, task, review); err != nil {
+	sr, err := j.selfReview(repository, task, review)
+	if err != nil {
+		return Started{}, err
+	}
+	// Gathered before the attempt is recorded, so inputs the judge cannot be given record no attempt.
+	g, err := j.gather(ctx, sr)
+	if err != nil {
 		return Started{}, err
 	}
 	choice, err := j.choose(repository, task, review, attempts)
@@ -315,7 +336,7 @@ func (j *Judge) Start(ctx context.Context, repository, task string, review int) 
 		return Started{}, fmt.Errorf("recorded judge attempt %d, expected %d: another writer started one", rc.Attempt, n)
 	}
 	k := j.key(repository, task, n)
-	p, err := j.prepare(k, review, func() (config.JudgeChoice, error) { return choice, nil })
+	p, err := j.prepare(ctx, k, review, func() (config.JudgeChoice, error) { return choice, nil }, &g)
 	if err != nil {
 		return Started{}, err
 	}
@@ -417,8 +438,9 @@ func readPrepared(dir string) (prepared, error) {
 }
 
 // prepare returns attempt k's published preparation, or renders and publishes it for review with the judge choose
-// returns when none was published; a published one is never rendered again.
-func (j *Judge) prepare(k artisan.AttemptKey, review int, choose func() (config.JudgeChoice, error)) (prepared, error) {
+// returns and the inputs g, gathered here when nil, when none was published; a published one is never rendered
+// again.
+func (j *Judge) prepare(ctx context.Context, k artisan.AttemptKey, review int, choose func() (config.JudgeChoice, error), g *gathered) (prepared, error) {
 	dir := k.Dir(j.StateDir)
 	published := filepath.Join(dir, promptDir)
 	if _, err := os.Lstat(published); err == nil {
@@ -430,6 +452,13 @@ func (j *Judge) prepare(k artisan.AttemptKey, review int, choose func() (config.
 	if err != nil {
 		return prepared{}, err
 	}
+	if g == nil {
+		gathered, err := j.gather(ctx, sr)
+		if err != nil {
+			return prepared{}, err
+		}
+		g = &gathered
+	}
 	choice, err := choose()
 	if err != nil {
 		return prepared{}, err
@@ -439,6 +468,7 @@ func (j *Judge) prepare(k artisan.AttemptKey, review int, choose func() (config.
 		return prepared{}, err
 	}
 	var brief []byte
+	given := map[string]bool{}
 	for _, in := range inputs {
 		data, err := os.ReadFile(j.reviewFile(k.Repository, k.TaskID, review, in.suffix))
 		if errors.Is(err, fs.ErrNotExist) && !in.required {
@@ -450,7 +480,17 @@ func (j *Judge) prepare(k artisan.AttemptKey, review int, choose func() (config.
 		if in.name == "judge.md" {
 			brief = data
 		}
+		given[in.name] = true
 		if err := writeFile(filepath.Join(partial, render.InputsDir, in.name), data); err != nil {
+			return prepared{}, err
+		}
+	}
+	for _, f := range g.files {
+		if given[f.path] {
+			return prepared{}, fmt.Errorf("%w: input %s is given twice", ErrInputs, f.path)
+		}
+		given[f.path] = true
+		if err := writeFile(filepath.Join(partial, render.InputsDir, filepath.FromSlash(f.path)), f.data); err != nil {
 			return prepared{}, err
 		}
 	}
@@ -464,7 +504,7 @@ func (j *Judge) prepare(k artisan.AttemptKey, review int, choose func() (config.
 	if err != nil {
 		return prepared{}, fmt.Errorf("judge role: %w", err)
 	}
-	if err := writeFile(filepath.Join(partial, render.PromptFile), prompt(sr, roleText, brief)); err != nil {
+	if err := writeFile(filepath.Join(partial, render.PromptFile), prompt(sr, roleText, brief, given, *g)); err != nil {
 		return prepared{}, err
 	}
 	p := prepared{Review: review, Judge: choice}
@@ -481,16 +521,136 @@ func (j *Judge) prepare(k artisan.AttemptKey, review int, choose func() (config.
 	return p, nil
 }
 
-// prompt is the judge's prompt: its role, the brief, and what to write.
-func prompt(sr SelfReview, role, brief []byte) []byte {
+// The paths, under inputs/, of the rubric and of the changed files' directory (docs/contracts/quality.md).
+const (
+	rubricFile = "docs/quality.md"
+	headDir    = "head"
+)
+
+// input is one file gathered for the judge, its path slash-separated and relative to inputs/.
+type input struct {
+	path string
+	data []byte
+}
+
+// skipped is a changed path the judge is not given a copy of, and why.
+type skipped struct{ path, why string }
+
+// gathered is what gather read for the judge from the repository and the records.
+type gathered struct {
+	// files are every file gathered: the rubric, the changed files and the task documents.
+	files []input
+	// documents are the task documents' names and paths, changed the changed paths copied under head/, and
+	// skipped the changed paths not copied.
+	documents []store.DocumentRef
+	changed   []string
+	skipped   []skipped
+}
+
+// gather reads, for the self-review's repository, the rubric and each changed file at its head and every task
+// document but the task's judgements, checked against its recorded digest. See docs/contracts/quality.md.
+func (j *Judge) gather(ctx context.Context, sr SelfReview) (gathered, error) {
+	refuse := func(format string, args ...any) (gathered, error) {
+		return gathered{}, fmt.Errorf("%w: %s", ErrInputs, fmt.Sprintf(format, args...))
+	}
+	repo, ok := j.Config.Repository(sr.Repository)
+	switch {
+	case !ok:
+		return refuse("repository %s is not configured", sr.Repository)
+	case j.Git == nil:
+		return gathered{}, errors.New("the judge has no git to read the repository with")
+	}
+	var g gathered
+	shown, err := j.Git.Show(ctx, repo.Path, sr.Head, rubricFile)
+	switch {
+	case errors.Is(err, git.ErrNoRevision):
+		return refuse("%s has no commit %s: %v", sr.Repository, sr.Head, err)
+	case err != nil:
+		return refuse("the rubric of %s at %s: %v", sr.Repository, sr.Head, err)
+	case shown.Absent:
+		return refuse("%s has no %s at %s", sr.Repository, rubricFile, sr.Head)
+	}
+	g.files = append(g.files, input{rubricFile, shown.Data})
+	changed, err := j.Git.ChangedFiles(ctx, repo.Path, sr.Base, sr.Head)
+	if err != nil {
+		return refuse("the files %s changes in %s since %s: %v", sr.Head, sr.Repository, sr.Base, err)
+	}
+	for _, p := range changed {
+		shown, err := j.Git.Show(ctx, repo.Path, sr.Head, p)
+		switch {
+		case errors.Is(err, git.ErrNotRegularFile):
+			g.skipped = append(g.skipped, skipped{p, "not a regular file at the head"})
+		case err != nil:
+			return refuse("%s at %s: %v", p, sr.Head, err)
+		case shown.Absent:
+			g.skipped = append(g.skipped, skipped{p, "deleted at the head"})
+		default:
+			g.changed = append(g.changed, p)
+			g.files = append(g.files, input{path.Join(headDir, p), shown.Data})
+		}
+	}
+	docs, err := j.Records.Documents(sr.Repository, sr.Task)
+	if err != nil {
+		return gathered{}, err
+	}
+	for _, d := range docs {
+		if strings.HasPrefix(d.Name, workflow.JudgeStep+"-") {
+			continue
+		}
+		if !filepath.IsLocal(filepath.FromSlash(d.Path)) || path.Clean(d.Path) != d.Path || strings.Contains(d.Path, `\`) {
+			return refuse("document %s's path %q is not a relative path inside the document directory", d.Name, d.Path)
+		}
+		data, err := os.ReadFile(filepath.Join(j.DocumentDir, filepath.FromSlash(d.Path)))
+		if err != nil {
+			return refuse("document %s: %v", d.Name, err)
+		}
+		if digest.Of(data).Hex() != d.SHA256 {
+			return refuse("document %s does not have its recorded digest", d.Name)
+		}
+		g.documents = append(g.documents, d)
+		g.files = append(g.files, input{d.Path, data})
+	}
+	return g, nil
+}
+
+// prompt is the judge's prompt: its role, what its inputs hold, the brief, and what to write. given holds each
+// self-review file copied, by its name under inputs/.
+func prompt(sr SelfReview, role, brief []byte, given map[string]bool, g gathered) []byte {
 	var b strings.Builder
 	b.Write(role)
 	if len(role) > 0 && role[len(role)-1] != '\n' {
 		b.WriteByte('\n')
 	}
+	in := func(name string) string { return "`" + render.InputsDir + "/" + name + "`" }
 	fmt.Fprintf(&b, "\n# Judge self-review %d of %s/%s\n\n", sr.Number, sr.Repository, sr.Task)
-	fmt.Fprintf(&b, "You judge the change merged at head %s; you are neither its builder nor the Director.\n", sr.Head)
-	b.WriteString("The self-review document, this brief and, when they exist, the change's diff and facts are in the `" + render.InputsDir + "` directory beside this prompt.\n")
+	fmt.Fprintf(&b, "You judge the change merged at head %s, compared from base %s; you are neither its builder nor the Director.\n", sr.Head, sr.Base)
+	b.WriteString("Everything you need is in the `" + render.InputsDir + "` directory beside this prompt, and nothing outside it need be read:\n\n")
+	fmt.Fprintf(&b, "- %s, the self-review document, and %s, this brief.\n", in("self-review.json"), in("judge.md"))
+	fmt.Fprintf(&b, "- %s, the rubric at the head.\n", in(rubricFile))
+	if given["change.diff"] {
+		fmt.Fprintf(&b, "- %s, the change's diff.\n", in("change.diff"))
+	}
+	if given["facts.txt"] {
+		fmt.Fprintf(&b, "- %s, the change's facts.\n", in("facts.txt"))
+	}
+	if len(g.documents) > 0 {
+		b.WriteString("- The task's documents, each a verified copy at its recorded path:\n")
+		for _, d := range g.documents {
+			fmt.Fprintf(&b, "  - %s: %s\n", d.Name, in(d.Path))
+		}
+	}
+	if len(g.changed) > 0 {
+		fmt.Fprintf(&b, "- The full content at the head of each file the change adds or changes, under %s:\n", in(headDir+"/"))
+		for _, p := range g.changed {
+			fmt.Fprintf(&b, "  - %s\n", in(headDir+"/"+p))
+		}
+	}
+	if len(g.skipped) > 0 {
+		b.WriteString("- Changed paths not copied:\n")
+		for _, s := range g.skipped {
+			fmt.Fprintf(&b, "  - `%s`: %s\n", s.path, s.why)
+		}
+	}
 	b.WriteString("\n## Brief\n\n")
 	b.Write(brief)
 	if len(brief) > 0 && brief[len(brief)-1] != '\n' {
