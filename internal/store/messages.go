@@ -79,10 +79,10 @@ func SubmitNudgeID(taskID, attemptID string) string {
 
 // ArtisanMessageTypes is the registry of message types Guildhall itself sends to an Artisan's inbox, each with what
 // it tells the Artisan (docs/messaging.md#guildhall-sent-steering). The labels are vocabulary only: Guildhall does
-// not act on them, and an Artisan acknowledges each as any steering message. interp.GuildhallOutbox refuses an
-// artisan message of any other type; the Director's `messages send` may use any type. A type is added here by the
-// change that sends it: MessageNudge by `guildhall result hook`, which sends it once to an attempt about to stop
-// without a valid result (SubmitNudgeID).
+// not act on them, and an Artisan acknowledges each as any steering message. The store refuses a guildhall-sent
+// artisan message of any other type (ValidateMessage), writing nothing; the Director's `messages send` may use any
+// type. A type is added here by the change that sends it: MessageNudge by `guildhall result hook`, which sends it
+// once to an attempt about to stop without a valid result (SubmitNudgeID).
 var ArtisanMessageTypes = map[string]string{
 	MessageNudge: "finish the stage's work, such as writing or submitting the result, before the session ends",
 }
@@ -439,6 +439,11 @@ func ValidateMessage(m Message) error {
 	}
 	if m.Recipient == RecipientArtisan && !slices.Contains(ArtisanSenders, m.Sender) {
 		return invalid("an artisan's inbox takes messages from %s only, not from %s", strings.Join(ArtisanSenders, ", "), MessageSender(m))
+	}
+	if m.Recipient == RecipientArtisan && m.Sender == SenderGuildhall {
+		if _, ok := ArtisanMessageTypes[m.Type]; !ok {
+			return invalid("guildhall's artisan message type %q is not in store.ArtisanMessageTypes", m.Type)
+		}
 	}
 	if err := validateIDs(m.Repository, m.TaskID, m.Type); err != nil {
 		return err

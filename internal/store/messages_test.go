@@ -21,6 +21,22 @@ func messagingStore(t *testing.T) (*Store, string) {
 	return s, path
 }
 
+// TestArtisanMessageTypesRegistry: the registry of Guildhall-sent Artisan message types starts with nudge, and
+// every entry says what it tells the Artisan.
+func TestArtisanMessageTypesRegistry(t *testing.T) {
+	if MessageNudge != "nudge" {
+		t.Errorf("MessageNudge = %q, want nudge", MessageNudge)
+	}
+	if _, ok := ArtisanMessageTypes[MessageNudge]; !ok {
+		t.Errorf("ArtisanMessageTypes lacks %q", MessageNudge)
+	}
+	for typ, what := range ArtisanMessageTypes {
+		if typ == "" || strings.TrimSpace(what) == "" {
+			t.Errorf("ArtisanMessageTypes[%q] = %q, want a type and what it tells the Artisan", typ, what)
+		}
+	}
+}
+
 var artisanInbox = Recipient{Role: RecipientArtisan, Repository: "app", TaskID: "t-1", Step: "build", Attempt: 1}
 
 func toArtisan(id string) Message {

@@ -18,7 +18,8 @@ Sustainability review 11 (F40) found the types of the Director messages Guildhal
 `DirectorUnread`, and so the [wake](../messaging.md#waking-the-director) line, counts by it and counts every other type as `other`, so no sender-chosen type is ever typed into the Director's pane.
 `internal/interp` names a message's type only as a registry constant; its own `AdvanceFailed`, `WorkerStalled`, `DirectorStage` and `BudgetRefused` constants are gone.
 `directorMessage`, the one function every engine and launcher send of a Director message goes through, refuses a type not in the registry with an error naming it and sends nothing, so a new type is added to the registry by the change that sends it.
-The store's `SendMessage` and `messages send` do not check: a local sender may still choose any type, which counts as `other`.
+The store's `SendMessage` and `messages send` do not check Director types, which `directorMessage` alone checks: a local sender may still choose any type, which counts as `other`.
+Amended by d213 (H82 of d209): the store refuses a `guildhall`-sent message to an Artisan whose type is not in `store.ArtisanMessageTypes`, in `store.ValidateMessage` beside the `store.ArtisanSenders` check, so every outbox and both fakes enforce that registry; the Director may still send an Artisan any type.
 
 ## Alternatives rejected
 

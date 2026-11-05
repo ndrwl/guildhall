@@ -74,6 +74,7 @@ func RunMailboxContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 		{"AckConsumesAddressedMessages", contractAck},
 		{"StewardTakesTheGuildmasterOnly", contractSteward},
 		{"ArtisanTakesTheDirectorAndGuildhallOnly", contractArtisanSenders},
+		{"ArtisanTakesOnlyRegisteredGuildhallTypes", contractArtisanGuildhallTypes},
 	} {
 		t.Run(c.name, func(t *testing.T) { c.run(t, setup(t)) })
 	}
@@ -266,7 +267,11 @@ func contractInvalidContent(t *testing.T, h Harness) {
 }
 
 func contractRetryAndConflict(t *testing.T, h Harness) {
-	first := mustSend(t, h.Mailbox(), BuildArtisan, Envelope("n-1", store.RecipientArtisan))
+	// n-1 is a nudge, a type Guildhall may send an Artisan (store.ArtisanMessageTypes), so the retry below can come
+	// from Guildhall: the sender is not part of the request.
+	nudge := Envelope("n-1", store.RecipientArtisan)
+	nudge.Type = store.MessageNudge
+	first := mustSend(t, h.Mailbox(), BuildArtisan, nudge)
 	if _, err := h.Mailbox().Ack(BuildArtisan, "n-1"); err != nil {
 		t.Fatal(err)
 	}
@@ -275,14 +280,14 @@ func contractRetryAndConflict(t *testing.T, h Harness) {
 
 	// An exact retry after restart, acknowledgement and the attempt finishing returns the original receipt and resends nothing.
 	b := h.Mailbox()
-	again, err := b.Send(BuildArtisan, store.SenderGuildhall, Envelope("n-1", store.RecipientArtisan))
+	again, err := b.Send(BuildArtisan, store.SenderGuildhall, nudge)
 	if err != nil || again != first {
 		t.Fatalf("retry = %+v, %v; want %+v", again, err, first)
 	}
 	if m, _ := b.Read("n-1"); !m.Acknowledged {
 		t.Fatalf("retry reset acknowledgement: %+v", m)
 	}
-	changed := Envelope("n-1", store.RecipientArtisan)
+	changed := nudge
 	changed.Text = "Something else."
 	if _, err := b.Send(BuildArtisan, store.SenderDirector, changed); !errors.Is(err, store.ErrMutationConflict) {
 		t.Fatalf("reused id: err = %v, want store.ErrMutationConflict", err)
@@ -524,10 +529,42 @@ func contractArtisanSenders(t *testing.T, h Harness) {
 	if _, err := b.Send(BuildArtisan, store.SenderDirector, Envelope("n-1", store.RecipientArtisan)); err != nil {
 		t.Fatalf("artisan message from the Director: %v", err)
 	}
-	if _, err := b.Send(BuildArtisan, store.SenderGuildhall, Envelope("n-2", store.RecipientArtisan)); err != nil {
+	fromGuildhall := Envelope("n-2", store.RecipientArtisan)
+	fromGuildhall.Type = store.MessageNudge
+	if _, err := b.Send(BuildArtisan, store.SenderGuildhall, fromGuildhall); err != nil {
 		t.Fatalf("artisan message from Guildhall: %v", err)
 	}
 	if s, _ := ids(t, b, BuildArtisan, 0, 10); s != "n-1 n-2" {
 		t.Fatalf("artisan inbox = %q", s)
+	}
+}
+
+// contractArtisanGuildhallTypes: Guildhall's own message to an Artisan's inbox must have a type in
+// store.ArtisanMessageTypes, and any other type is refused with nothing stored (H82 of d209). The rule is narrow:
+// the Director may send an Artisan any type, and Guildhall's messages to the Director are not checked against it.
+func contractArtisanGuildhallTypes(t *testing.T, h Harness) {
+	b := h.Mailbox()
+	_, err := b.Send(BuildArtisan, store.SenderGuildhall, Envelope("n-note", store.RecipientArtisan))
+	if !errors.Is(err, store.ErrInvalid) || !strings.Contains(err.Error(), `"note"`) {
+		t.Fatalf("Guildhall's note to an Artisan: err = %v, want store.ErrInvalid naming %q", err, "note")
+	}
+	if _, err := b.Read("n-note"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("a refused Guildhall message was stored: %v", err)
+	}
+	if len(store.ArtisanMessageTypes) == 0 {
+		t.Fatal("store.ArtisanMessageTypes is empty")
+	}
+	for typ := range store.ArtisanMessageTypes {
+		e := Envelope("n-"+typ, store.RecipientArtisan)
+		e.Type = typ
+		if _, err := b.Send(BuildArtisan, store.SenderGuildhall, e); err != nil {
+			t.Errorf("Guildhall's %s to an Artisan: %v", typ, err)
+		}
+	}
+	if _, err := b.Send(BuildArtisan, store.SenderDirector, Envelope("n-director", store.RecipientArtisan)); err != nil {
+		t.Errorf("the Director's note to an Artisan: %v", err)
+	}
+	if _, err := b.Send(Director, store.SenderGuildhall, Envelope("q-guildhall", store.RecipientDirector)); err != nil {
+		t.Errorf("Guildhall's note to the Director: %v", err)
 	}
 }
