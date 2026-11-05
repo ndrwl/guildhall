@@ -32,7 +32,7 @@ func withBar(b launch.Bridge, copyDir, prompt string) launch.Bridge {
 	if copyDir != "" {
 		cfgPath = filepath.Join(copyDir, "config.toml")
 	}
-	if cfg, err := config.Load(cfgPath); err == nil && cfg.Web != nil {
+	if cfg, err := config.LoadUnadmitted(cfgPath); err == nil && cfg.Web != nil {
 		b.URL = taskPageURL(cfg.Web.Address, k.Repository, k.TaskID)
 	}
 	type records struct {

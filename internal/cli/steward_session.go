@@ -82,7 +82,7 @@ func admitStewardConfig(copyDir, cfgPath string) (*config.Config, error) {
 	if managed, _ := admit.Managed(copyDir); managed {
 		return nil, errors.New("managed.toml: a Steward copy is never managed; remove it")
 	}
-	cfg, err := config.Load(cfgPath)
+	cfg, err := config.LoadUnadmitted(cfgPath)
 	if err != nil {
 		return nil, err
 	}
@@ -522,7 +522,7 @@ func (a *App) stewardStatusCmd(args []string) int {
 		return a.usageError("steward status: " + cp.missing(a).Error())
 	}
 	storePath = filepath.Join(cp.dir, stewardStoreFile)
-	cfg, err := config.Load(cfgPath)
+	cfg, err := config.LoadUnadmitted(cfgPath)
 	if err != nil {
 		return a.fail(fmt.Errorf("steward status: %w", err))
 	}

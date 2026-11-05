@@ -24,7 +24,8 @@ func (e *env) override(t *testing.T, n int, key, value string, prior int) {
 	}
 }
 
-// validConfig completes the engine's config into one config.Load would accept, which applying overrides needs.
+// validConfig completes the engine's config into one config.LoadUnadmitted would accept, which applying overrides
+// needs.
 func (e *env) validConfig(t *testing.T) *config.Config {
 	t.Helper()
 	c := e.eng.Config

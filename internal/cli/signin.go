@@ -267,9 +267,14 @@ func (a *App) signinCmd(args []string) int {
 			rs = signinRuntimes
 			a.preflightLine("signin", "no copy found, so every runtime: %s", strings.Join(signinRuntimeNames(), ", "))
 		} else {
-			cfg, err := config.Load(cfgPath)
+			cfg, refusal, err := appliedConfig(cfgPath)
 			if err != nil {
 				return a.fail(fmt.Errorf("signin: %w", err))
+			}
+			if refusal != "" {
+				if _, err := fmt.Fprintf(a.Stderr, "signin: managed settings not applied, using config.toml alone: %s\n", refusal); err != nil {
+					return 1
+				}
 			}
 			rs = copySigninRuntimes(cfg, "")
 			a.preflightLine("signin", "the runtimes copy %s uses: %s", cp.dir, strings.Join(signinNames(rs), ", "))

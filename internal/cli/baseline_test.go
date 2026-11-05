@@ -25,7 +25,7 @@ func configOnlyCopy(t *testing.T) (cfg *config.Config, cfgDir, release string) {
 	if err := os.WriteFile(filepath.Join(cfgDir, "config.toml"), data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if cfg, err = config.Load(filepath.Join(cfgDir, "config.toml")); err != nil {
+	if cfg, err = config.LoadUnadmitted(filepath.Join(cfgDir, "config.toml")); err != nil {
 		t.Fatal(err)
 	}
 	release = filepath.Join(t.TempDir(), "baseline")

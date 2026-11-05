@@ -20,7 +20,7 @@ The Steward stays optional for the whole guild: a Guildmaster with one machine a
 
 On `main` today:
 
-- `config.Load` falls back to `config.Parse` when no sibling `managed.toml` exists, so a copy with only `config.toml` loads ([configuration](configuration.md)).
+- `config.LoadUnadmitted` falls back to `config.Parse` when no sibling `managed.toml` exists, so a copy with only `config.toml` loads ([configuration](configuration.md)).
 - Repositories, their paths, owner machine, merge requirements and workflow, and the Artisan profiles are all in `config.toml`, so a standalone copy already holds its own guard rails for repositories and merging.
 - `Config.Setting` gives a local value only where the managed key allows it, and a local value for a non-overridable managed key is refused, so managed keys win.
 - Rollouts write only `managed.toml` and never `config.toml` ([managed publication](decisions/managed-publication-separate-from-director-config.md)), and refuse a copy whose repositories differ from the roster.

@@ -99,9 +99,9 @@ func (a *App) messagesReceive(args []string) int {
 		if err != nil {
 			return a.fail(fmt.Errorf("%s: no message to receive: %w", name, err))
 		}
-		cfg, err := config.Load(filepath.Join(dir, "config.toml"))
-		if err != nil {
-			return a.fail(fmt.Errorf("%s: %w", name, err))
+		cfg, code := a.receiveConfig(name, dir)
+		if code >= 0 {
+			return code
 		}
 		res, err := a.acceptPeer(cfg, storePath, *from, *to, data)
 		if err != nil {
@@ -117,9 +117,9 @@ func (a *App) messagesReceive(args []string) int {
 	if err != nil {
 		return a.fail(fmt.Errorf("%s: no message to receive: %w", name, err))
 	}
-	cfg, err := config.Load(filepath.Join(dir, "config.toml"))
-	if err != nil {
-		return a.fail(fmt.Errorf("%s: %w", name, err))
+	cfg, code := a.receiveConfig(name, dir)
+	if code >= 0 {
+		return code
 	}
 	res, err := a.acceptSteward(cfg, storePath, data)
 	if err != nil {
@@ -132,6 +132,22 @@ func (a *App) messagesReceive(args []string) int {
 		return a.fail(fmt.Errorf("%s: received, but the drop file stays: %w", name, err))
 	}
 	return a.printReceived(name, storePath, store.SenderSteward, res)
+}
+
+// receiveConfig loads the admitted config of the Director copy at dir for messages receive. A managed.toml the copy
+// has not authorized is not applied: the refusal is printed on stderr and config.toml alone is used. code is -1 when
+// cfg is usable, or else the exit code to return.
+func (a *App) receiveConfig(name, dir string) (*config.Config, int) {
+	cfg, refusal, err := appliedConfig(filepath.Join(dir, "config.toml"))
+	if err != nil {
+		return nil, a.fail(fmt.Errorf("%s: %w", name, err))
+	}
+	if refusal != "" {
+		if _, err := fmt.Fprintf(a.Stderr, "%s: managed settings not applied, using config.toml alone: %s\n", name, refusal); err != nil {
+			return nil, 1
+		}
+	}
+	return cfg, -1
 }
 
 // printReceived prints res and, for a delivered message, surfaces it to the Guildmaster and wakes the Director; the
@@ -303,7 +319,7 @@ func (a *App) messagesSummaryCmd(args []string) int {
 	if fl.NArg() > 0 {
 		return a.messagesUsage(fmt.Sprintf("%s: unexpected argument %q", name, fl.Arg(0)))
 	}
-	cfg, err := config.Load(filepath.Join(dir, "config.toml"))
+	cfg, err := config.LoadUnadmitted(filepath.Join(dir, "config.toml"))
 	if err != nil {
 		return a.fail(fmt.Errorf("%s: %w", name, err))
 	}

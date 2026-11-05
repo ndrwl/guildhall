@@ -127,7 +127,7 @@ func TestScheduledDirectorHealth(t *testing.T) {
 	app, _, stderr := cs.app()
 	now := time.Date(2026, 11, 4, 10, 0, 0, 0, time.UTC)
 	app.Now = func() time.Time { return now }
-	cfg, err := config.Load(filepath.Join(cs.steward, "config.toml"))
+	cfg, err := config.LoadUnadmitted(filepath.Join(cs.steward, "config.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}

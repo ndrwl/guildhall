@@ -20,7 +20,7 @@ A Director copy is one directory holding its [copy marker](#the-copy-marker) `.g
 Every command that takes a store (`task`, `step`, `decide`, `messages`, `workflow`, `director`, `spend`, `quality`, `version`, the owned `artisan` commands and `store init|doctor`) selects its copy with `--copy <dir>`, or, when that flag is absent, by **copy discovery** from the current directory.
 The copy defaults `--store` to `<dir>/director.store`, `--config` to `<dir>/config.toml` and `--state` to `<dir>/state`, for each of those flags the command takes; `workflow approve` takes the copy's config only with `--repo` and no `--file`.
 A [Steward copy](steward.md#the-steward-copy), one that holds `steward.store` and no `director.store`, defaults `--store` to its `steward.store` instead.
-`config.Load` reads the copy's config as it reads any other.
+Copy discovery does not change how the copy's config is read: commands that act on its settings read it through the admission boundary (`internal/admit`, `admit.Applied` or `admit.Admit`), while `store export`, `backup`, `messages send --to`, `messages summary`, `messages peer setup` and a local peer's receive of a sent message still read it unadmitted with `config.LoadUnadmitted`.
 
 - `--copy` comes first, then copy discovery ([decision](decisions/copy-discovery.md)).
 - Copy discovery starts from the cleaned absolute current directory and walks up one parent at a time to the filesystem root (on Windows, the drive root), stopping at the first directory that holds `.guildhall-copy`: that directory is the copy, so a command run anywhere inside a copy, such as in a session's `director/claude` workspace, finds it.

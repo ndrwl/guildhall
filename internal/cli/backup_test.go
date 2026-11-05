@@ -156,7 +156,7 @@ func TestBackupNowStatusRestore(t *testing.T) {
 // table changes no task's config digest (D50: no Director feature needs a Steward, and none runs unasked).
 func TestNoBackupTable(t *testing.T) {
 	f := newBackupFixture(t)
-	cfg, err := config.Load(f.cfgPath)
+	cfg, err := config.LoadUnadmitted(f.cfgPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestNoBackupTable(t *testing.T) {
 func TestSessionBackup(t *testing.T) {
 	f := newBackupFixture(t)
 	f.addTable(t, filepath.Join(t.TempDir(), "offline.git"))
-	cfg, err := config.Load(f.cfgPath)
+	cfg, err := config.LoadUnadmitted(f.cfgPath)
 	if err != nil {
 		t.Fatal(err)
 	}

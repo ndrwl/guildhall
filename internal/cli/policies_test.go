@@ -142,7 +142,7 @@ owner_machine = "workstation"
 // ref, then lists its policies in startup.md before the notes.
 func TestDirectorStartShowsRepositoryPolicies(t *testing.T) {
 	dir := directorCopy(t, "[director]\nadapter = \"fake\"\n", "/exit")
-	cfg, err := config.Load(filepath.Join(dir, "config.toml"))
+	cfg, err := config.LoadUnadmitted(filepath.Join(dir, "config.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}

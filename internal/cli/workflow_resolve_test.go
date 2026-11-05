@@ -189,7 +189,7 @@ func TestTaskNewGuildmasterReviewGetsNoDefault(t *testing.T) {
 
 func mustLoad(t *testing.T, cfg string) *config.Config {
 	t.Helper()
-	c, err := config.Load(cfg)
+	c, err := config.LoadUnadmitted(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

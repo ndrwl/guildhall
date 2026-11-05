@@ -884,7 +884,7 @@ func outcome(a *attempt) string {
 }
 
 func readConfig(path string) *config.Config {
-	c, err := config.Load(path)
+	c, err := config.LoadUnadmitted(path)
 	if err != nil {
 		fail(fmt.Errorf("config: %w", err))
 	}

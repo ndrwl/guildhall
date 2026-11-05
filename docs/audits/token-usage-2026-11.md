@@ -23,7 +23,7 @@ Task d170. Every figure comes from [`docs/evidence/token-usage-audit-2026-11.txt
 |---|---|---|
 | The copy's store | Attempts, outcomes, intake refusals, spend, task states, start receipts | `store.Open(..., ReadOnly: true, RequireStore: true)`. The handle was held for 61 ms, then closed before any file was read. |
 | The attempt state directory | `usage.json` (only where the store has no spend, as `spend report` does), `prompt/manifest.json`, `prompt/prompt.md`, `claude-settings.json`, `workbench.jsonl` | Plain file reads |
-| The copy's `config.toml` | Profiles: adapter, model and effort | `config.Load` |
+| The copy's `config.toml` | Profiles: adapter, model and effort | `config.LoadUnadmitted` |
 | The Director's Claude Code transcripts (two project directories, 39 files) | Per-API-message `usage` and model | One record per message id (the last line for each id). Totals only. |
 
 **Measures.** Measured, estimated and unknown amounts are kept apart, as [`docs/spend.md`](../spend.md) does.

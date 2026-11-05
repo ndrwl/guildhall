@@ -173,7 +173,7 @@ func TestWorkflowArtisanHerdrLab(t *testing.T) {
 	}
 	// The supervisor's workspace close sweep closes it once the launcher is gone
 	// and the 1s delay has passed, and leaves the Director's workspace and tab.
-	cfg, err := config.Load(d.config)
+	cfg, err := config.LoadUnadmitted(d.config)
 	if err != nil {
 		t.Fatal(err)
 	}

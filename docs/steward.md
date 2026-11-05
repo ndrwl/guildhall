@@ -28,7 +28,7 @@ A Steward copy is one self-contained directory:
 
 Copy discovery finds a Steward copy as it finds a Director's, by its copy marker, and a copy that holds `steward.store` and no `director.store` is a Steward copy, whose store every command defaults to ([copies](running.md#copies)).
 The session's own hooks, such as `guildhall director turn-ended` and `guildhall director note add`, therefore work in a Steward copy unchanged and act on its `steward.store`.
-Keep the Steward copy's `config.toml` outside the private checkout, so `config.Load` does not treat the private `managed.toml` as its published sibling.
+Keep the Steward copy's `config.toml` outside the private checkout, so `config.LoadUnadmitted` does not treat the private `managed.toml` as its published sibling.
 
 ### Config
 
@@ -203,7 +203,7 @@ overridable = true
 ```
 
 This private source is distinct from each copy's checksum-framed published file described in [configuration](configuration.md).
-Keep the Steward copy's own config outside this private source directory so `config.Load` does not treat the source as its published sibling.
+Keep the Steward copy's own config outside this private source directory so `config.LoadUnadmitted` does not treat the source as its published sibling.
 Each `[managed.<key>]` table has a `value` and `overridable` as in a copy's config, plus `policy`.
 `policy = true` marks a key, such as a review or approval rule, whose every change needs approval; it is not written to copies.
 Keys follow the config key rules, so credential-like names are refused.

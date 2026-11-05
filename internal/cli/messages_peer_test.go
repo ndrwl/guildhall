@@ -137,7 +137,7 @@ func TestPeerMessages(t *testing.T) {
 
 	// It wakes: the session supervisor's retry delivers it, once.
 	accounts.down["guild-web"] = false
-	cfg, err := config.Load(filepath.Join(alpha, "config.toml"))
+	cfg, err := config.LoadUnadmitted(filepath.Join(alpha, "config.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +265,7 @@ func TestPeerMessages(t *testing.T) {
 	}
 
 	// No peers, no retry.
-	if plain, err := config.Load(filepath.Join(newCopy(t), "config.toml")); err != nil || app.sessionPeerDeliveries(plain, alphaStore) != nil {
+	if plain, err := config.LoadUnadmitted(filepath.Join(newCopy(t), "config.toml")); err != nil || app.sessionPeerDeliveries(plain, alphaStore) != nil {
 		t.Errorf("a copy with no peers has a retry: %v", err)
 	}
 }
