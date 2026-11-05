@@ -76,3 +76,36 @@ func TestVersionReads(t *testing.T) {
 		}
 	}
 }
+
+// TestFirstParents pins FirstParents: the head and its first-parent ancestors, newest first, bounded by n, never a
+// merged side branch's commits; a name, a short id and a commit the repository lacks are refused.
+func TestFirstParents(t *testing.T) {
+	ctx := context.Background()
+	global := isolate(t)
+	repository, _, _ := gittest.Repository(t)
+	r := repo{t, repository, global}
+	p := git.Program{}
+	start := r.run("rev-parse", "HEAD")
+	r.run("switch", "-q", "-c", "side")
+	side := r.commit("side", map[string]string{"side.txt": "s\n"})
+	r.run("switch", "-q", "-")
+	main := r.commit("main", map[string]string{"main.txt": "m\n"})
+	r.run("merge", "-q", "--no-ff", "-m", "merge side", "side")
+	merge := r.run("rev-parse", "HEAD")
+
+	got, err := p.FirstParents(ctx, repository, merge, 2)
+	if want := []string{merge, main, start}; err != nil || !slices.Equal(got, want) {
+		t.Errorf("FirstParents(merge, 2) = %q, %v; want %q", got, err, want)
+	}
+	if slices.Contains(got, side) {
+		t.Error("FirstParents lists the merged side branch")
+	}
+	if got, err := p.FirstParents(ctx, repository, merge, 0); err != nil || !slices.Equal(got, []string{merge}) {
+		t.Errorf("FirstParents(merge, 0) = %q, %v; want the head alone", got, err)
+	}
+	for _, bad := range []string{"HEAD", merge[:12], strings.Repeat("e", 40)} {
+		if _, err := p.FirstParents(ctx, repository, bad, 3); err == nil {
+			t.Errorf("FirstParents(%q) succeeded", bad)
+		}
+	}
+}

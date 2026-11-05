@@ -124,7 +124,7 @@ Directories are compared by file identity, not by path text, so symbolic links s
 `w.Repository` and `w.Dir` must be absolute in the form of the machine `Ensure` runs on: an owner-machine path in another platform's form, which [the config accepts](../decisions/repository-paths-are-absolute.md), is `ErrInvalidWorkspace` there.
 Paths with spaces are passed as single arguments, never through a shell.
 
-Every git run of `Classify`, `Ensure`, `FastForward`, `Base`, `Tip`, `IsAncestor`, `FinalHead`, `Retire`, `Subject`, `FetchDefault`, `Behind`, `Show` and `Changes` goes through one runner: an argument list under the caller's context, bounded by `Program.Timeout` (`DefaultTimeout`, five minutes, when zero), its pipes closed five seconds after the bound (`WaitDelay`), with `GIT_TERMINAL_PROMPT=0` so git never prompts.
+Every git run of `Classify`, `Ensure`, `FastForward`, `Base`, `Tip`, `IsAncestor`, `FinalHead`, `Retire`, `Subject`, `FetchDefault`, `Behind`, `FirstParents`, `Show` and `Changes` goes through one runner: an argument list under the caller's context, bounded by `Program.Timeout` (`DefaultTimeout`, five minutes, when zero), its pipes closed five seconds after the bound (`WaitDelay`), with `GIT_TERMINAL_PROMPT=0` so git never prompts.
 A run past its bound is ended and is a plain error naming git's command and the bound; for `Classify` that is a full scope with that reason, since its context did not end.
 `forge.GitHub` keeps the same rule for `gh` and `git` ([forge](forge.md)); the shared runner both would use waits for a third consumer that runs a program under a bound, and is done when `exec.CommandContext` in `internal/forge`, `internal/git` and `internal/herdr` is found only in it.
 
@@ -137,6 +137,9 @@ A run past its bound is ended and is a plain error naming git's command and the 
 - `Program.Behind(ctx, repo, rev, ref)` is how many first-parent commits `ref` has after `rev` and their subjects, newest first (`git rev-list --count --first-parent` and `git log --first-parent --format=%s` of `rev..ref`), read with no network call; a missing ref, an unknown commit and any git failure are errors.
 
 The CLI declares its own narrow interface over them, `cli.VersionGit`, and bounds each run at five seconds.
+
+`Program.FirstParents(ctx, repo, head, n)` is `head`, a full commit id, and at most `n` of its first-parent ancestors, newest first (`git rev-list --first-parent --max-count=<n+1> <head>`), read with no network call; a name or short id, a commit the repository lacks and any git failure are errors.
+The [hallmark baseline](../interpreter.md#report-only-workflows) walks it for a CI run with test results, through an optional interface `interp.Workspaces` does not require, so `gittest.Workspaces` gives the current head alone.
 
 ### Policy reads
 
@@ -151,6 +154,7 @@ The CLI declares `cli.PolicyGit` over `FetchDefault` and `Show`, and bounds each
 
 `history_test.go`'s `TestVersionReads` covers the version reads over `gittest.Repository`: a subject, an unknown commit and a name that is not a full id refused, `Behind` before any fetch failing, a fetch that names two new commits with and without a pull request number, none behind at the tip, and a fetch from a missing remote failing with the ref unmoved and invalid refs and remotes refused.
 It was written with the operations and passed on its first run.
+`TestFirstParents` covers `FirstParents` over a merge of a side branch: the head and its first-parent ancestors bounded by `n`, never the side branch's commit, `n` 0 giving the head alone, and a name, a short id and a missing commit refused; it was written with the operation, not red first.
 `show_test.go`'s `TestShowAndChanges` covers the policy reads over `gittest.Repository`: `Show` before the ref is fetched (`ErrNoRevision`), of a missing path (absent), at the fetched ref, past an uncommitted edit in the work tree, of a directory and in a missing repository, and `Changes` over a commit adding the file and one not touching it.
 
 The workspace contract's regeneration case runs against `git.Program` and the double: a conflicting golden whose generator rewrites it gives a commit on the marked commit whose `Changed` is that path alone, a failing command gives `Failed` and no commit, and in both the scratch worktree is gone and the task's worktree and branch are unmoved.

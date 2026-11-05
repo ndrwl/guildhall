@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-10-31
 topic: workflow
-tasks: d74, d77, d81
+tasks: d74, d77, d81, d217
 amended-by: engine-owned-hallmark-cadence.md, closed-tasks-have-no-open-decisions.md
 ---
 
@@ -26,6 +26,11 @@ For a workflow whose every attempted step is a hallmark step, `finished` names t
 Read-only is enforced at intake: launching a hallmark attempt records the worktree's HEAD as `<step>-<n>-prepared`, and intake refuses the result, as its fault, when the worktree has a staged or unstaged tracked change or HEAD moved, saying "hallmarks must not change the project"; untracked files, the report and test caches among them, are allowed.
 The first attempt copies the report of the repository's last hallmark, chosen as [engine-owned hallmark cadence](engine-owned-hallmark-cadence.md) chooses it, once into the task's documents as `previous-<step>`; later attempts reuse the copy and every binding records it, so a hallmark that finishes later never changes what an earlier attempt was given, and with none the stage says the report is the repository's first.
 Evidence reaches a hallmark by input, not by grants (d81): the engine renders a `baseline` document once per task, with the previous hallmark's head, the current main, the merges between them and their check runs, and `guildhall ci log` serves the failed checks' logs.
+
+Amendment (d217): test health reaches the hallmark the same way.
+The baseline gains a `## Test results` section rendered from the `test-timings-*` artifacts of the completed push CI run at the current main, or else at the newest of its first 20 first-parent ancestors that has them ([CI's test timings](ci-test-timings.md)): one per-package table across the CI legs, each leg's 20 slowest top-level tests and every skip with its reason, naming the run and its commit.
+The engine fetches it with Guildhall's own `gh` through the forge's optional test results reader, so the hallmark profile, its grants and the shipped workflow are unchanged; every unavailable part is one reason line and the attempt still launches.
+The hallmark skill takes the suite's pass/fail state, slowest tests and skips from that section when it cannot run the suite; fresh runs, two runs and `-race` stay missing evidence unless it ran them.
 
 The `hallmark` workflow ships release-approved beside `default` and `bug`; because it has no guarded step, a `publish` or `deliver` step a baseline has none of counts as weakening, so the authority cannot admit any revision meeting the floor as non-weakening.
 A repository's `workflow_overrides` are keyed by step id across every workflow its kinds run, so a workflow other than the feature workflow takes only the overrides of the steps it has; the feature workflow still refuses an override naming a step it lacks.
