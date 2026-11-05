@@ -1,9 +1,11 @@
 package workbench
 
 import (
+	"bytes"
 	"os"
 	"strconv"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -56,8 +58,40 @@ func TestDetectTerminal(t *testing.T) {
 			}
 		})
 	}
+	if got := Detect(tty, env(nil)); got.Height != 24 {
+		t.Errorf("Detect height = %d, want the terminal's 24", got.Height)
+	}
 	narrow := openPTY(t, 30)
 	if got := Detect(narrow, env(nil)); got.Width != MinWidth {
 		t.Errorf("a 30 column terminal renders at %d, want %d", got.Width, MinWidth)
+	}
+}
+
+// TestWatchResize: a terminal's size is read and a SIGWINCH is passed on; a writer that is not a terminal has no
+// size and its channel never receives.
+func TestWatchResize(t *testing.T) {
+	tty := openPTY(t, 100)
+	if w, h := Size(tty); w != 100 || h != 24 {
+		t.Errorf("Size = %d×%d, want 100×24", w, h)
+	}
+	resized, stop := WatchResize(tty)
+	defer stop()
+	if err := unix.Kill(os.Getpid(), unix.SIGWINCH); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-resized:
+	case <-time.After(10 * time.Second):
+		t.Fatal("no resize after SIGWINCH")
+	}
+
+	var buf bytes.Buffer
+	if w, h := Size(&buf); w != 0 || h != 0 {
+		t.Errorf("Size of a buffer = %d×%d", w, h)
+	}
+	none, stopNone := WatchResize(&buf)
+	stopNone()
+	if none != nil {
+		t.Error("a buffer has a resize channel")
 	}
 }

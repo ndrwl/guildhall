@@ -493,7 +493,7 @@ The **Workbench** is what the bridge shows: a formatted, read-only live display 
 It is Guildhall's own Go code (`internal/workbench`), separate from [Lanterns](lanterns.md), with no Claude plugin, hook or Node.
 `launcher.log` stays the plain and complete record of the attempt: formatting is applied only on the way to the pane, and nothing the Workbench shows is written back to it.
 
-- A status bar, printed once at the top, says what the Artisan was asked to do. On a pane 60 columns or wider it is four lines and a rule:
+- A status bar at the top says what the Artisan was asked to do. On a pane 60 columns or wider it is four lines and a rule:
   1. the repository, task id and title;
   2. the step, the slice of a multi-PR task (`slice 3 of 4`), the attempt, `started HH:MM:SS`, and, with colour on, the elapsed time and tokens so far, such as `6m09s · 214k tok`;
   3. `Asked:` and one line of what the Artisan was given: the `- **Goal:**` bullet of the Summary block of the task's newest accepted spec or, before a spec is accepted (grill, research, design and plan attempts), the first sentence of the task's detail;
@@ -503,7 +503,10 @@ It is Guildhall's own Go code (`internal/workbench`), separate from [Lanterns](l
   Long text is cut at a word, then `…`.
   The elapsed time counts from the attempt's start, when its prompt was written just before the launch, so a bridge replaying the files later shows the attempt's time.
   Tokens are the running totals of the runtime's `usage` events; a pane with none shows no tokens, and no live dollar figure is shown.
-  With colour off the start time stands in for the elapsed time and tokens, which a bar printed once would leave stale.
+  With colour on in a terminal whose height is known, the bar is pinned: the pane is cleared once, the bar is drawn in its top rows, and a scroll region (`ESC[<n>;<rows>r`, `n` the row below the bar, `ESC[6;<rows>r` under a full five-row bar) keeps the text scrolling below it.
+  Once a second, when it has changed, the bar is redrawn between a cursor save and restore (`ESC 7` … `ESC 8`), so the elapsed time and tokens stay current.
+  On a resize, signalled by SIGWINCH on Unix and found by a check every second on Windows, the region is reset and the bar redrawn at the new width, or as one line below 60 columns with its URL printed once more in the text, and the region set again; text already written is not rewrapped, and later text wraps to the new width.
+  A terminal with fewer than three rows to spare below the bar, or whose height is not known, gets it printed once instead, as does a pane without colour; a bar printed once shows the start time in place of the elapsed time and tokens, which it would leave stale.
   `artisan start --pane-launch` reads the title, detail, accepted spec and slice count from the store, waiting at most 2 seconds for its lock, and the address from the copy's `config.toml`; anything it cannot read is left out of the bar rather than failing the launch.
 - The model's thinking is shown in full, word-wrapped, after a magenta `┃ ` margin on every line, in italic at full brightness and with no Markdown; without colour the margin alone marks it.
   Two pieces of thinking in a row are kept apart by a blank line.
@@ -536,8 +539,10 @@ With no event file, for another adapter or a wrapper older than the Workbench, o
 
 Colour is used only when the pane is a terminal, `NO_COLOR` is unset or empty, `TERM` is not `dumb` and, on Windows, virtual terminal processing can be enabled; otherwise the same layout is shown with no escape codes.
 The width is the terminal's, else `COLUMNS`, else 80, and never less than 40.
-The Workbench uses no alternate screen, raw mode, cursor movement or input, and resets colour after each coloured line and at its end, so the pane is left at an ordinary idle shell for the workspace close sweep.
+The Workbench uses a scroll region and cursor save, restore and positioning for the pinned bar only, and always undoes them: on every way out of the bridge, the launcher's exit, a pane output error, and SIGINT, SIGTERM or SIGHUP, the region is reset with `ESC[r` between a cursor save and restore, before the banner when there is one.
+It uses no alternate screen, raw mode or input, and resets colour after each coloured line and at its end, so the pane is left at an ordinary idle shell for the workspace close sweep.
 A pane output error ends only the presentation; the launcher stays owned.
+A stop signal also ends only the presentation, with an error naming the signal; the launcher runs in its own session or process group and carries on.
 
 [`artisan_pane_output`](configuration.md#settings) `= "plain"` turns the Workbench off: the pane then shows `launcher.log`'s bytes unchanged, as before it, followed by the banner as plain text and the finished line.
 The launcher passes the setting to the bridge as the internal `--pane-output` flag, which, like `--workspace-close-after`, goes only with `--pane-launch` and is not passed on to the launcher.

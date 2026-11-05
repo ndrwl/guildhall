@@ -85,7 +85,7 @@ func TestPresentWorkbench(t *testing.T) {
 	b := Bridge{Attempt: at, CloseAfter: 5 * time.Minute, Title: "Show the bar", Asked: "add a status bar.", URL: "http://h:1/guildhall/d36",
 		Start: time.Date(2026, 10, 31, 9, 10, 0, 0, time.UTC)}
 	var out bytes.Buffer
-	if err := presentWorkbench(b, filepath.Join(at.Dir(), LogFile), exited(), &out, workbench.Options{Width: 60, Location: time.UTC}, clock); err != nil {
+	if err := presentWorkbench(b, filepath.Join(at.Dir(), LogFile), exited(), &out, pane{Opts: workbench.Options{Width: 60, Location: time.UTC}, Now: clock}); err != nil {
 		t.Fatal(err)
 	}
 	rule := strings.Repeat("─", 60)
@@ -101,7 +101,7 @@ func TestPresentWorkbench(t *testing.T) {
 		t.Errorf("workbench =\n%s\nwant\n%s", out.String(), want)
 	}
 	out.Reset()
-	if err := presentWorkbench(b, filepath.Join(at.Dir(), LogFile), exited(), &out, workbench.Options{Width: 60, Color: true, Location: time.UTC}, clock); err != nil {
+	if err := presentWorkbench(b, filepath.Join(at.Dir(), LogFile), exited(), &out, pane{Opts: workbench.Options{Width: 60, Height: 24, Color: true, Location: time.UTC}, Now: clock}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasSuffix(out.String(), FinishLine(5*time.Minute)+"\n\x1b[0m") {
@@ -125,8 +125,8 @@ func TestPresentBannerUsesTheUsageFile(t *testing.T) {
 	start := time.Date(2026, 10, 31, 9, 10, 0, 0, time.UTC)
 	var out bytes.Buffer
 	b := Bridge{Attempt: at, URL: "http://h:1/guildhall/d36", Start: start}
-	if err := presentWorkbench(b, filepath.Join(at.Dir(), LogFile), exited(), &out, workbench.Options{Width: 50, Location: time.UTC},
-		func() time.Time { return start.Add(369 * time.Second) }); err != nil {
+	if err := presentWorkbench(b, filepath.Join(at.Dir(), LogFile), exited(), &out, pane{Opts: workbench.Options{Width: 50, Location: time.UTC},
+		Now: func() time.Time { return start.Add(369 * time.Second) }}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(out.String(), "d36 build · attempt 1 · started 09:10:00\n"+strings.Repeat("─", 50)+"\nhttp://h:1/guildhall/d36\nworking\n") {
@@ -147,7 +147,7 @@ func TestPresentWorkbenchWithoutResult(t *testing.T) {
 			}
 		}
 		var out bytes.Buffer
-		if err := presentWorkbench(Bridge{Attempt: at}, filepath.Join(at.Dir(), LogFile), exited(), &out, workbench.Options{}, time.Now); err != nil {
+		if err := presentWorkbench(Bridge{Attempt: at}, filepath.Join(at.Dir(), LogFile), exited(), &out, pane{Now: time.Now}); err != nil {
 			t.Fatal(err)
 		}
 		if !strings.Contains(out.String(), "working\n") || !strings.Contains(out.String(), "✗ no result written\n\n"+FinishLine(0)) {
