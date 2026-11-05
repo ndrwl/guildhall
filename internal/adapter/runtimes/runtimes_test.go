@@ -127,3 +127,82 @@ func TestEachRuntimeChecksSettings(t *testing.T) {
 		t.Errorf("claude CheckSettings = %v; want ErrUnsupportedSetting naming the effort", err)
 	}
 }
+
+// TestEachRuntimeDeclaresItsCapabilities: every runtime declares whether it grants tools and applies a skill policy,
+// with the values its adapter.Declaration gives packages that cannot import runtimes, and a sign-in entry that is
+// complete, or, for the fake alone, which is the guildhall executable, the zero entry; and every session runtime
+// takes SessionOptions.
+func TestEachRuntimeDeclaresItsCapabilities(t *testing.T) {
+	type want struct{ grants, skills, readOnly, signin bool }
+	wants := map[string]want{
+		adapter.ClaudeName: {grants: true, skills: true, signin: true},
+		adapter.CodexName:  {readOnly: true, signin: true},
+		adapter.FakeName:   {},
+	}
+	exe := filepath.Join(t.TempDir(), "guildhall")
+	for _, name := range runtimes.Names() {
+		w, ok := wants[name]
+		if !ok {
+			t.Errorf("runtime %q: no expected capabilities; add it to this test", name)
+			continue
+		}
+		r, err := runtimes.Lookup(name, exe)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.GrantsTools() != w.grants || r.SkillPolicy() != w.skills {
+			t.Errorf("%s: GrantsTools() = %v, SkillPolicy() = %v; want %v, %v", name, r.GrantsTools(), r.SkillPolicy(), w.grants, w.skills)
+		}
+		d, ok := adapter.Declared(name)
+		if !ok {
+			t.Errorf("%s: package adapter declares nothing for it", name)
+		}
+		if d != (adapter.Declaration{GrantsTools: r.GrantsTools(), SkillPolicy: r.SkillPolicy(), ReadOnly: w.readOnly}) ||
+			adapter.GrantsTools(name) != r.GrantsTools() || adapter.SkillPolicy(name) != r.SkillPolicy() || adapter.ReadOnly(name) != w.readOnly {
+			t.Errorf("%s: adapter.Declared = %+v, disagreeing with its methods or a read-only %v", name, d, w.readOnly)
+		}
+		s := r.Signin()
+		switch {
+		case !w.signin && !s.Zero():
+			t.Errorf("%s: Signin() = %+v, want the zero entry", name, s)
+		case w.signin && (s.Title == "" || s.Program == "" || len(s.Status) == 0 || len(s.Verify) == 0 || len(s.Act) == 0):
+			t.Errorf("%s: Signin() = %+v, want a title, program, status, verify and act lines", name, s)
+		}
+	}
+	for _, name := range runtimes.SessionNames() {
+		s, err := runtimes.LookupSession(name, exe)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := s.SessionOptions(nil, &adapter.Links{URL: "http://host:1", Repos: []string{"r"}})
+		if got.GrantsTools() != s.GrantsTools() || got.Program() != s.Program() {
+			t.Errorf("%s: SessionOptions changed the runtime", name)
+		}
+	}
+	for _, name := range []string{"", "gemini"} {
+		if _, ok := adapter.Declared(name); ok || adapter.GrantsTools(name) || adapter.SkillPolicy(name) || adapter.ReadOnly(name) {
+			t.Errorf("adapter declares %q, which is no runtime", name)
+		}
+	}
+}
+
+// TestClaudeSessionOptions: the Claude session runtime renders the links SessionOptions gives it, a nil argument
+// keeps what an earlier call gave, and the runtime stays a PersistentSession.
+func TestClaudeSessionOptions(t *testing.T) {
+	s, err := runtimes.LookupSession(adapter.ClaudeName, "/bin/guildhall")
+	if err != nil {
+		t.Fatal(err)
+	}
+	copyDir := t.TempDir()
+	if _, ok := s.SessionFiles(copyDir)[claude.LinksFile]; ok {
+		t.Fatal("a session with no links rendered the links file")
+	}
+	s = s.SessionOptions(nil, &adapter.Links{URL: "http://host:1"})
+	s = s.SessionOptions(nil, nil)
+	if got, want := string(s.SessionFiles(copyDir)[claude.LinksFile]), `{"url":"http://host:1","repos":[]}`+"\n"; got != want {
+		t.Errorf("links file = %q, want %q", got, want)
+	}
+	if _, ok := s.(runtimes.PersistentSession); !ok {
+		t.Error("the Claude session runtime is no longer a PersistentSession")
+	}
+}

@@ -11,8 +11,36 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/adapter/runtimes"
 	"github.com/ndrwl/guildhall/internal/config"
 )
+
+// TestSigninListIsTheRuntimesThenGh: guildhall signin knows each runtime's own entry, in name order, skipping a
+// runtime that needs no sign-in, then gh: today claude, codex, gh.
+func TestSigninListIsTheRuntimesThenGh(t *testing.T) {
+	var want []string
+	for _, name := range runtimes.Names() {
+		rt, err := runtimes.Lookup(name, "/bin/guildhall")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !rt.Signin().Zero() {
+			want = append(want, name)
+		}
+	}
+	want = append(want, ghName)
+	rs := signinRuntimes()
+	if got := strings.Join(signinNames(rs), ","); got != strings.Join(want, ",") || got != "claude,codex,gh" {
+		t.Fatalf("signin runtimes = %s, want %s and claude,codex,gh", got, strings.Join(want, ","))
+	}
+	for _, r := range rs[:len(rs)-1] {
+		rt, _ := runtimes.Lookup(r.name, "")
+		if s := rt.Signin(); r.Title != s.Title || r.Program != s.Program || strings.Join(r.Verify, " ") != strings.Join(s.Verify, " ") {
+			t.Errorf("%s: signin entry %+v, want the runtime's %+v", r.name, r.Signin, s)
+		}
+	}
+}
 
 // signinSecret is a token-shaped string every fake runtime prints in its output, which no probe line may echo.
 const signinSecret = "sk-ant-oat01-SIGNIN-TEST-SECRET"
@@ -97,8 +125,8 @@ func TestSigninCheckReportsAWorkingSignin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"claude auth status", "claude --print " + signinPrompt + " --max-turns 1", "codex login status",
-		"codex exec --skip-git-repo-check --sandbox read-only " + signinPrompt, "gh auth status --hostname github.com", "gh api user --jq .login"} {
+	for _, want := range []string{"claude auth status", "claude --print " + adapter.SigninPrompt + " --max-turns 1", "codex login status",
+		"codex exec --skip-git-repo-check --sandbox read-only " + adapter.SigninPrompt, "gh auth status --hostname github.com", "gh api user --jq .login"} {
 		if !strings.Contains(string(calls), want+"\n") {
 			t.Errorf("calls lack %q:\n%s", want, calls)
 		}

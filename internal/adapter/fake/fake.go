@@ -58,6 +58,16 @@ func (Adapter) Capabilities() adapter.Capabilities { return adapter.Capabilities
 // would (docs/messaging.md).
 func (Adapter) Steerable() bool { return true }
 
+// GrantsTools reports false: the fake applies no allowed_tools or repository grants, and refuses a profile with
+// any rule.
+func (Adapter) GrantsTools() bool { return false }
+
+// SkillPolicy reports false: the fake applies no Claude skill policy.
+func (Adapter) SkillPolicy() bool { return false }
+
+// Signin is the zero entry: the fake is the guildhall executable, so it needs no sign-in.
+func (Adapter) Signin() adapter.Signin { return adapter.Signin{} }
+
 // CheckSettings honours every model and effort: the fake runs no model, and records the settings it was given
 // (SettingsFile) so tests can see what reached the runtime.
 func (Adapter) CheckSettings(adapter.Settings) error { return nil }

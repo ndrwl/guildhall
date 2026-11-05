@@ -27,14 +27,83 @@ const (
 	CodexName = "codex"
 )
 
-// grantsTools are the runtimes, by name, that apply a profile's allowed_tools and repository grants.
-var grantsTools = map[string]bool{ClaudeName: true}
+// Declaration is what a runtime, by name, declares to the packages that cannot import adapter/runtimes, such as
+// config and adapter/grant. Each runtime's own methods (runtimes.Runtime) return the same values, which the
+// registry test in adapter/runtimes checks for every runtime.
+type Declaration struct {
+	// GrantsTools is set when the runtime applies a profile's allowed_tools and repository grants.
+	GrantsTools bool
+	// SkillPolicy is set when the runtime applies a Claude skill policy (config.ClaudeSkillPolicy).
+	SkillPolicy bool
+	// ReadOnly is set when the runtime runs only in a read-only sandbox, so it may run only the step kinds
+	// admitted as read-only.
+	ReadOnly bool
+}
+
+// declarations are the runtimes' declarations by name; every runtime has one.
+var declarations = map[string]Declaration{
+	FakeName:   {},
+	ClaudeName: {GrantsTools: true, SkillPolicy: true},
+	CodexName:  {ReadOnly: true},
+}
+
+// Declared returns the declaration of the runtime named name, and whether it has one.
+func Declared(name string) (Declaration, bool) {
+	d, ok := declarations[name]
+	return d, ok
+}
 
 // GrantsTools reports whether the runtime named name applies a profile's allowed_tools and repository grants
 // (package adapter/grant): only claude does. A name no runtime has grants none. It is declared here, beside the
 // names, so a package that cannot import adapter/runtimes reads it without comparing names.
 func GrantsTools(name string) bool {
-	return grantsTools[name]
+	return declarations[name].GrantsTools
+}
+
+// SkillPolicy reports whether the runtime named name applies a Claude skill policy: only claude does. A name no
+// runtime has applies none.
+func SkillPolicy(name string) bool {
+	return declarations[name].SkillPolicy
+}
+
+// ReadOnly reports whether the runtime named name runs only in a read-only sandbox: only codex does. A name no
+// runtime has is not read-only.
+func ReadOnly(name string) bool {
+	return declarations[name].ReadOnly
+}
+
+// Signin is a runtime's entry in `guildhall signin` (docs/signin.md): how to check, verify and act on its sign-in
+// on this machine. The zero Signin means the runtime needs no sign-in.
+type Signin struct {
+	// Title names the runtime in output.
+	Title string
+	// Program is the executable looked up on PATH.
+	Program string
+	// Status is the check: the runtime's own sign-in status arguments, exit 0 when it says signed in.
+	Status []string
+	// Verify is a minimal real call that only a working sign-in passes, since a status can pass while real calls
+	// fail.
+	Verify []string
+	// Env is added to the environment of both commands.
+	Env []string
+	// Act is the lines printed when the runtime is not signed in: the exact command and the link, never run or
+	// opened by Guildhall.
+	Act []string
+}
+
+// Zero reports whether s is the zero entry: the runtime needs no sign-in.
+func (s Signin) Zero() bool {
+	return s.Title == "" && s.Program == "" && len(s.Status) == 0 && len(s.Verify) == 0 && len(s.Env) == 0 && len(s.Act) == 0
+}
+
+// SigninPrompt is the whole prompt of a model runtime's sign-in verify call: a minimal real model call.
+const SigninPrompt = "Reply with the single word OK."
+
+// Links are the task pages a session links ticket tokens to: the pages' base URL and the copy's repository ids, in
+// config order.
+type Links struct {
+	URL   string   `json:"url"`
+	Repos []string `json:"repos"`
 }
 
 // Spec is what Guildhall gives an Artisan for one task attempt.

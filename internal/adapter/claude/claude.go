@@ -109,10 +109,10 @@ type Adapter struct {
 	// Claude is the Claude Code program the wrapper runs; empty means Program
 	// on PATH.
 	Claude string
-	// SkillPolicy is the already resolved Director policy; nil uses director-v1.
-	SkillPolicy *config.ClaudeSkillPolicy
+	// Skills is the already resolved Director policy; nil uses director-v1.
+	Skills *config.ClaudeSkillPolicy
 	// Links is the task pages Lanterns links ticket tokens to; nil, with no [web] table, renders no LinksFile.
-	Links *Links
+	Links *adapter.Links
 }
 
 // Capabilities reports the Claude adapter's optional capabilities: none.
@@ -121,6 +121,28 @@ func (Adapter) Capabilities() adapter.Capabilities { return adapter.Capabilities
 // Steerable reports that the Claude runtime can be steered: its prompt tells the Artisan about steering and its
 // grants let it run `guildhall messages` and `guildhall messages ack`.
 func (Adapter) Steerable() bool { return true }
+
+// GrantsTools reports true: the Claude adapter applies a profile's allowed_tools and repository grants
+// (grant.EffectiveGrant), as adapter.GrantsTools declares.
+func (Adapter) GrantsTools() bool { return true }
+
+// SkillPolicy reports true: the Claude adapter applies a Claude skill policy, as adapter.SkillPolicy declares.
+func (Adapter) SkillPolicy() bool { return true }
+
+// Signin is Claude Code's entry in `guildhall signin` (docs/signin.md).
+func (Adapter) Signin() adapter.Signin {
+	return adapter.Signin{
+		Title: "Claude Code", Program: Program,
+		Status: []string{"auth", "status"},
+		Verify: []string{"--print", adapter.SigninPrompt, "--max-turns", "1"},
+		Act: []string{
+			"run: claude auth login",
+			"or start claude and type /login; it signs this machine into your own Claude account",
+			"help: https://code.claude.com/docs/en/authentication",
+			"never copy a Claude login or token from another machine",
+		},
+	}
+}
 
 // CheckSettings honours a model Claude Code's --model can take as given, one word that does not start with "-",
 // and an effort among Efforts; it refuses anything else with an error wrapping adapter.ErrUnsupportedSetting.

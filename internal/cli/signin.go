@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/adapter/runtimes"
 	"github.com/ndrwl/guildhall/internal/config"
 )
 
@@ -31,70 +33,50 @@ const (
 	signinVerifyTimeout = 2 * time.Minute
 )
 
-// signinPrompt is the whole prompt of the Claude Code and Codex verify calls: a minimal real model call.
-const signinPrompt = "Reply with the single word OK."
-
-// signinRuntime is one runtime `guildhall signin` checks, acts on and verifies (docs/signin.md).
+// signinRuntime is one runtime `guildhall signin` checks, acts on and verifies (docs/signin.md): its entry, by
+// the name it has on the command line.
 type signinRuntime struct {
-	// name is the runtime's name on the command line: claude, codex or gh.
+	// name is the runtime's name on the command line: a runtime's name, such as claude or codex, or gh.
 	name string
-	// title names the runtime in output.
-	title string
-	// program is the executable looked up on PATH.
-	program string
-	// status is the check: the runtime's own sign-in status command, exit 0 when it says signed in.
-	status []string
-	// verify is a minimal real call that only a working sign-in passes, since a status can pass while real calls
-	// fail.
-	verify []string
-	// env is added to the environment of both commands.
-	env []string
-	// act is the lines printed when the runtime is not signed in: the exact command and the link, never run or
-	// opened by Guildhall.
-	act []string
+	adapter.Signin
 }
 
-// signinRuntimes are the runtimes guildhall signin knows, in the order it handles them.
-var signinRuntimes = []signinRuntime{
-	{
-		name: "claude", title: "Claude Code", program: "claude",
-		status: []string{"auth", "status"},
-		verify: []string{"--print", signinPrompt, "--max-turns", "1"},
-		act: []string{
-			"run: claude auth login",
-			"or start claude and type /login; it signs this machine into your own Claude account",
-			"help: https://code.claude.com/docs/en/authentication",
-			"never copy a Claude login or token from another machine",
-		},
+// ghName is the GitHub CLI's name on the command line.
+const ghName = "gh"
+
+// ghSignin is the GitHub CLI's entry, which a Director copy publishes through; it is no runtime, so signin owns it.
+var ghSignin = signinRuntime{name: ghName, Signin: adapter.Signin{
+	Title: "GitHub CLI", Program: "gh",
+	Status: []string{"auth", "status", "--hostname", "github.com"},
+	Verify: []string{"api", "user", "--jq", ".login"},
+	Env:    []string{"GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1"},
+	Act: []string{
+		"run: gh auth login --hostname github.com",
+		"then: gh auth setup-git, so git pushes use the same sign-in",
+		"help: https://cli.github.com/manual/gh_auth_login",
 	},
-	{
-		name: "codex", title: "Codex", program: "codex",
-		status: []string{"login", "status"},
-		verify: []string{"exec", "--skip-git-repo-check", "--sandbox", "read-only", signinPrompt},
-		act: []string{
-			"run: codex login --device-auth",
-			"device-code sign-in must be enabled for your ChatGPT account first: in ChatGPT, Settings > Security, turn on device code authorization for Codex (a workspace admin enables it for a workspace)",
-			"help: https://developers.openai.com/codex/auth",
-			"never copy ~/.codex/auth.json from another machine",
-		},
-	},
-	{
-		name: "gh", title: "GitHub CLI", program: "gh",
-		status: []string{"auth", "status", "--hostname", "github.com"},
-		verify: []string{"api", "user", "--jq", ".login"},
-		env:    []string{"GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1"},
-		act: []string{
-			"run: gh auth login --hostname github.com",
-			"then: gh auth setup-git, so git pushes use the same sign-in",
-			"help: https://cli.github.com/manual/gh_auth_login",
-		},
-	},
+}}
+
+// signinRuntimes are the runtimes guildhall signin knows, in the order it handles them: each runtime's entry
+// (runtimes.Runtime.Signin) in name order, skipping a runtime that needs no sign-in, then gh.
+func signinRuntimes() []signinRuntime {
+	var out []signinRuntime
+	for _, name := range runtimes.Names() {
+		rt, err := runtimes.Lookup(name, "")
+		if err != nil {
+			continue
+		}
+		if s := rt.Signin(); !s.Zero() {
+			out = append(out, signinRuntime{name: name, Signin: s})
+		}
+	}
+	return append(out, ghSignin)
 }
 
 // signinRuntimeNames is the names of signinRuntimes.
 func signinRuntimeNames() []string {
 	var out []string
-	for _, r := range signinRuntimes {
+	for _, r := range signinRuntimes() {
 		out = append(out, r.name)
 	}
 	return out
@@ -102,7 +84,7 @@ func signinRuntimeNames() []string {
 
 // lookupSigninRuntime is the signin runtime called name.
 func lookupSigninRuntime(name string) (signinRuntime, bool) {
-	for _, r := range signinRuntimes {
+	for _, r := range signinRuntimes() {
 		if r.name == name {
 			return r, true
 		}
@@ -121,22 +103,22 @@ type signinState struct {
 // githubLogin matches a GitHub login, the only output of a probe ever printed: gh's verify call prints it.
 var githubLogin = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$`)
 
-// probeSignin runs the check and verify of r: r.program on PATH, its status command, then its real call. No output
+// probeSignin runs the check and verify of r: r.Program on PATH, its status command, then its real call. No output
 // of either command is printed or returned, except a GitHub login gh's verify prints, which is not a secret.
 func (a *App) probeSignin(r signinRuntime) signinState {
-	path, err := a.LookPath(r.program)
+	path, err := a.LookPath(r.Program)
 	if err != nil {
-		return signinState{detail: fmt.Sprintf("%s is not on PATH; install it first", r.program)}
+		return signinState{detail: fmt.Sprintf("%s is not on PATH; install it first", r.Program)}
 	}
-	if _, err := a.runSigninStep(signinStatusTimeout, r, path, r.status, false); err != nil {
-		return signinState{detail: fmt.Sprintf("not signed in: %s %s %s", r.program, strings.Join(r.status, " "), err)}
+	if _, err := a.runSigninStep(signinStatusTimeout, r, path, r.Status, false); err != nil {
+		return signinState{detail: fmt.Sprintf("not signed in: %s %s %s", r.Program, strings.Join(r.Status, " "), err)}
 	}
-	out, err := a.runSigninStep(signinVerifyTimeout, r, path, r.verify, true)
+	out, err := a.runSigninStep(signinVerifyTimeout, r, path, r.Verify, true)
 	if err != nil {
-		return signinState{detail: fmt.Sprintf("not signed in: %s says signed in, but a real call %s, so the sign-in does not work", strings.Join(append([]string{r.program}, r.status...), " "), err)}
+		return signinState{detail: fmt.Sprintf("not signed in: %s says signed in, but a real call %s, so the sign-in does not work", strings.Join(append([]string{r.Program}, r.Status...), " "), err)}
 	}
 	detail := "signed in; a real call succeeded"
-	if r.name == "gh" {
+	if r.name == ghName {
 		if login := strings.TrimSpace(string(out)); githubLogin.MatchString(login) {
 			detail = fmt.Sprintf("signed in as %s; a real call succeeded", login)
 		}
@@ -144,7 +126,7 @@ func (a *App) probeSignin(r signinRuntime) signinState {
 	return signinState{ok: true, detail: detail}
 }
 
-// runSigninStep runs one probe command with r.env in a new empty directory, so no copy's project settings or hooks
+// runSigninStep runs one probe command with r.Env in a new empty directory, so no copy's project settings or hooks
 // load, and returns its output; a failure is described by its exit status or timeout only, never its output. With
 // reply set, a command that prints nothing has failed, as a real model call always replies.
 func (a *App) runSigninStep(timeout time.Duration, r signinRuntime, path string, args []string, reply bool) ([]byte, error) {
@@ -158,7 +140,7 @@ func (a *App) runSigninStep(timeout time.Duration, r signinRuntime, path string,
 	defer func() { _ = os.RemoveAll(dir) }()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	out, err := a.RunEnv(ctx, dir, r.env, path, args...)
+	out, err := a.RunEnv(ctx, dir, r.Env, path, args...)
 	var exit *exec.ExitError
 	switch {
 	case ctx.Err() != nil:
@@ -198,9 +180,9 @@ func copySigninRuntimes(cfg *config.Config, session string) []signinRuntime {
 	for _, p := range cfg.Profiles {
 		used[p.Adapter] = true
 	}
-	used["gh"] = cfg.Mode != config.ModeSteward
+	used[ghName] = cfg.Mode != config.ModeSteward
 	var out []signinRuntime
-	for _, r := range signinRuntimes {
+	for _, r := range signinRuntimes() {
 		if used[r.name] {
 			out = append(out, r)
 		}
@@ -264,7 +246,7 @@ func (a *App) signinCmd(args []string) int {
 			return a.usageError("signin: " + err.Error())
 		}
 		if cp.dir == "" {
-			rs = signinRuntimes
+			rs = signinRuntimes()
 			a.preflightLine("signin", "no copy found, so every runtime: %s", strings.Join(signinRuntimeNames(), ", "))
 		} else {
 			cfg, refusal, err := appliedConfig(cfgPath)
@@ -302,8 +284,8 @@ func (a *App) signinCmd(args []string) int {
 // signinAct is the act and verify steps of r: print its sign-in command and link, wait for a line on in, then probe
 // again. A line "skip", or the end of in, skips r without probing.
 func (a *App) signinAct(r signinRuntime, in *bufio.Reader) signinState {
-	a.preflightLine(r.name, "act: sign %s in on this machine yourself; Guildhall runs and opens nothing", r.title)
-	for _, l := range r.act {
+	a.preflightLine(r.name, "act: sign %s in on this machine yourself; Guildhall runs and opens nothing", r.Title)
+	for _, l := range r.Act {
 		_, _ = fmt.Fprintf(a.Stdout, "  %s\n", l)
 	}
 	_, _ = fmt.Fprintf(a.Stdout, "%s: press Enter once signed in, or type skip\n", r.name)

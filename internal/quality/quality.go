@@ -700,12 +700,12 @@ func (j *Judge) launch(ctx context.Context, k artisan.AttemptKey, p prepared) (S
 }
 
 // runtime is what the judge's attempt runs under: its profile's model and effort, the effort falling back as a
-// workflow step's does (config.Config.EffectiveEffort), and the profile itself only for a codex judge, whose wrapper
-// refuses a profile granting any rule. A Claude judge is given no profile, so it still runs with no grant.
+// workflow step's does (config.Config.EffectiveEffort), and the profile itself only for a judge on a read-only
+// runtime (adapter.ReadOnly), codex, whose wrapper refuses a profile granting any rule. A Claude judge is given no profile, so it still runs with no grant.
 func (j *Judge) runtime(c config.JudgeChoice) (string, adapter.Settings) {
 	p := j.Config.Profiles[c.Profile]
 	settings := adapter.Settings{Model: p.Model, Effort: j.Config.EffectiveEffort(p.Effort)}
-	if c.Adapter == adapter.CodexName {
+	if adapter.ReadOnly(c.Adapter) {
 		return c.Profile, settings
 	}
 	return "", settings

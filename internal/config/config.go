@@ -932,7 +932,7 @@ func (c *Config) validate() []string {
 		if p.Role != "" && !configRelative(p.Role) {
 			add("profile %q: role must be a relative slash-separated path inside the config directory", name)
 		}
-		if p.Adapter == adapter.CodexName && p.AllowedToolsSet() {
+		if readOnlyRuntime(p.Adapter) && p.AllowedToolsSet() {
 			add("profile %q: runs the %s adapter, which runs read-only and grants no allowed_tools; remove allowed_tools", name, p.Adapter)
 		}
 		problems = append(problems, checkAllowedTools(fmt.Sprintf("profile %q", name), p.AllowedToolsList())...)
@@ -1095,7 +1095,7 @@ func (c *Config) validate() []string {
 			where := fmt.Sprintf("%s: profile %q", name, profile)
 			if p, ok := c.Profiles[profile]; !ok {
 				add("%s: the copy declares no such profile", where)
-			} else if p.Adapter != "claude" {
+			} else if !adapter.GrantsTools(p.Adapter) {
 				add("%s: runs the %s adapter, which grants no allowed_tools; only the claude adapter does", where, p.Adapter)
 			}
 			problems = append(problems, checkAllowedTools(where, r.Profiles[profile].AllowedTools)...)

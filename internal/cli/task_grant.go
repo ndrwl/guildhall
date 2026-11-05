@@ -170,7 +170,7 @@ func createTaskGrant(s *store.Store, dir string, cfg *config.Config, r config.Re
 		if step.Actor() != workflow.ArtisanActor {
 			continue
 		}
-		if p, err := cfg.Profile(workflow.EffectiveProfile(step)); err == nil && p.Adapter == adapter.ClaudeName {
+		if p, err := cfg.Profile(workflow.EffectiveProfile(step)); err == nil && adapter.GrantsTools(p.Adapter) {
 			steps = append(steps, step.ID)
 		}
 	}

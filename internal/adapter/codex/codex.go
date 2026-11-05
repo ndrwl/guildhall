@@ -47,6 +47,28 @@ func (Adapter) Capabilities() adapter.Capabilities { return adapter.Capabilities
 // itself and never tells the Artisan about steering, so it cannot run `guildhall messages ack`.
 func (Adapter) Steerable() bool { return false }
 
+// GrantsTools reports false: the Codex adapter runs read-only and applies no allowed_tools or repository grants;
+// it refuses a profile with any rule.
+func (Adapter) GrantsTools() bool { return false }
+
+// SkillPolicy reports false: the Codex adapter applies no Claude skill policy.
+func (Adapter) SkillPolicy() bool { return false }
+
+// Signin is Codex's entry in `guildhall signin` (docs/signin.md).
+func (Adapter) Signin() adapter.Signin {
+	return adapter.Signin{
+		Title: "Codex", Program: Program,
+		Status: []string{"login", "status"},
+		Verify: []string{"exec", "--skip-git-repo-check", "--sandbox", "read-only", adapter.SigninPrompt},
+		Act: []string{
+			"run: codex login --device-auth",
+			"device-code sign-in must be enabled for your ChatGPT account first: in ChatGPT, Settings > Security, turn on device code authorization for Codex (a workspace admin enables it for a workspace)",
+			"help: https://developers.openai.com/codex/auth",
+			"never copy ~/.codex/auth.json from another machine",
+		},
+	}
+}
+
 // CheckSettings honours a model that is one word not starting with "-", which the wrapper passes to codex's -m, and
 // an effort among Efforts; it refuses anything else with an error wrapping adapter.ErrUnsupportedSetting. It does
 // not check that the model exists.
