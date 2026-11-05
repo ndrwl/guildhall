@@ -311,13 +311,15 @@ func TestParseRefusals(t *testing.T) {
 
 func TestBuiltins(t *testing.T) {
 	want := map[string][]string{
+		"director":       {"copy-dir", "guildhall-pin", "tailscale-ssh"},
 		"git-and-claude": {"git", "gh", "claude"},
 		"go":             {"go", "go-on-path"},
-		"herdr":          {"herdr"},
+		"herdr":          {"herdr", "herdr-session"},
+		"new-copy":       {"copy-free", "clone-paths-free"},
 		"sign-in":        {"claude-sign-in", "codex-sign-in", "gh-sign-in"},
 		"wsl-settings":   {"wsl-systemd", "wsl-keep-running"},
 	}
-	if got := setup.Builtins(); !slices.Equal(got, []string{"git-and-claude", "go", "herdr", "sign-in", "wsl-settings"}) {
+	if got := setup.Builtins(); !slices.Equal(got, []string{"director", "git-and-claude", "go", "herdr", "new-copy", "sign-in", "wsl-settings"}) {
 		t.Fatalf("Builtins = %v", got)
 	}
 	seen := map[string]string{}

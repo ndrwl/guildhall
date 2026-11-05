@@ -140,7 +140,7 @@ The Steward copy is self-contained, so moving it, such as from a laptop to a Lin
 A rollout only reaches machines and Director copies that are already in the roster.
 An existing Director copy is brought into the roster by a [takeover](#takeover), or by hand ([managing a Director copy](#managing-a-director-copy)).
 Creating the machine's Guildhall account, SSH setup, host-key trust, Claude and forge sign-in and administrator steps belong to the setup wizard (R1.43-R1.51), which is not implemented yet; its sign-in step is built as the standalone [`guildhall signin`](signin.md), which checks, guides and verifies each runtime's sign-in on the machine it runs on.
-The engine such a wizard and d128's provisioning run on, [`guildhall setup`](setup.md), is built: its doctor reports a machine's gaps against step files and its wizard walks a person through the human ones, but no Steward command runs it on a machine yet.
+The engine such a wizard and d128's provisioning run on, [`guildhall setup`](setup.md), is built: its doctor reports a machine's gaps against step files and its wizard walks a person through the human ones, and a Steward's [provisioning](#provisioning) runs its doctor on a machine.
 A rollout never adds a machine, account, Director or repository to the roster, never creates a Director copy and never asks for or stores a credential.
 Each machine's other [secrets](secrets.md) are sops ciphertext encrypted to its own age key, from `guildhall secrets init`, and decrypted in memory by `director start` and `steward start`; the Steward sets and pushes them with [`steward secrets`](#secrets), a separate command from rollouts.
 
@@ -309,12 +309,14 @@ The allow-list is exactly ([decision](decisions/steward-fixed-remote-commands.md
 - `director status --json --copy <copy_dir>`, which only reads the copy's status feed, for the [Director health](#director-health) checks ([decision](decisions/steward-reads-director-status.md)) and an approved [takeover](#takeover);
 - `secrets check --json --copy <copy_dir>`, which only reads: whether the machine's [secrets file](secrets.md#secrets-check) decrypts with its key and which names it holds, never a value, run by [`steward secrets`](#secrets) ([decision](decisions/steward-secrets-push.md));
 - `director reload --copy <copy_dir>`, reserved for [release upgrades](releases.md#guildhall-director-reload) and refused until that is built;
-- for an approved [takeover](#takeover) only ([decision](decisions/steward-setup-plans.md)): `director pause --copy <copy_dir>` and `director resume --copy <copy_dir>`; `backup now --copy <copy_dir>` and `store export --out <dir> --copy <copy_dir>`; and `director enrol --steward <label> --copy <copy_dir>`.
+- for an approved [takeover](#takeover) only ([decision](decisions/steward-setup-plans.md)): `director pause --copy <copy_dir>` and `director resume --copy <copy_dir>`; `backup now --copy <copy_dir>` and `store export --out <dir> --copy <copy_dir>`; and `director enrol --steward <label> --copy <copy_dir>`;
+- for an approved [provisioning](#provisioning) only: `setup doctor --json --steps <steps> --digest <hex> --setup-dir <dir> [--set <name>=<value>]...`, which only reads, and the same with `--fix --only <ids>` after `--json`, which closes only the fixable gaps it names; `store init --copy <copy_dir>`; `release adopt --copy <copy_dir>`; `director start --tab --copy <copy_dir>`; and `git clone -- <remote> <path>`, the one command whose program is `git`.
 
-A value other than the copy directory is held to the same rule: `--out` takes an absolute path in the restricted character set and `--steward` a lowercase id.
+A value other than the copy directory is held to the same rule: `--out`, `--setup-dir` and a clone's path take an absolute path in the restricted character set, `--steward` a lowercase id, `--digest` a lowercase hex sha256, `--only` comma-separated step ids, `--steps` a built-in step file's name or an absolute path, `--set` a lowercase name and a value of letters, digits, `.`, `_`, `~`, `+`, `:`, `/` and `-`, and a remote an `https://` URL or `git@host:path` of letters, digits, `.`, `_`, `~`, `-` and `/` with no `.` or `..` segment.
+A step file's contents never travel on a command line; only its path and digest do.
 Any other command, flag or argument is refused before `ssh` runs, and so is an alias that is not a plain roster alias.
 `ssh` joins the arguments with spaces for the remote side, which then parses them again, through `cmd.exe` or PowerShell on a Windows OpenSSH server and a POSIX shell elsewhere; every value is restricted to letters, digits, `.`, `_`, `-`, `/` and a drive's `:`, which all of them read the same way, so nothing is quoted.
-Each `ssh` run is bounded by a two-minute timeout and is cancelled as `scp` is, killing its process group on Unix and its process elsewhere.
+Each `ssh` run is bounded by a two-minute timeout, or fifteen minutes for a command that may take minutes (`setup doctor --fix`, `release adopt`, `director start --tab` and `git clone`), and is cancelled as `scp` is, killing its process group on Unix and its process elsewhere.
 A command that exits non-zero, a refusing machine and a timeout are each reported with their diagnostic.
 
 ## Collection
@@ -454,6 +456,76 @@ Once the `managed` step has run it refuses, since the copy may hold the plan's `
 **Failures.** A takeover never deletes or overwrites a store, a copy or a file it did not create.
 When a step fails, the Steward reads the step log and the command's diagnostic, tells the Guildmaster what is wrong, and may apply the same plan again once it is fixed; any other fix is a new dry run, approved again.
 
+## Provisioning
+
+```sh
+guildhall steward provision --config <steward.toml> --request <file> --plan <dir> --dry-run
+guildhall steward approval request --plan <dir> [--copy <steward copy>]
+guildhall steward provision --config <steward.toml> --plan <dir> --apply --approve <plan digest>
+```
+
+Provisioning makes a new managed Director copy on a roster machine that already has Guildhall, end to end, in one setup plan approved by its digest ([decision](decisions/steward-setup-plans.md)).
+It is built for Linux machines; a bare machine and native Windows come later.
+
+**Request.** The request is strict TOML:
+
+```toml
+schema_version = 1
+machine = "vds"                       # a roster machine with the director role
+director = "ops"                      # the new Director's name
+copy_dir = "/home/guild/directors/ops"
+setup_dir = "/home/guild/.guildhall/setup"   # the setup engine's directory on the machine
+herdr_session = "guild"               # the Herdr session the Director's tab opens in
+step_files = ["herdr", "git-and-claude", "sign-in", "steps/custom.toml"]   # optional
+
+[pins]                                # optional
+herdr_version = "0.5.0"
+herdr_url = "https://…/herdr-0.5.0-linux-amd64"
+herdr_sha256 = "<hex>"
+guildhall = "v0.9.0"                  # the release the machine must run, and the copy's pin is compared against
+
+[[repository]]
+id = "infra"
+remote = "git@github.com:guild/infra.git"
+path = "/home/guild/src/infra"
+```
+
+`step_files` names the [step files](setup.md#step-files) the machine is checked against: a built-in by name, or a path, relative to the request, to a step file the Steward wrote for an install no built-in covers.
+Without it they are `director`, `herdr`, `git-and-claude` and `sign-in`; the [`director`](setup.md#built-in-step-files) built-in, which makes the copy directory and checks the Guildhall release and Tailscale SSH, is always first.
+`new-copy` is not named there: every plan runs it before anything else.
+The `[pins]` Herdr values go together, and are needed when the machine has no Herdr.
+
+**Dry run.** The dry run changes nothing on the machine.
+It first runs `setup doctor --json` there for the [`new-copy`](setup.md#built-in-step-files) built-in, given the copy directory and the clone paths, and refuses with `ErrCopyExists` while it reports a gap: a copy directory that already has a `config.toml` or `director.store`, or a clone path that is a file or a directory that is not empty.
+Then it runs the doctor for each built-in step file in `step_files`, given the request's values with `--set`: for `director`, `copy_dir`, the `guildhall` program the roster names and the `[pins] guildhall` release as `guildhall_pin`; for `herdr`, the Herdr pins and `herdr_session`.
+So the doctor checks the Guildhall facts a plan needs before anything acts: the copy directory, store and clone paths (`new-copy`), the Guildhall release against the pin (`guildhall-pin`), Tailscale SSH with no check-mode rule (`tailscale-ssh`), which the Steward's batch-mode ssh could not pass, and a running Herdr server for `herdr_session` (`herdr-session`), which Guildhall never starts.
+Each gap becomes a step whose id is the gap's id: a **fix** step for a fixable gap, which the Steward runs with `setup doctor --fix --only <id>`, and a **wizard** step for a human one, which only the Guildmaster runs.
+Each Steward-written step file is kept in the plan directory under `files/steps/`, listed in full with its digest, and becomes a copy step to `<copy_dir>/state/steward/setup/<name>-<digest12>.toml` followed by a fix or wizard step for each of its steps.
+It refuses with `ErrRosterConflict` a machine not in the roster or without the director role, and a Director, copy directory or repository the roster already lists.
+It renders the copy's `config.toml` (a director config with the name, `herdr_session` in `[local]`, and each repository with the request's machine as its `owner_machine`), checked to load with the first `managed.toml`, which has no managed key.
+The digest binds the request, every step file's digest, the doctor's reports, the roster at the private config's `HEAD`, the planned files and every step.
+
+**Apply.** The first apply plans again and refuses with `ErrPlanChanged`, running no step, unless the digest is the same: a changed machine, doctor report, roster or Steward-written step file, at its source or in the plan, stops it.
+Then the steps run in order, each checking before it acts and verifying after, with the takeover's step log, lock and resume:
+
+1. The machine's gaps: each fix step runs `setup doctor --fix --only <id>`, which checks first, and must leave the doctor no longer reporting the gap. A wizard step asks the doctor; while it still reports the gap, the apply ends `waiting <id>` with the command the Guildmaster runs on the machine, `guildhall setup wizard --steps <file> --digest <hex> --only <id> --setup-dir <dir>`, and what the wizard's completion record, read back by `scp`, shows: missing, malformed or of another step file (`ErrWizardRecord`), or recording the step while the doctor still reports it. The record is the receipt; the doctor decides.
+2. `steps-<name>`: each Steward-written step file is copied and read back; the engine runs it only under its digest.
+3. `config` and `managed`: `config.toml` and `managed.toml` are copied into the copy directory and read back. A copy step copies only when `scp` reports the target missing ("No such file or directory"): the same file already there is left as done, a different one is refused with `ErrCopyExists`, and any other failure to read the target, such as a file the user may not read, a directory at the path or a lost connection, fails the step with nothing copied. The `steps-<name>` copies work the same way.
+4. `store`: `store init`, which refuses a store that exists.
+5. `clone-<id>`: the `new-copy` doctor runs again for that path alone, and a path that is not empty is refused with `ErrCopyExists` before git runs; then `git clone -- <remote> <path>`.
+6. `adopt`: `release adopt`, which pins the copy to the `guildhall` on the machine's `PATH`.
+7. `enrol` and `reload`: as in a takeover, after which the copy is managed by this Steward with its `managed.toml` authorized.
+8. `start`: `director start --tab`, after which `director status --json` must report the session started (`recovering`, `running` or `paused`) with its Herdr tab recorded within two minutes; a slow first turn does not fail the plan.
+9. `roster`: the entry is committed alone and pushed, as in a takeover.
+10. `summary`: the copy is checked managed with its tab recorded, the doctor is run again for every step file, and `summary.json` is written in the plan directory: the mode, the session and whether it is ready, the tab, the `guildhall` pin and Herdr's version against the pins, and every outstanding gap with its action line. Its one-line form is the step's note.
+
+A store or clone made by a run of its step that stopped before the step log was written is taken as done when the step runs again; for a clone, the step's note says that the repository at the path was taken as that clone.
+The Steward never runs a wizard, `sudo` or a human step, and never holds a secret: administrator installs and sign-ins are human steps the Guildmaster closes on the machine.
+Applying a finished plan checks the copy is still managed and the roster still holds the entry, and changes nothing.
+
+**Failures.** Provisioning never deletes or overwrites a store, a copy, a clone or a file the engine did not create.
+When a step fails, the Steward reads the step log, the setup journal and the doctor's report, gives the Guildmaster the diagnosis and the doctor's action line, and may apply the same plan again; any other fix, such as a new step file of its own, is a new dry run approved again.
+
 ## Managing a Director copy
 
 A Director copy is standalone until it is enrolled; a rollout reaches only its `managed.toml` and never enrols it ([standalone and managed Directors](director-modes.md)).
@@ -484,7 +556,7 @@ A revision naming a `release` moves the copy's pin at its reload, and active tas
 - The rest of R1.31, the release pin and side-by-side release installs designed in [release upgrades](releases.md): the Guildhall home, `guildhall release install` and `status`, the pin, `guildhall release use` and `adopt`, the PATH launcher, tasks recording and running on their release, a standalone copy's `guildhall release rollback` and `release prune`, and the managed pin, `release` and `release_sha256` in `managed.toml` applied by `config reload`, are [built](releases.md#built-so-far). A rollout of a new `release` changes the pin once the release is installed or its binary is in the machine's `releases/.incoming/<version>/`; the rollout copying that binary itself and the remote `director reload` are not built yet.
 - `rollback`, which will restore a preserved revision for new tasks.
 - Tool installs (`guildhall steward install`, R1.7, R1.50) and audits (R1.32); learnings are [collected and triaged](#collection), and an adopted lesson ships by an ordinary rollout.
-- Provisioning a new Director copy, the setup engine and doctor, bootstrapping a bare machine, and takeover on native Windows: the later slices of guildhall/d128, under the same [setup plans](decisions/steward-setup-plans.md) (R1.43-R1.51).
+- Bootstrapping a bare machine, and takeover and provisioning on native Windows: the later slices of guildhall/d128, under the same [setup plans](decisions/steward-setup-plans.md) (R1.43-R1.51).
 - The [takeover](#takeover)'s live acceptance, which the Guildmaster runs once on the laptop's WSL Director copy: CI runs it only on a stand-in fleet and a local copy.
 - Platform support: tests replace `scp` and `ssh` with stubs on Linux, Windows and macOS, and no platform is claimed as supported for rollouts until acceptance passes there (R1.27).
 - The Steward session's live acceptance: CI runs it against a stand-in runtime only, so it is not claimed until the Guildmaster has run it once with three Director hosts (R1.27, R1.30).

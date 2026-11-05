@@ -1,7 +1,8 @@
 # Herdr, installed into the user's own directory with no administrator rights. The Go form of Firstmate's
 # bin/fm-install-herdr.sh at ndrwl/firstmate 2add138ffe92309787dbbedf375beb4f05704f7b (MIT, see NOTICE). The version, download URL and sha256 come from the caller, such as a
 # Steward plan's pins; a wrong checksum is refused before anything is put in place. A running Herdr server is never
-# started, stopped or replaced.
+# started, stopped or replaced: the herdr-session step only checks that the named session's server runs, and a
+# person starts it.
 schema = "guildhall.steps/1"
 name = "herdr"
 title = "Herdr, the terminal host"
@@ -10,6 +11,8 @@ title = "Herdr, the terminal host"
 herdr_version = ""
 herdr_url = ""
 herdr_sha256 = ""
+# herdr_session is the Herdr session a Director's tab opens in; with none, the herdr-session step passes.
+herdr_session = ""
 
 [[step]]
 id = "herdr"
@@ -41,3 +44,41 @@ dest = "${home}/.local/bin/herdr"
 [step.verify]
 shell = "sh"
 script = '"$SETUP_HOME/.local/bin/herdr" --version'
+
+[[step]]
+id = "herdr-session"
+title = "Run the Herdr server of the Director's session"
+tag = "human"
+os = ["linux", "darwin"]
+instructions = '''
+The Director's tab opens in its own Herdr session, whose server is not running on this machine. Guildhall never
+starts, stops or replaces a Herdr server. In your own terminal on this machine, start Herdr in that session, for
+example with HERDR_SESSION=<session> herdr, and leave it running; then confirm here.
+'''
+undo = "Quit that Herdr session when you choose; nothing else changed."
+
+[[step.prompt]]
+kind = "confirm"
+text = "Is the session's Herdr server running?"
+
+[step.check]
+shell = "sh"
+script = '''
+if [ -z "$SETUP_HERDR_SESSION" ]; then
+  exit 0
+fi
+if command -v herdr >/dev/null 2>&1; then
+  herdr=herdr
+elif [ -x "$SETUP_HOME/.local/bin/herdr" ]; then
+  herdr="$SETUP_HOME/.local/bin/herdr"
+else
+  echo "herdr is not on PATH or in ~/.local/bin"
+  exit 1
+fi
+status=$("$herdr" status --json --session "$SETUP_HERDR_SESSION" 2>&1 | tr -d ' \t\r\n')
+case "$status" in
+*'"running":true'*'"session":"'"$SETUP_HERDR_SESSION"'"'*) echo "Herdr session $SETUP_HERDR_SESSION has a running server"; exit 0 ;;
+esac
+echo "Herdr session $SETUP_HERDR_SESSION has no running server"
+exit 1
+'''

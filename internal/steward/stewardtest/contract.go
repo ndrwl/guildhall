@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -88,8 +89,8 @@ func RunCopierContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 		{"missing remote file fails and leaves the local file", func(t *testing.T, h Harness, dir string) {
 			local := filepath.Join(dir, "fetched.toml")
 			writeLocal(t, local, []byte("kept\n"))
-			if err := h.Copier().Fetch(context.Background(), managed(Alpha), local); err == nil {
-				t.Fatal("Fetch of a missing file succeeded")
+			if err := h.Copier().Fetch(context.Background(), managed(Alpha), local); !errors.Is(err, fs.ErrNotExist) {
+				t.Fatalf("Fetch of a missing file: error %v, want one wrapping fs.ErrNotExist", err)
 			}
 			if got := readLocal(t, local); string(got) != "kept\n" {
 				t.Errorf("failed fetch left %q, want the previous file", got)
@@ -111,8 +112,8 @@ func RunCopierContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 			writeLocal(t, local, []byte("local\n"))
 			h.Refuse(t, Alpha)
 			err := h.Copier().Fetch(context.Background(), managed(Alpha), local)
-			if err == nil || err.Error() == "" {
-				t.Errorf("Fetch from a refused machine: error %v, want a diagnostic", err)
+			if err == nil || err.Error() == "" || errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("Fetch from a refused machine: error %v, want a diagnostic that is not fs.ErrNotExist", err)
 			}
 			err = h.Copier().Put(context.Background(), local, managed(Alpha))
 			if err == nil || err.Error() == "" {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"slices"
 	"strings"
@@ -21,7 +22,9 @@ type Fleet struct {
 	files   map[steward.Remote][]byte
 	refused map[string]bool
 	hung    map[string]bool
-	answers map[string]answer
+	// unreadable are files a fetch fails for with a diagnostic other than a missing file.
+	unreadable map[steward.Remote]string
+	answers    map[string]answer
 	// handlers answer the commands of one machine, by alias, before answers.
 	handlers map[string]Handler
 	ran      map[string][][]string
@@ -48,7 +51,7 @@ var (
 // NewFleet returns a Fleet with no files, every machine reachable and every remote command succeeding silently.
 func NewFleet() *Fleet {
 	return &Fleet{
-		files: map[steward.Remote][]byte{}, refused: map[string]bool{}, hung: map[string]bool{},
+		files: map[steward.Remote][]byte{}, refused: map[string]bool{}, hung: map[string]bool{}, unreadable: map[steward.Remote]string{},
 		answers: map[string]answer{}, handlers: map[string]Handler{}, ran: map[string][][]string{},
 	}
 }
@@ -96,6 +99,14 @@ func (f *Fleet) Read(file steward.Remote) ([]byte, bool) {
 	defer f.mu.Unlock()
 	data, ok := f.files[file]
 	return slices.Clone(data), ok
+}
+
+// FailFetch makes every later fetch of file fail with failure as its diagnostic, as a file the machine's user may
+// not read or a directory at the path does, whether or not the file exists; the error does not wrap fs.ErrNotExist.
+func (f *Fleet) FailFetch(file steward.Remote, failure string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.unreadable[file] = failure
 }
 
 // Refuse makes every later copy or command to or from the machine with alias fail.
@@ -161,9 +172,15 @@ func (f *Fleet) Fetch(ctx context.Context, src steward.Remote, dst string) error
 	if err := f.reach(ctx, "fetch "+src.String(), src.Alias); err != nil {
 		return err
 	}
+	f.mu.Lock()
+	failure, unreadable := f.unreadable[src]
+	f.mu.Unlock()
+	if unreadable {
+		return fmt.Errorf("fleet: %s: %s", src, failure)
+	}
 	data, ok := f.Read(src)
 	if !ok {
-		return fmt.Errorf("fleet: %s: no such file", src)
+		return fmt.Errorf("fleet: %s: %w", src, fs.ErrNotExist)
 	}
 	return os.WriteFile(dst, data, 0o600)
 }

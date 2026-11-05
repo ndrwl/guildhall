@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -91,33 +92,41 @@ func (a *App) stewardTakeoverCmd(args []string) int {
 		return 0
 	case *abandon:
 		out, err := s.Abandon(ctx, *planDir)
-		return a.setupOutcome(out, err)
+		return a.setupOutcome("steward takeover", out, err)
+	}
+	return a.applySetup(ctx, "steward takeover", steward.SetupKindTakeover, s, *cfgPath, *planDir, *approve)
+}
+
+// applySetup applies the approved setup plan of kind in planDir for the command name and prints its outcome.
+func (a *App) applySetup(ctx context.Context, name, kind string, s *steward.Setup, cfgPath, planDir, approve string) int {
+	if saved, err := steward.ReadSetupPlan(planDir); err == nil && saved.Kind != kind {
+		return a.fail(fmt.Errorf("%s: %s holds a %s plan; apply it with guildhall steward %s", name, planDir, saved.Kind, saved.Kind))
 	}
 	// An agent in a session, the Steward's among them, never approves a setup plan itself: its --approve stands only
 	// on the Guildmaster's recorded answer to the plan's approval decision.
-	if *approve != "" && a.inSession() {
-		storePath := filepath.Join(filepath.Dir(*cfgPath), stewardStoreFile)
-		ok, err := stewardDecisionApproved(storePath, stewardSetupTask, setupDecisionID(*approve), *approve)
+	if approve != "" && a.inSession() {
+		storePath := filepath.Join(filepath.Dir(cfgPath), stewardStoreFile)
+		ok, err := stewardDecisionApproved(storePath, stewardSetupTask, setupDecisionID(approve), approve)
 		if err != nil {
-			return a.fail(fmt.Errorf("steward takeover: %w", err))
+			return a.fail(fmt.Errorf("%s: %w", name, err))
 		}
 		if !ok {
-			return a.fail(fmt.Errorf("steward takeover: inside a Guildhall session --approve %s needs the Guildmaster's answer %q to decision %s/%s/%s in %s; open it with guildhall steward approval request --plan %s and ask the Guildmaster to answer it",
-				*approve, stewardApprove, stewardRepository, stewardSetupTask, setupDecisionID(*approve), storePath, shellQuote([]string{*planDir})))
+			return a.fail(fmt.Errorf("%s: inside a Guildhall session --approve %s needs the Guildmaster's answer %q to decision %s/%s/%s in %s; open it with guildhall steward approval request --plan %s and ask the Guildmaster to answer it",
+				name, approve, stewardApprove, stewardRepository, stewardSetupTask, setupDecisionID(approve), storePath, shellQuote([]string{planDir})))
 		}
 	}
-	out, err := s.ApplySetup(ctx, *planDir, *approve)
+	out, err := s.ApplySetup(ctx, planDir, approve)
 	if errors.Is(err, steward.ErrNotApproved) {
-		if saved, rerr := steward.ReadSetupPlan(*planDir); rerr == nil {
+		if saved, rerr := steward.ReadSetupPlan(planDir); rerr == nil {
 			err = fmt.Errorf("%w; open its approval decision with guildhall steward approval request --plan %s, and once the Guildmaster approves, add --approve %s",
-				err, shellQuote([]string{*planDir}), saved.Digest)
+				err, shellQuote([]string{planDir}), saved.Digest)
 		}
 	}
-	return a.setupOutcome(out, err)
+	return a.setupOutcome(name, out, err)
 }
 
 // setupOutcome prints each step's record and the outcome, and returns 0 only when the plan is done.
-func (a *App) setupOutcome(out *steward.Outcome, err error) int {
+func (a *App) setupOutcome(name string, out *steward.Outcome, err error) int {
 	if out != nil {
 		var b strings.Builder
 		for _, r := range out.Log.Steps {
@@ -143,7 +152,7 @@ func (a *App) setupOutcome(out *steward.Outcome, err error) int {
 	case errors.As(err, &stepErr):
 		return 1
 	case err != nil:
-		return a.fail(fmt.Errorf("steward takeover: %w", err))
+		return a.fail(fmt.Errorf("%s: %w", name, err))
 	case out.State != steward.OutcomeDone:
 		return 1
 	}
@@ -178,17 +187,26 @@ func (a *App) loadSetup(cfgPath string) (*steward.Setup, error) {
 		if err != nil {
 			return nil, fmt.Errorf("ssh is needed to run the takeover's remote commands: %w", err)
 		}
-		runner = steward.SSH{Path: ssh, Timeout: sshTimeout}
+		runner = steward.SSH{Path: ssh, Timeout: sshTimeout, LongTimeout: sshLongTimeout}
 	}
 	return &steward.Setup{Private: git.WorkTree{Program: git.Program{Path: gitPath, Timeout: scpTimeout}, Dir: private},
 		Transport: copier, Runner: runner, Steward: cfg.Steward.Name, Now: a.now}, nil
 }
 
-// renderSetupPlan describes a dry-run takeover plan: the copy, the roster change and every step with its command.
+// sshLongTimeout bounds each remote command of a setup plan that may take minutes: a clone, a fix that downloads,
+// a release adopt and a session start.
+const sshLongTimeout = 15 * time.Minute
+
+// renderSetupPlan describes a dry-run setup plan: the copy, the roster change, the files it copies, a provisioning's
+// step files, each Steward-written one in full, and every step with its command.
 func renderSetupPlan(p *steward.SetupPlan, cfgPath string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s plan %s\ndry run: nothing was changed\n\n", p.Kind, p.Digest)
-	fmt.Fprintf(&b, "%s/%s (%s:%s): %s, session %s, enrolled with Steward %s once applied\n", p.Machine, p.Director, p.SSHAlias, p.CopyDir, p.Probe.Mode, p.Session(), p.Steward)
+	if p.Kind == steward.SetupKindProvision {
+		fmt.Fprintf(&b, "%s/%s (%s:%s): a new copy with setup directory %s, enrolled with Steward %s once applied\n", p.Machine, p.Director, p.SSHAlias, p.CopyDir, p.SetupDir, p.Steward)
+	} else {
+		fmt.Fprintf(&b, "%s/%s (%s:%s): %s, session %s, enrolled with Steward %s once applied\n", p.Machine, p.Director, p.SSHAlias, p.CopyDir, p.Probe.Mode, p.Session(), p.Steward)
+	}
 	fmt.Fprintf(&b, "roster.toml:\n")
 	for line := range strings.Lines(p.RosterDiff) {
 		b.WriteString("    " + line)
@@ -196,19 +214,41 @@ func renderSetupPlan(p *steward.SetupPlan, cfgPath string) string {
 	for _, f := range p.Files {
 		fmt.Fprintf(&b, "file %s -> %s (sha256 %s)\n", f.Name, f.Target, f.SHA256)
 	}
+	for _, sf := range p.StepFiles {
+		if sf.Builtin {
+			fmt.Fprintf(&b, "step file %s: built-in, sha256 %s\n", sf.Name, sf.SHA256)
+			continue
+		}
+		fmt.Fprintf(&b, "step file %s: written by the Steward, sha256 %s, runs only under that digest; in full:\n", sf.Name, sf.SHA256)
+		data, _ := os.ReadFile(filepath.Join(p.PlanDir, filepath.FromSlash(sf.File)))
+		for line := range strings.Lines(string(data)) {
+			b.WriteString("    | " + line)
+		}
+		if len(data) > 0 && data[len(data)-1] != '\n' {
+			b.WriteByte('\n')
+		}
+	}
+	if pre := p.Preflight; pre != nil {
+		fmt.Fprintf(&b, "step file %s: built-in, sha256 %s, checked before the plan acts and before each clone; any gap refuses it\n", pre.Name, pre.SHA256)
+	}
+	for _, r := range p.Doctor {
+		fmt.Fprintf(&b, "doctor %s: %d gap(s)\n", r.Steps, len(r.Gaps))
+	}
 	b.WriteString("steps:\n")
 	for i, st := range p.Steps {
 		fmt.Fprintf(&b, "  %d. %s: %s\n", i+1, st.ID, st.Expect)
 		switch st.Kind {
-		case steward.StepKindRemote:
+		case steward.StepKindRemote, steward.StepKindFix:
 			fmt.Fprintf(&b, "     ssh -o BatchMode=yes -- %s %s\n", p.SSHAlias, shellQuote(st.Argv))
 		case steward.StepKindCopy:
 			fmt.Fprintf(&b, "     %s\n", shellQuote(st.Argv))
+		case steward.StepKindWizard:
+			fmt.Fprintf(&b, "     the Guildmaster runs on %s: %s\n", p.Machine, shellQuote(st.Argv))
 		}
 	}
 	fmt.Fprintf(&b, "\nplan: %s\n", p.PlanDir)
 	fmt.Fprintf(&b, "this plan needs the Guildmaster's approval of its exact digest: guildhall steward approval request --plan %s\n", shellQuote([]string{p.PlanDir}))
-	fmt.Fprintf(&b, "apply with: guildhall steward takeover --config %s --plan %s --apply --approve %s\n", shellQuote([]string{cfgPath}), shellQuote([]string{p.PlanDir}), p.Digest)
+	fmt.Fprintf(&b, "apply with: guildhall steward %s --config %s --plan %s --apply --approve %s\n", p.Kind, shellQuote([]string{cfgPath}), shellQuote([]string{p.PlanDir}), p.Digest)
 	return b.String()
 }
 
@@ -227,10 +267,30 @@ func (a *App) setupApprovalRequest(copyDir, storePath, planDir string) int {
 		backup = "exports its store on the machine, as it has no [backup] table"
 	}
 	id := setupDecisionID(plan.Digest)
+	question := fmt.Sprintf("Approve %s plan %s of Director %s on %s at %s? It pauses the Director's session, waits for running attempts, %s, publishes a managed.toml with no managed key, enrols the copy with Steward %s, reloads and resumes it, and commits its roster entry. Plan: %s",
+		plan.Kind, plan.Digest, plan.Director, plan.Machine, plan.CopyDir, backup, plan.Steward, plan.PlanDir)
+	if plan.Kind == steward.SetupKindProvision {
+		var fixes, wizards, written []string
+		for _, st := range plan.Steps {
+			switch st.Kind {
+			case steward.StepKindFix:
+				fixes = append(fixes, st.ID)
+			case steward.StepKindWizard:
+				wizards = append(wizards, st.ID)
+			}
+		}
+		for _, sf := range plan.StepFiles {
+			if !sf.Builtin {
+				written = append(written, sf.Name+" (sha256 "+sf.SHA256+")")
+			}
+		}
+		question = fmt.Sprintf("Approve %s plan %s of new Director %s on %s at %s? It fixes the doctor's gaps %s; waits for you to run the wizard on the machine for %s; runs the Steward-written step files %s; writes config.toml and a managed.toml with no managed key, makes the store, clones %s, adopts the release, enrols the copy with Steward %s, reloads it, starts its Herdr tab and commits its roster entry. Plan: %s",
+			plan.Kind, plan.Digest, plan.Director, plan.Machine, plan.CopyDir, orNone(fixes), orNone(wizards), orNone(written),
+			strings.Join(plan.Roster.Repositories, ", "), plan.Steward, plan.PlanDir)
+	}
 	d := store.Decision{Repository: stewardRepository, TaskID: stewardSetupTask, ID: id, Kind: store.DecisionApproval,
 		Subject: &store.Subject{Kind: store.SubjectDocument, Digest: plan.Digest}, Options: []string{stewardApprove, stewardDecline},
-		Question: truncateUTF8(fmt.Sprintf("Approve %s plan %s of Director %s on %s at %s? It pauses the Director's session, waits for running attempts, %s, publishes a managed.toml with no managed key, enrols the copy with Steward %s, reloads and resumes it, and commits its roster entry. Plan: %s",
-			plan.Kind, plan.Digest, plan.Director, plan.Machine, plan.CopyDir, backup, plan.Steward, plan.PlanDir), store.MaxTextBytes)}
+		Question: truncateUTF8(question, store.MaxTextBytes)}
 	out, err := withStore(storePath, false, func(s *store.Store) (store.Decision, error) {
 		_, err := s.OpenDecision("steward-setup-approval:"+plan.Digest, d)
 		if err != nil && !errors.Is(err, store.ErrExists) {

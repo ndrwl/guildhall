@@ -33,6 +33,8 @@ const (
 	posixCopy       = "/home/guild/directors/tools"
 	windowsCopy     = "C:/Users/guild/directors/games"
 	windowsProgram  = "C:/Users/guild/bin/guildhall.exe"
+	setupDir        = "/home/guild/.guildhall/setup"
+	sha             = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	unknownCommand  = `guildhall: unknown command "config"`
 	modeJSON        = `{"mode":"managed","authorized":true}` + "\n"
 	runnerReturnMax = 30 * time.Second
@@ -86,6 +88,77 @@ func RunRunnerContract(t *testing.T, newHarness func(t *testing.T) RunnerHarness
 			}
 			if got := h.Ran(t, Alpha); !slices.EqualFunc(got, cmds, slices.Equal) {
 				t.Errorf("%s ran %q, want exactly %q", Alpha, got, cmds)
+			}
+		}},
+		{"the provisioning commands and their values reach the machine unchanged", func(t *testing.T, h RunnerHarness) {
+			cmds := [][]string{
+				steward.DoctorCommand(steward.DefaultGuildhall, "herdr", sha, setupDir, nil),
+				steward.DoctorCommand(steward.DefaultGuildhall, "director", sha, setupDir, []string{"copy_dir=" + posixCopy}),
+				steward.DoctorCommand(steward.DefaultGuildhall, posixCopy+"/state/steward/setup/custom-0123456789ab.toml", sha, setupDir, nil),
+				steward.FixCommand(steward.DefaultGuildhall, "herdr", "herdr", sha, setupDir,
+					[]string{"herdr_sha256=" + sha, "herdr_url=https://example.com/herdr-0.5.0", "herdr_version=0.5.0"}),
+				steward.FixCommand(steward.DefaultGuildhall, "copy-dir,custom-tool", "director", sha, setupDir, nil),
+				steward.StoreInitCommand(steward.DefaultGuildhall, posixCopy),
+				steward.AdoptCommand(steward.DefaultGuildhall, posixCopy),
+				steward.StartTabCommand(steward.DefaultGuildhall, posixCopy),
+				steward.CloneCommand("git@github.com:guild/infra.git", "/home/guild/src/infra"),
+				steward.CloneCommand("https://github.com/guild/infra.git", "/home/guild/src/infra"),
+			}
+			for _, argv := range cmds {
+				if _, err := h.Runner().Run(context.Background(), Alpha, argv); err != nil {
+					t.Fatalf("Run %q: %v", argv, err)
+				}
+			}
+			if got := h.Ran(t, Alpha); !slices.EqualFunc(got, cmds, slices.Equal) {
+				t.Errorf("%s ran %q, want exactly %q", Alpha, got, cmds)
+			}
+		}},
+		{"provisioning commands outside their shapes are refused and run nothing", func(t *testing.T, h RunnerHarness) {
+			doctor := func(extra ...string) []string {
+				return append(steward.DoctorCommand(steward.DefaultGuildhall, "herdr", sha, setupDir, nil), extra...)
+			}
+			for _, argv := range [][]string{
+				// setup doctor only reads, or fixes the ids it names; never a wizard or a run, and never an unchecked file.
+				{steward.DefaultGuildhall, "setup", "wizard", "--steps", "sign-in", "--digest", sha, "--setup-dir", setupDir},
+				{steward.DefaultGuildhall, "setup", "run", "--steps", "herdr", "--digest", sha, "--setup-dir", setupDir},
+				{steward.DefaultGuildhall, "setup", "doctor", "--json", "--steps", "herdr", "--setup-dir", setupDir},
+				{steward.DefaultGuildhall, "setup", "doctor", "--json", "--fix", "--steps", "herdr", "--digest", sha, "--setup-dir", setupDir},
+				steward.DoctorCommand(steward.DefaultGuildhall, "herdr", "sha256:"+sha, setupDir, nil),
+				steward.DoctorCommand(steward.DefaultGuildhall, "../herdr", sha, setupDir, nil),
+				steward.DoctorCommand(steward.DefaultGuildhall, "steps/custom.toml", sha, setupDir, nil),
+				steward.DoctorCommand(steward.DefaultGuildhall, "herdr", sha, "relative/setup", nil),
+				steward.FixCommand(steward.DefaultGuildhall, "herdr;id", "herdr", sha, setupDir, nil),
+				steward.FixCommand(steward.DefaultGuildhall, "", "herdr", sha, setupDir, nil),
+				doctor("--set", "copy_dir=/home/guild/x y"),
+				doctor("--set", "copy_dir=$(id)"),
+				doctor("--set", "Copy=/x"),
+				doctor("--set"),
+				doctor("--extra"),
+				// git runs only clone, of an https:// or git@ remote, into an absolute path.
+				{"git", "clone", "git@github.com:guild/infra.git", "/home/guild/src/infra"},
+				{"git", "clone", "--", "--upload-pack=id", "/home/guild/src/infra"},
+				steward.CloneCommand("ext::sh -c id", "/home/guild/src/infra"),
+				steward.CloneCommand("file:///etc", "/home/guild/src/infra"),
+				steward.CloneCommand("http://github.com/guild/infra.git", "/home/guild/src/infra"),
+				steward.CloneCommand("https://github.com/guild/../infra", "/home/guild/src/infra"),
+				steward.CloneCommand("git@github.com:guild/infra.git;id", "/home/guild/src/infra"),
+				steward.CloneCommand("git@github.com:guild/infra.git", "src/infra"),
+				{"git", "pull", "--", "git@github.com:guild/infra.git", "/home/guild/src/infra"},
+				{"/usr/bin/git", "clone", "--", "git@github.com:guild/infra.git", "/home/guild/src/infra"},
+				{steward.DefaultGuildhall, "clone", "--", "git@github.com:guild/infra.git", "/home/guild/src/infra"},
+				// store init, release adopt and director start take only their flags and the copy.
+				{steward.DefaultGuildhall, "store", "init", posixCopy + "/director.store"},
+				{steward.DefaultGuildhall, "release", "adopt", "--launcher", "/tmp/l", "--copy", posixCopy},
+				{steward.DefaultGuildhall, "release", "install", "v1", "--copy", posixCopy},
+				{steward.DefaultGuildhall, "director", "start", "--copy", posixCopy},
+				{steward.DefaultGuildhall, "director", "start", "claude", "--tab", "--copy", posixCopy},
+			} {
+				if _, err := h.Runner().Run(context.Background(), Alpha, argv); !errors.Is(err, steward.ErrNotAllowed) {
+					t.Errorf("Run %q: error %v, want steward.ErrNotAllowed", argv, err)
+				}
+			}
+			if got := h.Ran(t, Alpha); len(got) != 0 {
+				t.Errorf("%s ran %q, want nothing", Alpha, got)
 			}
 		}},
 		{"commands outside the allow-list are refused and run nothing", func(t *testing.T, h RunnerHarness) {

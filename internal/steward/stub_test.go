@@ -82,6 +82,11 @@ func stubSCP(root string, args []string) int {
 		return stubHang(root)
 	}
 	data, err := os.ReadFile(stubPath(root, src))
+	if errors.Is(err, fs.ErrNotExist) {
+		// What OpenSSH's scp prints for a missing source, on every OS.
+		fmt.Fprintf(os.Stderr, "scp: %s: No such file or directory\n", src)
+		return 1
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "stub scp:", err)
 		return 1

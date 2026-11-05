@@ -75,7 +75,9 @@ func (r Remote) String() string { return r.Alias + ":" + r.Path }
 // Checksum-framed managed-file loading subsequently detects incomplete or corrupt transfers; no rollback is promised.
 // A Copier adds no credentials of its own and runs no remote command; a Runner runs the fixed remote commands.
 type Copier interface {
-	// Fetch copies src on a machine to the local file dst.
+	// Fetch copies src on a machine to the local file dst. Its error wraps fs.ErrNotExist when, and only when, src
+	// does not exist on a machine it reached; any other failure, such as a refused connection, a file it may not
+	// read or a directory at src, is an error that does not.
 	Fetch(ctx context.Context, src Remote, dst string) error
 	// Put copies the local file src to dst on a machine.
 	Put(ctx context.Context, src string, dst Remote) error

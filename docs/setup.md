@@ -77,7 +77,9 @@ dest = "${home}/.local/bin/herdr"
 
 | Name | Steps | |
 | --- | --- | --- |
-| `herdr` | `herdr` (fixable) | Herdr in `~/.local/bin` from `herdr_url`, checked against `herdr_sha256`, at `herdr_version`; a running Herdr server is never started, stopped or replaced. |
+| `director` | `copy-dir` (fixable), `guildhall-pin`, `tailscale-ssh` (human) | A new Director copy's directory and its `state/steward/setup`, from `copy_dir`; the `guildhall` program printing release `guildhall_pin` as `guildhall version`; and no check-mode rule (`holdAndDelegate` in `tailscale debug netmap`) when Tailscale serves SSH on the machine, since the Steward's batch-mode ssh cannot pass one. A Steward's [provisioning](steward.md#provisioning) sets the values; with no `copy_dir` or `guildhall_pin` those steps pass, and `tailscale-ssh` passes where Tailscale does not serve SSH. |
+| `herdr` | `herdr` (fixable), `herdr-session` (human) | Herdr in `~/.local/bin` from `herdr_url`, checked against `herdr_sha256`, at `herdr_version`; then, given `herdr_session`, `herdr status --json --session <name>` reporting that session's server running. A running Herdr server is never started, stopped or replaced: a person starts it. |
+| `new-copy` | `copy-free`, `clone-paths-free` (human) | No `config.toml` or `director.store` in `copy_dir`, and each of `clone_paths` (separated by `:`) absent or an empty directory. A provisioning plan runs it before it acts and before each clone, and refuses with `ErrCopyExists` on any gap, so its gaps never become plan steps; with no values both pass. |
 | `go` | `go` (fixable), `go-on-path` (human) | Go unpacked into `~/.local/go` from `go_url` and `go_sha256`, then put on `PATH` by hand, ahead of any other Go of another version. |
 | `git-and-claude` | `git`, `gh`, `claude` (human) | Administrator installs of Git and the GitHub CLI, and Claude Code. |
 | `sign-in` | `claude-sign-in`, `codex-sign-in`, `gh-sign-in` (human) | Each runtime's own status command as the check; the wizard prints the sign-in command, never a token ([sign-in](signin.md)). |
@@ -85,7 +87,7 @@ dest = "${home}/.local/bin/herdr"
 
 Step ids are unique across the built-ins, so a gap id names one step.
 The built-ins are Linux and macOS forms; d128's Windows slice adds their Windows forms.
-The doctor here checks only what its step files check; the Guildhall facts a provisioning plan needs (copy directory, store, clones, Herdr session, Tailscale SSH and the Guildhall pin) come with d128's provisioning slice.
+The doctor checks only what its step files check; the Guildhall facts a [provisioning](steward.md#provisioning) plan needs are steps of the built-ins: the copy directory (`copy-dir`), store and clone paths (`new-copy`), the Herdr server and `herdr_session` (`herdr-session`), Tailscale SSH check-mode (`tailscale-ssh`) and the Guildhall release against the pin (`guildhall-pin`).
 
 ## The setup directory
 

@@ -1,6 +1,6 @@
 ---
 name: guildhall-steward-setup
-description: Use as the Steward when the Guildmaster asks to take over an existing Director copy and bring it under your management, to dry-run the takeover, get approval of the exact plan digest, apply it, resume it after a failure or abandon it.
+description: Use as the Steward when the Guildmaster asks to take over an existing Director copy or provision a new one, to dry-run the plan, get approval of its exact digest, apply it, resume it after a failure or wizard step, or abandon a takeover.
 ---
 
 # Steward setup: taking over a Director
@@ -50,6 +50,36 @@ guildhall steward takeover --config <your copy>/config.toml --plan <your copy>/r
 ```
 
 Once the `managed` step has run, the takeover can only be finished with `--apply`; say so.
+
+# Steward setup: provisioning a new Director
+
+Provisioning makes a new managed Director copy on a roster machine that already has Guildhall: it fixes the machine's fixable gaps, waits for the Guildmaster at each human one, writes the copy's `config.toml` and `managed.toml`, makes its store, clones its repositories, adopts the release, enrols, reloads, starts its Herdr tab, commits the roster entry and writes a verified summary.
+Keep each plan in a new directory such as `rollouts/provision-<director>`.
+
+1. Ask the Guildmaster for the roster machine, the Director's name, its copy and setup directories there, the Herdr session its tab opens in, each repository's id, remote and path, and any pins; write them as a request file in your copy (`docs/steward.md#provisioning`).
+   When the machine needs an install no built-in step file covers, write a step file of your own beside the request and name it in `step_files`; every change it makes must be a `check`, `action` and `verify`, and anything that needs administrator rights a `human` step.
+2. Dry-run:
+
+   ```sh
+   guildhall steward provision --config <your copy>/config.toml --request <request file> --plan <your copy>/rollouts/provision-<name> --dry-run
+   ```
+
+   A refusal changes nothing: tell the Guildmaster why, such as a copy directory that already has a config or store, a clone path that is not empty, or a missing Herdr with no pins, and stop.
+3. Show the Guildmaster the plan: the doctor's gaps, every step, each step file you wrote in full with its digest, the config it writes and the plan digest.
+   Say which steps are theirs to run on the machine, including any Guildhall fact the doctor found missing: the pinned Guildhall release (`guildhall-pin`), Tailscale SSH without a check-mode rule (`tailscale-ssh`) and a running Herdr server for the session (`herdr-session`).
+4. Open the approval decision as for a takeover, and give them its answer command; never answer it yourself.
+5. Once they answered `approve`, apply:
+
+   ```sh
+   guildhall steward provision --config <your copy>/config.toml --plan <your copy>/rollouts/provision-<name> --apply --approve <plan digest>
+   ```
+
+6. Read the last line:
+   - `done`: give the Guildmaster the summary line: the tab, the versions against the pins and any outstanding manual item; confirm with `guildhall steward status`.
+   - `waiting <step>: …`: a human step; give the Guildmaster the one `guildhall setup wizard …` command it prints, to run themselves on the machine, and what the record shows, and apply the same command again once they say it is done.
+     Never run the wizard yourself.
+   - `failed <step>: …`: give the diagnosis and the doctor's action line, and apply the same plan again once it is fixed.
+     A fix outside the plan, such as a new step file of yours, is a new dry run and a new approval.
 
 ## Rules
 

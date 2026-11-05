@@ -3,6 +3,7 @@ package steward
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os/exec"
 	"strings"
 	"time"
@@ -24,9 +25,21 @@ func scpCommand(src, dst string) []string {
 	return []string{"scp", "-q", "-B", "-o", "BatchMode=yes", "--", src, dst}
 }
 
-// Fetch runs scp from src to dst.
+// Fetch runs scp from src to dst. When scp reports that src does not exist, and only then, the error wraps
+// fs.ErrNotExist: OpenSSH's scp prints "No such file or directory" for a missing source in both its SFTP and its
+// legacy protocol, and every other failure, such as a refused connection, a file it may not read or a directory at
+// the path, is another error.
 func (t Transport) Fetch(ctx context.Context, src Remote, dst string) error {
-	return t.run(ctx, scpCommand(src.String(), dst))
+	err := t.run(ctx, scpCommand(src.String(), dst))
+	if err != nil && ctx.Err() == nil && missingSource(err.Error()) {
+		return fmt.Errorf("%w: %w", fs.ErrNotExist, err)
+	}
+	return err
+}
+
+// missingSource reports whether scp's diagnostic says only that the source does not exist.
+func missingSource(msg string) bool {
+	return strings.Contains(strings.ToLower(msg), "no such file or directory")
 }
 
 // Put runs scp from src to dst.

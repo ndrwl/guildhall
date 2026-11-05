@@ -1,0 +1,73 @@
+# What a new Director copy must not find before a Steward's provisioning plan writes it (docs/steward.md#provisioning):
+# no config or store in the copy directory, and nothing at a clone path. The plan runs this doctor only before it
+# acts, and refuses with ErrCopyExists while either step reports a gap, since provisioning never deletes or
+# overwrites a store, a copy or a clone. With no copy_dir or clone_paths, as when a person runs the doctor over every
+# built-in, both steps pass.
+schema = "guildhall.steps/1"
+name = "new-copy"
+title = "Nothing in the way of a new Director copy"
+
+[params]
+copy_dir = ""
+# clone_paths are the repositories' clone paths, separated by ':'.
+clone_paths = ""
+
+[[step]]
+id = "copy-free"
+title = "Keep the copy directory free of a config and a store"
+tag = "human"
+os = ["linux", "darwin"]
+instructions = '''
+The copy directory already holds a Director's config.toml or store. Provisioning never overwrites either.
+Name another copy_dir in the provisioning request, or adopt this copy with guildhall steward takeover.
+'''
+undo = "Nothing to undo: this step only reads."
+
+[step.check]
+shell = "sh"
+script = '''
+if [ -z "$SETUP_COPY_DIR" ]; then
+  exit 0
+fi
+found=0
+for f in config.toml director.store; do
+  if [ -e "$SETUP_COPY_DIR/$f" ] || [ -L "$SETUP_COPY_DIR/$f" ]; then
+    echo "$SETUP_COPY_DIR/$f exists"
+    found=1
+  fi
+done
+exit $found
+'''
+
+[[step]]
+id = "clone-paths-free"
+title = "Keep each clone path absent or an empty directory"
+tag = "human"
+os = ["linux", "darwin"]
+instructions = '''
+A repository's clone path holds a file or a directory that is not empty. Provisioning never clones over it.
+Name another path for that repository in the provisioning request, or move what is there yourself.
+'''
+undo = "Nothing to undo: this step only reads."
+
+[step.check]
+shell = "sh"
+script = '''
+found=0
+old_ifs=$IFS
+IFS=:
+for p in $SETUP_CLONE_PATHS; do
+  [ -n "$p" ] || continue
+  if [ -d "$p" ] && [ ! -L "$p" ]; then
+    if [ -n "$(ls -A -- "$p")" ]; then
+      echo "$p is not empty"
+      found=1
+    fi
+  elif [ -e "$p" ] || [ -L "$p" ]; then
+    echo "$p exists and is not a directory"
+    found=1
+  fi
+done
+IFS=$old_ifs
+exit $found
+'''

@@ -1,0 +1,101 @@
+# What a new Director copy needs on its machine before a Steward's provisioning plan writes its files there
+# (docs/steward.md#provisioning): the copy directory and its state/steward/setup, where the plan's own step files are
+# copied; the Guildhall release the plan pins; and Tailscale SSH with no check-mode rule, which the Steward's
+# batch-mode ssh cannot pass. With no copy_dir or guildhall_pin, as when a person runs the doctor over every built-in,
+# those steps pass; the Tailscale step passes on a machine whose Tailscale does not serve SSH.
+schema = "guildhall.steps/1"
+name = "director"
+title = "A new Director copy's directory, Guildhall release and SSH"
+
+[params]
+copy_dir = ""
+# guildhall is the Guildhall program the copy runs, and guildhall_pin the release it must be.
+guildhall = "guildhall"
+guildhall_pin = ""
+
+[[step]]
+id = "copy-dir"
+title = "Make the Director copy's directory and its state/steward/setup"
+tag = "fixable"
+os = ["linux", "darwin"]
+undo = "Remove the directories it made while they are still empty: rmdir -p <copy_dir>/state/steward/setup."
+
+[step.check]
+shell = "sh"
+script = '''
+if [ -z "$SETUP_COPY_DIR" ] || [ -d "$SETUP_COPY_DIR/state/steward/setup" ]; then
+  exit 0
+fi
+echo "$SETUP_COPY_DIR/state/steward/setup is not a directory"
+exit 1
+'''
+
+[step.action]
+shell = "sh"
+script = 'mkdir -p -- "$SETUP_COPY_DIR/state/steward/setup"'
+
+[[step]]
+id = "guildhall-pin"
+title = "Run the pinned Guildhall release"
+tag = "human"
+os = ["linux", "darwin"]
+instructions = '''
+The Guildhall program on this machine is not the release the provisioning request pins (guildhall version prints
+"guildhall <release> ..."). Install the pinned release in place of it, so the new copy adopts that release, or change
+the request's [pins] guildhall and plan again.
+'''
+undo = "Install the release that was there before in its place."
+
+[step.check]
+shell = "sh"
+script = '''
+if [ -z "$SETUP_GUILDHALL_PIN" ]; then
+  exit 0
+fi
+line=$("$SETUP_GUILDHALL" version 2>&1 | head -n 1)
+case "$line" in
+"guildhall $SETUP_GUILDHALL_PIN "*) echo "$line"; exit 0 ;;
+esac
+echo "$SETUP_GUILDHALL version prints \"$line\", not release $SETUP_GUILDHALL_PIN"
+exit 1
+'''
+
+[[step]]
+id = "tailscale-ssh"
+title = "Serve Tailscale SSH with no check-mode rule"
+tag = "human"
+os = ["linux", "darwin"]
+instructions = '''
+This machine's Tailscale SSH policy has a check-mode rule (action "check"). A check-mode connection waits for a
+browser sign-in, which the Steward's batch-mode ssh cannot give, so a provisioning step would hang until it times out.
+In the tailnet policy file, make the rule that lets the Steward's node reach this machine an "accept" rule, then
+confirm here.
+If the check says the SSH policy cannot be read, let this user read it with `sudo tailscale set --operator=$USER`.
+'''
+undo = "Set the rule's action back to \"check\" in the tailnet policy file."
+
+[[step.prompt]]
+kind = "confirm"
+text = "Is the Steward's rule for this machine an accept rule now?"
+
+[step.check]
+shell = "sh"
+script = '''
+if ! command -v tailscale >/dev/null 2>&1; then
+  echo "tailscale is not on PATH, so Tailscale SSH does not serve this machine"
+  exit 0
+fi
+if ! tailscale debug prefs 2>/dev/null | tr -d ' \t\r\n' | grep -q '"RunSSH":true'; then
+  echo "Tailscale does not serve SSH on this machine"
+  exit 0
+fi
+if ! netmap=$(tailscale debug netmap 2>&1); then
+  echo "tailscale debug netmap failed, so the SSH policy cannot be read: $netmap" | head -n 3
+  exit 1
+fi
+if printf '%s' "$netmap" | grep -q '"holdAndDelegate"'; then
+  echo "the Tailscale SSH policy of this machine has a check-mode rule"
+  exit 1
+fi
+echo "Tailscale SSH serves this machine with no check-mode rule"
+'''
