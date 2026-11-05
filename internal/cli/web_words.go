@@ -395,10 +395,15 @@ func (b webBuilder) where(asks []web.Ask, stage string, waits []string) web.Wher
 		}
 		return web.Where{Lead: "Waiting on the Director:", Rest: rest}
 	case interp.WaitChecks:
-		if b.ct.pr != nil {
-			return web.Where{Lead: "Moving:", Rest: "CI is running on PR #" + strconv.Itoa(b.ct.pr.Number) + "."}
+		batch := ""
+		if e := b.ct.view.MergeQueue; e != nil && e.Batch != nil {
+			// The front leading a merge batch.
+			batch = ", " + e.Batch.String()
 		}
-		return web.Where{Lead: "Moving:", Rest: "CI is running."}
+		if b.ct.pr != nil {
+			return web.Where{Lead: "Moving:", Rest: "CI is running on PR #" + strconv.Itoa(b.ct.pr.Number) + batch + "."}
+		}
+		return web.Where{Lead: "Moving:", Rest: "CI is running" + batch + "."}
 	case interp.WaitMergeQueue:
 		return web.Where{Lead: "Moving:", Rest: "the work is " + stands + "."}
 	case interp.WaitQueued:

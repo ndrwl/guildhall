@@ -849,6 +849,24 @@ func (p storeRecords) ReleaseMergeFront(m, repo, id string) (store.Receipt, erro
 	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.ReleaseMergeFront(m, repo, id) })
 }
 
+func (p storeRecords) ClaimMergeBatch(m, repo, id string, slice, size int) (store.Receipt, error) {
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.ClaimMergeBatch(m, repo, id, slice, size) })
+}
+
+func (p storeRecords) LeaveMergeBatch(m, repo, id string) (store.Receipt, error) {
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.LeaveMergeBatch(m, repo, id) })
+}
+
+func (p storeRecords) SetMergeBatchLink(m, repo, id string, slice int, link string) (store.Receipt, error) {
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.SetMergeBatchLink(m, repo, id, slice, link) })
+}
+
+func (p storeRecords) SetMergeBatchState(m, repo, leader string, state store.MergeBatchState, base string) (store.Receipt, error) {
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) {
+		return s.SetMergeBatchState(m, repo, leader, state, base)
+	})
+}
+
 // Send is the engine's, launcher's and judge's outbox: every message it sends is Guildhall's own.
 func (p storeRecords) Send(to store.Recipient, e messaging.Envelope) (store.Receipt, error) {
 	return p.sendFrom(to, store.SenderGuildhall, e)

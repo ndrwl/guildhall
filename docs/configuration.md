@@ -263,7 +263,7 @@ merge_batch_size = 4
 | `merge_batch_size` | The most queued tasks, the front among them, that one batch holds. Unset or 1 is the serial queue, exactly: one task at a time, rebased, checked and merged before the next. At least 1. |
 
 - A size below 1 or a non-integer is refused when the config is parsed; a task override may not set it, as for every `[repository.merge]` key.
-- Batching is being delivered in slices: until the engine assembles and lands batches, a size above 1 is recorded but the queue still runs serially.
+- Batching is being delivered in slices: with a size above 1 the engine assembles batches and shows them, but until it lands them the leader still merges alone, so the queue still lands one task at a time.
 
 A repository's generated files, such as committed digest goldens, may be declared with the commands that rewrite them, one `[[repository.merge.regenerate]]` table each:
 

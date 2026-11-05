@@ -391,7 +391,8 @@ func (b MergeBatch) Member(task string) int {
 	return slices.IndexFunc(b.Members, func(m MergeBatchMember) bool { return m.TaskID == task }) + 1
 }
 
-// leaveBatch takes taskID out of the batch: the leader's leaving ends the batch, and a member's removes it alone.
+// leaveBatch takes taskID out of the batch: the leader's leaving ends the batch, and a member's removes it alone and
+// clears the links of the members after it, which replay onto its predecessor's link.
 func leaveBatch(b *bolt.Bucket, taskID string) error {
 	var mb MergeBatch
 	switch err := getJSON(b, mergeBatchKey, &mb); {
@@ -407,7 +408,15 @@ func leaveBatch(b *bolt.Bucket, taskID string) error {
 		return nil
 	}
 	mb.Members = slices.Delete(mb.Members, i-1, i)
+	clearLinks(mb.Members[i-1:])
 	return putJSON(b, mergeBatchKey, mb)
+}
+
+// clearLinks clears the links of members, which replayed onto a link that no longer precedes them.
+func clearLinks(members []MergeBatchMember) {
+	for j := range members {
+		members[j].Link = ""
+	}
 }
 
 // standingBatch reads the standing batch of repository, failing with ErrInvalid when none stands or taskID is not
@@ -424,7 +433,8 @@ func standingBatch(tx *bolt.Tx, repository, taskID string) (*bolt.Bucket, MergeB
 }
 
 // LeaveMergeBatch takes a task out of its batch and leaves it queued, as a member does on conflicts, a hold, a cancel
-// or a running attempt; the leader's leaving ends the batch but keeps its front. A task in no batch changes nothing.
+// or a running attempt, clearing the links after it; the leader's leaving ends the batch but keeps its front. A task
+// in no batch changes nothing.
 func (s *Store) LeaveMergeBatch(mutationID, repository, taskID string) (Receipt, error) {
 	if err := validateIDs(repository, taskID); err != nil {
 		return Receipt{}, err
@@ -598,11 +608,16 @@ func readMergeQueue(tx *bolt.Tx, repository string) (MergeQueue, error) {
 		f.Front = true
 		q.Entries = append([]QueuedEntry{f}, slices.Delete(q.Entries, i, i+1)...)
 		q.Front = front
-		// A batch stands with the front stay it was claimed in; members that left the queue or closed drop out.
+		// A batch stands with the front stay it was claimed in; members that left the queue or closed drop out, and
+		// the links after the first that did are cleared, since they replayed onto a link that is gone.
 		if batch != nil && batch.Leader == front.TaskID && batch.Stay == front.Stay {
-			batch.Members = slices.DeleteFunc(batch.Members, func(m MergeBatchMember) bool {
+			gone := func(m MergeBatchMember) bool {
 				return !slices.ContainsFunc(q.Entries, func(e QueuedEntry) bool { return e.TaskID == m.TaskID })
-			})
+			}
+			if i := slices.IndexFunc(batch.Members, gone); i >= 0 {
+				clearLinks(batch.Members[i:])
+			}
+			batch.Members = slices.DeleteFunc(batch.Members, gone)
 			q.Batch = batch
 		}
 	}

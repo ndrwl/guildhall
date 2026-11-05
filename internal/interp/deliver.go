@@ -623,14 +623,20 @@ func (r *run) front(s workflow.Step, repo config.Repository, dl deliverHead, id,
 			if _, err := q.q.ReleaseMergeFront(r.frontMutation("merge-release", s, q.stay), r.task.Repository, r.task.ID); err != nil {
 				return false, Next{}, err
 			}
+		} else if err := r.leaveBatch(q, "its merge is held"); err != nil {
+			return false, Next{}, err
 		}
 		next, err := r.queued(s, q, true)
 		return false, next, err
 	}
-	if err := r.claim(s, &q); err != nil {
+	if err := r.claim(s, repo, &q); err != nil {
 		return false, Next{}, err
 	}
 	if !q.front {
+		if b := q.view.Batch; b != nil && b.Member(r.task.ID) > 1 {
+			next, err := r.batchMember(s, repo, dl, id, q)
+			return false, next, err
+		}
 		next, err := r.queued(s, q, false)
 		return false, next, err
 	}
@@ -665,10 +671,20 @@ func (r *run) front(s workflow.Step, repo config.Repository, dl deliverHead, id,
 			continue
 		}
 		if cur.head != dl.head {
-			last := links[len(links)-1]
-			if cur.pr, err = r.publishLink(s, repo, last, dl.pr); err != nil {
+			if cur.pr, err = r.publishLink(s, repo, links[len(links)-1], dl.pr); err != nil {
 				return false, Next{}, err
 			}
+			// The leader's link is its rebased head: the members replay onto it while its checks run.
+			if err := r.leadLink(s, &q, cur.head, links[len(links)-1].doc.Onto); err != nil {
+				return false, Next{}, err
+			}
+		}
+		// A batch link the task pushed while it waited behind a leader is replaced by its own head.
+		if cur.pr, err = r.restoreHead(s, repo, dl.reviewed, cur.head, cur.pr); err != nil {
+			return false, Next{}, err
+		}
+		if cur.head != dl.head {
+			last := links[len(links)-1]
 			v, next, err := r.headChecks(s, k, repo, cur.head, cur.pr)
 			if err != nil || v == nil {
 				return false, next, err
@@ -694,6 +710,9 @@ func (r *run) front(s workflow.Step, repo config.Repository, dl deliverHead, id,
 			return false, Next{}, err
 		}
 		if !obstructed(m) {
+			if err := r.leadLink(s, &q, cur.head, m.Base); err != nil {
+				return false, Next{}, err
+			}
 			if cur.head == dl.head {
 				return r.merge(s, id, repo, cur.head, cur.pr)
 			}

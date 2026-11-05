@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -23,6 +24,22 @@ type mergeQueueEntry struct {
 	Held      bool           `json:"held"`
 	Front     bool           `json:"front"`
 	WaitingOn string         `json:"waiting_on"`
+	// Batch is the task's place in the merge batch the front leads, when it is a member (docs/interpreter.md#merge-batches).
+	Batch *batchPlace `json:"batch,omitempty"`
+}
+
+// batchPlace is a task's place in its repository's merge batch: its 1-based place among the members, the leader
+// first, the number of members, the leader, and the batch's state.
+type batchPlace struct {
+	Place  int                   `json:"place"`
+	Size   int                   `json:"size"`
+	Leader string                `json:"leader"`
+	State  store.MergeBatchState `json:"state"`
+}
+
+// String is "in batch <place>/<size> (<state>)".
+func (b batchPlace) String() string {
+	return fmt.Sprintf("in batch %d/%d (%s)", b.Place, b.Size, b.State)
 }
 
 // mergeQueue is one repository's merge queue, front first and then in queue order.
@@ -45,6 +62,9 @@ func mergeQueues(s *store.Store, repos []string) ([]mergeQueue, error) {
 		mq := mergeQueue{Repository: repo, Entries: []mergeQueueEntry{}}
 		for i, e := range q.Entries {
 			entry := mergeQueueEntry{Task: e.TaskID, Position: i + 1, Priority: e.Priority, ReadyAt: e.ReadyAt, PR: e.PR, Held: e.Held, Front: e.Front, WaitingOn: "queue"}
+			if b := q.Batch; b != nil && b.Member(e.TaskID) > 0 {
+				entry.Batch = &batchPlace{Place: b.Member(e.TaskID), Size: len(b.Members), Leader: b.Leader, State: b.State}
+			}
 			if e.Front {
 				if entry.WaitingOn, err = frontWait(s, repo, e.TaskID); err != nil {
 					return nil, err

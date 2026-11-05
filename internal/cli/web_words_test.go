@@ -144,6 +144,10 @@ func TestWebWhereItStands(t *testing.T) {
 		}
 		return webBuilder{d: clerkData{now: time.Now()}, ct: ct, def: def}
 	}
+	inBatch := func(b webBuilder, place int) webBuilder {
+		b.ct.view.MergeQueue = &mergeQueueEntry{Position: place, WaitingOn: "queue", Batch: &batchPlace{Place: place, Size: 3, Leader: "t0", State: store.BatchAssembling}}
+		return b
+	}
 	asks := []web.Ask{{ID: "review--s2-x2", Kind: "loop-exit"}, {ID: "grant-1", Kind: "grant"}, {ID: "deliver-1", Kind: "merge", Deferred: true}}
 	for _, c := range []struct {
 		name  string
@@ -162,6 +166,10 @@ func TestWebWhereItStands(t *testing.T) {
 		{"starting", task(store.TaskOpen, "attempt"), nil, "", nil, web.Where{Lead: "Moving:", Rest: "the slice 2 build is starting (attempt 3)."}},
 		{"director", task(store.TaskOpen, "director"), nil, "", []string{"checks of PR #4 failed"}, web.Where{Lead: "Waiting on the Director:", Rest: "checks of PR #4 failed."}},
 		{"checks", task(store.TaskOpen, "checks"), nil, "", nil, web.Where{Lead: "Moving:", Rest: "CI is running."}},
+		{"checks leading a batch", inBatch(task(store.TaskOpen, "checks"), 1), nil, "", nil,
+			web.Where{Lead: "Moving:", Rest: "CI is running, in batch 1/3 (assembling)."}},
+		{"merge queue in a batch", inBatch(task(store.TaskOpen, "merge-queue"), 2), nil, "", nil,
+			web.Where{Lead: "Moving:", Rest: "the work is in batch 2/3 (assembling)."}},
 		{"paused", task(store.TaskOpen, "paused"), nil, "", nil, web.Where{Lead: "Paused:", Rest: "nothing runs until the Director resumes it."}},
 		{"not started", task(store.TaskOpen, ""), nil, "", nil, web.Where{Lead: "Not started", Rest: "yet."}},
 		{"done", task(store.TaskDone, ""), nil, "", nil, web.Where{Lead: "Done."}},
