@@ -200,7 +200,7 @@ func (s *Store) LeaveMergeQueue(mutationID, repository, taskID string, keepReady
 		if err := releaseFront(b, taskID); err != nil {
 			return err
 		}
-		if err := leaveBatch(b, taskID); err != nil {
+		if err := leaveBatch(b, taskID, true); err != nil {
 			return err
 		}
 		var e MergeQueueEntry
@@ -217,7 +217,8 @@ func (s *Store) LeaveMergeQueue(mutationID, repository, taskID string, keepReady
 	})
 }
 
-// releaseFront gives up the front taskID holds, with the batch it leads.
+// releaseFront gives up the front taskID holds, with the batch it leads; a landed batch stays until its members
+// finish.
 func releaseFront(b *bolt.Bucket, taskID string) error {
 	var f MergeFront
 	switch err := getJSON(b, mergeFrontKey, &f); {
@@ -226,8 +227,15 @@ func releaseFront(b *bolt.Bucket, taskID string) error {
 	case err != nil:
 		return err
 	case f.TaskID == taskID:
-		if err := b.Delete(mergeBatchKey); err != nil {
+		var mb MergeBatch
+		switch err := getJSON(b, mergeBatchKey, &mb); {
+		case errors.Is(err, ErrNotFound):
+		case err != nil:
 			return err
+		case mb.State != BatchLanded:
+			if err := b.Delete(mergeBatchKey); err != nil {
+				return err
+			}
 		}
 		return b.Delete(mergeFrontKey)
 	}
@@ -306,6 +314,10 @@ func claimFront(tx *bolt.Tx, repository, taskID string, slice, size int) error {
 	if q.Front != nil && q.Front.TaskID == taskID {
 		return nil
 	}
+	// A landed batch holds the queue until each of its members has finished.
+	if q.Batch != nil && q.Batch.State == BatchLanded {
+		return fmt.Errorf("%w: %s/%s waits for the landed merge batch task %s led to finish", ErrMergeQueued, repository, taskID, q.Batch.Leader)
+	}
 	// Held tasks keep their place but are skipped: the first task not held may claim a free front.
 	first := slices.IndexFunc(q.Entries, func(e QueuedEntry) bool { return !e.Held })
 	if q.Front != nil || first < 0 || q.Entries[first].TaskID != taskID {
@@ -368,22 +380,38 @@ var batchMoves = map[MergeBatchState][]MergeBatchState{
 
 // MergeBatchMember is one task of a batch, in its stay'th time at or behind the front. Slice is the slice the member
 // merges, 0 until it is recorded; Link is the member's link head, its head replayed onto the previous member's link
-// (the first member's onto the base), empty until it is published.
+// (the first member's onto the base), empty until it is published. Ready reports that the member passed its merge
+// gates for its link while the batch is landing; Finished that it recorded the landed train's merge and left the
+// queue.
 type MergeBatchMember struct {
-	TaskID string `json:"task_id"`
-	Slice  int    `json:"slice,omitempty"`
-	Stay   int    `json:"stay"`
-	Link   string `json:"link,omitempty"`
+	TaskID   string `json:"task_id"`
+	Slice    int    `json:"slice,omitempty"`
+	Stay     int    `json:"stay"`
+	Link     string `json:"link,omitempty"`
+	Ready    bool   `json:"ready,omitempty"`
+	Finished bool   `json:"finished,omitempty"`
+}
+
+// MergeTrain is a batch's train pull request: the remote and pull request it is, the head it was last pushed at, and
+// the merge commit once it merged.
+type MergeTrain struct {
+	Remote      string `json:"remote"`
+	Number      int    `json:"number"`
+	URL         string `json:"url"`
+	Head        string `json:"head"`
+	MergeCommit string `json:"merge_commit,omitempty"`
 }
 
 // MergeBatch is the batch the front leads: its members in queue order, the leader first; the base tip it was
-// assembled on, empty until recorded; and its state. Stay is the leader's front stay the batch was claimed in.
+// assembled on, empty until recorded; its state; and its train pull request, nil until it is opened. Stay is the
+// leader's front stay the batch was claimed in.
 type MergeBatch struct {
 	Leader  string             `json:"leader"`
 	Stay    int                `json:"stay"`
 	Base    string             `json:"base,omitempty"`
 	Members []MergeBatchMember `json:"members"`
 	State   MergeBatchState    `json:"state"`
+	Train   *MergeTrain        `json:"train,omitempty"`
 }
 
 // Member returns the 1-based place of task in the batch, 0 when it is not a member.
@@ -392,14 +420,26 @@ func (b MergeBatch) Member(task string) int {
 }
 
 // leaveBatch takes taskID out of the batch: the leader's leaving ends the batch, and a member's removes it alone and
-// clears the links of the members after it, which replay onto its predecessor's link.
-func leaveBatch(b *bolt.Bucket, taskID string) error {
+// clears the links of the members after it, which replay onto its predecessor's link, sending a batch testing or
+// landing back to assembling. A landed batch keeps its members: with finish, as when a member leaves the queue after
+// recording the train's merge, the member is marked finished, and the batch is removed once every member is.
+func leaveBatch(b *bolt.Bucket, taskID string, finish bool) error {
 	var mb MergeBatch
 	switch err := getJSON(b, mergeBatchKey, &mb); {
 	case errors.Is(err, ErrNotFound):
 		return nil
 	case err != nil:
 		return err
+	case mb.State == BatchLanded:
+		i := mb.Member(taskID)
+		if i == 0 || !finish {
+			return nil
+		}
+		mb.Members[i-1].Finished = true
+		if !slices.ContainsFunc(mb.Members, func(m MergeBatchMember) bool { return !m.Finished }) {
+			return b.Delete(mergeBatchKey)
+		}
+		return putJSON(b, mergeBatchKey, mb)
 	case mb.Leader == taskID:
 		return b.Delete(mergeBatchKey)
 	}
@@ -408,14 +448,29 @@ func leaveBatch(b *bolt.Bucket, taskID string) error {
 		return nil
 	}
 	mb.Members = slices.Delete(mb.Members, i-1, i)
-	clearLinks(mb.Members[i-1:])
+	clearLinks(&mb, i-1)
 	return putJSON(b, mergeBatchKey, mb)
 }
 
-// clearLinks clears the links of members, which replayed onto a link that no longer precedes them.
-func clearLinks(members []MergeBatchMember) {
-	for j := range members {
-		members[j].Link = ""
+// clearLinks clears the links of the batch's members from index i on, which replayed onto a link that no longer
+// precedes them; a batch testing or landing goes back to assembling, since its train no longer holds them all.
+func clearLinks(mb *MergeBatch, i int) {
+	for j := i; j < len(mb.Members); j++ {
+		mb.Members[j].Link = ""
+	}
+	if mb.State == BatchTesting || mb.State == BatchLanding {
+		mb.State = BatchAssembling
+	}
+	clearReady(mb)
+}
+
+// clearReady clears every member's readiness unless the batch is landing, the only state readiness holds in.
+func clearReady(mb *MergeBatch) {
+	if mb.State == BatchLanding {
+		return
+	}
+	for j := range mb.Members {
+		mb.Members[j].Ready = false
 	}
 }
 
@@ -434,7 +489,7 @@ func standingBatch(tx *bolt.Tx, repository, taskID string) (*bolt.Bucket, MergeB
 
 // LeaveMergeBatch takes a task out of its batch and leaves it queued, as a member does on conflicts, a hold, a cancel
 // or a running attempt, clearing the links after it; the leader's leaving ends the batch but keeps its front. A task
-// in no batch changes nothing.
+// in no batch, or in a landed one, changes nothing.
 func (s *Store) LeaveMergeBatch(mutationID, repository, taskID string) (Receipt, error) {
 	if err := validateIDs(repository, taskID); err != nil {
 		return Receipt{}, err
@@ -446,15 +501,15 @@ func (s *Store) LeaveMergeBatch(mutationID, repository, taskID string) (Receipt,
 	return s.mutate(mutationID, "leave-merge-batch", req, func(tx *bolt.Tx, rc *Receipt) error {
 		rc.Repository, rc.TaskID, rc.Record = repository, taskID, MergeQueueRecord
 		if b := repoBucket(tx, repository, bucketMergeQueue); b != nil {
-			return leaveBatch(b, taskID)
+			return leaveBatch(b, taskID, false)
 		}
 		return nil
 	})
 }
 
 // SetMergeBatchLink records a member's slice and link head in the standing batch. The task must be a member, the
-// slice at least 1 and the link a full commit id. A changed link clears the links of the members after it, since
-// they replay onto it again.
+// slice at least 1 and the link a full commit id, and the batch not landed. A changed link clears the links of the
+// members after it, since they replay onto it again, and sends a batch testing or landing back to assembling.
 func (s *Store) SetMergeBatchLink(mutationID, repository, taskID string, slice int, link string) (Receipt, error) {
 	if err := validateIDs(repository, taskID); err != nil {
 		return Receipt{}, err
@@ -477,11 +532,12 @@ func (s *Store) SetMergeBatchLink(mutationID, repository, taskID string, slice i
 		if err != nil {
 			return err
 		}
+		if mb.State == BatchLanded {
+			return invalid("the merge batch of %s has landed", repository)
+		}
 		i := mb.Member(taskID) - 1
 		if mb.Members[i].Link != link {
-			for j := i + 1; j < len(mb.Members); j++ {
-				mb.Members[j].Link = ""
-			}
+			clearLinks(&mb, i+1)
 		}
 		mb.Members[i].Slice, mb.Members[i].Link = slice, link
 		return putJSON(b, mergeBatchKey, mb)
@@ -490,7 +546,8 @@ func (s *Store) SetMergeBatchLink(mutationID, repository, taskID string, slice i
 
 // SetMergeBatchState moves the standing batch leader leads to state, along the moves batchMoves allows, and records
 // base, the tip the batch is assembled on, when it is not empty. A task that does not lead the batch, an unknown
-// state, a move not allowed and a base that is not a full commit id are ErrInvalid.
+// state, a move not allowed and a base that is not a full commit id are ErrInvalid. Leaving landing clears every
+// member's readiness.
 func (s *Store) SetMergeBatchState(mutationID, repository, leader string, state MergeBatchState, base string) (Receipt, error) {
 	if err := validateIDs(repository, leader); err != nil {
 		return Receipt{}, err
@@ -523,6 +580,90 @@ func (s *Store) SetMergeBatchState(mutationID, repository, leader string, state 
 		if base != "" {
 			mb.Base = base
 		}
+		clearReady(&mb)
+		return putJSON(b, mergeBatchKey, mb)
+	})
+}
+
+// SetMergeBatchTrain records the train pull request of the standing batch leader leads: its remote, number, URL and
+// head, and its merge commit once it merged. A task that does not lead the batch, a number below 1, a head or merge
+// commit that is not a full commit id, a train that changes once its merge is recorded, and a merge commit for a
+// batch that is not landing are ErrInvalid. A train pushed to a new head while the batch is landing sends it back to
+// testing.
+func (s *Store) SetMergeBatchTrain(mutationID, repository, leader string, train MergeTrain) (Receipt, error) {
+	if err := validateIDs(repository, leader); err != nil {
+		return Receipt{}, err
+	}
+	switch {
+	case train.Remote == "" || len(train.Remote) > 2048 || len(train.URL) > 2048:
+		return Receipt{}, invalid("a train names its remote, and its remote and URL are at most 2048 bytes")
+	case train.Number < 1:
+		return Receipt{}, invalid("train pull request number %d is below 1", train.Number)
+	case !isCommitID(train.Head):
+		return Receipt{}, invalid("train head %q is not a full commit id", train.Head)
+	case train.MergeCommit != "" && !isCommitID(train.MergeCommit):
+		return Receipt{}, invalid("train merge commit %q is not a full commit id", train.MergeCommit)
+	}
+	req := struct {
+		Repository string     `json:"repository"`
+		Leader     string     `json:"leader"`
+		Train      MergeTrain `json:"train"`
+	}{repository, leader, train}
+	return s.mutate(mutationID, "set-merge-batch-train", req, func(tx *bolt.Tx, rc *Receipt) error {
+		rc.Repository, rc.TaskID, rc.Record = repository, leader, MergeQueueRecord
+		b, mb, err := standingBatch(tx, repository, leader)
+		if err != nil {
+			return err
+		}
+		switch {
+		case mb.Leader != leader:
+			return invalid("task %s/%s does not lead the merge batch of %s; %s does", repository, leader, repository, mb.Leader)
+		case mb.Train != nil && mb.Train.MergeCommit != "":
+			if *mb.Train != train {
+				return invalid("the train of the merge batch of %s has merged", repository)
+			}
+			return nil
+		case train.MergeCommit != "" && mb.State != BatchLanding:
+			return invalid("the merge batch of %s is %s, not landing", repository, mb.State)
+		}
+		if mb.Train != nil && mb.Train.Head != train.Head && mb.State == BatchLanding {
+			mb.State = BatchTesting
+			clearReady(&mb)
+		}
+		mb.Train = &train
+		return putJSON(b, mergeBatchKey, mb)
+	})
+}
+
+// SetMergeBatchReady marks a member of the standing batch ready to land at link, its recorded link: the member passed
+// its merge gates for it. The batch must be landing; a task that is not a member, or a link that is not its own, is
+// ErrInvalid.
+func (s *Store) SetMergeBatchReady(mutationID, repository, taskID, link string) (Receipt, error) {
+	if err := validateIDs(repository, taskID); err != nil {
+		return Receipt{}, err
+	}
+	if !isCommitID(link) {
+		return Receipt{}, invalid("link %q is not a full commit id", link)
+	}
+	req := struct {
+		Repository string `json:"repository"`
+		TaskID     string `json:"task_id"`
+		Link       string `json:"link"`
+	}{repository, taskID, link}
+	return s.mutate(mutationID, "set-merge-batch-ready", req, func(tx *bolt.Tx, rc *Receipt) error {
+		rc.Repository, rc.TaskID, rc.Record = repository, taskID, MergeQueueRecord
+		b, mb, err := standingBatch(tx, repository, taskID)
+		if err != nil {
+			return err
+		}
+		i := mb.Member(taskID) - 1
+		switch {
+		case mb.State != BatchLanding:
+			return invalid("the merge batch of %s is %s, not landing", repository, mb.State)
+		case mb.Members[i].Link != link:
+			return invalid("link %s is not the link %q of task %s/%s", link, mb.Members[i].Link, repository, taskID)
+		}
+		mb.Members[i].Ready = true
 		return putJSON(b, mergeBatchKey, mb)
 	})
 }
@@ -610,16 +751,23 @@ func readMergeQueue(tx *bolt.Tx, repository string) (MergeQueue, error) {
 		q.Front = front
 		// A batch stands with the front stay it was claimed in; members that left the queue or closed drop out, and
 		// the links after the first that did are cleared, since they replayed onto a link that is gone.
-		if batch != nil && batch.Leader == front.TaskID && batch.Stay == front.Stay {
+		if batch != nil && batch.State != BatchLanded && batch.Leader == front.TaskID && batch.Stay == front.Stay {
 			gone := func(m MergeBatchMember) bool {
 				return !slices.ContainsFunc(q.Entries, func(e QueuedEntry) bool { return e.TaskID == m.TaskID })
 			}
 			if i := slices.IndexFunc(batch.Members, gone); i >= 0 {
-				clearLinks(batch.Members[i:])
+				clearLinks(batch, i)
 			}
 			batch.Members = slices.DeleteFunc(batch.Members, gone)
 			q.Batch = batch
 		}
+	}
+	// A landed batch stands, front or not, while a member that has not finished is still queued: its train merged, so
+	// the member records the merge and leaves the queue at its next advance.
+	if batch != nil && batch.State == BatchLanded && slices.ContainsFunc(batch.Members, func(m MergeBatchMember) bool {
+		return !m.Finished && slices.ContainsFunc(q.Entries, func(e QueuedEntry) bool { return e.TaskID == m.TaskID })
+	}) {
+		q.Batch = batch
 	}
 	return q, nil
 }

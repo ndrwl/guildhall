@@ -867,6 +867,14 @@ func (p storeRecords) SetMergeBatchState(m, repo, leader string, state store.Mer
 	})
 }
 
+func (p storeRecords) SetMergeBatchTrain(m, repo, leader string, train store.MergeTrain) (store.Receipt, error) {
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.SetMergeBatchTrain(m, repo, leader, train) })
+}
+
+func (p storeRecords) SetMergeBatchReady(m, repo, id, link string) (store.Receipt, error) {
+	return withRecords(p, false, nil, func(s *store.Store) (store.Receipt, error) { return s.SetMergeBatchReady(m, repo, id, link) })
+}
+
 // Send is the engine's, launcher's and judge's outbox: every message it sends is Guildhall's own.
 func (p storeRecords) Send(to store.Recipient, e messaging.Envelope) (store.Receipt, error) {
 	return p.sendFrom(to, store.SenderGuildhall, e)

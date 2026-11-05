@@ -42,6 +42,9 @@ type pullRequestDoc struct {
 	// recompute it.
 	Title string `json:"title,omitempty"`
 	forge.PullRequest
+	// Train is set on the <decision>-merge of a task that landed in a merge train: the pull request above is the
+	// train's (docs/interpreter.md#merge-batches).
+	Train *trainRecord `json:"train,omitempty"`
 }
 
 // refusalDoc is a merge the forge refused at a merge decision: <decision>-refused, then -refused-2 and on.
@@ -353,6 +356,9 @@ type deliverHead struct {
 	// checks is the recorded read of a rebased head's checks; nil for the delivered head, whose validation is the
 	// validation input.
 	checks *validationDoc
+	// lands is the head that lands when it is not head itself: a batch member's link lands in its train's head, whose
+	// checks are the ones read.
+	lands string
 	// policies is set when the head changes the repository's policy file, so its merge needs the Guildmaster's
 	// answer whatever merge_requires says (guardPolicies).
 	policies bool
@@ -430,9 +436,10 @@ func (r *run) conditions(s workflow.Step, requires config.MergeRequires, outcome
 		artisan.Evidence = append(artisan.Evidence, l.name)
 	}
 	var green error
+	lands := cmp.Or(x.lands, x.head)
 	if x.checks != nil {
-		if x.checks.Verdict != validationPassed || x.checks.Head != x.head {
-			green = fmt.Errorf("%w: the checks of rebased head %s are %s", ErrValidationGate, x.head, x.checks.Verdict)
+		if x.checks.Verdict != validationPassed || x.checks.Head != lands {
+			green = fmt.Errorf("%w: the checks of rebased head %s are %s", ErrValidationGate, lands, x.checks.Verdict)
 		}
 	} else if len(s.Inputs["validation"]) > 0 || requires.CI() {
 		// With no validation input, a ci_green that is not required holds as before: there is nothing to check.
@@ -443,7 +450,7 @@ func (r *run) conditions(s workflow.Step, requires config.MergeRequires, outcome
 		return nil, err
 	}
 	if x.checks != nil {
-		ci.Evidence = []string{fmt.Sprintf("checks of %s", x.head)}
+		ci.Evidence = []string{fmt.Sprintf("checks of %s", lands)}
 	} else if refs := s.Inputs["validation"]; len(refs) > 0 {
 		step, port, _ := strings.Cut(refs[0], ".")
 		if v, _, err := r.output(step, port); err == nil {
@@ -614,9 +621,20 @@ func (r *run) authorizeHead(s workflow.Step, repo config.Repository, x deliverHe
 // over, or a new decision when reapprove_after_rebase asks for one. A rebase with major conflicts, or red checks on
 // the rebased head, sends the build back; three rebases in one stay at the front wait for the Director.
 func (r *run) front(s workflow.Step, repo config.Repository, dl deliverHead, id, record string, outcomes []reviewOutcome) (bool, Next, error) {
+	// A merge recorded from a landed merge train finishes, whatever the queue holds now.
+	if merged, err := r.trainMerged(s); err != nil || merged != "" {
+		if err != nil {
+			return false, Next{}, err
+		}
+		return r.trainTail(s, merged, repo)
+	}
 	q, err := r.enqueue(id, record, dl.pr)
 	if err != nil {
 		return false, Next{}, err
+	}
+	// A member of a landed batch, held or not, records the train's merge: its work is on the base.
+	if b := q.view.Batch; b != nil && b.State == store.BatchLanded && b.Member(r.task.ID) > 0 {
+		return r.landedMember(s, id, repo, dl, *b)
 	}
 	if q.view.Holds[r.task.ID] {
 		if q.front {
@@ -639,6 +657,15 @@ func (r *run) front(s workflow.Step, repo config.Repository, dl deliverHead, id,
 		}
 		next, err := r.queued(s, q, false)
 		return false, next, err
+	}
+	// A leader whose batch is landing goes straight on with its train: its own pull request is behind the base once
+	// the train merged, and is never rebased again.
+	if b := q.view.Batch; b != nil && b.Leader == r.task.ID && b.State == store.BatchLanding && b.Members[0].Link != "" {
+		lid, _, err := r.authorizedAs(s, b.Members[0].Link)
+		if err != nil {
+			return false, Next{}, err
+		}
+		return r.merge(s, cmp.Or(lid, id), repo, b.Members[0].Link, dl.pr)
 	}
 	p, _ := parseDecision(id)
 	k := p.round
@@ -1205,6 +1232,10 @@ func (r *run) mergedBy(id string) string {
 	if strings.HasPrefix(id, outsidePrefix) {
 		return "merged outside Guildhall, " + id + "-merge"
 	}
+	var m pullRequestDoc
+	if ok, err := r.readJSONDoc(id+"-merge", &m); err == nil && ok && m.Train != nil {
+		return fmt.Sprintf("merged in train #%d led by %s, %s", m.Number, m.Train.Leader, m.Train.Authorized)
+	}
 	if r.decision(id) != nil {
 		return "decision " + id
 	}
@@ -1231,6 +1262,10 @@ func (r *run) merge(s workflow.Step, id string, repo config.Repository, h string
 		case r.e.Forge == nil:
 			return false, Next{}, fmt.Errorf("%w: merging without a forge", ErrUnsupported)
 		}
+		// The leader of a batch of two or more lands its train pull request instead.
+		if handled, next, err := r.leadTrain(s, id, repo, h, pr); err != nil || handled {
+			return false, next, err
+		}
 		merged, err := r.e.Forge.Merge(r.ctx, forge.Merge{Repository: repo.Path, Remote: pr.Remote, Number: pr.Number, Head: h, Title: pr.Title})
 		if errors.Is(err, forge.ErrRefused) {
 			reason := err.Error()
@@ -1248,6 +1283,12 @@ func (r *run) merge(s workflow.Step, id string, repo config.Repository, h string
 			return false, Next{}, err
 		}
 	}
+	return r.mergeTail(s, id, repo, h, pr)
+}
+
+// mergeTail closes what merge id of pull request pr, whose work is safe at head h, leaves after its record: a slice
+// before the last closes, and the last tells the Director, retires the worktree, leaves the queue and closes the task.
+func (r *run) mergeTail(s workflow.Step, id string, repo config.Repository, h string, pr *pullRequestDoc) (bool, Next, error) {
 	k := r.slice.current
 	if !r.slice.final() {
 		// A slice before the last: its merge closes the slice, not the task, and the advance goes on to the next.

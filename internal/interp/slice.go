@@ -260,6 +260,10 @@ func (r *run) settleSlice() error {
 	if _, err := r.readJSONDoc(r.documents[i].Name, &pr); err != nil {
 		return err
 	}
+	if pr.Train != nil {
+		// A slice landed in a merge train: its work is safe at its own head, not the train's.
+		pr.Head = pr.Train.Head
+	}
 	p := r.docPlaces[i]
 	id := DecisionID(p.step, p.round, false)
 	return r.closeSlice(k, id, repo, &pr, p.step == outsideStep(k))
@@ -324,6 +328,12 @@ func (r *run) closeSlice(k int, id string, repo config.Repository, pr *pullReque
 // what comes next, and the merge decision it left unneeded, if any.
 func (r *run) mergedText(id, h string, k int) (string, error) {
 	msg := fmt.Sprintf("Merged head %s (%s)%s", h, r.mergedBy(id), r.sliceText(k))
+	var m pullRequestDoc
+	if ok, err := r.readJSONDoc(id+"-merge", &m); err != nil {
+		return "", err
+	} else if ok && m.Train != nil {
+		msg = fmt.Sprintf("Landed head %s in merge train #%d (%s) at link %s, merge commit %s (%s)%s", h, m.Number, m.URL, m.Train.Link, m.MergeCommit, r.mergedBy(id), r.sliceText(k))
+	}
 	var a authorizationDoc
 	if _, err := r.readJSONDoc(id+"-authorized", &a); err != nil {
 		return "", err

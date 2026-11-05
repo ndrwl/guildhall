@@ -187,6 +187,7 @@ func (r *run) renderBaseline(s workflow.Step, n int) ([]byte, error) {
 			}
 			return nil, fmt.Errorf("baseline: order merges: %w", err)
 		}
+		placed = collapseTrains(placed)
 		full = placed[:min(len(placed), baselineLimit)]
 		older = placed[len(full):]
 		fmt.Fprintf(&b, "\n## Merged tasks (%d, newest first)\n\n", len(placed)+len(unreadable))
@@ -388,6 +389,23 @@ func (r *run) baselineMerges() ([]baselineMerge, error) {
 		}
 	}
 	return out, nil
+}
+
+// collapseTrains makes merges of different tasks that landed one commit, the members of one merge train
+// (docs/interpreter.md#merge-batches), one merge, at the first's place: its row, checks heading and failed jobs name
+// every task, and its checks are listed once.
+func collapseTrains(merges []baselineMerge) []baselineMerge {
+	var out []baselineMerge
+	at := map[string]int{}
+	for _, m := range merges {
+		if i, ok := at[m.commit]; ok {
+			out[i].label += ", " + m.label
+			continue
+		}
+		at[m.commit] = len(out)
+		out = append(out, m)
+	}
+	return out
 }
 
 // sliceTotal is the number of slices task t's accepted spec lists, read as TaskSlices reads it, from its documents

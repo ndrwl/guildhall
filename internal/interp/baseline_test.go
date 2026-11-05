@@ -413,6 +413,31 @@ func TestHallmarkBaselineTwoMergeRecords(t *testing.T) {
 	}
 }
 
+// TestHallmarkBaselineTrain: the members of one merge train, whose merge records name the train's pull request and
+// merge commit, are one row and one checks section naming every member.
+func TestHallmarkBaselineTrain(t *testing.T) {
+	h := newBaselineEnv(t, backends[1], hallmarkExp(1, map[string]string{}, report("# Hallmark\n")))
+	c := h.commit(t, "train")
+	for i, task := range []string{"t4", "t5"} {
+		data, err := json.Marshal(map[string]any{"schema": "guildhall.pull-request/1", "remote": h.remote, "number": 9,
+			"url": "https://example.invalid/pull/9", "branch": interp.TrainBranch("t4", 1), "head": c, "state": "merged", "merge_commit": c,
+			"train": map[string]any{"leader": "t4", "stay": 1, "pull_request": map[string]any{"number": 104 + i}, "link": c, "head": c, "authorized": "deliver-1-authorized"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.close(t, task, straight(t).Revision(), func() {
+			h.putDoc(t, task, "deliver-1-merge", "tasks/app/"+task+"/deliver-1/merge.json", data)
+		})
+	}
+	h.forge.SetChecks(h.remote, c, forge.Check{Name: "test", State: forge.CheckPassed})
+	want(t, h.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 1})
+	_, text := h.baseline(t)
+	containsInOrder(t, text, "## Merged tasks (1, newest first)", "| t5, t4 | [#9](https://example.invalid/pull/9) | `"+c+"` |", "### t5, t4 `"+c+"`")
+	if n := strings.Count(text, "`"+c+"`\n\n"); n != 1 {
+		t.Fatalf("the train's checks are listed %d times", n)
+	}
+}
+
 // TestHallmarkBaselineOpenTask: an open one-slice task's merge record in range gets a row and a checks section, as a
 // done task's does (the d122 case); an open task with no merge record adds nothing, and the hallmark task's own merge
 // record is not listed.

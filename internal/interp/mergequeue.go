@@ -28,11 +28,14 @@ type MergeQueue interface {
 	ClaimMergeFront(mutationID, repository, taskID string) (store.Receipt, error)
 	ReleaseMergeFront(mutationID, repository, taskID string) (store.Receipt, error)
 	// ClaimMergeBatch claims the front as ClaimMergeFront does and, with size above 1, the batch the claimer leads
-	// (docs/interpreter.md#merge-batches); LeaveMergeBatch, SetMergeBatchLink and SetMergeBatchState change it.
+	// (docs/interpreter.md#merge-batches); LeaveMergeBatch, SetMergeBatchLink and SetMergeBatchState change it, and
+	// SetMergeBatchTrain and SetMergeBatchReady record its train pull request and its members' readiness to land.
 	ClaimMergeBatch(mutationID, repository, taskID string, slice, size int) (store.Receipt, error)
 	LeaveMergeBatch(mutationID, repository, taskID string) (store.Receipt, error)
 	SetMergeBatchLink(mutationID, repository, taskID string, slice int, link string) (store.Receipt, error)
 	SetMergeBatchState(mutationID, repository, leader string, state store.MergeBatchState, base string) (store.Receipt, error)
+	SetMergeBatchTrain(mutationID, repository, leader string, train store.MergeTrain) (store.Receipt, error)
+	SetMergeBatchReady(mutationID, repository, taskID, link string) (store.Receipt, error)
 	// SetMergeHold holds or releases a task's merge; the engine only releases one, for a task merged outside Guildhall.
 	SetMergeHold(mutationID, repository, taskID string, held bool) (store.Receipt, error)
 }

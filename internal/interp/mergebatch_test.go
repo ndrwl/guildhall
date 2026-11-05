@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ndrwl/guildhall/internal/forge"
 	"github.com/ndrwl/guildhall/internal/forge/forgetest"
 	"github.com/ndrwl/guildhall/internal/git"
 	"github.com/ndrwl/guildhall/internal/interp"
@@ -275,54 +274,7 @@ func TestBatchMemberRestoresItsHead(t *testing.T) {
 	}
 }
 
-// TestBatchLeader: under merge_batch_size above 1 the front claims a batch with the next queued task; its rebased
-// head, once pushed, is its link, and with every member linked the batch moves to testing. Until batches land, the
-// leader merges alone.
-func TestBatchLeader(t *testing.T) {
-	e, f, ws := queueEnv(t, backends[1])
-	e.eng.Config.Repositories[0].Merge.MergeBatchSize = ptr(3)
-	s := peer(t, e, "t9")
-	peer(t, e, "t8")
-	for _, id := range []string{"t9", "t8"} {
-		if _, err := s.SetTaskPriority("later-"+id, "app", id, store.PrioritySomeday); err != nil {
-			t.Fatal(err)
-		}
-	}
-	clean(ws, baseN(1), head, head2)
-	f.SetMergeability(forge.Mergeability{Head: head, Base: baseN(1), State: "behind", Behind: 1})
-	e.answer(t, "deliver-1", "merge")
-	want(t, e.advance(t, answeredMerge), deliverWait)
-	b := batchOf(t, s)
-	if b.Leader != "t7" || len(b.Members) != 3 || b.Members[1].TaskID != "t9" || b.Members[2].TaskID != "t8" || b.Members[0].Link != head2 || b.State != store.BatchAssembling {
-		t.Fatalf("batch = %+v", b)
-	}
-	f.SetChecks(repoRemote, head2, ciPassed...)
-	f.SetMergeability(forge.Mergeability{})
-	f.Refuse("held for the test")
-	// One member still without its link keeps the batch assembling.
-	if _, err := s.SetMergeBatchLink("link-t9", "app", "t9", 1, commitN(3)); err != nil {
-		t.Fatal(err)
-	}
-	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDirector, Step: "deliver"})
-	if b := batchOf(t, s); b.State != store.BatchAssembling {
-		t.Fatalf("batch with a link missing = %+v", b)
-	}
-	if _, err := s.SetMergeBatchLink("link-t8", "app", "t8", 1, commitN(4)); err != nil {
-		t.Fatal(err)
-	}
-	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDirector, Step: "deliver"})
-	if b := batchOf(t, s); b.State != store.BatchTesting || b.Base != baseN(1) {
-		t.Fatalf("batch after every link = %+v", b)
-	}
-	f.Refuse("")
-	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), done)
-	if got := mergedHead(f); got != head2 {
-		t.Fatalf("merged head = %q", got)
-	}
-	if q, _ := s.MergeQueue("app"); q.Batch != nil || len(q.Entries) != 2 {
-		t.Fatalf("queue after the leader merged = %+v", q)
-	}
-}
+// The leader's part, from claiming the batch to landing its train, is TestTrainLeaderLands (mergetrain_test.go).
 
 // queueRecords is interp.MergeQueue under a name of its own: embedded as itself, its field would be named MergeQueue
 // and hide the method of that name, so the wrapper would keep no queue.
