@@ -114,6 +114,8 @@ func TestPlanQuestionsPress(t *testing.T) {
 		says string
 	}{
 		"send round": {func() url.Values { v := form(planAsk, "", "", ""); v.Set("act", "send"); return v }(), http.StatusBadRequest, "no button of the open questions"},
+		// Accept all recommendations is a grill round's button; the approval has its own take-every-recommendation tile.
+		"accept all": {func() url.Values { v := form(planAsk, "", "", ""); v.Set("act", "accept-all"); return v }(), http.StatusBadRequest, "no button of the open questions"},
 		"no questions": {func() url.Values { v := form("grant-1", "", "", ""); v.Set("act", "accept-1"); return v }(), http.StatusConflict,
 			"#grant-1 has no open questions to answer here"},
 	} {

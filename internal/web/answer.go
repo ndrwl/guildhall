@@ -54,8 +54,10 @@ type Answer struct {
 // task's conversation under a.Tag and sends them as a note, refusing on a closed task.
 //
 // Round saves every box of the grill round p names as the Guildmaster's drafts, then does what its button asks:
-// marks a question accepted, answered with its words or open again, or, for Send round, records the round's answers
-// on the task's conversation with a grill-answered message to the Director and wakes it. It refuses unless the round
+// marks a question accepted, answered with its words or open again; for Accept all recommendations, marks every
+// unmarked question whose box is empty accepted, leaving any question with words as it is, and never sends; or, for
+// Send round, records the round's answers on the task's conversation with a grill-answered message to the Director
+// and wakes it. It refuses unless the round
 // is the latest of its attempt on an open task and not sent, and refuses, writing nothing, when the round has a draft
 // newer than p.Drafts, the highest draft number its form rendered, unless the press replays the same post; Send round
 // with a question unanswered saves the boxes and then refuses, naming them; a retry of a round already sent replays
@@ -75,14 +77,15 @@ type Answerer interface {
 	Round(p RoundPost) error
 }
 
-// The buttons of a round's form: Save, send later and Send round for the whole round, and Accept recommendation,
-// Answer with my words and Change for one question.
+// The buttons of a round's form: Save, send later, Accept all recommendations and Send round for the whole round,
+// and Accept recommendation, Answer with my words and Change for one question.
 const (
-	RoundSave   = "save"
-	RoundSend   = "send"
-	RoundAccept = "accept"
-	RoundWords  = "words"
-	RoundChange = "change"
+	RoundSave      = "save"
+	RoundSend      = "send"
+	RoundAcceptAll = "accept-all"
+	RoundAccept    = "accept"
+	RoundWords     = "words"
+	RoundChange    = "change"
 )
 
 // RoundPost is one press of a button of a grill round's form: the round, by its tag and conversation entry number,
@@ -520,11 +523,11 @@ func (s *Server) round(w http.ResponseWriter, r *http.Request, repo, id string) 
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
-// roundAct reads a round button's value: save or send, or accept-<n>, words-<n> or change-<n> for question n, from
-// 1 to most.
+// roundAct reads a round button's value: save, send or accept-all, or accept-<n>, words-<n> or change-<n> for
+// question n, from 1 to most.
 func roundAct(v string, most int) (act string, question int, ok bool) {
 	switch v {
-	case RoundSave, RoundSend:
+	case RoundSave, RoundSend, RoundAcceptAll:
 		return v, 0, true
 	}
 	act, num, found := strings.Cut(v, "-")
@@ -561,7 +564,7 @@ func (s *Server) planPress(w http.ResponseWriter, r *http.Request, a Answer, act
 	case a.Decision == "":
 		again(http.StatusBadRequest, "the answer names no decision")
 		return
-	case !ok || act == RoundSend:
+	case !ok || act == RoundSend || act == RoundAcceptAll:
 		again(http.StatusBadRequest, "the form names no button of the open questions")
 		return
 	}

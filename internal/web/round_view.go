@@ -21,8 +21,9 @@ type roundView struct {
 	// the form posts so a press from a page older than a saved draft is refused.
 	Drafts    int
 	Questions []roundQuestionView
-	// Total is how many questions it asks and Left how many have no answer yet.
-	Total, Left int
+	// Total is how many questions it asks and Left how many have no answer yet; Acceptable is how many of those
+	// have an empty saved box, which Accept all recommendations accepts.
+	Total, Left, Acceptable int
 	// Form says the request is from the Guildmaster's login, which answers as Login; Answering says the page answers
 	// at all.
 	Form, Answering bool
@@ -109,6 +110,9 @@ func (s *Server) openRound(t Task, p *talkPlan, base string, st pageState) *roun
 			qv.Folded, qv.Done, qv.Gist = true, "✓ Your words, saved", webGist(d.Text)
 		default:
 			v.Left++
+			if strings.TrimSpace(d.Text) == "" {
+				v.Acceptable++
+			}
 			if strings.TrimSpace(d.Text) != "" && !d.At.IsZero() {
 				qv.Saved = "saved " + s.at(t, d.At) + " · not an answer yet"
 			}

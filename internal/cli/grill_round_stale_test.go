@@ -82,6 +82,35 @@ func TestGrillRoundStaleQuestionRefused(t *testing.T) {
 	}
 }
 
+// TestGrillRoundStaleAcceptAllRefused: a stale tab's Accept all recommendations is refused with 409 and accepts
+// nothing; the current tab's press, retried, replays and writes once.
+func TestGrillRoundStaleAcceptAllRefused(t *testing.T) {
+	h, path := openGrillRound(t)
+	b := pageRoundDrafts(h)
+	pressRound(t, h, pageRoundDrafts(h), "save", map[int]string{1: "CSV only.", 2: "", 3: ""})
+	if code, body := pressRound(t, h, b, "accept-all", map[int]string{1: "", 2: "", 3: ""}); code != http.StatusConflict || !strings.Contains(body, staleReason) {
+		t.Fatalf("stale accept-all: %d\n%s", code, body)
+	}
+	d := pageDrafts(t, path, "a-grill")
+	if d[1].Text != "CSV only." || d[1].Mark != "" || d[2].Mark != "" || d[3].Mark != "" {
+		t.Fatalf("drafts after a stale accept-all = %+v", d)
+	}
+	current := pageRoundDrafts(h)
+	for i := range 2 {
+		if code, body := pressRound(t, h, current, "accept-all", map[int]string{1: "CSV only.", 2: "", 3: ""}); code != http.StatusSeeOther {
+			t.Fatalf("accept-all %d: %d\n%s", i+1, code, body)
+		}
+	}
+	once := pageRoundDrafts(h)
+	if d = pageDrafts(t, path, "a-grill"); d[1].Mark != "" || d[2].Mark != store.DraftAccept || d[3].Mark != store.DraftAccept {
+		t.Fatalf("drafts after accept-all = %+v", d)
+	}
+	pressRound(t, h, current, "accept-all", map[int]string{1: "CSV only.", 2: "", 3: ""})
+	if again := pageRoundDrafts(h); again != once {
+		t.Fatalf("a retried accept-all wrote drafts: %s, then %s", once, again)
+	}
+}
+
 // TestGrillRoundStaleSendRefused: with every question answered on both tabs, tab A changes Q1's words; tab B's Send
 // round is refused and sends nothing.
 func TestGrillRoundStaleSendRefused(t *testing.T) {

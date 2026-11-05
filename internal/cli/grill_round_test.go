@@ -234,3 +234,95 @@ func TestGrillRoundOnThePage(t *testing.T) {
 		t.Errorf("save on an older round: %d", code)
 	}
 }
+
+// acceptAllRound is a round of five questions, for Accept all recommendations.
+const acceptAllRound = `**Q1. Which format?**
+Recommended: CSV only.
+
+**Q2. Behind a flag?**
+Recommended: yes.
+
+**Q3. Import too?**
+Recommended: no, export only.
+
+**Q4. Who can export?**
+Recommended: every member.
+
+**Q5. Where does the button sit?**
+Recommended: in the toolbar.`
+
+// TestGrillRoundAcceptAll: Accept all recommendations saves every box, then accepts only the unmarked questions whose
+// box is empty: a question answered with words keeps them, an accepted one stays accepted, and an unmarked question
+// with words, saved before or typed with the press, stays open with them. It never sends; Send round is then refused
+// while those stay open and, once they are answered, sends Accepted for every accepted question.
+func TestGrillRoundAcceptAll(t *testing.T) {
+	h, path, _ := pageFixture(t)
+	startGrill(t, path)
+	if code, _, errOut := runGrill(t, acceptAllRound, "round", "open", "--store", path, "--repo", "app", "--task", "a-grill", "--attempt", "grill-1", "--questions-file", "-"); code != 0 {
+		t.Fatalf("grill round open = %d %s", code, errOut)
+	}
+	press := func(act string, boxes map[int]string) (int, string, string) {
+		t.Helper()
+		form := url.Values{"tag": {"grill-1"}, "round": {"1"}, "act": {act}}
+		if drafts := pageRoundDrafts(h); drafts != "" {
+			form.Set("drafts", drafts)
+		}
+		for n, w := range boxes {
+			form.Set("text-"+string(rune('0'+n)), w)
+		}
+		w := postRoute(t, h, "a-grill", "round", form)
+		return w.Code, w.Header().Get("Location"), w.Body.String()
+	}
+	if !strings.Contains(gmPage(h, "a-grill"), `value="accept-all"`) {
+		t.Fatal("an open round with empty questions does not offer Accept all recommendations")
+	}
+	// Q1 empty; Q2 answered with words; Q3 accepted; Q4 unmarked with saved words; Q5 typed with the press.
+	press("words-2", map[int]string{1: "", 2: "Yes, off by default.", 3: "", 4: "Admins only?", 5: ""})
+	press("accept-3", map[int]string{1: "", 3: "", 4: "Admins only?", 5: ""})
+	if code, loc, body := press("accept-all", map[int]string{1: "  ", 4: "Admins only?", 5: "A menu, not the toolbar."}); code != http.StatusSeeOther || loc != "/app/a-grill#grill-1" {
+		t.Fatalf("accept-all: %d %q\n%s", code, loc, body)
+	}
+	d := pageDrafts(t, path, "a-grill")
+	if d[1].Mark != store.DraftAccept || d[1].Text != "" {
+		t.Errorf("Q1, empty, = %+v; want accepted", d[1])
+	}
+	if d[2].Mark != store.DraftWords || d[2].Text != "Yes, off by default." {
+		t.Errorf("Q2, answered with words, = %+v", d[2])
+	}
+	if d[3].Mark != store.DraftAccept {
+		t.Errorf("Q3, accepted, = %+v", d[3])
+	}
+	if d[4].Mark != store.DraftUnmarked || d[4].Text != "Admins only?" {
+		t.Errorf("Q4, saved words, = %+v; want open with its words", d[4])
+	}
+	if d[5].Mark != store.DraftUnmarked || d[5].Text != "A menu, not the toolbar." {
+		t.Errorf("Q5, typed words, = %+v; want open with its words, saved", d[5])
+	}
+	if msgs := pageMessages(t, path); len(msgs) != 0 {
+		t.Fatalf("accept-all sent %+v", msgs)
+	}
+	// With every open question holding words, the button is no longer offered.
+	if body := gmPage(h, "a-grill"); strings.Contains(body, `value="accept-all"`) || !strings.Contains(body, `<b>Grill round 1</b> · 3 of 5`) {
+		t.Errorf("after accept-all the page offers it again or miscounts:\n%s", body)
+	}
+	// Pressed again with nothing to accept, it is a plain save.
+	if code, _, body := press("accept-all", map[int]string{4: "Admins only?", 5: "A menu, not the toolbar."}); code != http.StatusSeeOther {
+		t.Fatalf("accept-all with nothing to accept: %d\n%s", code, body)
+	}
+
+	if code, _, refused := press("send", map[int]string{4: "Admins only?", 5: "A menu, not the toolbar."}); code != http.StatusConflict ||
+		!strings.Contains(refused, "Q4 and Q5 have no answer yet") {
+		t.Fatalf("send with Q4 and Q5 open: %d\n%s", code, refused)
+	}
+	press("words-4", map[int]string{4: "Admins only.", 5: "A menu, not the toolbar."})
+	press("words-5", map[int]string{5: "A menu, not the toolbar."})
+	if code, _, body := press("send", nil); code != http.StatusSeeOther {
+		t.Fatalf("send: %d\n%s", code, body)
+	}
+	got := conversation(t, path, "app", "a-grill")
+	want := "**Q1. Which format?**\nAccepted: CSV only.\n\n**Q2. Behind a flag?**\nYour words:\n\nYes, off by default.\n\n**Q3. Import too?**\nAccepted: no, export only." +
+		"\n\n**Q4. Who can export?**\nYour words:\n\nAdmins only.\n\n**Q5. Where does the button sit?**\nYour words:\n\nA menu, not the toolbar."
+	if len(got) != 2 || got[1].Text != want {
+		t.Fatalf("conversation = %+v", got)
+	}
+}

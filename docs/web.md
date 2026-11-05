@@ -184,10 +184,13 @@ On Now, after the asks, the open round is one card, **Grill round <k>**, anchore
 - each question shows its title, body and the Director's recommendation, a **Your words** box and two buttons, **Accept recommendation** and **Answer with my words**;
 - an answered question folds to one line, "✓ Accepted" or "✓ Your words, saved", with its gist and **Change**, which opens it again with its words;
 - a box holding words that are not an answer yet says "saved *hh:mm* · not an answer yet";
-- the bar at the bottom of the card, which sticks to the bottom of the window while the card is in view, has **Save, send later** and **Send round**, whose tile says "*n* still to answer".
+- the bar at the bottom of the card, which sticks to the bottom of the window while the card is in view, has **Save, send later**, **Accept all recommendations** while some unanswered question has an empty box, and **Send round**, whose tile says "*n* still to answer".
 
 Every button saves every box first, as drafts: they are not answers, never go through the answer path and stay until the round is sent ([drafts](store.md#drafts)).
 So nothing typed is lost whichever button you press, or if you leave and come back.
+**Accept all recommendations** then accepts the recommendation of every unanswered question whose box is empty, folding each to "✓ Accepted".
+It leaves your words alone: a question answered with your words keeps them, and an unanswered question with words in its box, saved or just typed, stays open with them, to answer on purpose.
+It never sends; press **Send round** once you have looked over the round. With nothing left to accept it is a plain save.
 **Send round** can always be pressed: while a question has no answer it saves every box and then refuses, naming them, such as "Q9 and Q10 have no answer yet; your words are saved".
 Once every question is answered it records the round's answers on the conversation and a `grill-answered` message to the Director in one store transaction, and wakes it; pressing it twice sends once.
 The message names the round and the command that prints the answers, `guildhall grill round show --repo <id> --task <id> --attempt <attempt> [--round <k>]`, never your words.
