@@ -42,10 +42,26 @@ const (
 	ConversationRecommendation = "recommendation"
 	// ConversationConfirmed records that the Guildmaster confirmed a recommendation.
 	ConversationConfirmed = "confirmed"
+	// ConversationSummary is the Director's closing grill summary, put to the Guildmaster to confirm.
+	ConversationSummary = "summary"
+	// ConversationSummaryAnswer is the Guildmaster's answer to a grill summary: confirmed or changes requested.
+	ConversationSummaryAnswer = "summary-answer"
 )
 
 // ConversationKinds lists the kinds in the order the docs name them.
-var ConversationKinds = []string{ConversationSay, ConversationRound, ConversationRoundAnswers, ConversationRecommendation, ConversationConfirmed}
+var ConversationKinds = []string{ConversationSay, ConversationRound, ConversationRoundAnswers, ConversationRecommendation, ConversationConfirmed,
+	ConversationSummary, ConversationSummaryAnswer}
+
+// The outcomes of a summary-answer entry, its Option.
+const (
+	// SummaryConfirmed is Confirm: the Guildmaster agrees the summary.
+	SummaryConfirmed = "confirmed"
+	// SummaryChangesRequested is Request changes: the Guildmaster's words say what to change.
+	SummaryChangesRequested = "changes_requested"
+)
+
+// SummaryOutcomes lists a summary answer's outcomes in the order the docs name them.
+var SummaryOutcomes = []string{SummaryConfirmed, SummaryChangesRequested}
 
 // Saying is what one conversation entry says: who, about which attempt or decision of the task (its tag, such as
 // grill-2 or accept-1), what kind of entry it is, and its Markdown text.
@@ -53,7 +69,8 @@ var ConversationKinds = []string{ConversationSay, ConversationRound, Conversatio
 // A recommendation also names the Option of its decision the Director recommends and may carry Words, the
 // Guildmaster's words the page pre-fills its Your words box with. A confirmed entry names the Option it answered
 // with and Confirms, the number of the recommendation it confirmed. A round-answers entry names in Round the number
-// of the round entry it answers. No other kind carries these.
+// of the round entry it answers. A summary-answer entry names in Round the number of the summary entry it answers
+// and in Option its outcome, one of SummaryOutcomes. No other kind carries these.
 type Saying struct {
 	Author   string `json:"author"`
 	Tag      string `json:"tag"`
@@ -79,8 +96,9 @@ type ConversationEntry struct {
 // validateSaying checks a saying's author, kind, tag and text: an author and kind of the fixed vocabularies, a tag of
 // id form and Markdown text that is not blank, is valid UTF-8 and is at most MaxTextBytes. A recommendation is the
 // Director's and names a one-line option, with words of at most MaxTextBytes or none; a confirmed entry is the
-// Guildmaster's and names its option and the recommendation it confirmed; no other kind has an option, words or a
-// recommendation it confirms.
+// Guildmaster's and names its option and the recommendation it confirmed; a round and a summary are the Director's,
+// and their answers the Guildmaster's, naming in Round the entry they answer; a summary's answer names its outcome
+// as its option; no other kind has an option, words, a recommendation it confirms or a round.
 func validateSaying(say Saying) error {
 	switch {
 	case !slices.Contains(ConversationAuthors, say.Author):
@@ -94,7 +112,22 @@ func validateSaying(say Saying) error {
 	if err := validateText("conversation text", say.Text, MaxTextBytes); err != nil {
 		return err
 	}
+	if say.Kind == ConversationSummaryAnswer {
+		switch {
+		case say.Author == ConversationDirector:
+			return invalid("a summary's answer is the Guildmaster's")
+		case say.Round < 1:
+			return invalid("a summary's answer names the summary it answers")
+		case !slices.Contains(SummaryOutcomes, say.Option):
+			return invalid("a summary's answer is one of %v, not %q", SummaryOutcomes, say.Option)
+		case say.Words != "" || say.Confirms != 0:
+			return invalid("a summary's answer carries its words in its text and confirms no recommendation")
+		}
+		return nil
+	}
 	switch {
+	case say.Kind == ConversationSummary && say.Author != ConversationDirector:
+		return invalid("a summary is the Director's, not %s's", say.Author)
 	case say.Kind == ConversationRound && say.Author != ConversationDirector:
 		return invalid("a round is the Director's, not %s's", say.Author)
 	case say.Kind == ConversationRoundAnswers && say.Author == ConversationDirector:
@@ -102,7 +135,7 @@ func validateSaying(say Saying) error {
 	case say.Kind == ConversationRoundAnswers && say.Round < 1:
 		return invalid("a round's answers name the round they answer")
 	case say.Kind != ConversationRoundAnswers && say.Round != 0:
-		return invalid("only a round's answers name a round")
+		return invalid("only a round's or a summary's answer names the entry it answers")
 	case say.Kind == ConversationRoundAnswers && (say.Option != "" || say.Words != "" || say.Confirms != 0):
 		return invalid("a round's answers have no option, words or recommendation it confirms")
 	case say.Kind == ConversationRoundAnswers:

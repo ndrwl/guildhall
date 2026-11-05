@@ -153,6 +153,8 @@ Commands:
                  open the Director's own question to the Guildmaster on a task, as a question decision
   grill round open|show --store <path> --repo <id> --task <id> --attempt <step-n> ...
                  put a grill round on the task page, asked as one form the Guildmaster sends, and print a sent round's answers
+  grill summary open|show --store <path> --repo <id> --task <id> --attempt <step-n> ...
+                 put the grill's closing summary on the task page to Confirm or Request changes, and print its answer
   decide defer|undefer --store <path> --repo <id> --task <id> --decision <id> [--until-merged <repo>/<task>... --reason <text>]
                  hold an open decision out of needs_me until the named tasks merge, or lift that hold
   decide explain <repo>/<task> <decision> --store <path> --subject-digest <digest> (--text <md> | --file <path|->) [--recommend <option>]

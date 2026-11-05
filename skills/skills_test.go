@@ -898,15 +898,19 @@ var notAskedOfTheDirector = map[string]string{
 	"render":                   "the engine renders every prompt",
 	"director turn-started":    "the runtime's hook runs it when a turn starts",
 	"director turn-ended":      "the runtime's hook runs it when a turn ends",
-	"director context-report":  "the runtime's status line runs it after each message",
-	"quality judged":           "a judge attempt's launcher runs it when the attempt ends",
-	"ci log":                   "Artisans run it from a failed validate result's logs[].command",
-	"clerk guild":              "the Clerk plugin's /guild runs it for the Guildmaster",
-	"clerk decisions":          "the Clerk plugin's /decisions runs it for the Guildmaster",
-	"clerk task":               "the Clerk plugin's /task runs it for the Guildmaster",
-	"clerk inspect":            "the Clerk plugin's /inspect runs it for the Guildmaster",
-	"clerk queue":              "the Clerk plugin's /queue runs it for the Guildmaster",
-	"web":                      "the Director's session serves the task pages itself; the Guildmaster runs it by hand when none runs",
+	// d225 slice 2 puts the summary card on the task page and names these in the grill and Director stage skills;
+	// until the page shows it, a summary put up this way would sit unseen, so no skill names them yet.
+	"grill summary open":      "not yet: the task page shows no grill summary card until d225 slice 2",
+	"grill summary show":      "not yet: the task page answers no grill summary until d225 slice 2",
+	"director context-report": "the runtime's status line runs it after each message",
+	"quality judged":          "a judge attempt's launcher runs it when the attempt ends",
+	"ci log":                  "Artisans run it from a failed validate result's logs[].command",
+	"clerk guild":             "the Clerk plugin's /guild runs it for the Guildmaster",
+	"clerk decisions":         "the Clerk plugin's /decisions runs it for the Guildmaster",
+	"clerk task":              "the Clerk plugin's /task runs it for the Guildmaster",
+	"clerk inspect":           "the Clerk plugin's /inspect runs it for the Guildmaster",
+	"clerk queue":             "the Clerk plugin's /queue runs it for the Guildmaster",
+	"web":                     "the Director's session serves the task pages itself; the Guildmaster runs it by hand when none runs",
 }
 
 // readmeCommand finds each `guildhall <command>` in the README's command list.

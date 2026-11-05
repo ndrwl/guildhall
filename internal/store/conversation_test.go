@@ -237,6 +237,45 @@ func TestRecommendationAndConfirmation(t *testing.T) {
 	}
 }
 
+// TestSummaryAndAnswer: a summary is the Director's and carries no option, words or round; its answer is the
+// Guildmaster's, names the summary it answers in Round and its outcome, confirmed or changes_requested, in Option.
+// Of the other kinds, only a round's answers name a round. Each round-trips through the store.
+func TestSummaryAndAnswer(t *testing.T) {
+	s, _ := newStore(t)
+	mustCreate(t, s, "m-1", sampleTask("app", "t-1"))
+	sum := Saying{Author: ConversationDirector, Tag: "grill-1", Kind: ConversationSummary, Text: "- CSV only\n- behind a flag"}
+	conf := Saying{Author: ConversationGuildmasterPage, Tag: "grill-1", Kind: ConversationSummaryAnswer, Text: "Confirmed", Round: 1, Option: SummaryConfirmed}
+	changes := Saying{Author: ConversationGuildmasterChat, Tag: "grill-1", Kind: ConversationSummaryAnswer, Text: "Changes requested\n\nJSON too", Round: 1, Option: SummaryChangesRequested}
+	for name, bad := range map[string]Saying{
+		"summary by the Guildmaster":  {Author: ConversationGuildmasterPage, Tag: "grill-1", Kind: ConversationSummary, Text: "x"},
+		"summary with an option":      {Author: ConversationDirector, Tag: "grill-1", Kind: ConversationSummary, Text: "x", Option: SummaryConfirmed},
+		"summary with a round":        {Author: ConversationDirector, Tag: "grill-1", Kind: ConversationSummary, Text: "x", Round: 1},
+		"summary with words":          {Author: ConversationDirector, Tag: "grill-1", Kind: ConversationSummary, Text: "x", Words: "w"},
+		"answer by the Director":      {Author: ConversationDirector, Tag: "grill-1", Kind: ConversationSummaryAnswer, Text: "x", Round: 1, Option: SummaryConfirmed},
+		"answer of nothing":           {Author: ConversationGuildmasterPage, Tag: "grill-1", Kind: ConversationSummaryAnswer, Text: "x", Option: SummaryConfirmed},
+		"answer without an outcome":   {Author: ConversationGuildmasterPage, Tag: "grill-1", Kind: ConversationSummaryAnswer, Text: "x", Round: 1},
+		"answer with another outcome": {Author: ConversationGuildmasterPage, Tag: "grill-1", Kind: ConversationSummaryAnswer, Text: "x", Round: 1, Option: "approve"},
+		"answer with words":           {Author: ConversationGuildmasterPage, Tag: "grill-1", Kind: ConversationSummaryAnswer, Text: "x", Round: 1, Option: SummaryConfirmed, Words: "w"},
+		"answer that confirms":        {Author: ConversationGuildmasterPage, Tag: "grill-1", Kind: ConversationSummaryAnswer, Text: "x", Round: 1, Option: SummaryConfirmed, Confirms: 1},
+		"blank answer":                {Author: ConversationGuildmasterPage, Tag: "grill-1", Kind: ConversationSummaryAnswer, Text: " ", Round: 1, Option: SummaryConfirmed},
+		"say with a round":            {Author: ConversationDirector, Tag: "grill-1", Kind: ConversationSay, Text: "x", Round: 1},
+		"round answers with outcome":  {Author: ConversationGuildmasterPage, Tag: "grill-1", Kind: ConversationRoundAnswers, Text: "x", Round: 1, Option: SummaryConfirmed},
+	} {
+		if _, err := s.AddConversation("bad-"+strings.ReplaceAll(name, " ", "-"), "app", "t-1", bad); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s: err = %v, want ErrInvalid", name, err)
+		}
+	}
+	for i, say := range []Saying{sum, conf, changes} {
+		if _, err := s.AddConversation("ok-"+string(rune('1'+i)), "app", "t-1", say); err != nil {
+			t.Fatalf("%+v: %v", say, err)
+		}
+	}
+	got, err := s.Conversation("app", "t-1")
+	if err != nil || len(got) != 3 || got[0].Saying != sum || got[1].Saying != conf || got[2].Saying != changes {
+		t.Fatalf("Conversation = %+v, %v", got, err)
+	}
+}
+
 // TestDecisionRecommended: a question may carry the option the Director recommends, one of its options; no other
 // kind may.
 func TestDecisionRecommended(t *testing.T) {

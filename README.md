@@ -177,6 +177,7 @@ The commands are the Director's tools; you can also call them yourself to script
 - `guildhall web [--copy <dir>]`: serve the copy's task pages on the tailnet, where the Guildmaster answers a task's decisions, as a Director session does; see [task pages](docs/web.md).
 - `guildhall task say`: write the Director's words, a recommendation the Guildmaster confirms in one click, or the Guildmaster's quoted words from chat, on a task page's conversation; see [the conversation](docs/web.md#the-conversation).
 - `guildhall grill round open|show`: put a grill round on the task page, which the Guildmaster answers as one form and sends, and print a sent round's answers; see [grill rounds](docs/web.md#grill-rounds).
+- `guildhall grill summary open|show`: put the grill's closing summary on the task page for the Guildmaster to Confirm or Request changes, and print their answer with its words; see [grill rounds](docs/web.md#grill-rounds).
 - `guildhall spend report --copy <dir> [--by day] [--json]`: read-only recorded token and cost attribution by task, step, recorded role/profile and attempt outcome, or with `--by day` by UTC start day; see [spend reporting](docs/spend.md).
 - `guildhall quality judge|judged|agreement`: judge a delivered task's self-review in a separate session, take its judgement, and measure the judge against your audits; see [the quality rubric](docs/quality.md#running-it).
 - `guildhall workflow approve|approvals`: approve workflow changes; see [workflow-edit authority](docs/configuration.md#workflow-edit-authority).
