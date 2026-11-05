@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -45,7 +46,7 @@ func TestOwnedWaitHonoursCancellationBeforeReady(t *testing.T) {
 				if when == "before read" {
 					cancel()
 				}
-				go func() { done <- (&Process{}).owned(ctx, c) }()
+				go func() { done <- (&Process{}).owned(ctx, c, time.Minute) }()
 				if when == "during read" {
 					// The writer holds the store while owned blocks on its read lock.
 					synctest.Wait()

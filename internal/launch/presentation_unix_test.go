@@ -576,7 +576,9 @@ func TestTaskLockedLaunchLeavesAbandonedWorkspaceWithForeignTabOpen(t *testing.T
 }
 
 // TestTaskLockedLaunchStillRefusesBoundClaim: a claim holding a tab binding may
-// have had its command typed, so even a task-locked caller never relaunches it.
+// have had its command typed, so even a task-locked caller never relaunches it
+// while its launcher owns the attempt or was never recorded; only a recorded
+// launcher proven gone is recovered (TestTimedOutPaneClaimDoesNotBlockNextStart).
 func TestTaskLockedLaunchStillRefusesBoundClaim(t *testing.T) {
 	for _, phase := range []string{"report", "type"} {
 		t.Run(phase, func(t *testing.T) {
@@ -598,8 +600,13 @@ func TestTaskLockedLaunchStillRefusesBoundClaim(t *testing.T) {
 				t.Fatalf("Launch = %v", err)
 			}
 			sent := len(panes.Sent())
-			if _, err := p.Launch(context.Background(), spec); err == nil {
+			_, err := p.Launch(context.Background(), spec)
+			if err == nil {
 				t.Fatal("bound claim relaunched")
+			}
+			// Nothing was typed, so no launcher was recorded: the refusal names the command that recovers it (d221).
+			if phase == "report" && !strings.Contains(err.Error(), launch.AbandonPaneClaimFlag) {
+				t.Fatalf("Launch = %v, want the recovering command", err)
 			}
 			if len(panes.Sent()) != sent || host.workspaces != 1 || claimRecoveredEvents(t, p) != 0 {
 				t.Fatalf("sent=%q workspaces=%d", panes.Sent(), host.workspaces)

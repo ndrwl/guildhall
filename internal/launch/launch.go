@@ -773,5 +773,13 @@ func ClassifyAt(ctx context.Context, a Attempt, o *store.Ownership, now func() t
 	}
 	// A mark that cannot be read is not a hand-over: the attempt is classified as any other.
 	handed, _ := interp.HandedToDirector(a.Dir())
-	return reconcile.Classify(ctx, reconcile.Attempt{Dir: a.Dir(), Files: a.Files(), Owner: o, Handed: handed}, reconcile.Options{Now: now})
+	c := reconcile.Classify(ctx, reconcile.Attempt{Dir: a.Dir(), Files: a.Files(), Owner: o, Handed: handed}, reconcile.Options{Now: now})
+	// An absent attempt holding a bound pane claim is a launch whose launcher never owned it: its reason says so,
+	// and what became of that launcher, while its state stays absent for every other reader (d221).
+	if c.State == reconcile.Absent && o == nil {
+		if held, _, reason := HeldPaneClaim(a); held {
+			c.Reason = reason
+		}
+	}
+	return c
 }

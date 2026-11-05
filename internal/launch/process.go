@@ -74,9 +74,13 @@ type Process struct {
 	// StallInterval, when positive, is passed as `--stall-interval`, so the launcher sends the Director
 	// worker-stalled from its heartbeat (Config.StallInterval); the engine passes its own.
 	StallInterval time.Duration
-	// StartTimeout bounds presentation setup and Launch's wait for ownership; zero is 30 seconds.
+	// StartTimeout bounds a pane launch's presentation setup, up to typing its command, and a hidden launch's wait
+	// for ownership; zero is 30 seconds. A pane launch then waits LockWait plus 10 seconds for ownership, and a
+	// hidden launch's wait is at least that long.
 	StartTimeout time.Duration
-	LockWait     time.Duration
+	// LockWait is how long every store open waits on the store's lock, the launcher's too (`artisan start
+	// --lock-wait`); zero is the store's default.
+	LockWait time.Duration
 	// TaskLocked says the caller holds the task lock (artisan.LockAttempt on the task directory) for the whole
 	// Launch or LaunchFiles call, so no other launch of this task can be in flight. Only then does a pane launch
 	// recover a stale launching PaneClaimFile claim; the zero value never does.
@@ -151,6 +155,10 @@ func (p *Process) launchFiles(ctx context.Context, k artisan.AttemptKey, slices 
 		if p.StallInterval > 0 {
 			cmd.Args = append(cmd.Args, "--stall-interval", p.StallInterval.String())
 		}
+		// The launcher waits on the store's lock as long as every other caller, never only the store's default.
+		if p.LockWait > 0 {
+			cmd.Args = append(cmd.Args, "--lock-wait", p.LockWait.String())
+		}
 		if profile != "" {
 			cmd.Args = append(cmd.Args, "--profile", profile)
 		}
@@ -165,6 +173,9 @@ func (p *Process) launchFiles(ctx context.Context, k artisan.AttemptKey, slices 
 		cmd.Stdout, cmd.Stderr = log, log
 		return cmd
 	}
+	// In pane mode StartTimeout bounds only the terminal's setup; the wait for ownership after typing has its own
+	// budget, from the caller's own context.
+	caller := ctx
 	if p.Presentation != nil || p.OpenPresentation != nil {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, p.startTimeout())
@@ -182,7 +193,7 @@ func (p *Process) launchFiles(ctx context.Context, k artisan.AttemptKey, slices 
 		_ = log.Close()
 		cmd := build()
 		cmd.Dir = workDir
-		return p.launchPane(ctx, at, cmd, presentation)
+		return p.launchPane(ctx, caller, at, cmd, presentation)
 	}
 	cmd, err := startDetached(build)
 	// The child holds its own handle on the log.
@@ -194,7 +205,7 @@ func (p *Process) launchFiles(ctx context.Context, k artisan.AttemptKey, slices 
 	c := &child{at: at, identity: id, exited: make(chan struct{})}
 	go func() { _ = cmd.Wait(); close(c.exited) }()
 	h := interp.Handle{Identity: at.Identity(), Ref: fmt.Sprintf("%s pid %d", k, cmd.Process.Pid)}
-	if err := errors.Join(identityErr, p.owned(ctx, c)); err != nil {
+	if err := errors.Join(identityErr, p.owned(ctx, c, max(p.startTimeout(), p.ownershipWait()))); err != nil {
 		if !errors.Is(err, errReleased) {
 			_ = p.stop(c, true)
 		}
@@ -220,10 +231,26 @@ func (p *Process) startTimeout() time.Duration {
 	return 30 * time.Second
 }
 
-// owned waits until c owns its attempt with its endpoint recorded, and fails at once when c released it without one.
+// ownershipSlack is how much longer than LockWait a caller waits for its launcher to own the attempt, so it
+// always outwaits a launcher that is itself waiting LockWait on the store.
+const ownershipSlack = 10 * time.Second
+
+// ownershipWait is how long a pane launch waits for ownership once its command is typed: LockWait plus
+// ownershipSlack. A hidden launch waits at least this long.
+func (p *Process) ownershipWait() time.Duration { return p.LockWait + ownershipSlack }
+
+// PaneStartBudget is how long a pane launch over lockWait may take before a bound claim with no owner is no longer
+// one still starting: the default StartTimeout for its setup, and the wait for ownership after typing.
+func PaneStartBudget(lockWait time.Duration) time.Duration {
+	return (&Process{}).startTimeout() + (&Process{LockWait: lockWait}).ownershipWait()
+}
+
+// owned waits, within budget, until c owns its attempt with its endpoint recorded, and fails at once when c
+// released it without one, or exited without owning it: a hidden child's exit, or a pane child whose bridge
+// recorded a launcher (PaneLauncherFile) proven gone with no ownership recorded.
 // A cancelled wait is never reported ready, even if ownership was recorded before the next read.
-func (p *Process) owned(ctx context.Context, c *child) error {
-	ctx, cancel := context.WithTimeout(ctx, p.startTimeout())
+func (p *Process) owned(ctx context.Context, c *child, budget time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 	exited := false
 	for {
@@ -256,7 +283,15 @@ func (p *Process) owned(ctx context.Context, c *child) error {
 			}
 		}
 		if exited {
-			return errors.New("the launcher exited before owning the attempt")
+			return fmt.Errorf("the launcher exited before owning the attempt; see %s", filepath.Join(c.at.Dir(), LogFile))
+		}
+		// A pane child's exit is seen through the launcher its bridge recorded; the record is read again once more
+		// below, as after a hidden child's exit, so a fast launcher that owned and finished is not misreported.
+		if c.pane && c.identity.PID == 0 && err == nil && o == nil {
+			if state, _ := PaneLauncherState(c.at.Dir()); state == PaneLauncherGone {
+				exited = true
+				continue
+			}
 		}
 		select {
 		case <-c.exited:

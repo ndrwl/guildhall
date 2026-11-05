@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/workbench"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
@@ -66,7 +67,8 @@ const pollInterval = 100 * time.Millisecond
 // Present starts b.Argv as a detached owned launcher, appending its output to
 // LogFile in the attempt directory, and shows that log on out until it exits. A
 // lost output consumer never stops the launcher: an output error only ends the
-// presentation. It is an internal CLI bridge, not a second attempt owner.
+// presentation. It is an internal CLI bridge, not a second attempt owner. As soon as
+// the launcher starts, its identity is written to PaneLauncherFile.
 //
 // In plain output the log is copied to out unchanged. Otherwise out shows the
 // Workbench: launcher.log merged with the attempt's workbench.File, formatted,
@@ -88,6 +90,14 @@ func Present(b Bridge, out io.Writer) error {
 	_ = log.Close()
 	if err != nil {
 		return err
+	}
+	// The launcher is recorded at once, so a launch waiting for it to own the attempt sees it exit first, and a
+	// later start can prove the claim's only launcher gone (PaneLauncherFile). A failure only leaves it
+	// unrecorded, which no recovery reads as gone.
+	if id, err := artisan.Lookup(cmd.Process.Pid); err != nil {
+		_, _ = fmt.Fprintf(out, "guildhall: warning: launcher not recorded: %v\n", err)
+	} else if err := recordPaneLauncher(b.Attempt.Dir(), id); err != nil {
+		_, _ = fmt.Fprintf(out, "guildhall: warning: launcher not recorded: %v\n", err)
 	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()

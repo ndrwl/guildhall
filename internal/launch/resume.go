@@ -48,6 +48,9 @@ type ResumeReport struct {
 	AttemptOutcome store.AttemptOutcome `json:"attempt_outcome,omitempty"`
 	// Classification is the attempt's classification afterwards.
 	Classification reconcile.Classification `json:"classification"`
+	// PaneClaim is PaneClaimAbandoned when `artisan resume` set aside a bound pane claim with no owner
+	// (AbandonPaneClaim), so the next start launches; empty otherwise.
+	PaneClaim string `json:"pane_claim,omitempty"`
 }
 
 // Resume reconciles an attempt whose launcher has exited, such as after its

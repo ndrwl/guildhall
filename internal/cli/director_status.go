@@ -702,6 +702,7 @@ func readDirectorStatusConfig(ctx context.Context, path, stateDir, cfgPath strin
 // readDirectorStatusRecords is readDirectorStatusConfig waiting p's wait for the store's lock.
 func readDirectorStatusRecords(ctx context.Context, p storeRecords, stateDir, cfgPath string, now func() time.Time) (directorStatus, error) {
 	path := p.path
+	startBudget := launch.PaneStartBudget(statusLockWait(cfgPath))
 	stateDir, err := filepath.Abs(stateDir)
 	if err != nil {
 		return directorStatus{}, err
@@ -951,6 +952,14 @@ func readDirectorStatusRecords(ctx context.Context, p storeRecords, stateDir, cf
 						item.Reason = fmt.Sprintf("judge attempt %d of self-review %d was prepared but not launched", at.Number, review)
 					}
 					retry = append(retry, item)
+				} else if open && !judge && c.State == reconcile.Absent && owners[key] == nil && errors.Is(launchedErr, fs.ErrNotExist) &&
+					staleHeldPaneClaim(launch.Attempt{Store: path, StateDir: stateDir, Key: key}, startBudget, now) {
+					// A pane launch whose launcher never owned the attempt holds its claim with no owner; once past the
+					// start budget it is no launch in progress, and resume recovers it, whatever the task's last wait
+					// says (d221).
+					item.Kind, item.Resume, item.Reason = "resume", true, string(c.State)+": "+c.Reason
+					item.Command = heldPaneClaimCommand(launch.Attempt{Store: path, StateDir: stateDir, Key: key}, flags)
+					resume = append(resume, item)
 				} else if (open || judge) && (c.State == reconcile.Stuck || c.State == reconcile.Exited || c.State == reconcile.Unknown ||
 					// Files that settled an attempt the store did not, as when its launcher died before recording
 					// the outcome, are settled by artisan resume; a Director stage's published result is an advance.
