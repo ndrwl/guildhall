@@ -19,19 +19,21 @@ import (
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
-const spendHelp = `Usage: guildhall spend report --copy <dir> [--repo <name>] [--task <id>] [--since <RFC3339>] [--json]
+const spendHelp = `Usage: guildhall spend report --copy <dir> [--repo <name>] [--task <id>] [--since <RFC3339>] [--by day] [--json]
   --copy <dir>       Director copy (default: the copy found from the current directory)
   --store <path>     explicit existing store instead of --copy
   --state <dir>      attempt state directory (required with --store)
   --repo <name>      repository filter (default: all)
   --task <id>        task filter (default: all matching repositories)
   --since <RFC3339>  inclusive attempt start time (default: all)
+  --by day           one row per UTC day of each attempt's start receipt (default: by task, step, rerun, role and outcome)
   --json            JSON instead of a human-readable table
   --help            show this help
 Examples:
   guildhall spend report --copy ./director
   guildhall spend report --copy ./director --repo app --task t-1 --json
   guildhall spend report --copy ./director --since 2026-01-01T00:00:00Z --json
+  guildhall spend report --copy ./director --by day
 `
 
 type spendAmounts struct {
@@ -66,6 +68,25 @@ type spendRow struct {
 }
 type spendReport struct {
 	Rows                 []spendRow              `json:"rows"`
+	Total                spendSummary            `json:"total"`
+	ByRerun              map[string]spendSummary `json:"by_rerun"`
+	ExcludedUnknownStart int                     `json:"excluded_unknown_start"`
+	Unavailable          []string                `json:"unavailable"`
+	// Days holds the --by day rows in place of Rows; spendDayReport is their JSON form.
+	Days []spendDayRow `json:"-"`
+}
+
+// spendUnknownDay is the --by day row of attempts without a start receipt; it sorts after every date.
+const spendUnknownDay = "unknown"
+
+type spendDayRow struct {
+	Day string `json:"day"`
+	spendSummary
+}
+
+// spendDayReport is the --by day JSON: the same top-level fields as spendReport, with day rows.
+type spendDayReport struct {
+	Rows                 []spendDayRow           `json:"rows"`
 	Total                spendSummary            `json:"total"`
 	ByRerun              map[string]spendSummary `json:"by_rerun"`
 	ExcludedUnknownStart int                     `json:"excluded_unknown_start"`
@@ -117,6 +138,7 @@ func (a *App) spend(args []string) int {
 	repo := fl.String("repo", "", "repository")
 	task := fl.String("task", "", "task")
 	since := fl.String("since", "", "inclusive start time")
+	by := fl.String("by", "", "grouping dimension")
 	js := fl.Bool("json", false, "JSON")
 	if err := fl.Parse(args[1:]); errors.Is(err, flag.ErrHelp) {
 		_, err = io.WriteString(a.Stdout, spendHelp)
@@ -129,6 +151,9 @@ func (a *App) spend(args []string) int {
 	}
 	if fl.NArg() != 0 {
 		return a.usageError("spend report: unexpected arguments\n" + spendHelp)
+	}
+	if *by != "" && *by != "day" {
+		return a.usageError("spend report: --by must be day\n" + spendHelp)
 	}
 	var start time.Time
 	if *since != "" {
@@ -151,15 +176,30 @@ func (a *App) spend(args []string) int {
 	if err != nil {
 		return a.fail(err)
 	}
-	report, err := readSpend(s, *state, *repo, *task, start)
+	report, err := readSpend(s, *state, *repo, *task, start, *by)
 	err = errors.Join(err, s.Close())
 	if err != nil {
 		return a.fail(err)
 	}
+	if *by == "day" {
+		if *js {
+			return a.printJSON(spendDayReport{Rows: report.Days, Total: report.Total, ByRerun: report.ByRerun, ExcludedUnknownStart: report.ExcludedUnknownStart, Unavailable: report.Unavailable})
+		}
+		rows := make([]spendTableRow, 0, len(report.Days))
+		for _, d := range report.Days {
+			rows = append(rows, spendTableRow{[]string{d.Day}, d.spendSummary})
+		}
+		return a.spendTable([]string{"DAY"}, -1, rows, report)
+	}
 	if *js {
 		return a.printJSON(report)
 	}
-	return a.spendTable(report)
+	rows := make([]spendTableRow, 0, len(report.Rows))
+	for _, r := range report.Rows {
+		k := r.spendGroup
+		rows = append(rows, spendTableRow{[]string{k.Repository, k.Task, k.Step, k.Rerun, k.Profile, k.Role, k.Adapter, k.Model, k.Outcome}, r.spendSummary})
+	}
+	return a.spendTable([]string{"REPO", "TASK", "STEP", "RERUN", "PROFILE", "ROLE", "ADAPTER", "MODEL", "OUTCOME"}, 3, rows, report)
 }
 
 type spendStore interface {
@@ -201,11 +241,18 @@ func rerunLabel(byStep map[string]map[int]store.StageAttempt, at store.StageAtte
 	return rerunUnknown
 }
 
-func readSpend(s spendStore, state, repository, taskID string, since time.Time) (spendReport, error) {
+// readSpend reads the selected attempts' spend; by is "" for the grouped Rows or "day" for Days,
+// bucketed by the UTC day of each attempt's start receipt (spendUnknownDay without one).
+func readSpend(s spendStore, state, repository, taskID string, since time.Time, by string) (spendReport, error) {
 	out := spendReport{Rows: []spendRow{}, ByRerun: map[string]spendSummary{}, Unavailable: []string{"prompt_only_tokens", "tool_schema_tokens", "file_read_tokens", "adapter", "model"}}
+	byDay := by == "day"
+	if byDay {
+		out.Days = []spendDayRow{}
+	}
 	groups := map[spendGroup]spendSummary{}
+	days := map[string]spendSummary{}
 	starts := map[[3]string]time.Time{}
-	if !since.IsZero() {
+	if !since.IsZero() || byDay {
 		receipts, err := s.Receipts()
 		if err != nil {
 			return out, err
@@ -245,9 +292,11 @@ func readSpend(s spendStore, state, repository, taskID string, since time.Time) 
 				byStep[at.Step][at.Number] = at
 			}
 			for _, at := range attempts {
+				var started time.Time
+				if !since.IsZero() || byDay {
+					started = starts[[3]string{repo, task.ID, fmt.Sprintf("attempt/%s/%d", at.Step, at.Number)}]
+				}
 				if !since.IsZero() {
-					record := fmt.Sprintf("attempt/%s/%d", at.Step, at.Number)
-					started := starts[[3]string{repo, task.ID, record}]
 					if started.IsZero() {
 						out.ExcludedUnknownStart++
 						continue
@@ -272,9 +321,19 @@ func readSpend(s spendStore, state, repository, taskID string, since time.Time) 
 				if err := spendManifest(dir, at, &key); err != nil {
 					return out, err
 				}
-				sum := groups[key]
-				sum.add(u)
-				groups[key] = sum
+				if byDay {
+					day := spendUnknownDay
+					if !started.IsZero() {
+						day = started.UTC().Format(time.DateOnly)
+					}
+					sum := days[day]
+					sum.add(u)
+					days[day] = sum
+				} else {
+					sum := groups[key]
+					sum.add(u)
+					groups[key] = sum
+				}
 				out.Total.add(u)
 				byRerun := out.ByRerun[rerun]
 				byRerun.add(u)
@@ -285,6 +344,11 @@ func readSpend(s spendStore, state, repository, taskID string, since time.Time) 
 	for k, v := range groups {
 		out.Rows = append(out.Rows, spendRow{k, v})
 	}
+	for k, v := range days {
+		out.Days = append(out.Days, spendDayRow{k, v})
+	}
+	// "unknown" sorts after every YYYY-MM-DD date, since letters follow digits.
+	sort.Slice(out.Days, func(i, j int) bool { return out.Days[i].Day < out.Days[j].Day })
 	sort.Slice(out.Rows, func(i, j int) bool {
 		a, b := out.Rows[i].spendGroup, out.Rows[j].spendGroup
 		aa := []string{a.Repository, a.Task, a.Step, a.Rerun, a.Profile, a.Role, a.Adapter, a.Model, a.Outcome}
@@ -338,34 +402,49 @@ func spendManifest(dir string, at store.StageAttempt, key *spendGroup) error {
 	return nil
 }
 
-func (a *App) spendTable(r spendReport) int {
+type spendTableRow struct {
+	key []string
+	sum spendSummary
+}
+
+// spendTable prints the header's key columns and the measures for each row, then the TOTAL row and the footer.
+// rerunColumn is the header index of RERUN, under which one TOTAL row per rerun label follows; -1 omits them.
+func (a *App) spendTable(header []string, rerunColumn int, rows []spendTableRow, r spendReport) int {
 	var b strings.Builder
 	w := tabwriter.NewWriter(&b, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "REPO\tTASK\tSTEP\tRERUN\tPROFILE\tROLE\tADAPTER\tMODEL\tOUTCOME\tMEASURE\tINPUT\tOUTPUT\tCACHE-CREATE\tCACHE-READ\tUSD\tCOVERAGE")
-	row := func(k spendGroup, s spendSummary) {
+	_, _ = fmt.Fprintln(w, strings.Join(header, "\t")+"\tMEASURE\tINPUT\tOUTPUT\tCACHE-CREATE\tCACHE-READ\tUSD\tCOVERAGE")
+	blank := strings.Repeat("\t", len(header))
+	row := func(k []string, s spendSummary) {
 		coverage := "complete"
 		if s.Partial {
 			coverage = "partial"
 		}
+		key := strings.Join(k, "\t")
 		for _, m := range []struct {
 			name string
 			v    spendAmounts
 		}{{"measured", s.Measured}, {"estimated", s.Estimated}} {
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\t%.6f\t%s\n", k.Repository, k.Task, k.Step, k.Rerun, k.Profile, k.Role, k.Adapter, k.Model, k.Outcome, m.name, m.v.InputTokens, m.v.OutputTokens, m.v.CacheCreationInputTokens, m.v.CacheReadInputTokens, m.v.CostUSD, coverage)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%d\t%d\t%d\t%d\t%.6f\t%s\n", key, m.name, m.v.InputTokens, m.v.OutputTokens, m.v.CacheCreationInputTokens, m.v.CacheReadInputTokens, m.v.CostUSD, coverage)
 		}
-		_, _ = fmt.Fprintf(w, "\t\t\t\t\t\t\t\t\tunknown\ttokens=%d\tcost=%d\t\t\t\t%d attempts\n", s.TokensUnknown, s.CostUnknown, s.Attempts)
+		_, _ = fmt.Fprintf(w, "%sunknown\ttokens=%d\tcost=%d\t\t\t\t%d attempts\n", blank, s.TokensUnknown, s.CostUnknown, s.Attempts)
 	}
-	for _, v := range r.Rows {
-		row(v.spendGroup, v.spendSummary)
+	for _, v := range rows {
+		row(v.key, v.sum)
 	}
-	row(spendGroup{Repository: "TOTAL"}, r.Total)
-	labels := make([]string, 0, len(r.ByRerun))
-	for label := range r.ByRerun {
-		labels = append(labels, label)
-	}
-	sort.Strings(labels)
-	for _, label := range labels {
-		row(spendGroup{Repository: "TOTAL", Rerun: label}, r.ByRerun[label])
+	total := make([]string, len(header))
+	total[0] = "TOTAL"
+	row(total, r.Total)
+	if rerunColumn >= 0 {
+		labels := make([]string, 0, len(r.ByRerun))
+		for label := range r.ByRerun {
+			labels = append(labels, label)
+		}
+		sort.Strings(labels)
+		for _, label := range labels {
+			total := make([]string, len(header))
+			total[0], total[rerunColumn] = "TOTAL", label
+			row(total, r.ByRerun[label])
+		}
 	}
 	_ = w.Flush()
 	_, _ = fmt.Fprintf(&b, "Excluded unknown start: %d\nUnavailable: %s\n", r.ExcludedUnknownStart, strings.Join(r.Unavailable, ", "))

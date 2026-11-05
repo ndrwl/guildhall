@@ -1,11 +1,11 @@
 # Recorded spend report
 
-`guildhall spend report --copy <dir> [--repo <name>] [--task <id>] [--since <RFC3339>] [--json]` reads the existing store and attempt usage files without writing, launching processes or parsing transcripts.
+`guildhall spend report --copy <dir> [--repo <name>] [--task <id>] [--since <RFC3339>] [--by day] [--json]` reads the existing store and attempt usage files without writing, launching processes or parsing transcripts.
 It reports recorded aggregate usage split by attempt outcome; the unavailable attribution dimensions are listed below.
 The default is a human-readable table; `--json` returns the same complete report as JSON.
 The [November 2026 token usage audit](audits/token-usage-2026-11.md) breaks this spend down by step, outcome, day and cache behaviour, and ranks the savings.
 `--copy` defaults to the copy found from the current directory ([copies](running.md#copies)); alternatively, use both `--store <path>` and `--state <dir>` to select an existing store and its attempt state directory explicitly.
-Unknown flags, positional arguments and invalid timestamps fail before opening the store.
+Unknown flags, positional arguments, invalid timestamps and a `--by` other than `day` fail before opening the store.
 An absent store is an error, not an empty report.
 
 ## Behavioural contract
@@ -22,6 +22,13 @@ Rows are sorted by their grouping keys and an empty selection returns zero attem
 Retries count independently, with no double counting of the store and file sources.
 `--since` includes attempts started at or after the given instant, using start receipts, not finish times or file timestamps.
 Attempts without an identifiable start receipt are excluded by `--since` and counted separately as `excluded_unknown_start`.
+
+`--by day` replaces the grouping keys with one row per UTC day (`YYYY-MM-DD`) of each attempt's `start-attempt` or `start-owned-attempt` receipt, the same day the daily attempt cap counts, summed across repository, task, step, rerun label, profile, role, adapter, model and outcome.
+`--repo`, `--task` and `--since` select attempts first; the remaining attempts are then bucketed, with the same spend source and provenance rules as above.
+Rows sort ascending by day, and only days with attempts have a row.
+Without `--since`, attempts without a start receipt form a final `unknown` row, so the day rows always sum to the total; with `--since` they are excluded and counted as before.
+`total`, `by_rerun`, `excluded_unknown_start` and `unavailable` are unchanged by `--by day`; its JSON rows carry `day` in place of the grouping keys, and its table a `DAY` column and only the overall `TOTAL` line, since it has no `RERUN` column for the per-label totals.
+For example, `guildhall spend report --by day --json` reproduces the attempt, unknown, cost, token and cache-read columns of the [audit's](audits/token-usage-2026-11.md) per-day table.
 
 The rendered attempt manifest supplies profile and role (the recorded role source path).
 A [prune](running.md#pruning) leaves spend unaffected: it keeps each attempt's `result.json`, `usage.json` and `prompt/manifest.json`.
