@@ -107,11 +107,11 @@ func roundTask() Task {
 		Message{Number: 13, Author: AuthorDirector, Tag: "grill-2", Stage: "grill", Kind: KindRound, Text: roundText, At: *at("2026-11-03 21:41")},
 	)
 	t.Drafts = []Draft{
-		{Tag: "grill-2", Round: 13, Question: 1, Mark: DraftAccept, At: *at("2026-11-03 21:42")},
-		{Tag: "grill-2", Round: 13, Question: 2, Mark: DraftWords, Text: "Yes, with the gist\nand Change.", At: *at("2026-11-03 21:42")},
-		{Tag: "grill-2", Round: 13, Question: 3, Text: "Refuse <and> save", At: *at("2026-11-03 21:43")},
-		// A draft of the sent round is never shown.
-		{Tag: "grill-2", Round: 11, Question: 1, Text: "stale", At: *at("2026-11-03 21:00")},
+		{Tag: "grill-2", Round: 13, Question: 1, Number: 5, Mark: DraftAccept, At: *at("2026-11-03 21:42")},
+		{Tag: "grill-2", Round: 13, Question: 2, Number: 6, Mark: DraftWords, Text: "Yes, with the gist\nand Change.", At: *at("2026-11-03 21:42")},
+		{Tag: "grill-2", Round: 13, Question: 3, Number: 8, Text: "Refuse <and> save", At: *at("2026-11-03 21:43")},
+		// A draft of the sent round is never shown, nor counted in the form's drafts number.
+		{Tag: "grill-2", Round: 11, Question: 1, Number: 9, Text: "stale", At: *at("2026-11-03 21:00")},
 	}
 	return t
 }
@@ -128,7 +128,7 @@ func TestRoundOnThePage(t *testing.T) {
 	body := w.Body.String()
 	for _, want := range []string{
 		`<div class="ask round" id="grill-2">`,
-		`<form method="post" action="/guildhall/d145/round"><input type="hidden" name="tag" value="grill-2"><input type="hidden" name="round" value="13"><input type="hidden" name="token" value="t">`,
+		`<form method="post" action="/guildhall/d145/round"><input type="hidden" name="tag" value="grill-2"><input type="hidden" name="round" value="13"><input type="hidden" name="drafts" value="8"><input type="hidden" name="token" value="t">`,
 		`<span class="kind">Grill round 2</span><a class="aid" href="#grill-2">#grill-2</a><a class="tg" href="#grill-2-talk">grill · grill-2</a><span class="since">2 of 4 answered</span>`,
 		`<section class="oq rq done" id="grill-2-q1"><p class="qt"><span class="qn">Q1</span>Where do rounds go?</p><p class="rdone"><b>✓ Accepted</b> <span class="gist">on the page.</span><button class="lnk" type="submit" name="act" value="change-1">Change</button></p>`,
 		`<b>✓ Your words, saved</b> <span class="gist">Yes, with the gist</span><button class="lnk" type="submit" name="act" value="change-2">Change</button>`,
@@ -177,6 +177,13 @@ func TestRoundOnThePage(t *testing.T) {
 	}
 	if strings.ReplaceAll(body, "\r\n", "\n") != strings.ReplaceAll(string(want), "\r\n", "\n") {
 		t.Errorf("the round page differs from %s; review it and run with -update", golden)
+	}
+
+	// A round with no drafts posts 0.
+	none := roundTask()
+	none.Drafts = nil
+	if fresh := render(t, answeringTalkServer(), none, gmState); !strings.Contains(fresh, `<input type="hidden" name="drafts" value="0">`) {
+		t.Error("a round with no drafts does not post drafts 0")
 	}
 
 	// Anyone else reads the round with no form and no boxes.

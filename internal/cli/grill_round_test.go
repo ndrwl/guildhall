@@ -118,9 +118,13 @@ func TestGrillRoundOnThePage(t *testing.T) {
 			t.Fatalf("the page lacks %s:\n%s", want, body)
 		}
 	}
+	// press presses as a current tab, posting the drafts number the page shows now.
 	press := func(act string, boxes map[int]string) (int, string, string) {
 		t.Helper()
 		form := url.Values{"tag": {"grill-1"}, "round": {"1"}, "act": {act}}
+		if drafts := pageRoundDrafts(h); drafts != "" {
+			form.Set("drafts", drafts)
+		}
 		for n, w := range boxes {
 			form.Set("text-"+string(rune('0'+n)), w)
 		}

@@ -73,7 +73,7 @@ that shows questions or answers draws them through these two, so a change here c
 {{/* round: the open grill round as one form, where every button saves every box first
 (docs/web.md#grill-rounds). */}}
 {{define "round"}}<div class="ask round{{if .Refused}} refused{{end}}" id="{{.ID}}">
-{{- if .Form}}<form method="post" action="{{.Action}}"><input type="hidden" name="tag" value="{{.Tag}}"><input type="hidden" name="round" value="{{.Number}}"><input type="hidden" name="token" value="{{.Token}}">{{end}}
+{{- if .Form}}<form method="post" action="{{.Action}}"><input type="hidden" name="tag" value="{{.Tag}}"><input type="hidden" name="round" value="{{.Number}}"><input type="hidden" name="drafts" value="{{.Drafts}}"><input type="hidden" name="token" value="{{.Token}}">{{end}}
 <div class="ah"><span class="kind">{{.Name}}</span><a class="aid" href="#{{.ID}}">#{{.Tag}}</a><a class="tg" href="#{{.Tag}}-talk">{{.Chip}}</a><span class="since">{{.Progress}} answered</span></div>
 <p class="q">The Director asks {{.Total}} {{plural .Total "question" "questions"}}; answer each, then Send round.</p>
 {{- if .Bad}}<div class="plan md">{{.Bad}}</div>{{end}}

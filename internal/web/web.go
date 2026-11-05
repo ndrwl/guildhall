@@ -131,10 +131,12 @@ type Task struct {
 
 // Draft is the Guildmaster's latest saved draft of one question of a grill round: the round's tag and conversation
 // entry number, the question's number from 1, its mark (DraftAccept, DraftWords or "" for words that are not an
-// answer yet), the words in its box and when it was saved.
+// answer yet), the words in its box, when it was saved and its draft entry number, the highest of which in a round
+// its form posts as drafts.
 type Draft struct {
 	Tag             string
 	Round, Question int
+	Number          int
 	Mark, Text      string
 	At              time.Time
 }

@@ -347,12 +347,13 @@ func pageRound(s *store.Store, p web.RoundPost, boxes map[int]string) (string, e
 	if err != nil {
 		return "", err
 	}
+	// version is the highest draft number of this round, which the page's form posts as p.Drafts.
 	old := map[int]store.Draft{}
 	version := 0
 	for _, e := range saved {
-		version = max(version, e.Number)
 		if e.Tag == p.Tag && e.Round == round.Number {
 			old[e.Question] = e.Draft
+			version = max(version, e.Number)
 		}
 	}
 	drafts := make([]store.Draft, len(qs))
@@ -384,13 +385,21 @@ func pageRound(s *store.Store, p web.RoundPost, boxes map[int]string) (string, e
 		// A question never saved and still empty is no change.
 		changed = changed || (d != old[q.N] && (ok || d.Mark != "" || d.Text != ""))
 	}
-	if changed {
-		// The mutation names the drafts saved before it, so the same words saved again after others replay nothing.
-		body, err := json.Marshal(drafts)
-		if err != nil {
-			return "", err
+	// The mutation names the drafts the page rendered, so the same words saved again after others replay nothing.
+	body, err := json.Marshal(drafts)
+	if err != nil {
+		return "", err
+	}
+	mutation := mutationID("round-drafts", p.Repository, p.TaskID, p.Tag, strconv.Itoa(round.Number), strconv.Itoa(p.Drafts), digest.Of(body).Hex())
+	if version > p.Drafts {
+		// The page predates a draft of this round saved since, from another tab or window: its boxes and marks are
+		// not the round's, so the press writes nothing, unless it is a retry of the very post that saved.
+		if r, err := s.Receipt(mutation); err != nil || r.Repository != p.Repository || r.TaskID != p.TaskID {
+			return "", web.Refuse(http.StatusConflict, "changed since you loaded the page: its answers were saved from another tab or window; reload, your words there are kept")
 		}
-		mutation := mutationID("round-drafts", p.Repository, p.TaskID, p.Tag, strconv.Itoa(round.Number), strconv.Itoa(version), digest.Of(body).Hex())
+		changed = false
+	}
+	if changed {
 		if _, err := s.SaveDrafts(mutation, p.Repository, p.TaskID, drafts); err != nil {
 			if errors.Is(err, store.ErrInvalid) {
 				return "", web.Refuse(http.StatusConflict, err.Error())

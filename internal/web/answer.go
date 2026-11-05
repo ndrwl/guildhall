@@ -48,7 +48,8 @@ type Answer struct {
 // Round saves every box of the grill round p names as the Guildmaster's drafts, then does what its button asks:
 // marks a question accepted, answered with its words or open again, or, for Send round, records the round's answers
 // on the task's conversation with a grill-answered message to the Director and wakes it. It refuses unless the round
-// is the latest of its attempt on an open task and not sent; Send round with a question unanswered saves the boxes
+// is the latest of its attempt on an open task and not sent, and refuses, writing nothing, when the round has a draft
+// newer than p.Drafts, the highest draft number its form rendered, unless the press replays the same post; Send round with a question unanswered saves the boxes
 // and then refuses, naming them; a retry of a round already sent replays and returns nil.
 //
 // A refusal is a *Refusal, with the reason the page shows; a store held by a writer is ErrBusy; anything else is
@@ -71,11 +72,13 @@ const (
 )
 
 // RoundPost is one press of a button of a grill round's form: the round, by its tag and conversation entry number,
-// the button (a Round constant) and for a question's button its number, the words of every box the form showed, by
-// question number, and the Tailscale login that pressed it.
+// the highest draft number of the round the form rendered (0 for none, and for a form from an older build that posts
+// no drafts), the button (a Round constant) and for a question's button its number, the words of every box the form
+// showed, by question number, and the Tailscale login that pressed it.
 type RoundPost struct {
 	Repository, TaskID, Tag string
 	Round                   int
+	Drafts                  int
 	Act                     string
 	Question                int
 	Boxes                   map[int]string
@@ -442,6 +445,11 @@ func (s *Server) round(w http.ResponseWriter, r *http.Request, repo, id string) 
 	}
 	act, q, ok := roundAct(r.PostForm.Get("act"))
 	n, err := strconv.Atoi(r.PostForm.Get("round"))
+	drafts, derr := 0, error(nil)
+	if _, posted := r.PostForm["drafts"]; posted {
+		// A form from an older build posts no drafts, which is 0.
+		drafts, derr = strconv.Atoi(r.PostForm.Get("drafts"))
+	}
 	switch {
 	case p.Tag == "":
 		again(http.StatusBadRequest, "the round names no attempt")
@@ -452,8 +460,11 @@ func (s *Server) round(w http.ResponseWriter, r *http.Request, repo, id string) 
 	case !ok:
 		again(http.StatusBadRequest, "the form names no button of the round")
 		return
+	case derr != nil || drafts < 0:
+		again(http.StatusBadRequest, "the form's drafts number does not read")
+		return
 	}
-	p.Round, p.Act, p.Question, p.Login = n, act, q, who.Login
+	p.Round, p.Drafts, p.Act, p.Question, p.Login = n, drafts, act, q, who.Login
 	if s.failed(s.o.Answerer.Round(p), "round "+repo+"/"+id+" "+p.Tag, again) {
 		return
 	}

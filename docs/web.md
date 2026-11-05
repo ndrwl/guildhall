@@ -195,7 +195,9 @@ The sent round folds to one Director row, such as "Round 1 · 4 questions · sen
 The page never advances the task: the Director reads the answers, opens the next round or finishes the grill with `step finish` as before.
 The rail's Needs you counts the open round as an ask, with its progress, such as "Grill round 2 · 4 of 6".
 A round that was never sent shows as "⊘ … not sent"; once its task closes its saved drafts are dropped, and it says so.
-A round's buttons are refused as an answer is, with your words kept in the boxes, and also when the round was sent meanwhile, the Director opened a newer one or its attempt has finished.
+A round's buttons are refused as an answer is, with your words kept in the boxes, and also when the round was sent meanwhile, the Director opened a newer one or its attempt has finished, or its answers were saved from another tab or window since you loaded the page.
+Then nothing is saved: reload, and the words saved from the other tab are there; pressing the same button again after a dropped connection is not refused.
+A tab left open across an upgrade of Guildhall is refused in the same way once its round has any saved draft, and must be reloaded.
 
 ## The reader page
 
