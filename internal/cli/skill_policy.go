@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/adapter/claude"
 	"github.com/ndrwl/guildhall/internal/adapter/grant"
 	"github.com/ndrwl/guildhall/internal/config"
@@ -24,17 +25,16 @@ func (a *App) preflightSkillPolicies(p *startPlan) error {
 		settings []byte
 	}
 	var policies []selected
-	if rt, ok := p.runtime.(claude.Adapter); ok {
+	if p.runtime.SkillPolicy() {
 		policy, err := p.cfg.ClaudeSkills("")
 		if err != nil {
 			return err
 		}
-		rt.SkillPolicy = &policy
-		p.runtime = rt
-		policies = append(policies, selected{"Director", policy, rt.SessionFiles(filepath.Dir(p.cfgPath))[claude.SettingsFile]})
+		p.runtime = p.runtime.SessionOptions(&policy, nil)
+		policies = append(policies, selected{"Director", policy, p.runtime.SessionFiles(filepath.Dir(p.cfgPath))[claude.SettingsFile]})
 	}
 	for _, name := range slices.Sorted(maps.Keys(p.cfg.Profiles)) {
-		if p.cfg.Profiles[name].Adapter != "claude" {
+		if !adapter.SkillPolicy(p.cfg.Profiles[name].Adapter) {
 			continue
 		}
 		policy, err := p.cfg.ClaudeSkills(name)

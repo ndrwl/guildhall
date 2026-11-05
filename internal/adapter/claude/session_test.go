@@ -424,12 +424,12 @@ func TestSessionFilesLinks(t *testing.T) {
 	if data, ok := (claude.Adapter{}).SessionFiles(copyDir)[claude.LinksFile]; ok {
 		t.Errorf("links.json without links = %q, want none", data)
 	}
-	a := claude.Adapter{Links: &claude.Links{URL: "http://host.tail.ts.net:4388", Repos: []string{"guildhall", "site"}}}
+	a := claude.Adapter{Links: &adapter.Links{URL: "http://host.tail.ts.net:4388", Repos: []string{"guildhall", "site"}}}
 	got := string(a.SessionFiles(copyDir)[claude.LinksFile])
 	if want := `{"url":"http://host.tail.ts.net:4388","repos":["guildhall","site"]}` + "\n"; got != want {
 		t.Errorf("links.json = %q, want %q", got, want)
 	}
-	a.Links = &claude.Links{URL: "http://host:1"}
+	a.Links = &adapter.Links{URL: "http://host:1"}
 	if got, want := string(a.SessionFiles(copyDir)[claude.LinksFile]), `{"url":"http://host:1","repos":[]}`+"\n"; got != want {
 		t.Errorf("links.json with no repositories = %q, want %q", got, want)
 	}

@@ -44,18 +44,24 @@ func (c *Config) CheckArtisanAdapters(def *workflow.Definition) error {
 				return fmt.Errorf("workflow %q step %q: %w; declare [profile.%s] with adapter, or set a profile on that step in a custom workflow", def.Name, step.ID, ErrMissingAdapter, role)
 			}
 		}
-		if c.Profiles[role].Adapter == adapter.CodexName && !slices.Contains(codexStepKinds, step.Type) {
+		if readOnlyRuntime(c.Profiles[role].Adapter) && !slices.Contains(codexStepKinds, step.Type) {
 			return fmt.Errorf("workflow %q step %q: profile %s: %w: a %s step may write, and Codex is trusted only where it cannot; run it on a claude profile", def.Name, step.ID, role, ErrReadOnlyAdapter, step.Type)
 		}
 	}
 	// The engine runs the rebase and design steps itself, under their role profiles, whatever the workflow says.
 	for _, kind := range syntheticKinds {
 		role := workflow.RoleProfile(kind)
-		if c.Profiles[role].Adapter == adapter.CodexName && !slices.Contains(codexStepKinds, kind) {
+		if readOnlyRuntime(c.Profiles[role].Adapter) && !slices.Contains(codexStepKinds, kind) {
 			return fmt.Errorf("workflow %q: profile %s runs the engine's %s steps: %w: a %s step may write, and Codex is trusted only where it cannot; run it on a claude profile", def.Name, role, kind, ErrReadOnlyAdapter, kind)
 		}
 	}
 	return nil
+}
+
+// readOnlyRuntime reports whether the runtime named name grants no tools and runs read-only (adapter.Declared), so
+// it may run only codexStepKinds: today only codex.
+func readOnlyRuntime(name string) bool {
+	return !adapter.GrantsTools(name) && adapter.ReadOnly(name)
 }
 
 // syntheticKinds are the step types the engine runs under their role profile (workflow.RoleProfile) without a

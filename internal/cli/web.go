@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/ndrwl/guildhall/internal/adapter/claude"
+	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/atomicfile"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -139,7 +139,7 @@ func webBaseURL(address string) string { return "http://" + address }
 
 // sessionLinks is the task-page links a Claude session's Lanterns draws ticket tokens with: the pages' base URL
 // and the copy's repositories in config order, or nil with no [web] table.
-func sessionLinks(cfg *config.Config) *claude.Links {
+func sessionLinks(cfg *config.Config) *adapter.Links {
 	if cfg == nil || cfg.Web == nil {
 		return nil
 	}
@@ -147,7 +147,7 @@ func sessionLinks(cfg *config.Config) *claude.Links {
 	for _, r := range cfg.Repositories {
 		repos = append(repos, r.ID)
 	}
-	return &claude.Links{URL: webBaseURL(cfg.Web.Address), Repos: repos}
+	return &adapter.Links{URL: webBaseURL(cfg.Web.Address), Repos: repos}
 }
 
 // The link styles director status's web object reports in links: ticket tokens, which Lanterns draws as links

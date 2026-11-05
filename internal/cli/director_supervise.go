@@ -253,10 +253,7 @@ func (a *App) runSession(p startPlan, n int, copyDir, storePath, state string, s
 	model, effort := settings.Model, settings.Effort
 	dir := sessionDir(copyDir, n)
 	// Every start and reload renders the copy's current task-page links beside Lanterns.
-	if rt, ok := p.runtime.(claude.Adapter); ok {
-		rt.Links = sessionLinks(p.cfg)
-		p.runtime = rt
-	}
+	p.runtime = p.runtime.SessionOptions(nil, sessionLinks(p.cfg))
 	r, err := render.Session(render.SessionInput{Dir: dir, Number: n, Title: sr.title, Command: sr.command, Role: role, SkillsDir: p.runtime.SkillsDir(),
 		RuntimeFiles: p.runtime.SessionFiles(copyDir), InFlight: begun.inFlight, Running: begun.running, Parked: begun.parked, Held: begun.held, Notes: notes.lines, NotesBytes: notes.bytes, Policies: begun.policies}, []render.SkillRoot{{Name: "release", Dir: p.skills}})
 	if err != nil {

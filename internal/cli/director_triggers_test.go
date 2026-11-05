@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ndrwl/guildhall/internal/adapter/claude"
+	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/adapter/claude/claudetest"
-	"github.com/ndrwl/guildhall/internal/adapter/fake"
+	"github.com/ndrwl/guildhall/internal/adapter/runtimes"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/session"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -114,11 +114,18 @@ func TestHandoffPolicyNamesTheReportOnlyForARuntimeWithOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := filepath.Join(t.TempDir(), "director", "session-1")
-	if got, err := handoffPolicy(cfg, claude.Adapter{}, dir); err != nil ||
+	lookup := func(name string) runtimes.Session {
+		rt, err := runtimes.LookupSession(name, "/bin/guildhall")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rt
+	}
+	if got, err := handoffPolicy(cfg, lookup(adapter.ClaudeName), dir); err != nil ||
 		got != (store.HandoffPolicy{AfterTasks: 2, ContextPercent: 80, ContextFile: filepath.Join(dir, session.ContextFile)}) {
 		t.Errorf("claude: policy = %+v, %v", got, err)
 	}
-	if got, err := handoffPolicy(cfg, fake.Adapter{}, dir); err != nil || got != (store.HandoffPolicy{AfterTasks: 2, ContextPercent: 80}) {
+	if got, err := handoffPolicy(cfg, lookup(adapter.FakeName), dir); err != nil || got != (store.HandoffPolicy{AfterTasks: 2, ContextPercent: 80}) {
 		t.Errorf("fake: policy = %+v, %v; want no report path", got, err)
 	}
 }

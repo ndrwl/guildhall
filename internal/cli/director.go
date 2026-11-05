@@ -324,7 +324,7 @@ func artisanPermissions(cfg *config.Config, cfgPath string) (string, error) {
 	var grants []string
 	for _, name := range slices.Sorted(maps.Keys(cfg.Profiles)) {
 		p := cfg.Profiles[name]
-		if p.Adapter != adapter.ClaudeName {
+		if !adapter.GrantsTools(p.Adapter) {
 			if len(p.AllowedToolsList()) > 0 {
 				return "", fmt.Errorf("profile %s runs the %s adapter, which grants no allowed_tools; only the %s adapter does (docs/adapters.md#artisan-permissions)", name, p.Adapter, adapter.ClaudeName)
 			}

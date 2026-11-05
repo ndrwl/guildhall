@@ -17,7 +17,7 @@ func TestSigninStepsMatchRuntimes(t *testing.T) {
 		t.Fatal(err)
 	}
 	var runtimeIDs, stepIDs []string
-	for _, r := range signinRuntimes {
+	for _, r := range signinRuntimes() {
 		runtimeIDs = append(runtimeIDs, r.name+"-sign-in")
 	}
 	for _, s := range steps.Steps {
@@ -27,16 +27,16 @@ func TestSigninStepsMatchRuntimes(t *testing.T) {
 		t.Fatalf("sign-in step ids = %q, want one <runtime>-sign-in per signinRuntimes entry, in order: %q", stepIDs, runtimeIDs)
 	}
 
-	for i, r := range signinRuntimes {
+	for i, r := range signinRuntimes() {
 		s := steps.Steps[i]
 		t.Run(r.name, func(t *testing.T) {
 			var want []string
-			if len(r.env) > 0 {
-				want = append(append([]string{"env"}, r.env...), r.program)
+			if len(r.Env) > 0 {
+				want = append(append([]string{"env"}, r.Env...), r.Program)
 			} else {
-				want = []string{r.program}
+				want = []string{r.Program}
 			}
-			want = append(want, r.status...)
+			want = append(want, r.Status...)
 			if !slices.Equal(s.Check.Argv, want) {
 				t.Errorf("check = %q, want %q", s.Check.Argv, want)
 			}
@@ -49,7 +49,7 @@ func TestSigninStepsMatchRuntimes(t *testing.T) {
 				}
 			}
 			sawHelp := false
-			for _, act := range r.act {
+			for _, act := range r.Act {
 				switch {
 				case strings.HasPrefix(act, "help: "):
 					sawHelp = true

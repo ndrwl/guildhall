@@ -15,6 +15,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/atomicfile"
+	"github.com/ndrwl/guildhall/internal/config"
 )
 
 // DirectorSubcommand is the guildhall subcommand that runs the fake Director session.
@@ -202,6 +203,9 @@ func parseScript(prefix, text string) ([][]string, error) {
 // TurnEndHook reports false: the fake Director session has no turn hooks; its script runs `guildhall director
 // turn-started` and `turn-ended` itself where a test needs a turn to start or end.
 func (Adapter) TurnEndHook() bool { return false }
+
+// SessionOptions returns a unchanged: the fake Director session applies no skill policy and renders no links.
+func (a Adapter) SessionOptions(*config.ClaudeSkillPolicy, *adapter.Links) Adapter { return a }
 
 // SessionFiles are the files a fake Director session needs beside its skills: none.
 func (Adapter) SessionFiles(string) map[string][]byte { return nil }

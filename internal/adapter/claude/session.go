@@ -149,6 +149,18 @@ var lookupEnv = os.LookupEnv
 // TurnEndCommand as its Stop and StopFailure hooks.
 func (Adapter) TurnEndHook() bool { return true }
 
+// SessionOptions returns a copy of a whose session applies the resolved Director skill policy skills and renders
+// links into LinksFile; a nil argument leaves that option as it was.
+func (a Adapter) SessionOptions(skills *config.ClaudeSkillPolicy, links *adapter.Links) Adapter {
+	if skills != nil {
+		a.Skills = skills
+	}
+	if links != nil {
+		a.Links = links
+	}
+	return a
+}
+
 // TurnStartCommand and TurnEndCommand are the UserPromptSubmit and Stop (and StopFailure) hooks of a Director
 // session. Settings gives each the copy with CopyCommand, so a turn's end reaches its supervisor wherever the
 // session has moved its working directory.
@@ -188,7 +200,7 @@ const (
 // command at VersionCommandFile, the embedded Lanterns plugin at PluginDir with its CalmFile, and LinksFile when
 // Links is set, and the embedded Clerk plugin at ClerkPluginDir.
 func (a Adapter) SessionFiles(copyDir string) map[string][]byte {
-	p := a.SkillPolicy
+	p := a.Skills
 	if p == nil {
 		policy, _ := config.ParseClaudeSkills(`{"preset":"director-v1"}`)
 		policy.Key = config.ClaudeSkillsDirectorKey
@@ -204,7 +216,7 @@ func (a Adapter) SessionFiles(copyDir string) map[string][]byte {
 	}
 	files[CalmFile] = calmFile(copyDir)
 	if a.Links != nil {
-		files[LinksFile] = a.Links.file()
+		files[LinksFile] = linksFile(*a.Links)
 	}
 	return files
 }
@@ -214,14 +226,8 @@ func (a Adapter) SessionFiles(copyDir string) map[string][]byte {
 // leaves tokens as they are (docs/lanterns.md).
 const LinksFile = PluginDir + "/links.json"
 
-// Links is LinksFile's content: the task pages' base URL and the copy's repository ids, in config order.
-type Links struct {
-	URL   string   `json:"url"`
-	Repos []string `json:"repos"`
-}
-
-// file is LinksFile's JSON, {"url":"<base url>","repos":["<repo>",…]}, with a trailing newline.
-func (l Links) file() []byte {
+// linksFile is LinksFile's JSON for l, {"url":"<base url>","repos":["<repo>",…]}, with a trailing newline.
+func linksFile(l adapter.Links) []byte {
 	if l.Repos == nil {
 		l.Repos = []string{}
 	}

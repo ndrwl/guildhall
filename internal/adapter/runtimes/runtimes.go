@@ -2,7 +2,10 @@
 // `artisan start --adapter` and a profile's adapter use (docs/adapters.md#running-an-attempt).
 // Most also run a Director session; an attempt-only runtime, codex, does not.
 // A new runtime is added here and nowhere else: launch.Process passes the engine's name through to
-// `artisan start`, which looks it up.
+// `artisan start`, which looks it up, and what the runtime can do is its Runtime's capabilities, never a compare of
+// its name. Only its name and its adapter.Declaration, which packages that cannot import this one read, sit beside
+// the other names in package adapter, and the registry test refuses a runtime whose declaration is missing or
+// disagrees with its methods.
 package runtimes
 
 import (
@@ -16,6 +19,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter/claude"
 	"github.com/ndrwl/guildhall/internal/adapter/codex"
 	"github.com/ndrwl/guildhall/internal/adapter/fake"
+	"github.com/ndrwl/guildhall/internal/config"
 )
 
 // ErrUnknown reports a name that is not one of Names.
@@ -37,10 +41,24 @@ type Runtime interface {
 	// `guildhall messages` and `guildhall messages ack` (docs/messaging.md). `messages send` refuses an attempt
 	// on a runtime that cannot, and intake does not check that attempt's inbox.
 	Steerable() bool
+	// GrantsTools reports whether the runtime applies a profile's allowed_tools and repository grants
+	// (grant.EffectiveGrant); it agrees with adapter.GrantsTools for the runtime's name.
+	GrantsTools() bool
+	// SkillPolicy reports whether the runtime applies a Claude skill policy (config.ClaudeSkillPolicy); it agrees
+	// with adapter.SkillPolicy for the runtime's name.
+	SkillPolicy() bool
+	// Signin is the runtime's entry in `guildhall signin` (docs/signin.md), or the zero entry when the runtime
+	// needs no sign-in.
+	Signin() adapter.Signin
 }
 
-// Session builds the command that runs one interactive Director session (docs/director.md#start).
+// Session builds the command that runs one interactive Director session (docs/director.md#start). A session
+// runtime also runs attempts, so it is a Runtime too.
 type Session interface {
+	Runtime
+	// SessionOptions returns the runtime with the session's resolved Director skill policy and task-page links
+	// applied, each where the runtime takes it; a nil argument leaves that option as it was.
+	SessionOptions(skills *config.ClaudeSkillPolicy, links *adapter.Links) Session
 	// Program is the program the session needs on PATH, or "" when it is the guildhall executable itself.
 	Program() string
 	// SkillsDir is the slash path, relative to the session directory, the session's skills are rendered into.
@@ -67,20 +85,29 @@ type PersistentSession interface {
 }
 
 // sessions builds each runtime that runs both attempts and Director sessions over the guildhall executable.
-var sessions = map[string]func(executable string) both{
-	adapter.FakeName:   func(exe string) both { return fake.Adapter{Executable: exe} },
-	adapter.ClaudeName: func(exe string) both { return claude.Adapter{Executable: exe} },
+var sessions = map[string]func(executable string) Session{
+	adapter.FakeName:   func(exe string) Session { return fakeSession{fake.Adapter{Executable: exe}} },
+	adapter.ClaudeName: func(exe string) Session { return claudeSession{claude.Adapter{Executable: exe}} },
+}
+
+// claudeSession and fakeSession are the session runtimes, whose SessionOptions return a Session: the adapter
+// packages cannot name this package's types.
+type (
+	claudeSession struct{ claude.Adapter }
+	fakeSession   struct{ fake.Adapter }
+)
+
+func (s claudeSession) SessionOptions(skills *config.ClaudeSkillPolicy, links *adapter.Links) Session {
+	return claudeSession{s.Adapter.SessionOptions(skills, links)}
+}
+
+func (s fakeSession) SessionOptions(skills *config.ClaudeSkillPolicy, links *adapter.Links) Session {
+	return fakeSession{s.Adapter.SessionOptions(skills, links)}
 }
 
 // attemptsOnly builds each runtime that runs attempts but no Director session over the guildhall executable.
 var attemptsOnly = map[string]func(executable string) Runtime{
 	adapter.CodexName: func(exe string) Runtime { return codex.Adapter{Executable: exe} },
-}
-
-// both is a runtime that runs attempts and Director sessions.
-type both interface {
-	Runtime
-	Session
 }
 
 // Names returns the names of the runtimes Guildhall can launch for an attempt, in sorted order.

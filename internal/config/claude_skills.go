@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/strictjson"
 )
 
@@ -227,7 +228,7 @@ func (c *Config) checkClaudeSkills() []string {
 			problems = append(problems, fmt.Sprintf("%s %s: %v", source, key, err))
 		}
 		if name, ok := strings.CutPrefix(key, ClaudeSkillsProfilePrefix); ok {
-			if profile, found := c.Profiles[name]; !found || profile.Adapter != "claude" {
+			if profile, found := c.Profiles[name]; !found || !adapter.SkillPolicy(profile.Adapter) {
 				problems = append(problems, fmt.Sprintf("%s %s: explicit Claude policy requires a declared claude profile", source, key))
 			}
 		}

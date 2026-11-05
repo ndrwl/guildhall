@@ -22,7 +22,7 @@ func TestSkillPolicyDirectorSettingsAndFlag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := claude.Adapter{SkillPolicy: &p}
+	a := claude.Adapter{Skills: &p}
 	root := t.TempDir()
 	files := a.SessionFiles(root)
 	var settings struct {
@@ -131,7 +131,7 @@ func TestSkillPolicyArtisanResolvesOverrides(t *testing.T) {
 
 func TestSkillPolicyRenderedValidation(t *testing.T) {
 	p, _ := config.ParseClaudeSkills(`{"preset":"director-v1"}`)
-	good := (claude.Adapter{SkillPolicy: &p}).SessionFiles(t.TempDir())[claude.SettingsFile]
+	good := (claude.Adapter{Skills: &p}).SessionFiles(t.TempDir())[claude.SettingsFile]
 	if err := claude.ValidatePolicySettings(good, p); err != nil {
 		t.Fatal(err)
 	}
