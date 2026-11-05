@@ -17,6 +17,7 @@ The store's spend takes precedence over an attempt's `usage.json`; the file is u
 Missing usage is unknown, not zero measured usage; malformed usage is an error rather than silently discarded evidence.
 Token and cost provenance are independent: measured and estimated subtotals remain separate and unknown counts are explicit.
 Totals are labelled partial whenever tokens or cost are unknown.
+A Codex attempt, today only the quality judge, records measured tokens and an unknown cost, because Codex reports no price; a stopped Codex run records nothing, as a stopped Claude session does.
 Rows are sorted by their grouping keys and an empty selection returns zero attempts explicitly.
 Retries count independently, with no double counting of the store and file sources.
 `--since` includes attempts started at or after the given instant, using start receipts, not finish times or file timestamps.

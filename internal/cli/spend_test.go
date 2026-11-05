@@ -10,9 +10,11 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/adapter/codex/codextest"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/render"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
 func TestSpendReportRecordedUsage(t *testing.T) {
@@ -76,6 +78,59 @@ func TestSpendReportRecordedUsage(t *testing.T) {
 	out.Reset()
 	if code := app.Run(args[:len(args)-1]); code != 0 || !strings.Contains(out.String(), "partial") || !strings.Contains(out.String(), "CACHE-READ") {
 		t.Fatalf("table code=%d: %s", code, out)
+	}
+}
+
+// TestSpendReportCodexJudgeUsage (R9 of d170): a Codex judge attempt's usage file, measured tokens with an unknown
+// cost because Codex reports no price, is counted as measured tokens and an unknown cost, and labels the total
+// partial rather than reading as free.
+func TestSpendReportCodexJudgeUsage(t *testing.T) {
+	d := newRunDirector(t)
+	s, err := store.Open(d.store, store.Options{RequireStore: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	setUp := func() error {
+		def, err := workflow.Default()
+		if err != nil {
+			return err
+		}
+		// A judge attempt runs only on a delivered task, so the task is created and marked done first.
+		if _, err := s.CreateTask("create", store.Task{Repository: "app", ID: "t-judge", Title: "Delivered", Workflow: def.Revision(), ConfigDigest: "sha256:" + strings.Repeat("a", 64)}); err != nil {
+			return err
+		}
+		if _, err := s.SetTaskState("done", "app", "t-judge", store.TaskDone); err != nil {
+			return err
+		}
+		_, err = s.StartAttempt("judge", "app", "t-judge", workflow.JudgeStep)
+		return err
+	}
+	err = setUp()
+	if cerr := s.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := (artisan.AttemptKey{Repository: "app", TaskID: "t-judge", Step: workflow.JudgeStep, Attempt: 1}).Dir(d.state)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	u := codextest.Usage
+	if err := adapter.WriteUsage(filepath.Join(dir, artisan.ResultFile), u); err != nil {
+		t.Fatal(err)
+	}
+	app, out, stderr := newTestApp(nil, nil)
+	if code := app.Run([]string{"spend", "report", "--store", d.store, "--state", d.state, "--json"}); code != 0 {
+		t.Fatalf("code=%d out=%s err=%s", code, out, stderr)
+	}
+	var got spendReport
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	want := spendAmounts{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, CacheCreationInputTokens: u.CacheCreationInputTokens, CacheReadInputTokens: u.CacheReadInputTokens}
+	if tot := got.Total; tot.Attempts != 1 || tot.Measured != want || tot.Estimated != (spendAmounts{}) || tot.TokensUnknown != 0 || tot.CostUnknown != 1 || !tot.Partial {
+		t.Fatalf("total=%+v; want measured tokens %+v, one unknown cost, partial", tot, want)
 	}
 }
 
