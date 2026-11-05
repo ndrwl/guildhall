@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -124,4 +125,23 @@ func TestLockAttempt(t *testing.T) {
 		t.Errorf("LockPath on a held attempt lock = %v, want the deadline", err)
 	}
 	release()
+}
+
+// A caller whose ctx is already done is refused before the lock file is opened, so it neither takes a free lock nor
+// creates the file.
+func TestLockPathAtCancelledCtxDoesNotCreate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "x.lock")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	f, err := artisan.LockPathAt(ctx, path, highOffset)
+	if err == nil {
+		_ = f.Close()
+		t.Fatal("a cancelled ctx took the lock")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("LockPathAt with a cancelled ctx = %v, want context.Canceled", err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("after a cancelled LockPathAt the lock file stat = %v, want it absent", err)
+	}
 }

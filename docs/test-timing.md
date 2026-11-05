@@ -61,11 +61,16 @@ The [decision](decisions/artisan-timeout-and-not-started-evidence.md) records th
 ## Preflight lock wait
 
 The [CLI test contract](contracts/cli.md#tests) owns `TestAdvancePreflightLockWait`'s required refusal and timing budget.
-An advance must first acquire its task lock, whose deadline includes opening `attempt.lock` and scheduling its initial nonblocking acquisition.
-Delaying that OS open by two seconds deterministically reproduces the reported task-lock deadline with the original one-second configuration, without another task-lock holder or a duplicate acquisition by retry.
-This establishes a sufficient trigger for the symptom, not proof of which operation stalled on the Windows runner.
+An advance must first acquire its task lock, whose deadline then included opening `attempt.lock` and scheduling its initial nonblocking acquisition.
+Delaying that OS open by two seconds deterministically reproduced the reported task-lock deadline with the original one-second configuration, without another task-lock holder or a duplicate acquisition by retry.
+This established a sufficient trigger for the symptom, not proof of which operation stalled on the Windows runner.
 
 The test's configured wait is increased in this test only, leaving headroom for uncontended task-lock acquisition while keeping the refusal ceiling below the default store wait.
-Production locking order and cancellation behaviour are unchanged: an expired acquisition context is a legitimate refusal.
+That fix left production locking order and cancellation behaviour unchanged: an expired acquisition context was a legitimate refusal; [slow lock-file open](#slow-lock-file-open) describes how d233 later changed it.
 The real store and task-lock integration boundaries are kept rather than replacing either with a fake or accepting either error indiscriminately.
 The deterministic delayed-open reproduction is a local Linux diagnostic; native filesystem behaviour continues to run in the three-OS CI matrix.
+
+## Slow lock-file open
+
+Since d233, `artisan.LockPathAt`'s deadline bounds contention only: a context already done fails before the file is opened or created, opening the file does not count against the deadline, and one nonblocking acquisition is always made once the file is open, so a slow open no longer refuses a free lock (the Steward's 100ms `lockWait` had turned this into a false `busy`).
+`TestLockPathAtSlowOpenStillTakesAFreeLock` and `TestTakePrivateLockSlowOpenIsNotBusy` stall the open on Linux with a read lease (`testenv.StallOpens`) to reproduce the Windows flake in `TestProvisionResume` and `TestProvisionNeverCopiesOverUnreadable`.

@@ -33,6 +33,7 @@ Every package whose tests start subprocesses calls it from `TestMain`: `cmd/guil
 This closes the gap `interp.CheckAdapter` leaves in a built binary, where `testing.Testing()` is false.
 
 [`WaitFor`](../../internal/testenv/wait.go) supplies named condition waits for real filesystem/process events.
+[`StallOpens(t, path, hold)`](../../internal/testenv/stallopen_linux.go), Linux only, is a test double for a slow OS open, as antivirus filter drivers cause on Windows: it creates `path` empty, takes an `F_SETLEASE` read lease on it through a second handle, so the kernel holds any `O_RDWR` open of it for about `hold`, when a goroutine drops the lease; it skips `t` when the lease cannot be taken, and waits in `t.Cleanup` for that goroutine. The [artisan](artisan.md#tests) and Steward slow-open lock tests use it.
 The [test timing policy](../test-timing.md) owns the ceiling and exception rules enforced by `TestTimingPolicy` in every CI matrix job.
 
 ## Tests
