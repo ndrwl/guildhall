@@ -132,6 +132,7 @@ The presets disable only `cc-plugin-plugin-authoring@builtin`; unrelated plugins
 No blanket `Skill` deny is generated: selection is ergonomics, not a security sandbox, and existing tool denies remain authoritative.
 An organization-managed force-enabled plugin may override these controls.
 Personal/project skills, unknown plugins and feature-gated inventory are not isolated by this policy.
+For Artisans, the wrapper loads no user, project or local settings source, so personal and project skills and agents do not load there ([Artisan permissions](adapters.md#artisan-permissions)); the Director's session still loads them.
 
 Resolved settings are rendered before launch, not edited in generated workspaces.
 Both Director and Artisan pass an owned settings file with `--settings`, even when Artisan grants are empty, and record policy provenance/digest in `claude-skill-policy.json`.

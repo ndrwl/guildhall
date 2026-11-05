@@ -240,15 +240,16 @@ func TestClaudeArgs(t *testing.T) {
 	got := claude.ClaudeArgs(a)
 	model := filepath.Join(filepath.Dir(spec.ResultFile), artisan.ModelDir)
 	want := []string{"--print", claude.Instruction(a), "--output-format", claude.OutputFormat, "--verbose", "--permission-mode", claude.PermissionMode,
-		"--disallowedTools", strings.Join(claude.DisallowedTools, ","), "--settings", claude.ArtisanSettingsPath(spec.ResultFile), "--add-dir", model}
+		"--disallowedTools", strings.Join(claude.DisallowedTools, ","), "--settings", claude.ArtisanSettingsPath(spec.ResultFile), "--add-dir", model,
+		"--setting-sources", "", "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`}
 	if !slices.Equal(got, want) {
 		t.Errorf("ClaudeArgs = %q, want %q", got, want)
 	}
 	a.Settings = adapter.Settings{Model: "opus", Effort: "high"}
 	got = claude.ClaudeArgs(a)
 	d, s := slices.Index(got, "--disallowedTools"), slices.Index(got, "--settings")
-	if d < 0 || s < 0 || d > slices.Index(got, "--model") || d > s || got[len(got)-2] != "--add-dir" {
-		t.Errorf("ClaudeArgs = %q; want --disallowedTools before --model and --settings, and --add-dir last", got)
+	if d < 0 || s < 0 || d > slices.Index(got, "--model") || d > s || !slices.Equal(got[len(got)-7:], want[len(want)-7:]) {
+		t.Errorf("ClaudeArgs = %q; want --disallowedTools before --model and --settings, and --add-dir, --setting-sources and the MCP config last", got)
 	}
 	dropped := strings.Split(got[d+1], ",")
 	for _, tool := range []string{"Workflow", "ScheduleWakeup", "ReportFindings", "ListAgents"} {
@@ -473,13 +474,53 @@ func TestRunReportsDenials(t *testing.T) {
 }
 
 // TestArtisanSettings: the settings file grants exactly the rules, in order, as Claude Code's permissions.allow, and
-// registers the steering PostToolUse hook for every tool, and nothing else.
+// registers the steering PostToolUse hook for every tool, and turns auto memory off, and nothing else.
 func TestArtisanSettings(t *testing.T) {
 	got := string(claude.ArtisanSettings([]string{"Bash(go test:*)", "Bash(git commit:*)"}))
 	want := `{"permissions":{"allow":["Bash(go test:*)","Bash(git commit:*)"]},` +
-		`"hooks":{"PostToolUse":[{"hooks":[{"type":"command","command":"guildhall messages hook","timeout":10}]}]}}` + "\n"
+		`"hooks":{"PostToolUse":[{"hooks":[{"type":"command","command":"guildhall messages hook","timeout":10}]}]},` +
+		`"autoMemoryEnabled":false}` + "\n"
 	if got != want {
 		t.Errorf("ArtisanSettings = %q, want %q", got, want)
+	}
+}
+
+// TestArtisanPolicySettingsHooks: the settings launch and the Director preflight render for every shipped profile,
+// under every Artisan skill preset, keep the grant, auto memory off and the steering hook as the only hook, and never set
+// disableAllHooks, which would switch the steering hook off; user and project hooks stay out because ClaudeArgs
+// loads no settings file source.
+func TestArtisanPolicySettingsHooks(t *testing.T) {
+	for _, preset := range []string{"artisan-v1", "builder-v1", "reviewer-v1"} {
+		p, err := config.ParseClaudeSkills(`{"preset":"` + preset + `"}`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for name, rules := range grant.ShippedDefaultGrants {
+			b := claude.ArtisanPolicySettings(append(slices.Clone(rules), grant.GuildhallRules...), p)
+			var settings struct {
+				DisableAllHooks   *bool                      `json:"disableAllHooks"`
+				AutoMemoryEnabled *bool                      `json:"autoMemoryEnabled"`
+				Hooks             map[string]json.RawMessage `json:"hooks"`
+				Permissions       struct {
+					Allow []string `json:"allow"`
+				} `json:"permissions"`
+			}
+			if err := json.Unmarshal(b, &settings); err != nil {
+				t.Fatalf("%s %s: %v", preset, name, err)
+			}
+			if settings.DisableAllHooks != nil || len(settings.Permissions.Allow) == 0 {
+				t.Errorf("%s %s settings = %s; want the grant and no disableAllHooks", preset, name, b)
+			}
+			if settings.AutoMemoryEnabled == nil || *settings.AutoMemoryEnabled {
+				t.Errorf("%s %s settings = %s; want autoMemoryEnabled false", preset, name, b)
+			}
+			if len(settings.Hooks) != 1 || !strings.Contains(string(settings.Hooks["PostToolUse"]), claude.SteeringHookCommand) {
+				t.Errorf("%s %s hooks = %v; want only the steering PostToolUse hook", preset, name, settings.Hooks)
+			}
+			if err := claude.ValidatePolicySettings(b, p); err != nil {
+				t.Errorf("%s %s: %v", preset, name, err)
+			}
+		}
 	}
 }
 
@@ -669,10 +710,10 @@ func TestRunStopsOnContext(t *testing.T) {
 // so makes a model call; CI never sets it.
 const LiveEnv = "GUILDHALL_CLAUDE_LIVE"
 
-// LiveGrantEnv chooses what TestLiveClaudeBuildPermissions grants: unset, nothing, so only the machine's own
-// settings can allow its commands; "configured", the profile grant a Go builder would be configured with,
-// the builder's shipped default, SuggestedGoAllowedTools and the check's own command, so the run shows those rules
-// suffice.
+// LiveGrantEnv chooses what TestLiveClaudeBuildPermissions grants: unset, nothing, so the check's command is
+// expected to be denied, since no user, project or local settings load to allow it; "configured", the profile
+// grant a Go builder would be configured with, the builder's shipped default, SuggestedGoAllowedTools and the
+// check's own command, so the run shows those rules suffice.
 const LiveGrantEnv = "GUILDHALL_CLAUDE_LIVE_GRANT"
 
 // liveGrant is the configured mode's grant.
@@ -718,18 +759,26 @@ func TestLiveClaude(t *testing.T) {
 }
 
 // TestLiveClaudeBuildPermissions is the Artisan permissions' live acceptance: one real attempt through the
-// wrapper, in a git repository, asked to run a check and commit as the build stage asks. It passes only where
-// Claude's settings, or with GUILDHALL_CLAUDE_LIVE_GRANT=configured the profile grant liveGrant, allow those shell
-// commands (docs/adapters.md#artisan-permissions); a denial is named in the failure. Run it by hand with
-// GUILDHALL_CLAUDE_LIVE=1 [GUILDHALL_CLAUDE_LIVE_GRANT=configured] go test ./internal/adapter/claude -run TestLiveClaudeBuildPermissions -v -timeout 15m
+// wrapper, in a git repository, asked to run a check and commit as the build stage asks. With
+// GUILDHALL_CLAUDE_LIVE_GRANT=configured the profile grant liveGrant must allow those shell commands; unset, with
+// no profile grant, the check's command must be denied, because the machine's own settings no longer load
+// (docs/adapters.md#artisan-permissions). Run it by hand with
+// GUILDHALL_CLAUDE_LIVE=1 [GUILDHALL_CLAUDE_LIVE_GRANT=configured] go test ./internal/adapter/claude -run TestLiveClaudeBuildPermissions -v -timeout 15m -claude-program "$(command -v claude)"
+// or, where only `go test` is granted, with -claude-live [-claude-live-grant configured] in place of the variables.
 func TestLiveClaudeBuildPermissions(t *testing.T) {
-	if os.Getenv(LiveEnv) != "1" {
-		t.Skipf("set %s=1 to run a real Claude Code session; it makes a model call", LiveEnv)
-	}
+	program := liveClaude(t)
 	spec := testSpec(t)
-	switch mode := os.Getenv(LiveGrantEnv); mode {
+	configured := false
+	mode := os.Getenv(LiveGrantEnv)
+	if *claudeLiveGrant != "" {
+		mode = *claudeLiveGrant
+	}
+	switch mode {
 	case "":
+		spec.Copy, spec.Profile = grantProfile(t, nil)
+		t.Log("granting nothing; expecting the check to be denied")
 	case "configured":
+		configured = true
 		spec.Copy, spec.Profile = grantProfile(t, liveGrant)
 		t.Logf("granting %q", liveGrant)
 	default:
@@ -761,12 +810,23 @@ func TestLiveClaudeBuildPermissions(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	var stderr bytes.Buffer
-	runErr := claude.Run(ctx, args(spec), os.Stdout, io.MultiWriter(os.Stderr, &stderr))
+	a := args(spec)
+	a.Claude = program
+	runErr := claude.Run(ctx, a, os.Stdout, io.MultiWriter(os.Stderr, &stderr))
 	r, err := adapter.ReadResult(spec.ResultFile, spec.Identity)
 	if err != nil {
 		t.Fatalf("result: %v (run: %v)", err, runErr)
 	}
 	t.Logf("result: %+v", r)
+	if !configured {
+		if !strings.Contains(stderr.String(), "Claude was denied") || !strings.Contains(stderr.String(), "Bash(sh check.sh)") {
+			t.Errorf("want sh check.sh denied without a profile grant. Wrapper output:\n%s", stderr.String())
+		}
+		if _, err := os.Stat(filepath.Join(spec.WorkDir, ".git", "guildhall-checked")); err == nil {
+			t.Error("check.sh ran without a grant")
+		}
+		return
+	}
 	if head := git("rev-parse", "HEAD"); r.Status != adapter.StatusSucceeded || head == base {
 		t.Errorf("result %s, head %s from base %s; want a new commit. Wrapper output:\n%s", r.Status, head, base, stderr.String())
 	} else if files := git("diff", "--name-only", base, "HEAD"); files != "hello.txt" {
@@ -783,13 +843,16 @@ func TestLiveClaudeBuildPermissions(t *testing.T) {
 // keptTools are the tools an Artisan keeps, which DisallowedTools must not name.
 var keptTools = []string{"Agent", "Task", "Skill", "ToolSearch", "WebSearch", "WebFetch", "Monitor", "TaskStop", "NotebookEdit"}
 
-// claudeLive opens TestLiveClaudeTools as LiveEnv does, for a runner whose grant allows `go test` but not an
-// environment assignment before it.
-var claudeLive = flag.Bool("claude-live", false, "run TestLiveClaudeTools, which makes two short model calls")
+// claudeLive opens TestLiveClaudeTools, TestLiveClaudeIsolation and TestLiveClaudeBuildPermissions as LiveEnv
+// does, for a runner whose grant allows `go test` but not an environment assignment before it.
+var claudeLive = flag.Bool("claude-live", false, "run the live Claude Code tests that take -claude-program; they make model calls")
 
-// claudeProgram is the real Claude Code TestLiveClaudeTools runs. The test binary's claude guard
+// claudeLiveGrant is LiveGrantEnv as a flag, for the same runner; when set it wins over the variable.
+var claudeLiveGrant = flag.String("claude-live-grant", "", "TestLiveClaudeBuildPermissions grant mode: empty or configured")
+
+// claudeProgram is the real Claude Code the -claude-live tests run. The test binary's claude guard
 // (testenv.InstallClaudeGuard) shadows every `claude` on PATH, so the probe needs the program's absolute path.
-var claudeProgram = flag.String("claude-program", "", "absolute path of the real claude for TestLiveClaudeTools")
+var claudeProgram = flag.String("claude-program", "", "absolute path of the real claude for the -claude-live tests")
 
 // toolsProbe is what one print-mode run reports: its init event's tools and its first assistant event's usage.
 type toolsProbe struct {
@@ -900,4 +963,217 @@ func TestLiveClaudeTools(t *testing.T) {
 	if delta < 3000 {
 		t.Errorf("first-call prompt shrank by %d tokens; want at least 3000", delta)
 	}
+}
+
+// userEntries are the names in the user's Claude directory dir, such as ~/.claude/skills or ~/.claude/agents, each
+// without a .md extension: the user skills and agents an Artisan must not inherit.
+func userEntries(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, e := range entries {
+		names = append(names, strings.TrimSuffix(e.Name(), ".md"))
+	}
+	return names
+}
+
+// isolationProbe is what one print-mode run reports: its init event, the hook events in its stream and its first
+// assistant event's usage.
+type isolationProbe struct {
+	Init                            []byte
+	Tools, SlashCommands, Skills    []string
+	Agents, MCPServers, Hooks       []string
+	Input, CacheCreation, CacheRead int
+	Text                            string
+}
+
+func (p isolationProbe) prompt() int { return p.Input + p.CacheCreation + p.CacheRead }
+
+// memoryCanary is the word the project CLAUDE.md TestLiveClaudeIsolation writes asks for, so a reply carrying it
+// shows the memory file was loaded.
+const memoryCanary = "PINEAPPLE"
+
+// probeIsolation runs program with argv in dir and reads the stream-json events isolationProbe reports.
+func probeIsolation(t *testing.T, program, dir string, argv []string) isolationProbe {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, program, argv...)
+	cmd.Dir, cmd.Stderr = dir, os.Stderr
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("claude %q: %v\n%s", argv[2:], err, out)
+	}
+	var p isolationProbe
+	var sawInit, sawUsage bool
+	sc := bufio.NewScanner(bytes.NewReader(out))
+	sc.Buffer(nil, 64<<20)
+	for sc.Scan() {
+		var event struct {
+			Type          string   `json:"type"`
+			Subtype       string   `json:"subtype"`
+			HookName      string   `json:"hook_name"`
+			HookEvent     string   `json:"hook_event"`
+			Tools         []string `json:"tools"`
+			SlashCommands []string `json:"slash_commands"`
+			Skills        []string `json:"skills"`
+			Agents        []string `json:"agents"`
+			MCPServers    []struct {
+				Name string `json:"name"`
+			} `json:"mcp_servers"`
+			Message struct {
+				Content []struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				} `json:"content"`
+				Usage *struct {
+					InputTokens              int `json:"input_tokens"`
+					CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+					CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+				} `json:"usage"`
+			} `json:"message"`
+		}
+		if json.Unmarshal(sc.Bytes(), &event) != nil {
+			continue
+		}
+		switch {
+		case event.Type == "system" && event.Subtype == "init" && !sawInit:
+			sawInit = true
+			p.Init = slices.Clone(sc.Bytes())
+			p.Tools, p.SlashCommands, p.Skills, p.Agents = event.Tools, event.SlashCommands, event.Skills, event.Agents
+			for _, s := range event.MCPServers {
+				p.MCPServers = append(p.MCPServers, s.Name)
+			}
+		case event.Type == "system" && strings.Contains(event.Subtype, "hook"):
+			p.Hooks = append(p.Hooks, string(sc.Bytes()))
+		case event.Type == "assistant":
+			for _, c := range event.Message.Content {
+				if c.Type == "text" {
+					p.Text += c.Text
+				}
+			}
+			if event.Message.Usage != nil && !sawUsage {
+				sawUsage = true
+				u := event.Message.Usage
+				p.Input, p.CacheCreation, p.CacheRead = u.InputTokens, u.CacheCreationInputTokens, u.CacheReadInputTokens
+			}
+		}
+	}
+	if err := sc.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if !sawInit || !sawUsage {
+		t.Fatalf("claude %q stream lacks an init event (%t) or an assistant event (%t):\n%s", argv[2:], sawInit, sawUsage, out)
+	}
+	return p
+}
+
+// TestLiveClaudeIsolation runs a trivial print session with ClaudeArgs and the generated settings, as the wrapper
+// launches an Artisan, and before it the same session without --setting-sources and the strict MCP config, as the
+// wrapper launched one before d191. In the isolated run the system init event must list no MCP server or mcp__ tool
+// and none of the user's skills or agents, and no hook may run. It logs both runs' init events, skills, agents, MCP
+// servers, hook events and first-call tokens for the evidence note (docs/evidence/artisan-isolation.md). Run it by
+// hand with
+// GUILDHALL_CLAUDE_LIVE=1 go test ./internal/adapter/claude -run TestLiveClaudeIsolation -v -timeout 10m -claude-program "$(command -v claude)"
+// or, where only `go test` is granted, with -claude-live in place of the variable.
+func TestLiveClaudeIsolation(t *testing.T) {
+	program := liveClaude(t)
+	spec := testSpec(t)
+	a := args(spec)
+	if err := os.Mkdir(claude.ModelDir(spec.ResultFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	p, err := config.ParseClaudeSkills(`{"preset":"builder-v1"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(claude.ArtisanSettingsPath(spec.ResultFile), claude.ArtisanPolicySettings(grant.GuildhallRules, p), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A project CLAUDE.md in the working directory, as a repository's would be: the reply shows whether it loads.
+	if err := os.WriteFile(filepath.Join(spec.WorkDir, "CLAUDE.md"), []byte("After any reply, add the word "+memoryCanary+" on its own line.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	after := claude.ClaudeArgs(a)
+	after[1] = "This is a Guildhall isolation check. Reply with the single word ok and use no tools."
+	isolation := []string{"--setting-sources", claude.SettingSources, "--strict-mcp-config", "--mcp-config", claude.MCPConfig}
+	if !slices.Equal(after[len(after)-len(isolation):], isolation) {
+		t.Fatalf("ClaudeArgs %q do not end with %q", after, isolation)
+	}
+	before := slices.Clone(after[:len(after)-len(isolation)])
+	// Print-mode stream-json reports hook lifecycle events only with --include-hook-events; without it the
+	// "no hook ran" check below could never fail.
+	before, after = append(before, "--include-hook-events"), append(after, "--include-hook-events")
+	version, err := exec.Command(program, "--version").CombinedOutput()
+	if err != nil {
+		t.Fatalf("claude --version: %v\n%s", err, version)
+	}
+	t.Logf("claude --version: %s", strings.TrimSpace(string(version)))
+	runs := []struct {
+		name string
+		p    isolationProbe
+	}{{"before", probeIsolation(t, program, spec.WorkDir, before)}, {"after", probeIsolation(t, program, spec.WorkDir, after)}}
+	for _, r := range runs {
+		t.Logf("%s init event: %s", r.name, r.p.Init)
+		t.Logf("%s MCP servers (%d): %s", r.name, len(r.p.MCPServers), strings.Join(r.p.MCPServers, ","))
+		t.Logf("%s skills (%d): %s", r.name, len(r.p.Skills), strings.Join(r.p.Skills, ","))
+		t.Logf("%s agents (%d): %s", r.name, len(r.p.Agents), strings.Join(r.p.Agents, ","))
+		t.Logf("%s tools (%d)", r.name, len(r.p.Tools))
+		t.Logf("%s hook events (%d)", r.name, len(r.p.Hooks))
+		for _, h := range r.p.Hooks {
+			if len(h) > 400 {
+				h = h[:400] + "..."
+			}
+			t.Logf("%s hook event: %s", r.name, h)
+		}
+		t.Logf("%s first call: input %d, cache_creation %d, cache_read %d, prompt %d", r.name, r.p.Input, r.p.CacheCreation, r.p.CacheRead, r.p.prompt())
+		t.Logf("%s reply %q; project CLAUDE.md loaded: %t", r.name, r.p.Text, strings.Contains(r.p.Text, memoryCanary))
+	}
+	t.Logf("prompt delta: %d tokens", runs[0].p.prompt()-runs[1].p.prompt())
+	got := runs[1].p
+	if len(got.MCPServers) > 0 {
+		t.Errorf("MCP servers %q; want none", got.MCPServers)
+	}
+	for _, tool := range got.Tools {
+		if strings.HasPrefix(tool, "mcp__") {
+			t.Errorf("MCP tool %s; want none", tool)
+		}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range userEntries(t, filepath.Join(home, ".claude", "skills")) {
+		if slices.Contains(got.Skills, name) || slices.Contains(got.SlashCommands, name) {
+			t.Errorf("user skill %s is loaded", name)
+		}
+	}
+	for _, name := range userEntries(t, filepath.Join(home, ".claude", "agents")) {
+		if slices.Contains(got.Agents, name) {
+			t.Errorf("user agent %s is loaded", name)
+		}
+	}
+	for _, h := range got.Hooks {
+		t.Errorf("a hook ran: %s", h)
+	}
+	// An init event's memory_paths names the auto memory directory only when auto memory is on.
+	if bytes.Contains(got.Init, []byte(`"memory_paths"`)) {
+		t.Errorf("auto memory is on; want autoMemoryEnabled false to hold")
+	}
+}
+
+// liveClaude skips the test unless LiveEnv is 1 or -claude-live is set, and returns the real Claude Code it runs:
+// -claude-program, an absolute path, since the test binary's claude guard shadows every claude on PATH.
+func liveClaude(t *testing.T) string {
+	t.Helper()
+	if os.Getenv(LiveEnv) != "1" && !*claudeLive {
+		t.Skipf("set %s=1 or -claude-live to run a real Claude Code session; it makes a model call", LiveEnv)
+	}
+	if !filepath.IsAbs(*claudeProgram) {
+		t.Fatalf("-claude-program %q; want the real claude's absolute path, since the test's guard shadows claude on PATH", *claudeProgram)
+	}
+	return *claudeProgram
 }

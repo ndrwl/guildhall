@@ -361,7 +361,7 @@ Claude Artisans resolve [skill selection](configuration.md#claude-skill-policies
 That configuration reference owns the shipped role defaults, web grants, account-sync opt-ins and compatibility requirements.
 Rendered workflow skill documents are unchanged, and non-Claude adapters receive no invented equivalent policy.
 See the [Claude adapter](adapters.md#claude-adapter) for the wrapper's settings and policy receipt.
-See [Artisan permissions](adapters.md#artisan-permissions) for inherited settings, hooks and skill-scoped grants: ordinary print mode is not edits-only isolation.
+See [Artisan permissions](adapters.md#artisan-permissions) for what a Claude Artisan loads: its generated settings and managed policy, with no user, project or local settings, hooks, MCP servers, personal skills or agents, though skill-scoped grants from kept bundled skills still apply.
 
 ## Commands
 

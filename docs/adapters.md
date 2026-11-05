@@ -154,10 +154,11 @@ The Claude adapter runs one attempt as a non-interactive Claude Code session, wi
 Its command is `guildhall claude-artisan --task <id> --attempt <id> --prompt <file> --result <file> [--copy <dir> --profile <name>] [--model <model>] [--effort <level>] [--claude <program>]`, a wrapper in the attempt's working directory that runs:
 
 ```text
-claude --print <instruction> --output-format stream-json --verbose --permission-mode acceptEdits --disallowedTools <dropped tools> [--model <model>] [--effort <level>] --settings <settings file> --add-dir <model directory>
+claude --print <instruction> --output-format stream-json --verbose --permission-mode acceptEdits --disallowedTools <dropped tools> [--model <model>] [--effort <level>] --settings <settings file> --add-dir <model directory> --setting-sources "" --strict-mcp-config --mcp-config '{"mcpServers":{}}'
 ```
 
 - `--model` and `--effort` are the profile's effective [runtime settings](#runtime-settings), each passed only when nonempty.
+- `--setting-sources ""` loads no user, project or local settings file, and `--strict-mcp-config` with an empty inline `--mcp-config` loads no MCP server, so an Artisan inherits no hooks, permission rules, MCP servers, skills or agents from the machine or the repository; only the generated settings file and managed policy apply ([Artisan permissions](#artisan-permissions)).
 - `--disallowedTools` is one comma-joined value, `claude.DisallowedTools`, the same for every profile: `Workflow`, `ScheduleWakeup`, `ReportFindings`, `ListAgents`, `SendMessage`, `CronCreate`, `CronDelete`, `CronList`, `RemoteTrigger`, `PushNotification`, `DesignSync`, `EnterWorktree` and `ExitWorktree`.
   No stage uses them, and their schemas cost about 5k prompt tokens per attempt ([audit](audits/token-usage-2026-11.md), [probe](evidence/claude-disallowed-tools-2026-11-04.txt)); dropping the worktree tools also keeps an Artisan in its assigned worktree.
   `Agent`, `Skill`, `ToolSearch`, `WebSearch`, `WebFetch`, `Monitor`, `TaskStop` and `NotebookEdit` are kept.
@@ -167,10 +168,11 @@ claude --print <instruction> --output-format stream-json --verbose --permission-
 - The instruction names the prompt copy and a draft file, `model/draft.json` (`claude.SubmitFile`), fixes the result identity, and directs Claude to the prompt's [generated Result template](rendering.md#required-outputs-and-result-template); Claude reads the prompt, writes its result to the draft file and submits it with [`guildhall result submit`](contracts/cli.md), fixing and resubmitting it until it prints `ok` or no resubmissions are left.
   An accepted submission becomes the draft result the wrapper publishes, `model/result.json`; only when the command cannot run does the instruction have Claude write that file directly, once, as its last action, which intake checks as before.
   For a custom prompt without a template, the instruction describes adding status, summary and the required file entries to those identity fields, allowing an empty output list only for failed results or automatic code-head capture.
-- `acceptEdits` lets Claude edit files in the working directory and the model directory; other tools that need permission depend on explicit or inherited grants, because a print-mode session has no one to ask ([Artisan permissions](#artisan-permissions)).
+- `acceptEdits` lets Claude edit files in the working directory and the model directory; other tools that need permission depend on the generated grants, because a print-mode session has no one to ask ([Artisan permissions](#artisan-permissions)).
 - The wrapper always writes `claude-settings.json` beside the result, outside model-writable added directories, and passes it with `--settings`.
   It merges `permissions.allow` from the referenced copy/profile with the resolved [Claude skill policy](configuration.md#claude-skill-policies), including when the allow list is empty.
   It also registers one PostToolUse hook for every tool, `guildhall messages hook` (`claude.SteeringHookCommand`), which shows the model the attempt's unacknowledged [steering messages](messaging.md#steering-an-attempt) after each tool call; it grants nothing, always exits 0, and correctness never depends on it.
+  Because no user, project or local settings file loads, it is the only hook outside managed policy that runs; the file does not set `disableAllHooks`, which would switch it off too.
   `syncClaudeAiSkills` is consequently supplied in flag scope, not just repository project settings.
   An owned `claude-skill-policy.json` receipt records the preset, effective controls, source key, provenance, overridability and normalized digest; neither file contains credentials.
   The wrapper probes `claude --version` before preparing the model directory and refuses versions older than 2.1.310 or unknown/prerelease version output; this probe makes no model call.
@@ -281,27 +283,37 @@ allowed_tools = ["Bash(go test:*)"]
 ```
 
 A repository whose checks are other commands, such as a `make check` target or a linter, grants those commands' rules instead; a rule allowing every shell command, `Bash`, `Bash(*)` or `Bash(:*)`, is refused.
-The allow rules widen tool authority and never narrow it: the user's `~/.claude/settings.json` and the repository's `.claude/settings.json`, which the task's worktree carries, still apply.
-Ordinary print mode also discovers hooks, skills, commands, plugins, agents and MCP servers; skill frontmatter can grant turn-scoped tools.
-Thus `acceptEdits` grants edits only, but an empty profile allow list is not the complete inherited permission environment, and applicable deny rules still win.
+The generated settings are the whole permission environment apart from managed policy: the wrapper passes `--setting-sources ""`, so neither the user's `~/.claude/settings.json` nor the repository's `.claude/settings.json` or `.claude/settings.local.json`, which the task's worktree carries, loads, and `--strict-mcp-config` with an empty `--mcp-config`, so no user, project or claude.ai MCP server loads.
+Without the user and project sources no personal or project hooks, skills, commands or agents load either; the only hook outside managed policy is the generated steering hook.
+What those files set no longer applies to Artisans: their allow and deny rules, `env`, the default `model` (a profile without a `model` gets Claude Code's default, not the user's), sandbox and attribution settings, and the project `CLAUDE.md` and `~/.claude/CLAUDE.md` memory, which load only with the project and user sources (a canary project `CLAUDE.md` in the live run is not loaded; [evidence](evidence/artisan-isolation.md)).
+Because a user setting no longer keeps it off, the generated settings set `autoMemoryEnabled` to false, so an Artisan neither loads nor writes an auto memory directory under `~/.claude/projects`.
+Only managed-policy deny rules still win; a command no generated rule allows is refused, because a print-mode session has no one to ask.
+Skill frontmatter of kept bundled skills can still grant turn-scoped tools.
 Skill selection is ergonomics, not a security sandbox: independently granted shell/API tools can perform equivalent actions without invoking a skill.
 See [Claude skill policies](configuration.md#claude-skill-policies) for shipped web grants and independent tool/skill customization, rather than editing generated Claude files.
-On a machine where neither the profile nor those settings allow them, a build attempt can edit files but neither run the checks nor commit, so it leaves no new head to publish.
+Where neither the profile nor a repository grant allows the checks and git, a build attempt can edit files but neither run the checks nor commit, so it leaves no new head to publish.
 
 So the grant and the dependency are never silent:
 
-- [`director start`](director.md#start)'s preflight prints an `artisans` line naming the Director and its config file and each claude profile's effective grant by source, the shipped role profiles included: the copy's list or the shipped default, or that a profile of another name gets no shipped default, then each repository's additions labelled with its id; of the grants it refuses only `allowed_tools` or a repository grant on a profile of another adapter, which cannot grant them, because Guildhall cannot see every settings file Claude Code reads (it also refuses a profile's [runtime settings](#runtime-settings) its runtime cannot honour);
+- [`director start`](director.md#start)'s preflight prints an `artisans` line naming the Director and its config file and each claude profile's effective grant by source, the shipped role profiles included: the copy's list or the shipped default, or that a profile of another name gets no shipped default, then each repository's additions labelled with its id; of the grants it refuses only `allowed_tools` or a repository grant on a profile of another adapter, which cannot grant them (it also refuses a profile's [runtime settings](#runtime-settings) its runtime cannot honour);
 - the wrapper names each denied tool use in the attempt's launcher log, as above.
 
-A live run, `TestLiveClaudeBuildPermissions`, asks a real session in a git repository to run a check command Claude Code does not allow as read-only, `sh check.sh`, and then commit; it fails unless the check ran and the commit was made, and on any denied tool use.
-Without `GUILDHALL_CLAUDE_LIVE_GRANT` it grants nothing, and shows that the machine's settings allow a non-read-only check and a commit; with `GUILDHALL_CLAUDE_LIVE_GRANT=configured` it grants the suggested set plus `Bash(sh check.sh)`, as a profile would, and shows those rules suffice, on a machine whose own settings do not already allow the commands:
+A live run, `TestLiveClaudeBuildPermissions`, asks a real session in a git repository to run a check command Claude Code does not allow as read-only, `sh check.sh`, and then commit; with `GUILDHALL_CLAUDE_LIVE_GRANT=configured` it grants the suggested set plus `Bash(sh check.sh)`, as a profile would, fails unless the check ran and the commit was made, and on any denied tool use, and so shows those rules alone suffice.
+Without `GUILDHALL_CLAUDE_LIVE_GRANT` it grants nothing, and passes only if `sh check.sh` is denied and does not run, which shows the machine's own settings no longer allow it:
 
 ```sh
-GUILDHALL_CLAUDE_LIVE=1 go test ./internal/adapter/claude -run TestLiveClaudeBuildPermissions -v -timeout 15m
-GUILDHALL_CLAUDE_LIVE=1 GUILDHALL_CLAUDE_LIVE_GRANT=configured go test ./internal/adapter/claude -run TestLiveClaudeBuildPermissions -v -timeout 15m
+GUILDHALL_CLAUDE_LIVE=1 go test ./internal/adapter/claude -run TestLiveClaudeBuildPermissions -v -timeout 15m -claude-program "$(command -v claude)"
+GUILDHALL_CLAUDE_LIVE=1 GUILDHALL_CLAUDE_LIVE_GRANT=configured go test ./internal/adapter/claude -run TestLiveClaudeBuildPermissions -v -timeout 15m -claude-program "$(command -v claude)"
 ```
 
-Neither mode has been run yet; they are part of the live acceptance before the Director's first unattended task.
+A third live run, `TestLiveClaudeIsolation`, starts a trivial print session with the wrapper's arguments and generated settings, and before it the same session without `--setting-sources` and the strict MCP config. It fails if the isolated run's `system`/`init` event lists an MCP server, an `mcp__` tool, one of the user's `~/.claude/skills` or `~/.claude/agents`, or an auto memory path, or if a hook runs. It logs both runs' init events, hook events, first-call tokens and whether a canary project `CLAUDE.md` loaded ([evidence](evidence/artisan-isolation.md)):
+
+```sh
+GUILDHALL_CLAUDE_LIVE=1 go test ./internal/adapter/claude -run TestLiveClaudeIsolation -v -timeout 10m -claude-program "$(command -v claude)"
+```
+
+The test binary's claude guard shadows `claude` on `PATH`, so `-claude-program` names the real one; where only `go test` is granted, `-claude-live` and `-claude-live-grant configured` stand in for the two variables.
+All three passed on Claude Code 2.1.318 ([evidence](evidence/artisan-isolation.md)).
 
 ## Runtime settings
 

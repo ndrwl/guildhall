@@ -70,6 +70,13 @@ func TestSkillPolicyArtisanWithoutGrants(t *testing.T) {
 	if !p.DisableBundledSkills || p.SyncClaudeAiSkills || p.EnabledPlugins["cc-plugin-plugin-authoring@builtin"] {
 		t.Fatalf("policy not rendered: %s", b)
 	}
+	var hooks struct {
+		DisableAllHooks *bool                      `json:"disableAllHooks"`
+		Hooks           map[string]json.RawMessage `json:"hooks"`
+	}
+	if err := json.Unmarshal(b, &hooks); err != nil || hooks.DisableAllHooks != nil || len(hooks.Hooks) != 1 {
+		t.Fatalf("launch settings want the steering hook alone and no disableAllHooks: %s (%v)", b, err)
+	}
 	if _, err := os.Stat(filepath.Join(filepath.Dir(spec.ResultFile), claude.SkillPolicyFile)); err != nil {
 		t.Fatal(err)
 	}
