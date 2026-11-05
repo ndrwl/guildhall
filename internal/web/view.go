@@ -51,6 +51,8 @@ type taskView struct {
 	Closed string
 	// Round is the current attempt's open grill round, asked as one form after the asks; nil when none is open.
 	Round *roundView
+	// Poll is the new-reply bar's data for poll.js, at the top of Now; nil where the page has no bar.
+	Poll *pollView
 }
 
 // joinBoxes is a refused round's words, each box's under its question's number, for the Not saved box.
@@ -248,7 +250,7 @@ func taskHref(repo, id string) string { return "/" + pathEscape(repo) + "/" + pa
 func docHref(repo, id, name string) string { return taskHref(repo, id) + "/doc/" + pathEscape(name) }
 
 func (s *Server) taskView(t Task, st pageState) taskView {
-	v := taskView{Style: style, Scripts: scripts, T: t, Base: taskHref(t.Repository, t.ID), Steps: t.Steps, ReadAt: s.clock(t.ReadAt)}
+	v := taskView{Style: style, Scripts: scripts, T: t, Base: taskHref(t.Repository, t.ID), Steps: t.Steps, ReadAt: s.clock(t.ReadAt), Poll: s.newPollView(t, st)}
 	for _, r := range t.Related {
 		v.Crumbs = append(v.Crumbs, relatedView{Label: r.Label, Name: relatedName(t.Repository, r), Href: taskHref(r.Repository, r.ID)})
 	}

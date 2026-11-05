@@ -110,6 +110,13 @@ words box below (docs/web.md#confirm-and-say). */}}
 <label class="yw" for="say-text">Say to the Director about {{.Tag}} <span>answers nothing</span></label><textarea id="say-text" name="text" rows="3">{{.Words}}</textarea>
 <div class="wo"><button class="opt" type="submit"><b>Send to the Director</b><span>answers nothing; your words reach the Director, who replies here</span></button></div></form>{{end}}
 
+{{/* newbar: the new-reply bar at the top of Now, hidden until poll.js shows it, so with scripts off it never
+appears; the script fills only the tag, the time and Reload's link, with textContent and setAttribute
+(docs/web.md#the-new-reply-bar). */}}
+{{define "newbar"}}<div class="newbar" id="newbar" hidden data-since="{{.Since}}" data-base="{{.Base}}" data-last="{{.Last}}" data-start="{{.Start}}">
+<p class="nbm" hidden>New from the Director on <b class="nbt"></b> · <time class="nbw"></time> · <a class="nbr" href="{{.Base}}">Reload</a></p>
+<p class="nbs" hidden><b>This page is out of date:</b> Guildhall restarted since it loaded, so its forms would be refused. <a href="{{.Base}}">Reload</a> before you answer.</p></div>{{end}}
+
 {{define "gone"}}<div class="ask refused" id="{{if .ID}}{{.ID}}{{else}}not-recorded{{end}}">
 <div class="ah"><span class="kind">{{.KindName}}</span>{{if .ID}}<a class="aid" href="#{{.ID}}">#{{.ID}}</a>{{end}}</div>
 <p class="q">{{.First}}</p>
@@ -150,7 +157,8 @@ words box below (docs/web.md#confirm-and-say). */}}
 <section class="r-docs"><h2>Documents <span class="n">{{.DocCount}}</span></h2>{{if .Docs}}<ul class="dix">{{range .Docs}}{{$k := .Kind}}{{range $i, $d := .Docs}}<li{{if $d.Old}} class="old"{{end}}><span class="k">{{if not $i}}{{$k}}{{end}}</span><a href="{{$d.Href}}" title="{{$d.Name}}">{{$d.Label}}</a><span class="d">{{$d.Day}}</span></li>{{end}}{{end}}</ul>{{else}}<p class="empty">No documents yet.</p>{{end}}</section>
 </aside>
 <section class="c2-now"><ol class="spine"><li class="node {{if .Open}}you{{else}}ok{{end}}"><div class="nh"><span class="t">Now</span><span class="st">{{if .Open}}waiting on you · {{.Open}} {{plural .Open "ask" "asks"}}{{else}}nothing waits on you{{end}}</span>{{if .Since}}<time>{{.Since}}</time>{{end}}</div>
-{{if and .Round .Status.Stage}}<p class="stage">The Director runs {{.Status.Stage}} with you; its {{lower .Round.Name}} is below, to answer here.</p>{{else if .Status.Stage}}<p class="stage">The Director runs {{.Status.Stage}} with you in its session; answer it there.</p>{{end}}
+{{with .Poll}}{{template "newbar" .}}
+{{end}}{{if and .Round .Status.Stage}}<p class="stage">The Director runs {{.Status.Stage}} with you; its {{lower .Round.Name}} is below, to answer here.</p>{{else if .Status.Stage}}<p class="stage">The Director runs {{.Status.Stage}} with you in its session; answer it there.</p>{{end}}
 {{with .Gone}}{{template "gone" .}}{{end}}
 {{range .Asks}}{{template "ask" .}}{{end}}{{with .Round}}{{template "round" .}}
 {{end}}

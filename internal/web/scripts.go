@@ -26,9 +26,10 @@ type ownScript struct {
 var ownScripts = loadScripts(assets)
 
 // CSP is the Content-Security-Policy every page is served with: baseCSP, plus a script-src listing only the own
-// scripts' hashes, so no other script runs, including any inside Artisan-written content. It never lists
-// 'unsafe-inline', 'unsafe-eval', 'unsafe-hashes', 'strict-dynamic', 'self' or a host, and with no own scripts it
-// is baseCSP exactly.
+// scripts' hashes, so no other script runs, including any inside Artisan-written content, and connect-src 'self',
+// so the one own script allowed a request, poll.js, can ask its page's own since route and nothing else can be
+// reached. Its script-src never lists 'unsafe-inline', 'unsafe-eval', 'unsafe-hashes', 'strict-dynamic', 'self' or
+// a host, and with no own scripts it is baseCSP exactly.
 var CSP = policy(ownScripts)
 
 func loadScripts(fsys fs.FS) []ownScript {
@@ -55,7 +56,11 @@ func loadScripts(fsys fs.FS) []ownScript {
 	return out
 }
 
-// policy is baseCSP with a script-src of scripts' hashes, or baseCSP itself when there are none.
+// connectSrc is the one request source own scripts may use: the page's own origin, which serves poll.js's since
+// route (docs/decisions/own-scripts.md).
+const connectSrc = "connect-src 'self'"
+
+// policy is baseCSP with a script-src of scripts' hashes and connectSrc, or baseCSP itself when there are none.
 func policy(scripts []ownScript) string {
 	if len(scripts) == 0 {
 		return baseCSP
@@ -64,7 +69,7 @@ func policy(scripts []ownScript) string {
 	for i, s := range scripts {
 		hashes[i] = s.Hash
 	}
-	return baseCSP + "; script-src " + strings.Join(hashes, " ")
+	return baseCSP + "; script-src " + strings.Join(hashes, " ") + "; " + connectSrc
 }
 
 // scripts are the own scripts' bodies, which the task list, task and reader pages inline.

@@ -161,6 +161,37 @@ func (w webSource) Task(repo, id string) (web.Task, error) {
 	return b.task(), nil
 }
 
+// Tail reads only the tail of repo/id's conversation for the page's poll: one read-only store open with the page's
+// bounded wait, the task's record and the entries after after, and none of Clerk's read, so a poll every few
+// seconds holds the store's shared lock only for that read.
+func (w webSource) Tail(repo, id string, after int) (web.Tail, error) {
+	type tail struct {
+		last  int
+		newer []store.ConversationEntry
+	}
+	got, err := withRecords(storeRecords{path: w.c.store, wait: webLockWait}, true, nil, func(s *store.Store) (tail, error) {
+		last, newer, err := s.ConversationAfter(repo, id, after)
+		return tail{last, newer}, err
+	})
+	if errors.Is(err, store.ErrNotFound) {
+		return web.Tail{}, web.ErrNotFound
+	}
+	if err != nil {
+		return web.Tail{}, webBusy(err)
+	}
+	out := web.Tail{Last: got.last}
+	for _, e := range got.newer {
+		out.Newer = append(out.Newer, webMessage(e))
+	}
+	return out, nil
+}
+
+// webMessage is a conversation entry as the page's model holds it.
+func webMessage(e store.ConversationEntry) web.Message {
+	return web.Message{Number: e.Number, Author: e.Author, Tag: e.Tag, Stage: webTagStage(e.Tag),
+		Kind: e.Kind, Text: e.Text, At: e.At, Option: e.Option, Words: e.Words, Confirms: e.Confirms, Round: e.Round}
+}
+
 // webBuilder builds one task's page model from what webSource read.
 type webBuilder struct {
 	d     clerkData
@@ -190,8 +221,7 @@ func (b webBuilder) task() web.Task {
 	t.Grill = b.grillLine()
 	t.Story = b.story(t.Documents)
 	for _, e := range b.h.Conversation {
-		t.Conversation = append(t.Conversation, web.Message{Number: e.Number, Author: e.Author, Tag: e.Tag, Stage: webTagStage(e.Tag),
-			Kind: e.Kind, Text: e.Text, At: e.At, Option: e.Option, Words: e.Words, Confirms: e.Confirms, Round: e.Round})
+		t.Conversation = append(t.Conversation, webMessage(e))
 	}
 	for _, d := range b.h.Drafts {
 		t.Drafts = append(t.Drafts, web.Draft{Tag: d.Tag, Round: d.Round, Question: d.Question, Number: d.Number, Mark: d.Mark, Text: d.Text, Pick: d.Pick, At: d.At})

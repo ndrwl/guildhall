@@ -377,7 +377,64 @@ tiles' line says the picks go with them */
 .rqa .ra{margin:0;color:var(--ok);font-weight:600;font-size:14px}
 .rqa .md>:last-child{margin-bottom:0}
 .fold.void>summary{color:var(--mut)}
+.newbar{position:sticky;top:0;z-index:5;background:var(--runbg);border:1px solid var(--run);border-left:4px solid var(--run);border-radius:10px;padding:10px 14px;margin:0 0 14px;font-size:14.5px;box-shadow:var(--shadow)}
+.newbar[hidden],.newbar [hidden]{display:none}
+.newbar p{margin:0}
+.newbar p+p{margin-top:6px}
+.newbar a{font-weight:650}
 </style><script>document.documentElement.classList.add('js')
+</script><script>// poll.js: the new-reply bar (docs/web.md#the-new-reply-bar). It asks the page's own since route, every 5 s while
+// the tab is visible and every 60 s while it is hidden, whether the Director has written since the page loaded, and
+// whether the server restarted since, which makes the page's form token out of date. It shows the bar, fills it with
+// textContent, links Reload to the talk and counts new messages in the tab's title; it never reloads the page and
+// never submits anything. The bar's data-* attributes are its only input; on a page with no bar it does nothing.
+(function () {
+  var bar = document.getElementById('newbar')
+  if (!bar || !window.fetch) {
+    return
+  }
+  var since = bar.getAttribute('data-since')
+  var base = bar.getAttribute('data-base')
+  var last = bar.getAttribute('data-last')
+  var start = bar.getAttribute('data-start')
+  var title = document.title
+  var news = bar.querySelector('.nbm')
+  var restarted = bar.querySelector('.nbs')
+  var timer = 0
+  function schedule() {
+    clearTimeout(timer)
+    timer = setTimeout(poll, document.visibilityState === 'hidden' ? 60000 : 5000)
+  }
+  function show(r) {
+    if (r.start !== start) {
+      restarted.hidden = false
+      bar.hidden = false
+    }
+    if (r.new > 0 && typeof r.tag === 'string') {
+      bar.querySelector('.nbt').textContent = '#' + r.tag
+      bar.querySelector('.nbw').textContent = r.at || ''
+      bar.querySelector('.nbr').setAttribute('href', base + '?seen=' + encodeURIComponent(String(r.last)) + '#' + encodeURIComponent(r.tag) + '-talk')
+      news.hidden = false
+      bar.hidden = false
+      document.title = '(' + r.new + ') ' + title
+    }
+  }
+  function poll() {
+    window.fetch(since + '?after=' + encodeURIComponent(last), {credentials: 'same-origin', cache: 'no-store', redirect: 'error'})
+      .then(function (res) { return res.ok ? res.json() : null })
+      .then(function (r) { if (r) { show(r) } })
+      .catch(function () {})
+      .then(schedule)
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') {
+      poll()
+    } else {
+      schedule()
+    }
+  })
+  schedule()
+})()
 </script></head>
 <body>
 <header class="band">
@@ -409,6 +466,9 @@ tiles' line says the picks go with them */
 <section class="r-docs"><h2>Documents <span class="n">12</span></h2><ul class="dix"><li><span class="k">Review</span><a href="/guildhall/d122/doc/review--s2-2-outcome" title="review--s2-2-outcome">Slice 2 review, round 2</a><span class="d">4 Nov</span></li><li class="old"><span class="k"></span><a href="/guildhall/d122/doc/review-1-outcome" title="review-1-outcome">Review</a><span class="d">4 Nov</span></li><li><span class="k">Design</span><a href="/guildhall/d122/doc/designer-5-design-2" title="designer-5-design-2">Mock-up, round 5</a><span class="d">4 Nov</span></li><li class="old"><span class="k"></span><a href="/guildhall/d122/doc/designer-5-design" title="designer-5-design">Design, round 5</a><span class="d">4 Nov</span></li><li class="old"><span class="k"></span><a href="/guildhall/d122/doc/designer-4-design-2" title="designer-4-design-2">Mock-up, round 4</a><span class="d">4 Nov</span></li><li class="old"><span class="k"></span><a href="/guildhall/d122/doc/designer-4-design" title="designer-4-design">Design, round 4</a><span class="d">4 Nov</span></li><li class="old"><span class="k"></span><a href="/guildhall/d122/doc/design-1-design" title="design-1-design">Design</a><span class="d">31 Oct</span></li><li><span class="k">Spec</span><a href="/guildhall/d122/doc/plan-1-spec" title="plan-1-spec">Spec</a><span class="d">31 Oct</span></li><li><span class="k">Grill</span><a href="/guildhall/d122/doc/grill-3-notes" title="grill-3-notes">Grill notes, round 3</a><span class="d">31 Oct</span></li><li class="old"><span class="k"></span><a href="/guildhall/d122/doc/grill-2-notes" title="grill-2-notes">Grill notes, round 2</a><span class="d">31 Oct</span></li><li class="old"><span class="k"></span><a href="/guildhall/d122/doc/grill-1-notes" title="grill-1-notes">Grill notes, round 1</a><span class="d">31 Oct</span></li><li><span class="k">d105</span><a href="/guildhall/d105/doc/design-3-design" title="design-3-design">d105&#39;s design, round 3</a><span class="d">31 Oct</span></li></ul></section>
 </aside>
 <section class="c2-now"><ol class="spine"><li class="node you"><div class="nh"><span class="t">Now</span><span class="st">waiting on you · 2 asks</span><time>since 4 Nov 14:20</time></div>
+<div class="newbar" id="newbar" hidden data-since="/guildhall/d122/since" data-base="/guildhall/d122" data-last="11" data-start="fixture-start">
+<p class="nbm" hidden>New from the Director on <b class="nbt"></b> · <time class="nbw"></time> · <a class="nbr" href="/guildhall/d122">Reload</a></p>
+<p class="nbs" hidden><b>This page is out of date:</b> Guildhall restarted since it loaded, so its forms would be refused. <a href="/guildhall/d122">Reload</a> before you answer.</p></div>
 <p class="stage">The Director runs grill with you in its session; answer it there.</p>
 
 <div class="ask" id="review--s2-x2"><form method="post" action="/guildhall/d122/answer"><input type="hidden" name="decision" value="review--s2-x2"><input type="hidden" name="subject" value="3f9c2ab0c0ffee0000000000000000000000beef"><input type="hidden" name="token" value="fixture-token">

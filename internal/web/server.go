@@ -61,6 +61,7 @@ type Options struct {
 //	GET /<repo>/<task>/doc/<name>       the reader page of one of the task's documents
 //	GET /<repo>/<task>/doc/<name>/raw   the document as text/plain
 //	GET /<repo>/<task>/doc/<name>/frame an HTML document, sandboxed, for the reader page's frame
+//	GET /<repo>/<task>/since?after=<n>  the conversation's tail, as JSON, for poll.js's new-reply bar
 //	POST /<repo>/<task>/answer          an answer to one of the task's decisions, a confirmed recommendation, or words only
 //	POST /<repo>/<task>/say             words to the Director about the current stage, from the Say box
 //	POST /<repo>/<task>/round           a button of a grill round's form, which saves every box first
@@ -71,6 +72,9 @@ type Server struct {
 	o Options
 	// token is the per-process form token every answer must carry.
 	token string
+	// start is the per-process start id the since route answers with, which tells an open page that the server
+	// restarted, so its form token is stale; it is not the token, which only the forms carry.
+	start string
 }
 
 // New returns a Server with options o.
@@ -78,7 +82,7 @@ func New(o Options) *Server {
 	if o.Location == nil {
 		o.Location = time.Local
 	}
-	return &Server{o: o, token: newToken()}
+	return &Server{o: o, token: newToken(), start: newToken()[:16]}
 }
 
 // ServeHTTP routes one request.
@@ -117,6 +121,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case len(segs) == 2:
 		s.taskPage(w, r, segs[0], segs[1])
+	case len(segs) == 3 && segs[2] == "since":
+		s.since(w, r, segs[0], segs[1])
 	case len(segs) == 4 && segs[2] == "doc":
 		s.document(w, r, segs[0], segs[1], segs[3], "")
 	case len(segs) == 5 && segs[2] == "doc" && (segs[4] == "raw" || segs[4] == "frame"):

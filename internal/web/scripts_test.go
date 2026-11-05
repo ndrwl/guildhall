@@ -110,14 +110,20 @@ func TestOwnScriptsPinned(t *testing.T) {
 }
 
 // TestCSPAllowsOnlyOwnScripts: the CSP is today's policy plus a script-src of exactly the own scripts' hashes, with
-// no keyword or host that would let any other script run, still no connect-src, and a policy of no scripts is
-// today's string exactly.
+// no keyword or host that would let any other script run, and one connect-src of the page's own origin only, for
+// poll.js; a policy of no scripts is today's string exactly, and the frame's FrameCSP is unchanged.
 func TestCSPAllowsOnlyOwnScripts(t *testing.T) {
 	if policy(nil) != baseCSP {
 		t.Errorf("a policy of no scripts is %q, want %q", policy(nil), baseCSP)
 	}
-	if !strings.HasPrefix(CSP, baseCSP+"; ") || !strings.Contains(CSP, "default-src 'none'") || strings.Contains(CSP, "connect-src") {
+	if !strings.HasPrefix(CSP, baseCSP+"; ") || !strings.Contains(CSP, "default-src 'none'") {
 		t.Errorf("CSP %q does not keep today's policy", CSP)
+	}
+	if !strings.HasSuffix(CSP, "; connect-src 'self'") || strings.Count(CSP, "connect-src") != 1 {
+		t.Errorf("CSP %q does not end in one connect-src 'self'", CSP)
+	}
+	if FrameCSP != "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; frame-src 'self' about:" {
+		t.Errorf("FrameCSP changed: %q", FrameCSP)
 	}
 	var sources []string
 	n := 0
@@ -151,15 +157,20 @@ func TestCSPAllowsOnlyOwnScripts(t *testing.T) {
 	if len(loaded) != 2 || loaded[0].Name != "a.js" || loaded[1].Name != "b.js" {
 		t.Errorf("loaded %+v, want a.js and b.js only", loaded)
 	}
-	if got := policy(loaded); got != baseCSP+"; script-src "+hashOf("x")+" "+hashOf("y") {
+	if got := policy(loaded); got != baseCSP+"; script-src "+hashOf("x")+" "+hashOf("y")+"; connect-src 'self'" {
 		t.Errorf("policy of two scripts = %q", got)
 	}
 }
 
 // forbiddenInScripts are the calls and properties an own script may not use: none parses HTML from a string,
-// evaluates a string as code, makes a request, loads a module or submits a form.
+// evaluates a string as code, makes a request, loads a module or submits a form. poll.js alone may make one request,
+// pollFetch, to its page's since route.
 var forbiddenInScripts = []string{"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function",
-	"Function(", "fetch(", "XMLHttpRequest", "WebSocket", "EventSource", "sendBeacon", "import(", ".submit(", "requestSubmit"}
+	"Function(", "fetch(", "XMLHttpRequest", "WebSocket", "EventSource", "sendBeacon", "import(", ".submit(", "requestSubmit",
+	"location.reload", "location.href", "location.assign", "location.replace"}
+
+// pollFetch is the one request an own script makes: poll.js's GET of the since route its bar's data-since names.
+const pollFetch = "window.fetch(since + '?after=' + encodeURIComponent(last), {credentials: 'same-origin', cache: 'no-store', redirect: 'error'})"
 
 var (
 	stringTimer   = regexp.MustCompile(`set(Timeout|Interval)\s*\(\s*['"` + "`" + `]`)
@@ -181,6 +192,12 @@ func TestOwnScriptCodeRules(t *testing.T) {
 			t.Fatal(err)
 		}
 		src := string(b)
+		if name == "scripts/poll.js" {
+			if strings.Count(src, "fetch(") != 1 || strings.Count(src, pollFetch) != 1 || strings.Count(src, "since = bar.getAttribute('data-since')") != 1 {
+				t.Errorf("%s makes a request other than its one GET of data-since", name)
+			}
+			src = strings.Replace(src, pollFetch, "", 1)
+		}
 		for _, bad := range forbiddenInScripts {
 			if strings.Contains(src, bad) {
 				t.Errorf("%s uses %s", name, bad)

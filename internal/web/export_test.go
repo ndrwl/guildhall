@@ -30,9 +30,12 @@ func AnsweringFixture(t *testing.T, id Identifier, guildmaster string, a Answere
 	src := &fakeSource{tasks: map[string]Task{"guildhall/d122": fixtureTask(sums)}}
 	s := New(Options{Source: src, Documents: dir, Location: time.UTC, Host: FixtureAddress, Identity: id, Guildmaster: guildmaster,
 		Answerer: a})
-	s.token = FixtureToken
+	s.token, s.start = FixtureToken, FixtureStart
 	return s
 }
+
+// FixtureStart is AnsweringFixture's server's start id, fixed so its page is a stable golden file.
+const FixtureStart = "fixture-start"
 
 // DraftsFixture is AnsweringFixture with drafts saved on the fixture task.
 func DraftsFixture(t *testing.T, id Identifier, guildmaster string, a Answerer, drafts []Draft) *Server {

@@ -15,6 +15,7 @@ type fakeSource struct {
 	list  TaskList
 	err   error
 	calls int
+	tails int
 }
 
 func (f *fakeSource) Tasks() (TaskList, error) {
@@ -35,6 +36,27 @@ func (f *fakeSource) Task(repo, id string) (Task, error) {
 		return Task{}, ErrNotFound
 	}
 	return t, nil
+}
+
+// Tail is the tail of the fixed task's conversation; it counts in tails, not calls, so a test can tell that the
+// poll read no page model.
+func (f *fakeSource) Tail(repo, id string, after int) (Tail, error) {
+	f.tails++
+	if f.err != nil {
+		return Tail{}, f.err
+	}
+	t, ok := f.tasks[repo+"/"+id]
+	if !ok {
+		return Tail{}, ErrNotFound
+	}
+	var out Tail
+	for _, m := range t.Conversation {
+		out.Last = max(out.Last, m.Number)
+		if m.Number > after {
+			out.Newer = append(out.Newer, m)
+		}
+	}
+	return out, nil
 }
 
 func at(s string) *time.Time {

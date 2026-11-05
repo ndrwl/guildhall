@@ -260,3 +260,46 @@ func TestDecisionRecommended(t *testing.T) {
 		t.Fatalf("Decisions = %+v, %v", all, err)
 	}
 }
+
+// TestConversationAfter: the tail read gives the last entry's number and only the entries after the one named,
+// never another task's whose id shares a prefix, 0 and none for a task with no talk, and ErrNotFound for no task.
+func TestConversationAfter(t *testing.T) {
+	s, _ := newStore(t)
+	for i, id := range []string{"t-1", "t-10", "t-2"} {
+		mustCreate(t, s, "m-"+string(rune('1'+i)), sampleTask("app", id))
+	}
+	if last, got, err := s.ConversationAfter("app", "t-1", 0); err != nil || last != 0 || len(got) != 0 {
+		t.Fatalf("no talk: %d, %+v, %v", last, got, err)
+	}
+	for i, sy := range []Saying{say(ConversationDirector, "grill-2", ConversationSay, "One."),
+		say(ConversationGuildmasterPage, "grill-2", ConversationSay, "Two."), say(ConversationDirector, "accept-1", ConversationSay, "Three.")} {
+		if _, err := s.AddConversation("t1-"+string(rune('1'+i)), "app", "t-1", sy); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := range 12 {
+		if _, err := s.AddConversation("t10-"+string(rune('a'+i)), "app", "t-10", say(ConversationDirector, "grill-1", ConversationSay, "Other.")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		task        string
+		after, last int
+		want        []string
+	}{{"t-1", 0, 3, []string{"One.", "Two.", "Three."}}, {"t-1", 1, 3, []string{"Two.", "Three."}}, {"t-1", 3, 3, nil},
+		{"t-1", 9, 3, nil}, {"t-1", -4, 3, []string{"One.", "Two.", "Three."}}, {"t-10", 11, 12, []string{"Other."}}, {"t-2", 0, 0, nil}} {
+		last, got, err := s.ConversationAfter("app", tc.task, tc.after)
+		if err != nil || last != tc.last || len(got) != len(tc.want) {
+			t.Errorf("%s after %d = %d, %+v, %v; want %d and %q", tc.task, tc.after, last, got, err, tc.last, tc.want)
+			continue
+		}
+		for i, e := range got {
+			if e.Text != tc.want[i] || e.TaskID != tc.task || e.Number != max(tc.after, 0)+i+1 {
+				t.Errorf("%s after %d: entry %d = %+v", tc.task, tc.after, i, e)
+			}
+		}
+	}
+	if _, _, err := s.ConversationAfter("app", "t-9", 0); !errors.Is(err, ErrNotFound) {
+		t.Errorf("unknown task: err = %v, want ErrNotFound", err)
+	}
+}
