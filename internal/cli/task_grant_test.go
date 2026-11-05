@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ndrwl/guildhall/internal/adapter/claude"
 	"github.com/ndrwl/guildhall/internal/adapter/claude/claudetest"
+	"github.com/ndrwl/guildhall/internal/adapter/grant"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/testenv"
 )
@@ -217,7 +217,7 @@ func TestTaskGrantReachesTheClaudeSession(t *testing.T) {
 		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)
 	}
 	d.waitResult(t, "plan", 1)
-	want := append(append(slices.Clone(claude.ShippedDefaultGrants["planner"]), claude.GuildhallRules...), "Bash(go:*)")
+	want := append(append(slices.Clone(grant.ShippedDefaultGrants["planner"]), grant.GuildhallRules...), "Bash(go:*)")
 	if got, err := claudetest.Granted(d.result("plan", 1)); err != nil || !slices.Equal(got, want) {
 		t.Errorf("plan-1 was granted %q, %v; want %q", got, err, want)
 	}

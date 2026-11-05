@@ -1,4 +1,7 @@
-package claude
+// Package grant resolves an Artisan profile's effective grant: the allowed_tools a runtime that grants tools
+// applies, by source, and the admitted ProfileTools every adapter checks its spec's profile against
+// (docs/contracts/adapter-grant.md). It imports no runtime adapter, so no adapter imports another.
+package grant
 
 import (
 	"path/filepath"
@@ -72,9 +75,9 @@ type Grant struct {
 }
 
 // EffectiveGrant is the effective grant cfg gives profile for a task of repository, in order: the profile's own
-// allowed_tools when it sets them, even to an empty list, or else its shipped default when it runs the claude
-// adapter; then repository's grant for the profile, if any; then, for a claude profile, GuildhallRules. A rule already
-// granted is dropped, keeping the first.
+// allowed_tools when it sets them, even to an empty list, or else its shipped default when its runtime grants tools
+// (adapter.GrantsTools); then repository's grant for the profile, if any; then, for a profile whose runtime grants
+// tools, GuildhallRules. A rule already granted is dropped, keeping the first.
 // An empty repository, or one cfg does not list, adds nothing; a profile cfg does not declare is an error.
 func EffectiveGrant(cfg *config.Config, profile, repository string) ([]Grant, error) {
 	p, err := cfg.Profile(profile)
@@ -85,14 +88,14 @@ func EffectiveGrant(cfg *config.Config, profile, repository string) ([]Grant, er
 	switch {
 	case p.AllowedToolsSet():
 		grants = addGrants(grants, p.AllowedToolsList(), SourceCopy)
-	case p.Adapter == adapter.ClaudeName:
+	case adapter.GrantsTools(p.Adapter):
 		grants = addGrants(grants, ShippedDefaultGrants[profile], SourceDefault)
 	}
 	if r, ok := cfg.Repository(repository); ok && repository != "" {
 		grants = addGrants(grants, r.Profiles[profile].AllowedTools, SourceRepository)
 	}
 	// A copy's allowed_tools replace the shipped default, so the task-scoped log and result commands are added apart.
-	if p.Adapter == adapter.ClaudeName {
+	if adapter.GrantsTools(p.Adapter) {
 		grants = addGrants(grants, GuildhallRules, SourceGuildhall)
 	}
 	return grants, nil

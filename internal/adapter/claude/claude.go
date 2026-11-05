@@ -40,6 +40,7 @@ import (
 	"unicode"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
+	"github.com/ndrwl/guildhall/internal/adapter/grant"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/render"
@@ -498,7 +499,7 @@ func Run(ctx context.Context, a Args, stdout, stderr io.Writer) error {
 	stdout, stderr = red.Writer(stdout), red.Writer(stderr)
 	a.redactor = red
 	var err error
-	a.allowedTools, err = ProfileTools(a.Copy, a.Profile, a.Repository)
+	a.allowedTools, err = grant.ProfileTools(a.Copy, a.Profile, a.Repository)
 	if err != nil {
 		return fmt.Errorf("claude adapter: profile: %w", err)
 	}
@@ -634,11 +635,11 @@ func withBoundTaskGrant(a Args, rules []string, stderr io.Writer) ([]string, err
 		return rules, nil
 	}
 	_, _ = fmt.Fprintf(stderr, "guildhall: %s: task grant %s adds %s\n", Subcommand, g.ID, strings.Join(g.Rules, ", "))
-	var grants []Grant
+	var grants []grant.Grant
 	for _, rule := range rules {
-		grants = append(grants, Grant{Rule: rule})
+		grants = append(grants, grant.Grant{Rule: rule})
 	}
-	return GrantRules(WithTaskGrant(grants, g.Rules)), nil
+	return grant.GrantRules(grant.WithTaskGrant(grants, g.Rules)), nil
 }
 
 // report writes the usage Claude's output reports as a's usage file, unknown when the output reports none, names

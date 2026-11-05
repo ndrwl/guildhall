@@ -17,7 +17,7 @@ Widening it was first left to managed settings, which a standalone Director does
 
 ## Decision
 
-A session's **effective grant** is resolved in one place, `claude.EffectiveGrant` and `claude.WithTaskGrant`, in this order, a repeated rule keeping its first source ([Artisan permissions](../adapters.md#artisan-permissions)):
+A session's **effective grant** is resolved in one place, `grant.EffectiveGrant` and `grant.WithTaskGrant` ([`internal/adapter/grant`](../contracts/adapter-grant.md)), in this order, a repeated rule keeping its first source ([Artisan permissions](../adapters.md#artisan-permissions)):
 
 1. the profile's `allowed_tools` in the Director copy's `config.toml` when set, even to `[]`; otherwise the **shipped default grant** of a `claude` profile with a well-known role name: read-only git for every role, plus commit and rebase git for the builder, the web tools for the researcher and `guildhall review check` for the reviewer;
 2. the task repository's grant, `[repository.profiles.<name>]`;

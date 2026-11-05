@@ -30,6 +30,7 @@
 3 github.com/ndrwl/guildhall/internal/adapter/codex
 3 github.com/ndrwl/guildhall/internal/adapter/codex/codextest
 3 github.com/ndrwl/guildhall/internal/adapter/fake
+3 github.com/ndrwl/guildhall/internal/adapter/grant
 3 github.com/ndrwl/guildhall/internal/adapter/runtimes
 3 github.com/ndrwl/guildhall/internal/adapter/tabcontract
 3 github.com/ndrwl/guildhall/internal/admit

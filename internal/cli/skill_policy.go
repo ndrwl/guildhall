@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/adapter/claude"
+	"github.com/ndrwl/guildhall/internal/adapter/grant"
 	"github.com/ndrwl/guildhall/internal/config"
 )
 
@@ -42,11 +43,11 @@ func (a *App) preflightSkillPolicies(p *startPlan) error {
 		}
 		// The settings validated carry the profile's effective grant without a repository's additions, which
 		// change only the allow list, never the skill controls validated here.
-		grant, err := claude.EffectiveGrant(p.cfg, name, "")
+		g, err := grant.EffectiveGrant(p.cfg, name, "")
 		if err != nil {
 			return err
 		}
-		policies = append(policies, selected{"profile " + name, policy, claude.ArtisanPolicySettings(claude.GrantRules(grant), policy)})
+		policies = append(policies, selected{"profile " + name, policy, claude.ArtisanPolicySettings(grant.GrantRules(g), policy)})
 	}
 	if len(policies) == 0 {
 		return nil

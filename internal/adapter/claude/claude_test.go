@@ -22,6 +22,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/adapter/adaptertest"
 	"github.com/ndrwl/guildhall/internal/adapter/claude"
 	"github.com/ndrwl/guildhall/internal/adapter/claude/claudetest"
+	"github.com/ndrwl/guildhall/internal/adapter/grant"
 	"github.com/ndrwl/guildhall/internal/artisan"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/interp"
@@ -485,15 +486,15 @@ func TestArtisanSettings(t *testing.T) {
 // TestSuggestedGoAllowedToolsAreValidConfig: the documented repository grant for a Go repository is go test and go
 // vet, one a repository grant and a profile accept; the git it once held comes from the builder's shipped default.
 func TestSuggestedGoAllowedToolsAreValidConfig(t *testing.T) {
-	if want := []string{"Bash(go test:*)", "Bash(go vet:*)"}; !slices.Equal(claude.SuggestedGoAllowedTools, want) {
-		t.Errorf("suggested set = %q, want %q", claude.SuggestedGoAllowedTools, want)
+	if want := []string{"Bash(go test:*)", "Bash(go vet:*)"}; !slices.Equal(grant.SuggestedGoAllowedTools, want) {
+		t.Errorf("suggested set = %q, want %q", grant.SuggestedGoAllowedTools, want)
 	}
-	for _, rule := range claude.SuggestedGoAllowedTools {
+	for _, rule := range grant.SuggestedGoAllowedTools {
 		if err := config.CheckAllowedTool(rule); err != nil {
 			t.Errorf("suggested rule %q refused: %v", rule, err)
 		}
 	}
-	for name, rules := range claude.ShippedDefaultGrants {
+	for name, rules := range grant.ShippedDefaultGrants {
 		for _, rule := range rules {
 			if err := config.CheckAllowedTool(rule); err != nil {
 				t.Errorf("%s default rule %q refused: %v", name, rule, err)
@@ -510,7 +511,7 @@ func TestRunGrantsAllowedTools(t *testing.T) {
 	claudetest.Install(t)
 	for name, rules := range map[string][]string{
 		"none":      nil,
-		"suggested": claude.SuggestedGoAllowedTools,
+		"suggested": grant.SuggestedGoAllowedTools,
 		"one":       {"Bash(sh check.sh)"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -521,7 +522,7 @@ func TestRunGrantsAllowedTools(t *testing.T) {
 			if err := claude.Run(context.Background(), args(spec), &bytes.Buffer{}, &stderr); err != nil {
 				t.Fatalf("Run = %v; stderr %s", err, stderr.String())
 			}
-			want := append(slices.Clone(rules), claude.GuildhallRules...)
+			want := append(slices.Clone(rules), grant.GuildhallRules...)
 			got, err := claudetest.Granted(spec.ResultFile)
 			if err != nil || !slices.Equal(got, want) {
 				t.Errorf("granted %q, %v; want exactly %q", got, err, want)
@@ -532,7 +533,7 @@ func TestRunGrantsAllowedTools(t *testing.T) {
 			}
 		})
 	}
-	for repo, extra := range map[string][]string{"app": claude.SuggestedGoAllowedTools, "site": {"Bash(npm test:*)"}, "": nil} {
+	for repo, extra := range map[string][]string{"app": grant.SuggestedGoAllowedTools, "site": {"Bash(npm test:*)"}, "": nil} {
 		t.Run("default and repository "+repo, func(t *testing.T) {
 			spec := testSpec(t)
 			spec.Copy = t.TempDir()
@@ -549,7 +550,7 @@ func TestRunGrantsAllowedTools(t *testing.T) {
 			if err := claude.Run(context.Background(), args(spec), &bytes.Buffer{}, &stderr); err != nil {
 				t.Fatalf("Run = %v; stderr %s", err, stderr.String())
 			}
-			want := append(append(slices.Clone(claude.ShippedDefaultGrants["builder"]), extra...), claude.GuildhallRules...)
+			want := append(append(slices.Clone(grant.ShippedDefaultGrants["builder"]), extra...), grant.GuildhallRules...)
 			if got, err := claudetest.Granted(spec.ResultFile); err != nil || !slices.Equal(got, want) {
 				t.Errorf("granted %q, %v; want exactly %q", got, err, want)
 			}
@@ -675,7 +676,7 @@ const LiveEnv = "GUILDHALL_CLAUDE_LIVE"
 const LiveGrantEnv = "GUILDHALL_CLAUDE_LIVE_GRANT"
 
 // liveGrant is the configured mode's grant.
-var liveGrant = append(append(slices.Clone(claude.ShippedDefaultGrants["builder"]), claude.SuggestedGoAllowedTools...), "Bash(sh check.sh)")
+var liveGrant = append(append(slices.Clone(grant.ShippedDefaultGrants["builder"]), grant.SuggestedGoAllowedTools...), "Bash(sh check.sh)")
 
 // TestLiveClaude runs one real attempt through the wrapper with the `claude`
 // on PATH, signed in as the developer: run it by hand with

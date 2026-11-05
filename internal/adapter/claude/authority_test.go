@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/ndrwl/guildhall/internal/adapter/claude"
+	"github.com/ndrwl/guildhall/internal/adapter/grant"
 )
 
 func TestDirectorCannotPassGrantRules(t *testing.T) {
@@ -67,7 +68,7 @@ func TestWrapperProfileAuthority(t *testing.T) {
 			// An empty list still keeps the rules Guildhall gives every claude profile; no reference grants nothing.
 			var want []string
 			if name == "empty" {
-				want = claude.GuildhallRules
+				want = grant.GuildhallRules
 			}
 			got, err := claudetest.Granted(spec.ResultFile)
 			if err != nil || !slices.Equal(got, want) {

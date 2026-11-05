@@ -18,7 +18,7 @@ import (
 	"unicode"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
-	"github.com/ndrwl/guildhall/internal/adapter/claude"
+	"github.com/ndrwl/guildhall/internal/adapter/grant"
 )
 
 // Subcommand is the guildhall subcommand that runs the Codex wrapper.
@@ -59,7 +59,7 @@ func (Adapter) CheckSettings(s adapter.Settings) error {
 // Command returns the wrapper invocation for spec: an argument list run in spec's working directory with spec's
 // environment, passing spec's settings as --model and --effort, each only when set. It refuses an invalid spec,
 // settings CheckSettings refuses, an unset Executable, or a spec referencing a profile whose effective grant
-// (claude.ProfileTools) has any rule, since Codex grants none; it returns no command then.
+// (grant.ProfileTools) has any rule, since Codex grants none; it returns no command then.
 func (a Adapter) Command(spec adapter.Spec) (adapter.Command, error) {
 	if err := spec.Validate(); err != nil {
 		return adapter.Command{}, err
@@ -70,7 +70,7 @@ func (a Adapter) Command(spec adapter.Spec) (adapter.Command, error) {
 	if a.Executable == "" {
 		return adapter.Command{}, errors.New("codex adapter: guildhall executable is not set")
 	}
-	rules, err := claude.ProfileTools(spec.Copy, spec.Profile, spec.Repository)
+	rules, err := grant.ProfileTools(spec.Copy, spec.Profile, spec.Repository)
 	if err != nil {
 		return adapter.Command{}, err
 	}
