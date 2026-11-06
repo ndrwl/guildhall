@@ -474,11 +474,13 @@ func TestRunReportsDenials(t *testing.T) {
 }
 
 // TestArtisanSettings: the settings file grants exactly the rules, in order, as Claude Code's permissions.allow, and
-// registers the steering PostToolUse hook for every tool, and turns auto memory off, and nothing else.
+// registers the steering PostToolUse hook for every tool and the result Stop hook, each with a 10-second timeout,
+// and turns auto memory off, and nothing else: no StopFailure hook.
 func TestArtisanSettings(t *testing.T) {
 	got := string(claude.ArtisanSettings([]string{"Bash(go test:*)", "Bash(git commit:*)"}))
 	want := `{"permissions":{"allow":["Bash(go test:*)","Bash(git commit:*)"]},` +
-		`"hooks":{"PostToolUse":[{"hooks":[{"type":"command","command":"guildhall messages hook","timeout":10}]}]},` +
+		`"hooks":{"PostToolUse":[{"hooks":[{"type":"command","command":"guildhall messages hook","timeout":10}]}],` +
+		`"Stop":[{"hooks":[{"type":"command","command":"guildhall result hook","timeout":10}]}]},` +
 		`"autoMemoryEnabled":false}` + "\n"
 	if got != want {
 		t.Errorf("ArtisanSettings = %q, want %q", got, want)
@@ -486,9 +488,9 @@ func TestArtisanSettings(t *testing.T) {
 }
 
 // TestArtisanPolicySettingsHooks: the settings launch and the Director preflight render for every shipped profile,
-// under every Artisan skill preset, keep the grant, auto memory off and the steering hook as the only hook, and never set
-// disableAllHooks, which would switch the steering hook off; user and project hooks stay out because ClaudeArgs
-// loads no settings file source.
+// under every Artisan skill preset, keep the grant, auto memory off and the steering and result hooks as the only
+// hooks, and never set disableAllHooks, which would switch them off; user and project hooks stay out because
+// ClaudeArgs loads no settings file source.
 func TestArtisanPolicySettingsHooks(t *testing.T) {
 	for _, preset := range []string{"artisan-v1", "builder-v1", "reviewer-v1"} {
 		p, err := config.ParseClaudeSkills(`{"preset":"` + preset + `"}`)
@@ -514,8 +516,9 @@ func TestArtisanPolicySettingsHooks(t *testing.T) {
 			if settings.AutoMemoryEnabled == nil || *settings.AutoMemoryEnabled {
 				t.Errorf("%s %s settings = %s; want autoMemoryEnabled false", preset, name, b)
 			}
-			if len(settings.Hooks) != 1 || !strings.Contains(string(settings.Hooks["PostToolUse"]), claude.SteeringHookCommand) {
-				t.Errorf("%s %s hooks = %v; want only the steering PostToolUse hook", preset, name, settings.Hooks)
+			if len(settings.Hooks) != 2 || !strings.Contains(string(settings.Hooks["PostToolUse"]), claude.SteeringHookCommand) ||
+				!strings.Contains(string(settings.Hooks["Stop"]), claude.ResultHookCommand) {
+				t.Errorf("%s %s hooks = %v; want only the steering PostToolUse hook and the result Stop hook", preset, name, settings.Hooks)
 			}
 			if err := claude.ValidatePolicySettings(b, p); err != nil {
 				t.Errorf("%s %s: %v", preset, name, err)

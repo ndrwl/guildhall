@@ -3,13 +3,11 @@
 package cli
 
 import (
-	"bytes"
 	"context"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -20,24 +18,6 @@ import (
 	"github.com/ndrwl/guildhall/internal/testenv"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
-
-// lockedBuffer is a bytes.Buffer safe for the supervisor's goroutines and the test to share.
-type lockedBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (l *lockedBuffer) Write(p []byte) (int, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.b.Write(p)
-}
-
-func (l *lockedBuffer) String() string {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.b.String()
-}
 
 // sweptCopy is a supervised copy whose config names a Herdr session and a 1ns close delay, with app/t9's plan
 // attempt finished under an exited launcher and presented in Herdr workspace w2, and the host modelling it, whose

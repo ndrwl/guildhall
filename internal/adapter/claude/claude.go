@@ -286,17 +286,25 @@ func ArtisanSettingsPath(result string) string {
 // failing hook changes nothing: delivery in command output and the check at intake do not depend on it.
 const SteeringHookCommand = "guildhall messages hook"
 
-// SteeringHookTimeout is the seconds Claude Code gives SteeringHookCommand before it gives up on it.
+// SteeringHookTimeout is the seconds Claude Code gives SteeringHookCommand, and ResultHookCommand, before it gives up
+// on it.
 const SteeringHookTimeout = 10
 
+// ResultHookCommand is the Artisan's Stop hook: `guildhall result hook`, the `guildhall` on PATH as for the
+// guildhall grant, which sends the attempt Guildhall's one submit nudge and blocks the stop when the session is about
+// to end without a valid draft result (docs/messaging.md#guildhall-sent-steering). It always exits 0 and prints
+// nothing when the draft is valid, the attempt was already nudged or the hook fails, so a missing or failing hook
+// changes nothing: the attempt ends as it would without one. StopFailure, a turn ended by an API error, gets no hook.
+const ResultHookCommand = "guildhall result hook"
+
 // ArtisanSettings is the Claude Code settings file granting rules: a permissions object whose allow list is
-// rules, in order, and a PostToolUse hook running SteeringHookCommand after every tool, as JSON with a trailing
-// newline. A hook command is not a permission rule, so the hook grants the model nothing. Because ClaudeArgs loads
-// no user, project or local settings file (SettingSources), the steering hook is the only hook outside managed
-// policy that runs; the settings do not set disableAllHooks, which would switch the steering hook off too.
-// autoMemoryEnabled is false: with no user settings loaded Claude Code would otherwise turn auto memory on, adding
-// about 675 prompt tokens and a memory directory under ~/.claude/projects that the Artisan reads and may write
-// (docs/evidence/artisan-isolation.md).
+// rules, in order, a PostToolUse hook running SteeringHookCommand after every tool and a Stop hook running
+// ResultHookCommand, each with SteeringHookTimeout, and autoMemoryEnabled false, as JSON with a trailing newline.
+// A hook command is not a permission rule, so the hooks grant the model nothing. Because ClaudeArgs loads no user,
+// project or local settings file (SettingSources), these are the only hooks outside managed policy that run; the
+// settings do not set disableAllHooks, which would switch them off too. autoMemoryEnabled is false: with no user
+// settings loaded Claude Code would otherwise turn auto memory on, adding about 675 prompt tokens and a memory
+// directory under ~/.claude/projects that the Artisan reads and may write (docs/evidence/artisan-isolation.md).
 func ArtisanSettings(rules []string) []byte {
 	if rules == nil {
 		rules = []string{}
@@ -318,6 +326,7 @@ func ArtisanSettings(rules []string) []byte {
 		AutoMemoryEnabled bool                 `json:"autoMemoryEnabled"`
 	}{permissions{Allow: rules}, map[string][]matcher{
 		"PostToolUse": {{[]command{{Type: "command", Command: SteeringHookCommand, Timeout: SteeringHookTimeout}}}},
+		"Stop":        {{[]command{{Type: "command", Command: ResultHookCommand, Timeout: SteeringHookTimeout}}}},
 	}, false})
 	return append(data, '\n')
 }

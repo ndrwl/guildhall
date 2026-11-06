@@ -171,8 +171,11 @@ claude --print <instruction> --output-format stream-json --verbose --permission-
 - `acceptEdits` lets Claude edit files in the working directory and the model directory; other tools that need permission depend on the generated grants, because a print-mode session has no one to ask ([Artisan permissions](#artisan-permissions)).
 - The wrapper always writes `claude-settings.json` beside the result, outside model-writable added directories, and passes it with `--settings`.
   It merges `permissions.allow` from the referenced copy/profile with the resolved [Claude skill policy](configuration.md#claude-skill-policies), including when the allow list is empty.
-  It also registers one PostToolUse hook for every tool, `guildhall messages hook` (`claude.SteeringHookCommand`), which shows the model the attempt's unacknowledged [steering messages](messaging.md#steering-an-attempt) after each tool call; it grants nothing, always exits 0, and correctness never depends on it.
-  Because no user, project or local settings file loads, it is the only hook outside managed policy that runs; the file does not set `disableAllHooks`, which would switch it off too.
+  It also registers one PostToolUse hook for every tool, `guildhall messages hook` (`claude.SteeringHookCommand`), which shows the model the attempt's unacknowledged [steering messages](messaging.md#steering-an-attempt) after each tool call, and one Stop hook, `guildhall result hook` (`claude.ResultHookCommand`), which, when the session is about to end without a valid draft result, sends the attempt Guildhall's one [submit nudge](messaging.md#guildhall-sent-steering) and blocks the stop so the session goes on with the nudge as its next turn; each has a 10-second timeout.
+  `StopFailure`, a turn ended by an API error, gets no hook.
+  The hooks grant nothing, always exit 0, and correctness never depends on them: a session that still stops without a result fails with "worker exited without a result" as before.
+  Because no user, project or local settings file loads, they are the only hooks outside managed policy that run; the file does not set `disableAllHooks`, which would switch them off too.
+  A live `--print` session confirmed that a Stop hook block continues it ([evidence](evidence/claude-stop-hook-nudge-2026-11-05.txt)).
   `syncClaudeAiSkills` is consequently supplied in flag scope, not just repository project settings.
   An owned `claude-skill-policy.json` receipt records the preset, effective controls, source key, provenance, overridability and normalized digest; neither file contains credentials.
   The wrapper probes `claude --version` before preparing the model directory and refuses versions older than 2.1.310 or unknown/prerelease version output; this probe makes no model call.
@@ -284,7 +287,7 @@ allowed_tools = ["Bash(go test:*)"]
 
 A repository whose checks are other commands, such as a `make check` target or a linter, grants those commands' rules instead; a rule allowing every shell command, `Bash`, `Bash(*)` or `Bash(:*)`, is refused.
 The generated settings are the whole permission environment apart from managed policy: the wrapper passes `--setting-sources ""`, so neither the user's `~/.claude/settings.json` nor the repository's `.claude/settings.json` or `.claude/settings.local.json`, which the task's worktree carries, loads, and `--strict-mcp-config` with an empty `--mcp-config`, so no user, project or claude.ai MCP server loads.
-Without the user and project sources no personal or project hooks, skills, commands or agents load either; the only hook outside managed policy is the generated steering hook.
+Without the user and project sources no personal or project hooks, skills, commands or agents load either; the only hooks outside managed policy are the generated steering and result hooks.
 What those files set no longer applies to Artisans: their allow and deny rules, `env`, the default `model` (a profile without a `model` gets Claude Code's default, not the user's), sandbox and attribution settings, and the project `CLAUDE.md` and `~/.claude/CLAUDE.md` memory, which load only with the project and user sources (a canary project `CLAUDE.md` in the live run is not loaded; [evidence](evidence/artisan-isolation.md)).
 Because a user setting no longer keeps it off, the generated settings set `autoMemoryEnabled` to false, so an Artisan neither loads nor writes an auto memory directory under `~/.claude/projects`.
 Only managed-policy deny rules still win; a command no generated rule allows is refused, because a print-mode session has no one to ask.
@@ -343,11 +346,18 @@ The suite makes no model calls; a runtime proves each behaviour through prompts 
 
 The fake runs it as a direct child process, inside the owned Artisan launcher, in a tab through the Herdr tab launcher, and on attempts the interpreter renders, mapped onto the adapter spec by `interp.Spec.AdapterSpec`, the mapping `launch.Process` starts attempts from.
 The Claude adapter runs it as a direct child process, inside the owned Artisan launcher, and on interpreter-rendered attempts, over `claudetest`'s stub `claude` on `PATH`: the test binary under that name, which checks the arguments, reads the files the instruction names, plays the behaviour a `claude-stub:` prompt line asks for and prints a result message with fixed usage, with no model call; its extra behaviour `denied` succeeds and reports one denied shell command, `go test ./...`, as the message's `permission_denials`.
+Its behaviours `nudged` and `nudged-no-result` stop first without a draft and run the Stop hook the settings register, `guildhall result hook` from `PATH`, as Claude Code does: when it blocks, `nudged` acknowledges the nudge, writes its result and stops again, and `nudged-no-result` stops again at once without one; `TestClaudeNudged` runs both with the test binary as `guildhall`.
 Inside a test binary the interpreter's adapter guard admits `claude` only while `claude` on `PATH` is the stub `claudetest.Install` names in `GUILDHALL_TEST_CLAUDE_STUB`, so `task start` runs a profile naming `claude` over the stub and never a real Claude Code.
 `TestLiveClaude` runs one real session instead when `GUILDHALL_CLAUDE_LIVE=1` is set; CI never sets it:
 
 ```sh
 GUILDHALL_CLAUDE_LIVE=1 go test ./internal/adapter/claude -run TestLiveClaude -v -timeout 15m
+```
+
+`TestLiveClaudeNudged`, the Stop hook's live check, is opened by test flags rather than that variable: `-claude-live`, and `-claude-program` with the absolute path of the real `claude`:
+
+```sh
+go test ./internal/cli -run TestLiveClaudeNudged -v -count=1 -claude-live -claude-program "$(command -v claude)"
 ```
 Every runtime also passes `adaptertest.RunSessionContract` for its Director session, the fake as `guildhall fake-director` and the Claude adapter over the stub, which plays a session scripted by `claude-stub:` lines of its role prompt.
 CI has no Herdr server, so the tab run uses `adaptertest.ShellPanes`, which keeps the Herdr tab contract over a real POSIX shell; it runs on Linux and macOS, and Windows panes are covered by the live checks below.

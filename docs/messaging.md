@@ -224,6 +224,7 @@ A type is added by the change that sends it; the Director's `messages send` may 
 
 **The submit nudge.**
 `guildhall result hook` ([CLI](contracts/cli.md)) is an agent's stop hook: run as the agent is about to end its session, with `GUILDHALL_ATTEMPT` set.
+The Claude Artisan's settings register it as their Stop hook (`claude.ResultHookCommand`, 10-second timeout, [adapters](adapters.md#claude-adapter)); a live `--print` session showed the block continuing the session, which then acknowledged the nudge and submitted ([evidence](evidence/claude-stop-hook-nudge-2026-11-05.txt)).
 When the attempt's draft result, `model/result.json`, is missing or is not a parseable result for the attempt, and the attempt is not cancelled, it sends the attempt one `nudge` with the id `<task>.<step>-<n>.nudge.submit` and prints a Claude Code Stop hook `block` decision whose reason is that message in its frame, so the agent goes on instead of stopping:
 
 ```text
