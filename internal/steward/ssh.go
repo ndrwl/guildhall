@@ -80,6 +80,8 @@ var allowedCommands = []struct {
 	// before it first runs, and release install --from --sha256, run by that file, installs it as a release after
 	// checking its sha256 again itself.
 	{program: "sha256sum", args: []string{argDir}},
+	// certutil -hashfile <path> SHA256 is the Windows form of sha256sum: it only reads the file and prints its sha256.
+	{program: "certutil", args: []string{"-hashfile", argDir, "SHA256"}},
 	{args: []string{"release", "install", argVersion, "--from", argDir, "--sha256", argHex}, long: true},
 }
 
@@ -208,9 +210,39 @@ func CloneCommand(remote, path string) []string {
 	return []string{"git", "clone", "--", remote, path}
 }
 
-// HashCommand is `sha256sum <path>`, which prints the sha256 of the file at the absolute path, changing nothing.
-func HashCommand(path string) []string {
+// HashCommand is the command that prints the sha256 of the file at the absolute path on a goos machine, changing
+// nothing: `sha256sum <path>`, or on Windows `certutil -hashfile <path> SHA256`, which every Windows machine has.
+func HashCommand(goos OS, path string) []string {
+	if goos == OSWindows {
+		return []string{"certutil", "-hashfile", path, "SHA256"}
+	}
 	return []string{"sha256sum", path}
+}
+
+// ParseHash reads the sha256 HashCommand printed on a goos machine: sha256sum's first field, or the line of hex
+// certutil prints between its header and its completion line, in lowercase and with any spaces between the bytes,
+// as older Windows prints them, removed.
+func ParseHash(goos OS, out []byte) (string, bool) {
+	if goos != OSWindows {
+		fields := strings.Fields(string(out))
+		if len(fields) == 0 || !hexPattern.MatchString(fields[0]) {
+			return "", false
+		}
+		return fields[0], true
+	}
+	for line := range strings.Lines(string(out)) {
+		if h := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(line), " ", "")); hexPattern.MatchString(h) {
+			return h, true
+		}
+	}
+	return "", false
+}
+
+// hashMissing reports whether a failed HashCommand said there is no file at the path: sha256sum's "No such file or
+// directory", or certutil's ERROR_FILE_NOT_FOUND or ERROR_PATH_NOT_FOUND (0x80070002, 0x80070003).
+func hashMissing(msg string) bool {
+	msg = strings.ToLower(msg)
+	return missingSource(msg) || strings.Contains(msg, "error_file_not_found") || strings.Contains(msg, "error_path_not_found")
 }
 
 // InstallFromCommand is `<guildhall> release install <version> --from <file> --sha256 <hex>`: the binary at file,
@@ -284,7 +316,7 @@ func allowed(argv []string) (long bool, err error) {
 		}
 		return c.long, nil
 	}
-	if argv[0] != "git" && argv[0] != "sha256sum" && !guildhallProgram {
+	if argv[0] != "git" && argv[0] != "sha256sum" && argv[0] != "certutil" && !guildhallProgram {
 		return false, fmt.Errorf("%w: program %q must be %s or an absolute guildhall_path", ErrNotAllowed, argv[0], DefaultGuildhall)
 	}
 	return false, fmt.Errorf("%w: %q", ErrNotAllowed, argv[1:])
@@ -377,7 +409,10 @@ var _ Runner = SSH{}
 
 // sshCommand is the ssh command that runs argv on the machine with alias, as plans and receipts record it.
 // ssh joins argv with spaces for the remote side, which is safe because CheckCommand admits only values with no
-// character a POSIX shell, cmd.exe or PowerShell interprets.
+// character a POSIX shell, cmd.exe or PowerShell interprets. On a Windows machine the line reaches the OpenSSH
+// server's shell, cmd.exe by default, with Windows paths in their forward-slash form (C:/Users/...), which Windows
+// programs read as they are; the one value PowerShell would split, a comma-separated --only, is a single step id in
+// every plan step.
 func sshCommand(alias string, argv []string) []string {
 	return append([]string{"ssh", "-o", "BatchMode=yes", "--", alias}, argv...)
 }

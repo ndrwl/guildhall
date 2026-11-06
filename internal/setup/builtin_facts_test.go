@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 
@@ -72,6 +73,58 @@ func TestBuiltinNewCopy(t *testing.T) {
 		if got := gapIDs(t, sb, "new-copy", map[string]string{"copy_dir": dir}); !slices.Equal(got, []string{"copy-free"}) {
 			t.Errorf("copy directory with %s: gaps %v, want copy-free", f, got)
 		}
+	}
+}
+
+// TestBuiltinWindowsForms runs the PowerShell forms of new-copy and director's copy-dir on a Windows machine: the
+// same gaps as the Linux forms, clone paths split only before a drive letter, and copy-dir fixed by --fix.
+func TestBuiltinWindowsForms(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("the Windows forms run on Windows")
+	}
+	sb := newSandbox(t)
+	full, empty, file := t.TempDir(), t.TempDir(), filepath.Join(t.TempDir(), "file")
+	for path, data := range map[string]string{filepath.Join(full, "README"): "x", file: "x"} {
+		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	slash := filepath.ToSlash
+	absent := slash(filepath.Join(t.TempDir(), "absent"))
+	withStore := t.TempDir()
+	if err := os.WriteFile(filepath.Join(withStore, "director.store"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name string
+		vars map[string]string
+		want []string
+	}{
+		{"no params", nil, []string{}},
+		{"free", map[string]string{"copy_dir": slash(t.TempDir()), "clone_paths": slash(empty) + ":" + absent}, []string{}},
+		{"clone path not empty", map[string]string{"clone_paths": absent + ":" + slash(full)}, []string{"clone-paths-free"}},
+		{"clone path a file", map[string]string{"clone_paths": slash(file)}, []string{"clone-paths-free"}},
+		{"a store", map[string]string{"copy_dir": slash(withStore)}, []string{"copy-free"}},
+	} {
+		if got := gapIDs(t, sb, "new-copy", c.vars); !slices.Equal(got, c.want) {
+			t.Errorf("new-copy %s: gaps %v, want %v", c.name, got, c.want)
+		}
+	}
+
+	copyDir := slash(filepath.Join(t.TempDir(), "ops"))
+	vars := map[string]string{"copy_dir": copyDir}
+	if got := gapIDs(t, sb, "director", vars); !slices.Contains(got, "copy-dir") {
+		t.Fatalf("director gaps %v, want copy-dir", got)
+	}
+	s, err := setup.LoadBuiltin("director", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := setup.Fix(context.Background(), s, setup.Facts{Home: sb.home, SetupDir: sb.setupDir, Vars: vars}, []string{"copy-dir"}, nil); err != nil {
+		t.Fatalf("fix copy-dir: %v", err)
+	}
+	if info, err := os.Stat(filepath.Join(filepath.FromSlash(copyDir), "state", "steward", "setup")); err != nil || !info.IsDir() {
+		t.Errorf("copy-dir made no state/steward/setup: %v", err)
 	}
 }
 

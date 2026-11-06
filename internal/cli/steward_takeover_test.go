@@ -49,7 +49,7 @@ type takeoverSetup struct {
 func newTakeoverSetup(t *testing.T) *takeoverSetup {
 	t.Helper()
 	if runtime.GOOS == "windows" {
-		t.Skip("takeover is built for Linux machines only so far")
+		t.Skip("this end-to-end takeover reaches a local copy as the roster's Linux machine; internal/steward's TestTakeoverWindows covers a Windows machine")
 	}
 	global := filepath.Join(t.TempDir(), "gitconfig")
 	writeFile(t, global, "")

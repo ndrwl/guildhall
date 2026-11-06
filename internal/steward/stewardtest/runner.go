@@ -34,6 +34,7 @@ const (
 	windowsCopy     = "C:/Users/guild/directors/games"
 	windowsProgram  = "C:/Users/guild/bin/guildhall.exe"
 	setupDir        = "/home/guild/.guildhall/setup"
+	windowsSetup    = "C:/Users/guild/AppData/Local/Guildhall/setup"
 	bareProgram     = "/home/guild/.local/bin/guildhall"
 	sha             = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	unknownCommand  = `guildhall: unknown command "config"`
@@ -104,8 +105,36 @@ func RunRunnerContract(t *testing.T, newHarness func(t *testing.T) RunnerHarness
 				steward.StartTabCommand(steward.DefaultGuildhall, posixCopy),
 				steward.CloneCommand("git@github.com:guild/infra.git", "/home/guild/src/infra"),
 				steward.CloneCommand("https://github.com/guild/infra.git", "/home/guild/src/infra"),
-				steward.HashCommand(bareProgram),
+				steward.HashCommand(steward.OSLinux, bareProgram),
 				steward.InstallFromCommand(bareProgram, "v0.0.0-20261105160445-9fb699fffce8", bareProgram, sha),
+			}
+			for _, argv := range cmds {
+				if _, err := h.Runner().Run(context.Background(), Alpha, argv); err != nil {
+					t.Fatalf("Run %q: %v", argv, err)
+				}
+			}
+			if got := h.Ran(t, Alpha); !slices.EqualFunc(got, cmds, slices.Equal) {
+				t.Errorf("%s ran %q, want exactly %q", Alpha, got, cmds)
+			}
+		}},
+		{"the Windows forms of the takeover, provisioning and bootstrap commands reach the machine unchanged", func(t *testing.T, h RunnerHarness) {
+			cmds := [][]string{
+				steward.StatusCommand(windowsProgram, windowsCopy),
+				steward.PauseCommand(windowsProgram, windowsCopy),
+				steward.ExportCommand(windowsProgram, windowsCopy+"/state/steward/takeover/plan-1", windowsCopy),
+				steward.EnrolCommand(windowsProgram, "steward", windowsCopy),
+				steward.DoctorCommand(windowsProgram, "new-copy", sha, windowsSetup, []string{"copy_dir=" + windowsCopy, "clone_paths=C:/Users/guild/src/a:D:/src/b"}),
+				steward.DoctorCommand(windowsProgram, windowsCopy+"/state/steward/setup/custom-0123456789ab.toml", sha, windowsSetup, nil),
+				steward.FixCommand(windowsProgram, "go", "go", sha, windowsSetup, []string{"go_url=https://go.dev/dl/go1.27.2.windows-amd64.zip"}),
+				steward.StoreInitCommand(windowsProgram, windowsCopy),
+				steward.AdoptCommand(windowsProgram, windowsCopy),
+				steward.StartTabCommand(windowsProgram, windowsCopy),
+				steward.CloneCommand("git@github.com:guild/games.git", "C:/Users/guild/src/games"),
+				steward.HashCommand(steward.OSWindows, windowsProgram),
+				steward.InstallFromCommand(windowsProgram, "v0.9.0", windowsProgram, sha),
+			}
+			if got := steward.HashCommand(steward.OSWindows, windowsProgram); !slices.Equal(got, []string{"certutil", "-hashfile", windowsProgram, "SHA256"}) {
+				t.Errorf("Windows hash command %q", got)
 			}
 			for _, argv := range cmds {
 				if _, err := h.Runner().Run(context.Background(), Alpha, argv); err != nil {
@@ -162,6 +191,14 @@ func RunRunnerContract(t *testing.T, newHarness func(t *testing.T) RunnerHarness
 				{"sha256sum", bareProgram + ";id"},
 				{"/usr/bin/sha256sum", bareProgram},
 				{"sha512sum", bareProgram},
+				// certutil only hashes one absolute file with SHA256: no other verb, algorithm or file.
+				{"certutil", "-hashfile", windowsProgram},
+				{"certutil", "-hashfile", windowsProgram, "MD5"},
+				{"certutil", "-hashfile", "guildhall.exe", "SHA256"},
+				{"certutil", "-hashfile", `C:\Users\guild\bin\guildhall.exe`, "SHA256"},
+				{"certutil", "-urlcache", "-f", "https://example.com/x", windowsProgram},
+				{"certutil", "-decode", windowsProgram, windowsProgram + ".exe"},
+				{"C:/Windows/System32/certutil.exe", "-hashfile", windowsProgram, "SHA256"},
 				steward.InstallFromCommand(bareProgram, "v1;id", bareProgram, sha),
 				steward.InstallFromCommand(bareProgram, "v1", "guildhall", sha),
 				steward.InstallFromCommand(bareProgram, "v1", bareProgram, "sha256:"+sha),

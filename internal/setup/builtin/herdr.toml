@@ -82,3 +82,71 @@ esac
 echo "Herdr session $SETUP_HERDR_SESSION has no running server"
 exit 1
 '''
+
+# The Windows forms, in Windows PowerShell: the same install into ~/.local/bin, as herdr.exe, and the same session
+# check. The plan's pins name the Windows build's URL and sha256.
+
+[[step]]
+id = "herdr"
+title = "Install Herdr into ~/.local/bin"
+tag = "fixable"
+os = ["windows"]
+expect = "${herdr_version}"
+creates = ["${home}/.local/bin/herdr.exe"]
+undo = "Remove ~/.local/bin/herdr.exe and its line in the setup manifest. A Herdr server that was already running is left as it was; restart it yourself when you choose."
+
+[step.check]
+shell = "pwsh"
+script = '''
+$own = $env:SETUP_HOME + '/.local/bin/herdr.exe'
+$found = Get-Command herdr -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($found) { & $found.Source --version; exit $LASTEXITCODE }
+if (Test-Path -LiteralPath $own -PathType Leaf) { & $own --version; exit $LASTEXITCODE }
+Write-Output 'herdr is not on PATH or in ~/.local/bin'
+exit 1
+'''
+
+[step.fetch]
+url = "${herdr_url}"
+sha256 = "${herdr_sha256}"
+dest = "${home}/.local/bin/herdr.exe"
+
+[step.verify]
+shell = "pwsh"
+script = '''
+& ($env:SETUP_HOME + '/.local/bin/herdr.exe') --version
+exit $LASTEXITCODE
+'''
+
+[[step]]
+id = "herdr-session"
+title = "Run the Herdr server of the Director's session"
+tag = "human"
+os = ["windows"]
+instructions = '''
+The Director's tab opens in its own Herdr session, whose server is not running on this machine. Guildhall never
+starts, stops or replaces a Herdr server. In your own terminal on this machine, start Herdr in that session, for
+example in PowerShell with $env:HERDR_SESSION = '<session>'; herdr, and leave it running; then confirm here.
+'''
+undo = "Quit that Herdr session when you choose; nothing else changed."
+
+[[step.prompt]]
+kind = "confirm"
+text = "Is the session's Herdr server running?"
+
+[step.check]
+shell = "pwsh"
+script = '''
+$session = $env:SETUP_HERDR_SESSION
+if (-not $session) { exit 0 }
+$own = $env:SETUP_HOME + '/.local/bin/herdr.exe'
+$found = Get-Command herdr -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($found) { $herdr = $found.Source } elseif (Test-Path -LiteralPath $own -PathType Leaf) { $herdr = $own } else {
+  Write-Output 'herdr is not on PATH or in ~/.local/bin'
+  exit 1
+}
+$status = (& $herdr status --json --session $session 2>&1 | Out-String) -replace '\s', ''
+if ($status -like ('*"running":true*"session":"' + $session + '"*')) { Write-Output ('Herdr session ' + $session + ' has a running server'); exit 0 }
+Write-Output ('Herdr session ' + $session + ' has no running server')
+exit 1
+'''
