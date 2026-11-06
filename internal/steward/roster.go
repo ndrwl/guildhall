@@ -224,6 +224,31 @@ func (r *Roster) validate() []string {
 	return problems
 }
 
+// validPath reports whether p is an absolute path of goos's form in the restricted character set: a drive letter and
+// forward slashes, such as C:/Users/guild/ops, on Windows, and /home/guild/ops elsewhere.
+func validPath(goos OS, p string) bool {
+	if goos == OSWindows {
+		return validDir(windowsDirPattern, p)
+	}
+	return validDir(posixDirPattern, p)
+}
+
+// pathForm names the path form validPath takes for goos, for messages.
+func pathForm(goos OS) string {
+	if goos == OSWindows {
+		return "Windows path, a drive letter then forward slashes (C:/Users/<user>/...),"
+	}
+	return "Linux path"
+}
+
+// exeName is the program name on goos: name.exe on Windows, else name.
+func exeName(goos OS, name string) string {
+	if goos == OSWindows {
+		return name + ".exe"
+	}
+	return name
+}
+
 func validDir(pattern *regexp.Regexp, dir string) bool {
 	if !pattern.MatchString(dir) {
 		return false

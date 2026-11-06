@@ -287,7 +287,7 @@ A Director session with a `[[peer]]` ticks `sessionPeerDeliveries`, a `workspace
 ### Steward takeover
 
 `guildhall steward takeover --config <steward.toml> --plan <dir>` with exactly one of `--dry-run`, `--apply` and `--abandon` ([takeover](../steward.md#takeover)).
-`--dry-run` needs `--machine`, `--director` and `--copy`, the Director's copy directory on that machine, and takes `--ssh-alias` for a machine not yet in the roster; `--apply` and `--abandon` read them from the plan and refuse them, and only `--apply` takes `--approve`.
+`--dry-run` needs `--machine`, `--director` and `--copy`, the Director's copy directory on that machine, and takes `--ssh-alias` for a machine not yet in the roster, with `--os linux` or `--os windows` (default `linux`) for its operating system, which `--os` without `--ssh-alias` or any other value is refused for; `--apply` and `--abandon` read them from the plan and refuse them, and only `--apply` takes `--approve`.
 Each of these is a usage error (exit 2).
 `loadSetup` reads the Steward config, refusing a config that is not a Steward's or has no `[steward] name`, which is the enrolment label, and the private checkout (`privateCheckout`), and builds `steward.Setup` over `git.WorkTree` from `App.LookPath` and `App.Copier` and `App.Runner`, or `scp` and `ssh` found with `App.LookPath`, within a 30-minute bound.
 
@@ -309,7 +309,7 @@ It builds `steward.Setup` with `loadSetup`, within a 90-minute bound.
 
 `steward approval request --plan <dir>` opens a provision plan's decision as a takeover's, its question naming the fix and wizard steps, each Steward-written step file with its digest and the repositories cloned.
 
-A [bootstrap](../steward.md#bootstrapping-a-bare-machine) plan, made from a request with `bootstrap = true` for a machine with nothing at its `guildhall_path`, prints `<machine> (<alias>): a bare machine, with nothing at guildhall_path <path>`, what it copies and installs, and that the same request's dry run plans the copy once it is done, and no roster diff; its approval question names the version, platform, sha256 and both targets. The Steward's own binary is the running executable, which `version --json` must report as a release (not `dev`, not modified, with a release contract), and its launcher is the home's `bin/guildhall`, else one found as `release adopt` finds it; otherwise the dry run exits 1.
+A [bootstrap](../steward.md#bootstrapping-a-bare-machine) plan, made from a request with `bootstrap = true` for a machine with nothing at its `guildhall_path`, prints `<machine> (<alias>): a bare machine, with nothing at guildhall_path <path>`, what it copies and installs, and that the same request's dry run plans the copy once it is done, and no roster diff; its approval question names the version, platform, sha256 and both targets. The Steward's own binary is the running executable, which `version --json` must report as a release (not `dev`, not modified, with a release contract), and its launcher is the home's `bin/guildhall`, else one found as `release adopt` finds it; otherwise the dry run exits 1. A request with `bootstrap_from` places the cross-built release there instead, which the plan's lines and question name as `the cross-built release from <dir>`, and both name the hash check the machine runs, `sha256sum` or, on Windows, `certutil`.
 
 ### Config reload
 

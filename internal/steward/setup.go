@@ -106,7 +106,9 @@ type TakeoverInput struct {
 	Director string
 	CopyDir  string
 	SSHAlias string
-	PlanDir  string
+	// OS is a new machine's operating system, linux or windows; empty means linux. A roster machine has its own.
+	OS      OS
+	PlanDir string
 }
 
 // SetupPlan is a dry-run setup plan, approved by its digest before it runs.
@@ -211,6 +213,9 @@ type Setup struct {
 	StartWait, PollEvery time.Duration
 	// Self names the Steward's own Guildhall release, which a provisioning plan copies to a bare machine.
 	Self func() (SelfBinary, error)
+	// ReadBuild reads a cross-built release's build information, for a bootstrap from the request's bootstrap_from;
+	// nil means ReadBuild.
+	ReadBuild func(file string) (BuildInfo, error)
 }
 
 func (s *Setup) signature() git.Signature {
@@ -249,8 +254,8 @@ func (s *Setup) PlanTakeover(ctx context.Context, in TakeoverInput) (*SetupPlan,
 		return nil, fmt.Errorf("director name %q must be a lowercase id", in.Director)
 	case !workflow.ValidID(s.Steward):
 		return nil, fmt.Errorf("the Steward's label %q, its [steward] name, must be a lowercase id", s.Steward)
-	case !validDir(posixDirPattern, in.CopyDir):
-		return nil, fmt.Errorf("copy directory %q must be an absolute Linux path of letters, digits, '.', '_', '-' and '/'", in.CopyDir)
+	case !validFile(in.CopyDir):
+		return nil, fmt.Errorf("copy directory %q must be an absolute Linux or Windows path of letters, digits, '.', '_', '-' and '/'", in.CopyDir)
 	}
 	planDir, err := filepath.Abs(in.PlanDir)
 	if err != nil {
@@ -269,6 +274,9 @@ func (s *Setup) PlanTakeover(ctx context.Context, in TakeoverInput) (*SetupPlan,
 	if m, ok := roster.Machine(in.Machine); ok {
 		if in.SSHAlias != "" && in.SSHAlias != m.SSHAlias {
 			return nil, fmt.Errorf("%w: machine %q is in the roster with ssh_alias %q, not %q", ErrRosterConflict, m.Label, m.SSHAlias, in.SSHAlias)
+		}
+		if in.OS != "" && in.OS != m.OS {
+			return nil, fmt.Errorf("%w: machine %q is in the roster as %s, not %s", ErrRosterConflict, m.Label, m.OS, in.OS)
 		}
 		if !slices.Contains(m.Roles, RoleDirector) {
 			return nil, fmt.Errorf("%w: machine %q lacks the director role; add it in roster.toml first", ErrRosterConflict, m.Label)
@@ -292,9 +300,15 @@ func (s *Setup) PlanTakeover(ctx context.Context, in TakeoverInput) (*SetupPlan,
 			}
 		}
 		entry.NewMachine, entry.SSHAlias, entry.OS = true, in.SSHAlias, OSLinux
+		if in.OS != "" {
+			entry.OS = in.OS
+		}
 	}
-	if entry.OS != OSLinux {
-		return nil, fmt.Errorf("machine %q is %s: takeover is built for Linux machines only so far", in.Machine, entry.OS)
+	switch {
+	case entry.OS != OSLinux && entry.OS != OSWindows:
+		return nil, fmt.Errorf("machine %q is %s: takeover is built for Linux and Windows machines", in.Machine, entry.OS)
+	case !validPath(entry.OS, in.CopyDir):
+		return nil, fmt.Errorf("copy directory %q must be an absolute %s on a %s machine", in.CopyDir, pathForm(entry.OS), entry.OS)
 	}
 
 	p := &SetupPlan{Schema: SetupPlanSchema, Kind: SetupKindTakeover, Machine: in.Machine, Director: in.Director, CopyDir: in.CopyDir,
@@ -509,6 +523,9 @@ func ReadSetupPlan(planDir string) (*SetupPlan, error) {
 	p.input = TakeoverInput{Machine: p.Machine, Director: p.Director, CopyDir: p.CopyDir, PlanDir: p.PlanDir}
 	if p.Roster.NewMachine {
 		p.input.SSHAlias = p.SSHAlias
+		if p.Roster.OS != OSLinux {
+			p.input.OS = p.Roster.OS
+		}
 	}
 	return &p, nil
 }

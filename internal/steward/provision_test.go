@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -42,6 +43,9 @@ undo = "Remove ~/.local/bin/custom-tool."
 `
 )
 
+// windowsPaths finds each Windows path in a ':'-separated list.
+var windowsPaths = regexp.MustCompile(`[A-Za-z]:[^:]*`)
+
 // provisionMachine is a roster machine that already has Guildhall, as the provisioning's remote commands see it: the
 // steps whose checks fail, the new copy's store, enrolment, authorized managed digest and session, and its files on
 // the Fleet. Its doctor answers from the real step files, built-in or copied to it.
@@ -49,6 +53,8 @@ type provisionMachine struct {
 	mu    sync.Mutex
 	f     *stewardtest.Fleet
 	alias string
+	// goos is the machine's operating system, whose step forms its doctor checks, and copyDir the new copy there.
+	goos, copyDir string
 	// open are the step ids whose checks fail.
 	open       map[string]bool
 	steward    string
@@ -66,7 +72,7 @@ type provisionMachine struct {
 }
 
 func newProvisionMachine(f *stewardtest.Fleet, alias string, open ...string) *provisionMachine {
-	m := &provisionMachine{f: f, alias: alias, open: map[string]bool{"copy-dir": true}, state: "no session",
+	m := &provisionMachine{f: f, alias: alias, goos: "linux", copyDir: newCopy, open: map[string]bool{"copy-dir": true}, state: "no session",
 		acted: map[string]int{}, fail: map[string]bool{}, failAfter: map[string]bool{}}
 	for _, id := range open {
 		m.open[id] = true
@@ -80,7 +86,7 @@ func (m *provisionMachine) has(path string) bool {
 }
 
 func (m *provisionMachine) managed() (string, bool) {
-	data, ok := m.f.Read(steward.Remote{Alias: m.alias, Path: newCopy + "/managed.toml"})
+	data, ok := m.f.Read(steward.Remote{Alias: m.alias, Path: m.copyDir + "/managed.toml"})
 	if !ok {
 		return "", false
 	}
@@ -89,7 +95,7 @@ func (m *provisionMachine) managed() (string, bool) {
 
 // steps loads the step file a setup doctor command names, refusing another digest as the engine does.
 func (m *provisionMachine) steps(ref, want string) (setup.Steps, error) {
-	if !strings.HasPrefix(ref, "/") {
+	if !strings.HasPrefix(ref, "/") && !strings.HasPrefix(ref[1:], ":/") {
 		return setup.LoadBuiltin(ref, want)
 	}
 	data, ok := m.f.Read(steward.Remote{Alias: m.alias, Path: ref})
@@ -102,10 +108,12 @@ func (m *provisionMachine) steps(ref, want string) (setup.Steps, error) {
 // report is the doctor's report of s given its --set values: the new-copy steps' checks read the Fleet's files,
 // taking a path with a .git/HEAD as not empty, and every other check fails while its id is open.
 func (m *provisionMachine) report(s setup.Steps, sets map[string]string) []byte {
-	r := setup.Report{Schema: setup.ReportSchema, Steps: s.Name, Ref: s.Ref, Digest: s.Digest, OS: "linux", Checks: []setup.Check{}, Gaps: []setup.Gap{}, Skipped: []string{}}
+	r := setup.Report{Schema: setup.ReportSchema, Steps: s.Name, Ref: s.Ref, Digest: s.Digest, OS: m.goos, Checks: []setup.Check{}, Gaps: []setup.Gap{}, Skipped: []string{}}
 	for _, st := range s.Steps {
-		if !st.ForOS("linux") {
-			r.Skipped = append(r.Skipped, st.ID)
+		if !st.ForOS(m.goos) {
+			if form, _ := s.Step(st.ID, m.goos); !form.ForOS(m.goos) && !slices.Contains(r.Skipped, st.ID) {
+				r.Skipped = append(r.Skipped, st.ID)
+			}
 			continue
 		}
 		detail := ""
@@ -124,7 +132,12 @@ func (m *provisionMachine) report(s setup.Steps, sets map[string]string) []byte 
 				}
 			}
 		case "clone-paths-free":
-			for p := range strings.SplitSeq(sets["clone_paths"], ":") {
+			paths := strings.Split(sets["clone_paths"], ":")
+			if m.goos == "windows" {
+				// Only a ':' before the next drive letter separates Windows paths.
+				paths = windowsPaths.FindAllString(sets["clone_paths"], -1)
+			}
+			for _, p := range paths {
 				if p != "" && m.has(p+"/.git/HEAD") {
 					ok, detail = false, "exit 1: "+p+" is not empty"
 				}
@@ -171,7 +184,7 @@ func (m *provisionMachine) handle(argv []string) ([]byte, bool, error) {
 			return m.report(s, sets), true, nil
 		}
 		for _, id := range strings.Split(argv[6], ",") {
-			st, ok := s.Step(id)
+			st, ok := s.Step(id, m.goos)
 			if !ok || st.Tag != setup.Fixable {
 				return nil, true, fmt.Errorf("setup doctor --fix: %s is not a fixable step", id)
 			}
@@ -210,10 +223,10 @@ func (m *provisionMachine) handle(argv []string) ([]byte, bool, error) {
 	return m.act(words, argv, func() ([]byte, error) {
 		switch words {
 		case "store init":
-			if m.has(newCopy + "/director.store") {
-				return nil, errors.New("store init: " + newCopy + "/director.store already exists, and store init never replaces or repairs it")
+			if m.has(m.copyDir + "/director.store") {
+				return nil, errors.New("store init: " + m.copyDir + "/director.store already exists, and store init never replaces or repairs it")
 			}
-			m.f.Write(steward.Remote{Alias: m.alias, Path: newCopy + "/director.store"}, []byte("store"))
+			m.f.Write(steward.Remote{Alias: m.alias, Path: m.copyDir + "/director.store"}, []byte("store"))
 		case "release adopt":
 		case "director enrol":
 			if _, ok := m.managed(); !ok {
@@ -227,7 +240,7 @@ func (m *provisionMachine) handle(argv []string) ([]byte, bool, error) {
 			}
 			m.authorized = d
 		case "director start":
-			if d, _ := m.managed(); d == "" || m.authorized != d || !m.has(newCopy+"/director.store") {
+			if d, _ := m.managed(); d == "" || m.authorized != d || !m.has(m.copyDir+"/director.store") {
 				return nil, errors.New("director start: preflight failed")
 			}
 			m.state, m.tab, m.reads = "running", "t-1", 0
@@ -448,8 +461,8 @@ func TestProvisionDryRunRefuses(t *testing.T) {
 			t.Errorf("%s: %v, want ErrRosterConflict", name, err)
 		}
 	}
-	if err := plan(fx, func(r *steward.ProvisionRequest) { r.Machine = "laptop" }); err == nil {
-		t.Error("a Windows machine was planned")
+	if err := plan(fx, func(r *steward.ProvisionRequest) { r.Machine = "laptop" }); err == nil || !strings.Contains(err.Error(), "Windows path") {
+		t.Errorf("Linux paths planned on a Windows machine: %v", err)
 	}
 	fx = newProvisionFixture(t, "herdr")
 	if err := plan(fx, func(r *steward.ProvisionRequest) { r.Pins = steward.Pins{} }); err == nil || !strings.Contains(err.Error(), "herdr_url") {

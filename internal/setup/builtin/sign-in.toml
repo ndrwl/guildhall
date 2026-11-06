@@ -9,7 +9,7 @@ title = "Sign in to Claude Code, Codex and GitHub"
 id = "claude-sign-in"
 title = "Sign in to Claude Code"
 tag = "human"
-os = ["linux", "darwin"]
+os = ["linux", "darwin", "windows"]
 check = ["claude", "auth", "status"]
 instructions = '''
 In another terminal on this machine, run:
@@ -30,7 +30,7 @@ text = "Have you signed in to Claude Code?"
 id = "codex-sign-in"
 title = "Sign in to Codex"
 tag = "human"
-os = ["linux", "darwin"]
+os = ["linux", "darwin", "windows"]
 check = ["codex", "login", "status"]
 instructions = '''
 In another terminal on this machine, run:
@@ -68,3 +68,36 @@ undo = "Run `gh auth logout --hostname github.com` to sign this machine out agai
 [[step.prompt]]
 kind = "confirm"
 text = "Have you signed in to GitHub and run gh auth setup-git?"
+
+# The Windows form of gh-sign-in, which has no env program: the same two variables, set in Windows PowerShell.
+
+[[step]]
+id = "gh-sign-in"
+title = "Sign in to GitHub"
+tag = "human"
+os = ["windows"]
+instructions = '''
+In another terminal on this machine, run:
+
+    gh auth login --hostname github.com
+    gh auth setup-git
+
+The second command makes git pushes use the same sign-in.
+Help: https://cli.github.com/manual/gh_auth_login
+'''
+undo = "Run `gh auth logout --hostname github.com` to sign this machine out again."
+
+[[step.prompt]]
+kind = "confirm"
+text = "Have you signed in to GitHub and run gh auth setup-git?"
+
+[step.check]
+shell = "pwsh"
+script = '''
+$env:GH_PROMPT_DISABLED = '1'
+$env:GH_NO_UPDATE_NOTIFIER = '1'
+$gh = Get-Command gh -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $gh) { Write-Output 'gh is not on PATH'; exit 1 }
+& $gh.Source auth status --hostname github.com
+exit $LASTEXITCODE
+'''

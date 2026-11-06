@@ -309,6 +309,63 @@ func TestParseRefusals(t *testing.T) {
 	}
 }
 
+// TestStepForms: an id may have one form per operating system, and the doctor and --fix --only take the form of the
+// machine's; an id with no form for it is skipped once, and naming it is ErrUnsupportedOS.
+func TestStepForms(t *testing.T) {
+	requireUnix(t)
+	src := `schema = "guildhall.steps/1"
+name = "forms"
+
+[[step]]
+id = "a"
+title = "A on Linux"
+tag = "fixable"
+os = ["linux"]
+check = ["true"]
+action = ["true"]
+undo = "u"
+
+[[step]]
+id = "a"
+title = "A on Windows"
+tag = "fixable"
+os = ["windows"]
+check = ["false"]
+action = ["true"]
+undo = "u"
+`
+	s, err := setup.Parse([]byte(src), "")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if st, ok := s.Step("a", "windows"); !ok || st.Title != "A on Windows" {
+		t.Errorf("Step(a, windows) = %+v, %v", st, ok)
+	}
+	sb := newSandbox(t)
+	for _, c := range []struct {
+		goos          string
+		gaps, skipped []string
+	}{{"linux", nil, nil}, {"windows", []string{"a"}, nil}, {"darwin", nil, []string{"a"}}} {
+		r, err := setup.Doctor(context.Background(), s, setup.Facts{Home: sb.home, SetupDir: sb.setupDir, GOOS: c.goos})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var gaps []string
+		for _, g := range r.Gaps {
+			gaps = append(gaps, g.ID+": "+g.Title)
+		}
+		if len(gaps) != len(c.gaps) || (len(gaps) == 1 && gaps[0] != "a: A on Windows") || !slices.Equal(r.Skipped, append([]string{}, c.skipped...)) || len(r.Checks)+len(r.Skipped) != 1 {
+			t.Errorf("%s: gaps %v, checks %d, skipped %v", c.goos, gaps, len(r.Checks), r.Skipped)
+		}
+	}
+	if _, err := setup.Fix(context.Background(), s, setup.Facts{Home: sb.home, SetupDir: sb.setupDir, GOOS: "darwin"}, []string{"a"}, nil); !errors.Is(err, setup.ErrUnsupportedOS) {
+		t.Errorf("Fix on darwin = %v, want ErrUnsupportedOS", err)
+	}
+	if _, err := setup.Parse([]byte(strings.Replace(src, `os = ["windows"]`, `os = ["windows", "linux"]`, 1)), ""); !errors.Is(err, setup.ErrInvalid) {
+		t.Errorf("two forms of a for linux: Parse = %v, want ErrInvalid", err)
+	}
+}
+
 func TestBuiltins(t *testing.T) {
 	want := map[string][]string{
 		"director":       {"copy-dir", "guildhall-pin", "guildhall-on-path", "tailscale-ssh"},
@@ -322,26 +379,48 @@ func TestBuiltins(t *testing.T) {
 	if got := setup.Builtins(); !slices.Equal(got, []string{"director", "git-and-claude", "go", "herdr", "new-copy", "sign-in", "wsl-settings"}) {
 		t.Fatalf("Builtins = %v", got)
 	}
-	seen := map[string]string{}
-	for name, ids := range want {
-		s, err := setup.LoadBuiltin(name, "")
-		if err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
-		data, _ := setup.BuiltinBytes(name)
-		if s.Name != name || !s.Builtin || s.Ref != name || s.Digest != setup.Digest(data) {
-			t.Errorf("%s: header %+v", name, s)
-		}
-		var got []string
-		for _, st := range s.Steps {
-			got = append(got, st.ID)
-			if other, dup := seen[st.ID]; dup {
-				t.Errorf("step id %s is in both %s and %s; gap ids must be unique across built-ins", st.ID, other, name)
+	// Every step has a Windows form of the same id and tag, in PowerShell or a plain argv, except the ones that are
+	// about Linux itself: Tailscale SSH, which Windows does not serve, and WSL's settings.
+	noWindows := []string{"tailscale-ssh", "wsl-systemd", "wsl-keep-running"}
+	for _, goos := range []string{"linux", "windows"} {
+		seen := map[string]string{}
+		for name, ids := range want {
+			s, err := setup.LoadBuiltin(name, "")
+			if err != nil {
+				t.Fatalf("%s: %v", name, err)
 			}
-			seen[st.ID] = name
-		}
-		if !slices.Equal(got, ids) {
-			t.Errorf("%s: steps %v, want %v", name, got, ids)
+			data, _ := setup.BuiltinBytes(name)
+			if s.Name != name || !s.Builtin || s.Ref != name || s.Digest != setup.Digest(data) {
+				t.Errorf("%s: header %+v", name, s)
+			}
+			if goos == "windows" {
+				ids = slices.DeleteFunc(slices.Clone(ids), func(id string) bool { return slices.Contains(noWindows, id) })
+			}
+			got := []string{}
+			for _, st := range s.Steps {
+				if !st.ForOS(goos) {
+					continue
+				}
+				got = append(got, st.ID)
+				if other, dup := seen[st.ID]; dup {
+					t.Errorf("%s: step id %s is in both %s and %s; gap ids must be unique across built-ins", goos, st.ID, other, name)
+				}
+				seen[st.ID] = name
+				if goos != "windows" {
+					continue
+				}
+				if linux, _ := s.Step(st.ID, "linux"); linux.Tag != st.Tag {
+					t.Errorf("%s/%s: the Windows form is %s, the Linux form %s", name, st.ID, st.Tag, linux.Tag)
+				}
+				for _, c := range []setup.Command{st.Check, st.Action, st.Verify, st.Run} {
+					if c.Shell == "sh" || (len(c.Argv) > 0 && slices.Contains([]string{"sh", "env"}, c.Argv[0])) {
+						t.Errorf("%s/%s: the Windows form runs %s", name, st.ID, c)
+					}
+				}
+			}
+			if !slices.Equal(got, ids) {
+				t.Errorf("%s on %s: steps %v, want %v", name, goos, got, ids)
+			}
 		}
 	}
 	for _, name := range []string{"git-and-claude", "sign-in", "wsl-settings"} {

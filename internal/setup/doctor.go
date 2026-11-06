@@ -62,7 +62,10 @@ func (e *env) doctor(ctx context.Context) Report {
 		Checks: []Check{}, Gaps: []Gap{}, Skipped: []string{}}
 	for _, st := range e.s.Steps {
 		if !st.ForOS(e.f.GOOS) {
-			r.Skipped = append(r.Skipped, st.ID)
+			// A step with another form for this operating system is checked in that form, not skipped.
+			if form, _ := e.s.Step(st.ID, e.f.GOOS); !form.ForOS(e.f.GOOS) && !slices.Contains(r.Skipped, st.ID) {
+				r.Skipped = append(r.Skipped, st.ID)
+			}
 			continue
 		}
 		ok, detail := e.check(ctx, st, st.Check)
@@ -118,7 +121,7 @@ func sortedStrings(s []string) []string {
 // os list leaves this operating system out with ErrUnsupportedOS. No ids means every step for this operating system.
 func (e *env) selectSteps(ids []string) ([]Step, error) {
 	for _, id := range ids {
-		st, ok := e.s.Step(id)
+		st, ok := e.s.Step(id, e.f.GOOS)
 		if !ok {
 			return nil, fmt.Errorf("%w: %s has no step %q", ErrUnknownStep, e.s.Name, id)
 		}
@@ -128,7 +131,7 @@ func (e *env) selectSteps(ids []string) ([]Step, error) {
 	}
 	var out []Step
 	for _, st := range e.s.Steps {
-		if (len(ids) == 0 && st.ForOS(e.f.GOOS)) || slices.Contains(ids, st.ID) {
+		if st.ForOS(e.f.GOOS) && (len(ids) == 0 || slices.Contains(ids, st.ID)) {
 			out = append(out, st)
 		}
 	}

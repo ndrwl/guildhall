@@ -46,7 +46,7 @@ title = "Herdr, the terminal host"
 herdr_version = ""
 
 [[step]]
-id = "herdr"                      # the gap id the doctor reports, unique in the file
+id = "herdr"                      # the gap id the doctor reports, unique in the file for each OS
 title = "Install Herdr into ~/.local/bin"
 tag = "fixable"                   # or "human"
 os = ["linux", "darwin"]          # of linux, darwin, windows
@@ -62,11 +62,12 @@ dest = "${home}/.local/bin/herdr"
 ```
 
 - **check, act, verify.** Every step's check runs first, and a passing check skips the act. `verify`, when given, replaces the fresh run of the check that follows the act.
-- **Commands** (`check`, `action`, `verify`, `run`) are argv lists run with no shell, or a `{shell = "sh" | "pwsh", script = "…"}` table: that is how a step file carries a custom installation script.
+- **Forms.** An id may name one step for each operating system: a step and its Windows form share the id, with disjoint `os` lists, so a gap id is the same on every machine. The doctor and `--only` take the form for the machine's operating system; an id with none for it is a `skip`.
+- **Commands** (`check`, `action`, `verify`, `run`) are argv lists run with no shell, or a `{shell = "sh" | "pwsh", script = "…"}` table: that is how a step file carries a custom installation script. A `pwsh` script runs with `pwsh` when it is on `PATH`, else, on Windows, with the Windows PowerShell every Windows machine has.
   `${name}` is substituted in argv elements, `expect`, `creates` and `fetch`; a script is not substituted and reads every value from the environment as `SETUP_<NAME>`, such as `SETUP_HOME`.
   The engine sets `home`, `setup_dir`, `os`, `arch` and `exe` (`.exe` on Windows, else empty).
 - **A fixable step** acts with exactly one of `action` and `fetch`.
-  `fetch` downloads `url` (https, or http to the loopback address), refuses it unless its sha256 is `sha256`, then puts it at `dest`, or with `unpack = "tar.gz"` unpacks it there, dropping `strip` leading path elements; an entry that is not a file or directory, or that leaves `dest`, is refused.
+  `fetch` downloads `url` (https, or http to the loopback address), refuses it unless its sha256 is `sha256`, then puts it at `dest`, or with `unpack = "tar.gz"` or `unpack = "zip"` unpacks it there, dropping `strip` leading path elements; an entry that is not a file or directory, or that leaves `dest` (an absolute name, `..`, a `\` or a drive's `:`), is refused.
   An earlier install at `dest` is replaced only after the new one is fully unpacked, and is put back if the replacement fails.
 - **A human step** has `instructions`, `[[step.prompt]]` entries (`kind = "confirm" | "ask" | "ask_secret"`, `name`, `text`) and an optional `run`.
   A confirm answered no fails the step. An `ask` answer is recorded; an `ask_secret` answer is read without echo, given to `run` only as `SETUP_<NAME>`, and never written: the journal and record name the prompt and redact its value from any output they keep.
@@ -85,8 +86,9 @@ dest = "${home}/.local/bin/herdr"
 | `sign-in` | `claude-sign-in`, `codex-sign-in`, `gh-sign-in` (human) | Each runtime's own status command as the check, `gh`'s run through `env` with gh's two variables set as `guildhall signin` sets them; the wizard prints the sign-in command, never a token ([sign-in](signin.md)). |
 | `wsl-settings` | `wsl-systemd`, `wsl-keep-running` (human) | systemd in `/etc/wsl.conf` and `vmIdleTimeout=-1` in `%UserProfile%\.wslconfig`; outside WSL both pass. |
 
-Step ids are unique across the built-ins, so a gap id names one step.
-The built-ins are Linux and macOS forms; d128's Windows slice adds their Windows forms.
+Step ids are unique across the built-ins on each operating system, so a gap id names one step.
+Each built-in step has a **Windows form** of the same id and tag, a step with `os = ["windows"]` in the same file whose checks and acts are Windows PowerShell scripts or plain argvs: Herdr as `~/.local/bin/herdr.exe`, Go from its Windows `.zip` into `~/.local/go`, Git and the GitHub CLI with `winget`, Claude Code with its PowerShell installer, `PATH` set in the user's environment, and `gh-sign-in`'s variables set in PowerShell, as Windows has no `env`; `claude-sign-in` and `codex-sign-in` are one step for every OS.
+`tailscale-ssh` and the `wsl-settings` steps have none: Tailscale does not serve SSH on Windows, and WSL's settings are read inside WSL. On Windows `clone_paths` are still separated by `:`, but only a `:` before the next path's drive letter separates, as in `C:/src/a:D:/src/b`.
 The doctor checks only what its step files check; the Guildhall facts a [provisioning](steward.md#provisioning) plan needs are steps of the built-ins: the copy directory (`copy-dir`), store and clone paths (`new-copy`), the Herdr server and `herdr_session` (`herdr-session`), Tailscale SSH check-mode (`tailscale-ssh`) and the Guildhall release against the pin (`guildhall-pin`).
 
 ## The setup directory

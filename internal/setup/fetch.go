@@ -7,6 +7,7 @@ package setup
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -85,8 +86,8 @@ func (e *env) fetch(ctx context.Context, f Fetch) error {
 	if got := hex.EncodeToString(h.Sum(nil)); got != want {
 		return fmt.Errorf("%w: %s has sha256 %s, the plan names %s; nothing was installed", ErrChecksum, rawURL, got, want)
 	}
-	if f.Unpack == "tar.gz" {
-		return unpackInto(tmp.Name(), dest, f.Strip)
+	if f.Unpack != "" {
+		return unpackInto(tmp.Name(), f.Unpack, dest, f.Strip)
 	}
 	if err := os.Chmod(tmp.Name(), 0o755); err != nil {
 		return err
@@ -110,15 +111,28 @@ func paramNames(s Steps) string {
 	return strings.Join(sortedStrings(names), ", ")
 }
 
-// unpackInto extracts the gzipped tar archive into a scratch directory beside dest, dropping strip leading elements
-// of each name, and only then puts it at dest. Only directories and regular files are allowed, and no name may leave
-// dest. A failed extraction leaves dest untouched.
-func unpackInto(archive, dest string, strip int) error {
+// unpackInto extracts the archive, a gzipped tar (kind "tar.gz") or a zip (kind "zip", as Go's Windows releases are),
+// into a scratch directory beside dest, dropping strip leading elements of each name, and only then puts it at dest.
+// Only directories and regular files are allowed, and no name may leave dest. A failed extraction leaves dest
+// untouched.
+func unpackInto(archive, kind, dest string, strip int) error {
 	work, err := mkdirTemp(filepath.Dir(dest), ".setup-unpack-*")
 	if err != nil {
 		return err
 	}
 	defer func() { _ = os.RemoveAll(work) }()
+	if kind == "zip" {
+		err = unzipInto(archive, work, strip)
+	} else {
+		err = untarInto(archive, work, strip)
+	}
+	if err != nil {
+		return err
+	}
+	return swapInto(work, dest)
+}
+
+func untarInto(archive, work string, strip int) error {
 	file, err := os.Open(archive)
 	if err != nil {
 		return err
@@ -132,46 +146,81 @@ func unpackInto(archive, dest string, strip int) error {
 	for {
 		hdr, err := tr.Next()
 		if errors.Is(err, io.EOF) {
-			break
+			return nil
 		}
 		if err != nil {
 			return fmt.Errorf("unpack: %w", err)
 		}
-		name := path.Clean(strings.TrimPrefix(hdr.Name, "./"))
-		if path.IsAbs(name) || name == ".." || strings.HasPrefix(name, "../") || strings.Contains(hdr.Name, `\`) {
-			return fmt.Errorf("unpack: entry %q leaves the destination", hdr.Name)
-		}
-		parts := strings.Split(name, "/")
-		if len(parts) <= strip {
-			continue
-		}
-		name = path.Join(parts[strip:]...)
-		target := filepath.Join(work, filepath.FromSlash(name))
+		var dir bool
 		switch hdr.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, 0o755); err != nil {
-				return err
-			}
+			dir = true
 		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return err
-			}
-			out, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, os.FileMode(hdr.Mode)&0o755|0o600)
-			if err != nil {
-				return err
-			}
-			_, err = io.Copy(out, io.LimitReader(tr, maxFetch))
-			if cerr := out.Close(); err == nil {
-				err = cerr
-			}
-			if err != nil {
-				return err
-			}
 		default:
 			return fmt.Errorf("unpack: entry %q is neither a directory nor a regular file", hdr.Name)
 		}
+		if err := extractEntry(work, hdr.Name, strip, dir, os.FileMode(hdr.Mode), tr); err != nil {
+			return err
+		}
 	}
-	return swapInto(work, dest)
+}
+
+func unzipInto(archive, work string, strip int) error {
+	zr, err := zip.OpenReader(archive)
+	if err != nil {
+		return fmt.Errorf("unpack: %w", err)
+	}
+	defer func() { _ = zr.Close() }()
+	for _, zf := range zr.File {
+		if mode := zf.Mode(); !mode.IsDir() && !mode.IsRegular() {
+			return fmt.Errorf("unpack: entry %q is neither a directory nor a regular file", zf.Name)
+		}
+		if err := unzipEntry(work, zf, strip); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func unzipEntry(work string, zf *zip.File, strip int) error {
+	if zf.Mode().IsDir() {
+		return extractEntry(work, zf.Name, strip, true, 0, nil)
+	}
+	rc, err := zf.Open()
+	if err != nil {
+		return fmt.Errorf("unpack: %w", err)
+	}
+	defer func() { _ = rc.Close() }()
+	return extractEntry(work, zf.Name, strip, false, zf.Mode(), rc)
+}
+
+// extractEntry writes one archive entry, a directory or a regular file read from r, under work, dropping strip
+// leading elements of its name and refusing a name that leaves work: absolute, "..", or with a '\' or a drive ':'.
+func extractEntry(work, entry string, strip int, dir bool, mode os.FileMode, r io.Reader) error {
+	name := path.Clean(strings.TrimPrefix(entry, "./"))
+	if path.IsAbs(name) || name == ".." || strings.HasPrefix(name, "../") || strings.ContainsAny(entry, `\:`) {
+		return fmt.Errorf("unpack: entry %q leaves the destination", entry)
+	}
+	parts := strings.Split(name, "/")
+	if len(parts) <= strip {
+		return nil
+	}
+	target := filepath.Join(work, filepath.FromSlash(path.Join(parts[strip:]...)))
+	if dir {
+		return os.MkdirAll(target, 0o755)
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	out, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode.Perm()&0o755|0o600)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(out, io.LimitReader(r, maxFetch))
+	if cerr := out.Close(); err == nil {
+		err = cerr
+	}
+	return err
 }
 
 // swapInto puts the fully extracted directory work at dest. An earlier install at dest (claim has checked the

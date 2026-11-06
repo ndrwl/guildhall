@@ -86,7 +86,7 @@ type Prompt struct {
 }
 
 // Fetch is a fixable step's download: the file at URL, refused unless its sha256 is SHA256, written to Dest, or
-// unpacked there when Unpack is "tar.gz" (dropping Strip leading path elements of each entry).
+// unpacked there when Unpack is "tar.gz" or "zip" (dropping Strip leading path elements of each entry).
 type Fetch struct {
 	URL    string `toml:"url" json:"url"`
 	SHA256 string `toml:"sha256" json:"sha256"`
@@ -135,14 +135,22 @@ type Steps struct {
 	Steps  []Step
 }
 
-// Step returns the step with the given id.
-func (s Steps) Step(id string) (Step, bool) {
-	for _, st := range s.Steps {
-		if st.ID == id {
+// Step returns the step with the given id: its form for goos when it has one, else its first form.
+func (s Steps) Step(id, goos string) (Step, bool) {
+	found := -1
+	for i, st := range s.Steps {
+		switch {
+		case st.ID != id:
+		case st.ForOS(goos):
 			return st, true
+		case found < 0:
+			found = i
 		}
 	}
-	return Step{}, false
+	if found < 0 {
+		return Step{}, false
+	}
+	return s.Steps[found], true
 }
 
 // Digest returns the lowercase hex sha256 of data, a step file's digest.
@@ -283,6 +291,8 @@ func Parse(data []byte, wantDigest string) (Steps, error) {
 	if len(raw.Step) == 0 {
 		fault("no steps")
 	}
+	// An id names one step per operating system: a step's Windows form shares its Linux form's id, so a gap id is
+	// the same on every machine, but no two steps of one id run on the same operating system.
 	seen := map[string]bool{}
 	for i, rs := range raw.Step {
 		where := fmt.Sprintf("step %d", i+1)
@@ -293,10 +303,12 @@ func Parse(data []byte, wantDigest string) (Steps, error) {
 		for _, e := range errs {
 			fault("%s: %s", where, e)
 		}
-		if seen[st.ID] {
-			fault("%s: duplicate id", where)
+		for _, o := range st.OS {
+			if seen[st.ID+"/"+o] {
+				fault("%s: duplicate id for %s", where, o)
+			}
+			seen[st.ID+"/"+o] = true
 		}
-		seen[st.ID] = true
 		for _, name := range st.referencedVars() {
 			if _, ok := s.Params[name]; !ok {
 				if _, ok := defaultVars[name]; !ok {
@@ -362,8 +374,8 @@ func convertStep(rs rawStep) (Step, []string) {
 			if f.Dest == "" || f.URL == "" || f.SHA256 == "" {
 				fault("fetch needs url, sha256 and dest")
 			}
-			if f.Unpack != "" && f.Unpack != "tar.gz" {
-				fault("fetch unpack %q is not tar.gz", f.Unpack)
+			if f.Unpack != "" && f.Unpack != "tar.gz" && f.Unpack != "zip" {
+				fault("fetch unpack %q is not tar.gz or zip", f.Unpack)
 			}
 			if f.Strip < 0 || (f.Strip > 0 && f.Unpack == "") {
 				fault("fetch strip needs unpack and is not negative")

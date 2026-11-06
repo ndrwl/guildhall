@@ -115,6 +115,15 @@ func (e *env) environ(extra map[string]string) []string {
 	return out
 }
 
+// powershell is the program a pwsh script runs with: pwsh, PowerShell 7, when it is on PATH, else, on Windows, the
+// Windows PowerShell every Windows machine has, so a built-in's Windows form runs on a stock machine.
+func powershell(goos string) string {
+	if _, err := exec.LookPath("pwsh"); err != nil && goos == "windows" {
+		return "powershell"
+	}
+	return "pwsh"
+}
+
 // exec runs c, returning its combined output. Argv elements are substituted and run with no shell; a script is
 // given to its shell unsubstituted and reads values from SETUP_* variables. interactive attaches Facts' streams.
 func (e *env) exec(ctx context.Context, c Command, timeout time.Duration, extra map[string]string, interactive bool) ([]byte, error) {
@@ -123,7 +132,7 @@ func (e *env) exec(ctx context.Context, c Command, timeout time.Duration, extra 
 	var argv []string
 	if c.Script != "" {
 		if c.Shell == "pwsh" {
-			argv = []string{"pwsh", "-NoProfile", "-NonInteractive", "-Command", c.Script}
+			argv = []string{powershell(e.f.GOOS), "-NoProfile", "-NonInteractive", "-Command", c.Script}
 		} else {
 			argv = []string{"sh", "-c", c.Script}
 		}

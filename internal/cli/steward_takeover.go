@@ -41,6 +41,7 @@ func (a *App) stewardTakeoverCmd(args []string) int {
 	director := fs.String("director", "", "")
 	copyDir := fs.String("copy", "", "")
 	alias := fs.String("ssh-alias", "", "")
+	machineOS := fs.String("os", "", "")
 	planDir := fs.String("plan", "", "")
 	dryRun := fs.Bool("dry-run", false, "")
 	apply := fs.Bool("apply", false, "")
@@ -63,8 +64,10 @@ func (a *App) stewardTakeoverCmd(args []string) int {
 		err = errors.New("--config and --plan are required")
 	case *dryRun && (*machine == "" || *director == "" || *copyDir == ""):
 		err = errors.New("--dry-run needs --machine, --director and --copy")
-	case !*dryRun && (*machine != "" || *director != "" || *copyDir != "" || *alias != ""):
-		err = errors.New("--machine, --director, --copy and --ssh-alias belong to --dry-run; --apply and --abandon read them from the plan")
+	case !*dryRun && (*machine != "" || *director != "" || *copyDir != "" || *alias != "" || *machineOS != ""):
+		err = errors.New("--machine, --director, --copy, --ssh-alias and --os belong to --dry-run; --apply and --abandon read them from the plan")
+	case *machineOS != "" && (*alias == "" || (*machineOS != string(steward.OSLinux) && *machineOS != string(steward.OSWindows))):
+		err = errors.New("--os, linux or windows, names the operating system of a machine new to the roster, with --ssh-alias")
 	case !*apply && *approve != "":
 		err = errors.New("--approve applies only with --apply")
 	}
@@ -80,7 +83,7 @@ func (a *App) stewardTakeoverCmd(args []string) int {
 	defer cancel()
 	switch {
 	case *dryRun:
-		p, err := s.PlanTakeover(ctx, steward.TakeoverInput{Machine: *machine, Director: *director, CopyDir: *copyDir, SSHAlias: *alias, PlanDir: *planDir})
+		p, err := s.PlanTakeover(ctx, steward.TakeoverInput{Machine: *machine, Director: *director, CopyDir: *copyDir, SSHAlias: *alias, OS: steward.OS(*machineOS), PlanDir: *planDir})
 		if err != nil {
 			return a.fail(fmt.Errorf("steward takeover: %w", err))
 		}
@@ -233,6 +236,15 @@ func (a *App) selfBinary() (steward.SelfBinary, error) {
 // a release adopt and a session start.
 const sshLongTimeout = 15 * time.Minute
 
+// bootstrapSource names the release a bootstrap plan places: this Steward's own, or the cross-built one in the
+// request's bootstrap_from.
+func bootstrapSource(p *steward.SetupPlan) string {
+	if p.Request != nil && p.Request.BootstrapFrom != "" {
+		return "the cross-built release from " + p.Request.BootstrapFrom + ","
+	}
+	return "this Steward's own"
+}
+
 // renderSetupPlan describes a dry-run setup plan: the copy, the roster change, the files it copies, a provisioning's
 // step files, each Steward-written one in full, and every step with its command.
 func renderSetupPlan(p *steward.SetupPlan, cfgPath string) string {
@@ -242,7 +254,7 @@ func renderSetupPlan(p *steward.SetupPlan, cfgPath string) string {
 	case p.Bootstrap != nil:
 		bs := p.Bootstrap
 		fmt.Fprintf(&b, "%s (%s): a bare machine, with nothing at guildhall_path %s\n", p.Machine, p.SSHAlias, bs.Guildhall)
-		fmt.Fprintf(&b, "this plan only bootstraps Guildhall: it copies this Steward's own guildhall %s (%s) there and the launcher to %s, checks each with sha256sum before it first runs, and installs it with release install --from --sha256\n", bs.Version, bs.Platform, bs.Launcher)
+		fmt.Fprintf(&b, "this plan only bootstraps Guildhall: it copies %s guildhall %s (%s) there and the launcher to %s, checks each with %s before it first runs, and installs it with release install --from --sha256\n", bootstrapSource(p), bs.Version, bs.Platform, bs.Launcher, steward.HashCommand(p.Roster.OS, "")[0])
 		fmt.Fprintf(&b, "once it is done, make the dry run again with the same request to plan Director %s at %s\n", p.Director, p.CopyDir)
 	case p.Kind == steward.SetupKindProvision:
 		fmt.Fprintf(&b, "%s/%s (%s:%s): a new copy with setup directory %s, enrolled with Steward %s once applied\n", p.Machine, p.Director, p.SSHAlias, p.CopyDir, p.SetupDir, p.Steward)
@@ -333,8 +345,8 @@ func (a *App) setupApprovalRequest(copyDir, storePath, planDir string) int {
 			strings.Join(plan.Roster.Repositories, ", "), plan.Steward, plan.PlanDir)
 	}
 	if bs := plan.Bootstrap; bs != nil {
-		question = fmt.Sprintf("Approve bootstrap plan %s of bare machine %s? It copies this Steward's own guildhall %s (%s, sha256 %s) to %s and the launcher to %s, checks each with sha256sum before it first runs, and installs it with release install --from --sha256; nothing else. Plan: %s",
-			plan.Digest, plan.Machine, bs.Version, bs.Platform, plan.Files[0].SHA256, bs.Guildhall, bs.Launcher, plan.PlanDir)
+		question = fmt.Sprintf("Approve bootstrap plan %s of bare machine %s? It copies %s guildhall %s (%s, sha256 %s) to %s and the launcher to %s, checks each with %s before it first runs, and installs it with release install --from --sha256; nothing else. Plan: %s",
+			plan.Digest, plan.Machine, bootstrapSource(plan), bs.Version, bs.Platform, plan.Files[0].SHA256, bs.Guildhall, bs.Launcher, steward.HashCommand(plan.Roster.OS, "")[0], plan.PlanDir)
 	}
 	d := store.Decision{Repository: stewardRepository, TaskID: stewardSetupTask, ID: id, Kind: store.DecisionApproval,
 		Subject: &store.Subject{Kind: store.SubjectDocument, Digest: plan.Digest}, Options: []string{stewardApprove, stewardDecline},

@@ -9,7 +9,8 @@ title = "Nothing in the way of a new Director copy"
 
 [params]
 copy_dir = ""
-# clone_paths are the repositories' clone paths, separated by ':'.
+# clone_paths are the repositories' clone paths, separated by ':'; on Windows only a ':' before the next path's drive
+# letter separates, as in C:/src/a:D:/src/b.
 clone_paths = ""
 
 [[step]]
@@ -69,5 +70,59 @@ for p in $SETUP_CLONE_PATHS; do
   fi
 done
 IFS=$old_ifs
+exit $found
+'''
+
+# The Windows forms, in Windows PowerShell.
+
+[[step]]
+id = "copy-free"
+title = "Keep the copy directory free of a config and a store"
+tag = "human"
+os = ["windows"]
+instructions = '''
+The copy directory already holds a Director's config.toml or store. Provisioning never overwrites either.
+Name another copy_dir in the provisioning request, or adopt this copy with guildhall steward takeover.
+'''
+undo = "Nothing to undo: this step only reads."
+
+[step.check]
+shell = "pwsh"
+script = '''
+if (-not $env:SETUP_COPY_DIR) { exit 0 }
+$found = 0
+foreach ($f in 'config.toml', 'director.store') {
+  $p = $env:SETUP_COPY_DIR + '/' + $f
+  if (Test-Path -LiteralPath $p) { Write-Output ($p + ' exists'); $found = 1 }
+}
+exit $found
+'''
+
+[[step]]
+id = "clone-paths-free"
+title = "Keep each clone path absent or an empty directory"
+tag = "human"
+os = ["windows"]
+instructions = '''
+A repository's clone path holds a file or a directory that is not empty. Provisioning never clones over it.
+Name another path for that repository in the provisioning request, or move what is there yourself.
+'''
+undo = "Nothing to undo: this step only reads."
+
+[step.check]
+shell = "pwsh"
+script = '''
+$found = 0
+foreach ($p in ('' + $env:SETUP_CLONE_PATHS) -split ':(?=[A-Za-z]:)') {
+  if (-not $p) { continue }
+  $item = Get-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue
+  if (-not $item) { continue }
+  if ($item.PSIsContainer -and -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+    if (Get-ChildItem -LiteralPath $p -Force | Select-Object -First 1) { Write-Output ($p + ' is not empty'); $found = 1 }
+  } else {
+    Write-Output ($p + ' exists and is not a directory')
+    $found = 1
+  }
+}
 exit $found
 '''
