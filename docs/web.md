@@ -39,6 +39,12 @@ guildhall web [--copy <dir>]
 
 Open `http://<address>/`, such as `http://andrew-lap-wsl.tail5da40a.ts.net:4388/`, for every task of the copy, in every repository it serves, as one column of sections:
 
+- The **stats strip**, full width, as plain text:
+  - **Work**: the running attempts against the running cap ("3 of 4 running"), the start queue, the merge queues' entries with a link to each front task, and the pull requests merged today, one per merge record.
+  - **Spend**: today's cost in US dollars, marked "estimated" when it is, its attempts and its tokens, labelled with the day, such as "5 Nov, UTC". "Today" is the UTC day, as for the spend limit.
+  - **Machine**: the load and the core count, the memory used and the free disk of the volume holding the copy's state. A value the OS cannot give without cgo, such as the load on Windows, reads "unavailable".
+
+  On a phone it folds to one line, "3/4 running · 16 to merge · 4 merged · $38.20 today", which the server renders open.
 - **Needs you**, pinned on top in amber and always open: a task with an open or deferred ask, or a grill the Director runs with you in its session, oldest ask first. Each row has a second line naming the ask, such as "Approval of the plan.". The filter never hides it.
 - The filter bar and the column header, then one group per pipeline stage, each folding on its own, open at first, with a count and a short status line:
   - **Grill and plan** and **Build and review**: a task whose next step is starting or running, or waits for a free slot, grouped by the step's type in its workflow (grill, research, plan, refute, document review, plan approval and design; build, rebase, review, publish, validate, deliver, hallmark and handoff), never by its name.
@@ -56,6 +62,7 @@ Every time on the list reads relative to when the page was read: "now" under a m
 
 The filter box matches a task's id or title; the priority and repository chips, with their counts, narrow it, and a chip in effect turns it off again. On a desktop the sticky column header sorts by Task, Pri, Stage · step, PR or In state, and the sort in effect reverses on a second press; on a phone, sort chips take its place. The default is priority, then oldest in state. All of it lives in the URL, `/?q=&p=&repo=&sort=&dir=`, and the server applies it, so a link or a reload gives the same view with scripts off.
 The list's only form is that filter, a GET: answer on each task's page.
+`/list.json` gives the same list as data, read-only: every row and group in the default order, unfiltered, and the stats, each time as an RFC 3339 instant with its exact time.
 Every task page's crumb starts with **All tasks**, a link back to the list.
 
 ## The task page

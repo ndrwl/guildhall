@@ -361,7 +361,22 @@ tiles' line says the picks go with them */
 .hm{font:700 10.5px/1 system-ui,sans-serif;text-transform:uppercase;letter-spacing:.06em;color:var(--you);border:1px solid var(--youline);background:var(--youbg);padding:3px 6px;border-radius:5px;margin-right:6px}
 .hold{margin:0;padding:9px 16px;font-size:13.5px;border-top:1px solid var(--line);background:var(--runbg);border-left:4px solid var(--run);overflow-wrap:anywhere}
 .hold b{font-weight:650}
+/* the stats strip: Work, Spend and Machine as text; on a phone a <details> folded to one line */
+.strip{margin:0 0 16px;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+.strip>summary{display:none}
+.stb{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0}
+.stc{padding:10px 16px 12px;min-width:0}
+.stc+.stc{border-left:1px solid var(--line)}
+.stc h2{margin:0 0 4px;font:650 11px/1.4 system-ui,sans-serif;text-transform:uppercase;letter-spacing:.07em;color:var(--mut)}
+.stc ul{list-style:none;margin:0;padding:0;font-size:13.5px;line-height:1.55;color:var(--mut);font-variant-numeric:tabular-nums}
+.stc li{overflow-wrap:anywhere}
+.stc b{color:var(--fg);font-weight:650}
+.stc a{display:inline-flex;align-items:center;min-height:44px;margin:-12px 0;font-weight:600}
+.sd{font-weight:500;text-transform:none;letter-spacing:0;color:var(--faint)}
 @media (max-width:760px){
+ .strip>summary{display:flex;align-items:center;min-height:44px;padding:0 12px;font-size:13.5px;font-weight:600;font-variant-numeric:tabular-nums;cursor:pointer;overflow-wrap:anywhere}
+ .stb{grid-template-columns:minmax(0,1fr);border-top:1px solid var(--line)}
+ .stc+.stc{border-left:0;border-top:1px solid var(--line)}
  .ws{font-size:14.5px;margin:0 0 10px}
  .ws .m{display:block;margin:2px 0 0}
  .band.list .ws{margin:0 0 8px}
@@ -499,6 +514,11 @@ tiles' line says the picks go with them */
 <p class="ws you"><b>3 tasks wait for you</b><span class="m">12 open · 3 in the merge queue · updated <time datetime="2026-11-05T14:52:10Z" title="Thu 5 Nov 2026, 14:52:10 UTC">now</time></span></p>
 </header>
 <main class="tl tri">
+<details class="strip" id="stats" open><summary>3/4 running · 3 to merge · 4 merged · $38.20 today</summary><div class="stb">
+<section class="stc" aria-label="Work"><h2>Work</h2><ul><li><b>3 of 4 running</b></li><li>2 queued to start</li><li>3 in the merge queue · front <a href="/guildhall/d208">d208</a></li><li>4 PRs merged today</li></ul></section>
+<section class="stc" aria-label="Spend"><h2>Spend <span class="sd">5 Nov, UTC</span></h2><ul><li><b>$38.20</b> <span class="sd">estimated</span></li><li>12 attempts</li><li>4.1M tokens</li></ul></section>
+<section class="stc" aria-label="Machine"><h2>Machine</h2><ul><li><b>load 1.52</b> · 8 cores</li><li>12.1 GB of 16.0 GB memory used</li><li>120 GB of 500 GB disk free</li></ul></section>
+</div></details>
 <section class="sg you" id="g-you"><div class="sgh"><h2>Needs you <span class="n you">3</span></h2><span class="sgm">oldest ask first</span></div><ul class="rows">
 <li class="r you"><span class="idc"><a class="tid" href="/firstmate/f31"><span class="rp">firstmate/</span>f31</a></span><span class="rt" title="Captain view keeps its scroll position across refreshes">Captain view keeps its scroll position across refreshes</span><span></span><span class="stp"><b>build</b> · attempt 3</span><span class="sx"><span class="lb">slice </span>1/2</span><span class="prc"><a href="https://github.com/ndrwl/firstmate/pull/90">#90</a><i class="ci bad" title="CI failed">✗</i></span><time datetime="2026-11-04T12:40:00Z" title="Wed 4 Nov 2026, 12:40:00 UTC">1 day ago</time><span class="ak">A grant for an attempt.</span></li>
 <li class="r you"><span class="idc"><a class="tid" href="/guildhall/d219"><span class="rp">guildhall/</span>d219</a></span><span class="rt" title="Retry budget per step type">Retry budget per step type</span><span class="pri p1">p1</span><span class="stp"><b>plan approval</b> · attempt 1</span><span class="sx"></span><span class="prc"></span><time datetime="2026-11-05T12:12:00Z" title="Thu 5 Nov 2026, 12:12:00 UTC">2 h ago</time><span class="ak">Approval of the plan.</span></li>

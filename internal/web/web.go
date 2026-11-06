@@ -29,6 +29,54 @@ type Source interface {
 	// Tail reads only the tail of repo/id's conversation, for the page's poll: it opens the store read-only and
 	// builds none of Clerk's read. Its errors are Task's.
 	Tail(repo, id string, after int) (Tail, error)
+	// Stats reads the task list's stats strip: the work under way, today's spend and the machine's vitals. Its
+	// errors are Tasks'; a vital the machine cannot give is unavailable, not an error.
+	Stats() (Stats, error)
+}
+
+// Stats is the task list's stats strip, as the store and the machine held it when ReadAt was taken.
+type Stats struct {
+	ReadAt time.Time
+	// Running counts the running attempts the running cap counts, and RunningLimit is that cap, 0 when the copy has
+	// no config to read it from.
+	Running, RunningLimit int
+	// StartQueue counts the starts the running cap queued, and MergeQueue the entries of every merge queue, whose
+	// fronts, one per repository with a queue, are Fronts in repository order.
+	StartQueue, MergeQueue int
+	Fronts                 []TaskRef
+	// Day is the UTC day today's numbers count, MergedToday the merge records recorded on it, one per pull request
+	// merged, and Spend what the attempts started on it reported they spent.
+	Day         time.Time
+	MergedToday int
+	Spend       Spend
+	Machine     Vitals
+}
+
+// TaskRef names a task.
+type TaskRef struct {
+	Repository, ID string
+}
+
+// Spend is what a day's attempts reported they spent: how many attempts, the tokens and the cost in US dollars,
+// with the cost's measure, "measured", "estimated" or "unknown" when no attempt reported one.
+type Spend struct {
+	Attempts    int
+	Tokens      int64
+	CostUSD     float64
+	CostMeasure string
+}
+
+// Vitals are the machine's numbers: the one-minute load average and the core count, memory used of the total, and
+// the free and total space of the volume holding the copy's state. Each ...OK says the OS gave that value; one it
+// cannot give without cgo, such as the load on Windows, shows as unavailable.
+type Vitals struct {
+	Load                float64
+	LoadOK              bool
+	Cores               int
+	MemUsed, MemTotal   uint64
+	MemOK               bool
+	DiskFree, DiskTotal uint64
+	DiskOK              bool
 }
 
 // Tail is the tail of a task's conversation: the number of its last message, 0 for none, and its messages numbered
