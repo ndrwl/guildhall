@@ -32,7 +32,8 @@ func TestDirectorTabReloadPreservesOnePane(t *testing.T) {
 			defer func() { _ = input.Close(); _ = typing.Close() }()
 			host := newDirectorTabs()
 			host.onRun = func(tab adapter.TabRef, _ string) {
-				app, _, _ := supervisorApp(input, time.Millisecond)
+				// The long grace makes turn-ended end session 1, so the signal always reaches a live session.
+				app, _, _ := supervisorApp(input, time.Hour)
 				if code := app.Run(supervisorArgv(t, dir, tab)[1:]); code != 0 {
 					t.Errorf("supervisor exit %d", code)
 				}
