@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="same-origin">
+<title>All tasks</title>
+<style>/* d105 design-3, "C2, refined": one set of colour variables, the dark theme chosen by prefers-color-scheme. */
+:root{--bg:#fff;--bg2:#f5f6f8;--card:#fff;--fg:#1b1d22;--mut:#5b6270;--faint:#868d99;--line:#e2e5ea;--line2:#cfd4db;--link:#1d5bd0;
+ --band:#15171c;--bandfg:#f1f2f5;--bandmut:#a1a7b3;--chip:#262a32;
+ --ok:#15803d;--okbg:#e9f6ee;--back:#7c3aed;--backbg:#f3eefe;--run:#1d6fe0;--runbg:#e8f0fd;
+ --you:#b45f00;--youbg:#fff7e8;--youline:#f2c46d;--youdot:#e08a00;--bad:#c42b2b;--badbg:#fdeeee;--on:#fff;
+ --code:#f1f3f6;--shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08)}
+@media (prefers-color-scheme:dark){:root{--bg:#121418;--bg2:#181b20;--card:#1c1f25;--fg:#e8eaee;--mut:#a5acb8;--faint:#7c8390;--line:#2a2e36;--line2:#3a3f49;--link:#86b4ff;
+ --band:#0b0c0f;--bandfg:#eef0f3;--bandmut:#8e95a1;--chip:#20242b;
+ --ok:#4ade80;--okbg:#10251a;--back:#b597ff;--backbg:#211a35;--run:#6ea8ff;--runbg:#132038;
+ --you:#fbbf24;--youbg:#2a2009;--youline:#7a5a12;--youdot:#f5b31c;--bad:#ff8080;--badbg:#2f1515;--on:#0f1114;
+ --code:#0d0f12;--shadow:none}}
+html{color-scheme:light dark}
+body{margin:0;min-height:100%;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+*{box-sizing:border-box}
+a{color:var(--link);text-underline-offset:2px}
+code{font:.86em/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--code);padding:1px 4px;border-radius:4px}
+h2{font:650 12px/1.3 system-ui,sans-serif;text-transform:uppercase;letter-spacing:.09em;color:var(--mut);margin:0 0 10px;display:flex;align-items:center;gap:8px}
+h2 .n{font-size:11px;letter-spacing:0;background:var(--line);color:var(--fg);border-radius:999px;padding:1px 7px}
+h2 .n.you{background:var(--youdot);color:var(--on)}
+summary{cursor:pointer}
+summary::-webkit-details-marker{display:none}
+button{font:inherit;color:inherit}
+/* band */
+.band{background:var(--band);color:var(--bandfg);padding:18px 32px 0}
+.crumb{font-size:13px;color:var(--bandmut);display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center}
+.crumb a{color:#9cc2ff}
+.crumb .sep{opacity:.5}
+.band h1{font:650 22px/1.3 system-ui,sans-serif;margin:6px 0 14px;letter-spacing:-.01em;max-width:62ch}
+.chips{display:none}
+.steps{display:flex;margin:0;padding:0;list-style:none;gap:3px}
+.steps li{flex:1 1 0;padding:9px 12px 13px;border-top:4px solid #3a3f49;font-size:12.5px;color:var(--bandmut);min-width:0;overflow:hidden;text-overflow:ellipsis}
+.steps b{display:block;color:var(--bandfg);font-size:13.5px;font-weight:600;white-space:nowrap}
+.steps .ok{border-color:#3fbf73}.steps .ok b::before{content:"✓ ";color:#5fd394}
+.steps .back{border-color:#a78bfa}.steps .back b::before{content:"↩\FE0E  ";color:#c4b5fd}
+.steps .run{border-color:#5b9cff}.steps .run b::before{content:"▸ ";color:#8fbcff}
+.steps .bad{border-color:#ff6b6b}.steps .bad b::before{content:"✗ ";color:#ff9b9b}
+.steps .you{border-color:#f5b31c;background:#262116}.steps .you b{color:#ffd166}.steps .you b::before{content:"● "}
+.steps .later b{color:var(--bandmut);font-weight:500}
+/* quiet text and status */
+.mut{color:var(--mut)}.faint{color:var(--faint)}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:6px 14px;margin:0;font-size:14px}
+.kv dt{color:var(--mut)}.kv dd{margin:0;min-width:0}
+.tag{display:inline-flex;align-items:center;gap:4px;font-weight:600;white-space:nowrap}
+.tag.ok{color:var(--ok)}.tag.bad{color:var(--bad)}.tag.you{color:var(--you)}.tag.run{color:var(--run)}
+.sl{list-style:none;margin:4px 0 0;padding:0;font-size:13.5px}.sl li{margin:2px 0}.sl .cur{font-weight:650}
+.waits{margin:6px 0 0;padding-left:18px;font-size:13.5px;color:var(--mut)}
+/* one ask */
+.ask{background:var(--card);border:1px solid var(--youline);border-left:5px solid var(--youdot);border-radius:12px;padding:16px 18px 14px;box-shadow:var(--shadow)}
+.ask+.ask{margin-top:14px}
+.ask.def{border-left-style:dashed}
+.ah{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px}
+.kind{font:700 11px/1 system-ui,sans-serif;text-transform:uppercase;letter-spacing:.07em;background:var(--youbg);color:var(--you);border:1px solid var(--youline);padding:4px 8px;border-radius:5px}
+.aid{font:13px ui-monospace,Menlo,Consolas,monospace;color:var(--mut);text-decoration:none}
+.since{color:var(--faint);margin-left:auto}
+.q{font:650 17px/1.4 system-ui,sans-serif;margin:10px 0 4px;letter-spacing:-.005em;overflow-wrap:anywhere}
+.subj{font-size:13.5px;color:var(--mut);margin:0 0 10px}
+.plan{margin:0 0 12px;padding:10px 14px;border-radius:8px;background:var(--bg2);border:1px solid var(--line);font-size:15px;line-height:1.55}.plan .ph{font-weight:650;margin:0 0 6px}.plan>:last-child{margin-bottom:0}.plan ul,.plan ol{margin:0 0 8px;padding-left:20px}
+.ctx{margin:0 0 12px;font-size:14px;border-radius:8px;background:var(--bg2);border:1px solid var(--line)}
+.ctx>summary{padding:8px 12px;font-weight:600;color:var(--fg);min-height:44px;display:flex;align-items:center}
+.ctx>summary,.fold>summary{list-style:none}
+.ctx>summary::before,.fold>summary::before{content:"▸";display:inline-block;width:1.2em;color:var(--mut)}
+.ctx[open]>summary::before,.fold[open]>summary::before{content:"▾"}
+.ctx>div{padding:0 12px 10px}.ctx p{margin:0}
+.ctx pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace;margin:0}
+.pick{font-size:13px;color:var(--mut);margin:12px 0 6px;font-weight:600}
+.opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.opt{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;text-align:left;min-height:56px;padding:8px 12px;border-radius:10px;border:1px solid var(--line2);border-left:4px solid var(--line2);background:var(--card)}
+.opt b{font-size:15px;font-weight:650}
+.opt span{font-size:12.5px;color:var(--mut);line-height:1.35}
+.opt.carry{border-left-color:var(--run)}.opt.carry b{color:var(--run)}
+.opt.pos{border-left-color:var(--ok)}.opt.pos b{color:var(--ok)}
+.opt.neg{border-left-color:var(--bad)}.opt.neg b{color:var(--bad)}
+.opt[disabled]{opacity:.55;cursor:not-allowed}
+.opt:not([disabled]){cursor:pointer;color:inherit;font:inherit}
+.opt:not([disabled]):hover{background:var(--bg2)}
+.ask form{margin:0}
+.yw{display:block;font-size:13px;color:var(--mut);margin:12px 0 6px;font-weight:600}
+.yw span{font-weight:400;color:var(--faint);margin-left:6px}
+.ask textarea,.say textarea{display:block;width:100%;box-sizing:border-box;min-height:88px;padding:10px 12px;border-radius:10px;border:1px solid var(--line2);background:var(--bg);color:inherit;font:15px/1.45 system-ui,sans-serif;resize:vertical}
+.wo{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line2);display:grid}
+.wo .opt{min-height:44px}
+.state{margin:12px 0 0;padding:8px 12px;border-radius:8px;font-size:14px}
+.state.bad{background:var(--badbg);border-left:3px solid var(--bad)}
+.state.ok{background:var(--okbg);border-left:3px solid var(--ok)}
+.ask.refused{border-left-color:var(--bad)}
+.who{font-size:12.5px;color:var(--faint);margin:12px 0 0;padding-top:12px;border-top:1px dashed var(--line2)}
+.who b{color:var(--mut);font-weight:600}
+.find{margin:8px 0 0;padding:0;list-style:none;font-size:14px}
+.find li{margin:3px 0;display:flex;gap:8px;align-items:baseline}
+.sev{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:1px 6px;border-radius:4px;border:1px solid var(--line2);color:var(--mut);white-space:nowrap}
+.find .fx{color:var(--ok);font-size:12.5px;font-weight:600;white-space:nowrap}
+/* the task in your words */
+.w{margin:0 0 10px;font-size:14px;line-height:1.5;border-left:3px solid var(--line2);padding:2px 0 2px 12px;white-space:pre-line;overflow-wrap:anywhere}
+.w cite{display:block;font-size:12px;color:var(--faint);font-style:normal;margin-top:2px;white-space:normal}
+.fold{font-size:14px}
+.fold>summary{color:var(--link);padding:6px 0;font-weight:600;min-height:44px;display:flex;align-items:center}
+.grill{margin:4px 0 0}.grill ul,.grill ol{padding-left:18px;margin:4px 0}.grill li{margin:4px 0}
+.flink{display:flex;align-items:center;min-height:44px;font-weight:600;font-size:14px}
+/* documents index */
+.dix{list-style:none;margin:0;padding:0;font-size:14px}
+.dix li{display:flex;gap:8px;align-items:center;min-height:44px}
+.dix .k{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);width:62px;flex:none;overflow:hidden;text-overflow:ellipsis}
+.dix a{flex:1;min-width:0;overflow-wrap:anywhere;display:flex;align-items:center;min-height:44px}
+.dix .d{font-size:12px;color:var(--faint);white-space:nowrap}
+.dix .old a{color:var(--mut)}
+.dix .grp{font-size:12px;font-weight:700;color:var(--mut);min-height:28px;margin-top:6px}
+/* the spine, newest first */
+.key{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12.5px;color:var(--mut);margin:0 0 16px;padding:0;list-style:none}
+.key li{display:flex;align-items:center;gap:6px}
+.dot{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;font:700 11px/1 system-ui,sans-serif;color:var(--on);background:var(--ok)}
+.dot.back{background:var(--back)}.dot.run{background:var(--run)}.dot.you{background:var(--youdot)}.dot.later{background:transparent;box-shadow:inset 0 0 0 2px var(--line2)}
+.spine{list-style:none;margin:0;padding:0;position:relative}
+.spine::before{content:"";position:absolute;left:12px;top:8px;bottom:8px;width:2px;background:var(--line)}
+.node{position:relative;padding:0 0 22px 42px}
+.node::before{content:"✓";position:absolute;left:0;top:0;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font:700 14px/1 system-ui,sans-serif;color:var(--on);background:var(--ok);box-shadow:0 0 0 4px var(--bg)}
+.node.back::before{content:"↩\FE0E";background:var(--back)}
+.node.run::before{content:"▸";background:var(--run)}
+.node.bad::before{content:"✗";background:var(--bad)}
+.node.void::before{content:"⊘";background:var(--faint)}
+.node.later::before{content:"";background:var(--bg);box-shadow:0 0 0 4px var(--bg),inset 0 0 0 2px var(--line2)}
+.node.you::before{content:"";background:var(--youdot);box-shadow:0 0 0 4px var(--bg),0 0 0 7px var(--youline)}
+.nh{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;min-height:26px}
+.nh .t{font-weight:650;font-size:15px}
+.st{font-size:12px;font-weight:700;letter-spacing:.03em;padding:2px 8px;border-radius:999px;background:var(--okbg);color:var(--ok)}
+.back .st{background:var(--backbg);color:var(--back)}.run .st{background:var(--runbg);color:var(--run)}.you .st{background:var(--youbg);color:var(--you)}
+.bad .st{background:var(--badbg);color:var(--bad)}.void .st,.later .st{background:var(--bg2);color:var(--mut)}
+.nh time{margin-left:auto;font-size:13px;color:var(--faint);font-variant-numeric:tabular-nums;white-space:nowrap}
+.nb{color:var(--mut);margin-top:3px;font-size:14px;overflow-wrap:anywhere}
+.links{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.att,.flag{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:4px 12px;border-radius:8px;font-size:13.5px;text-decoration:none;font-weight:600}
+.att{border:1px solid var(--line2);background:var(--card);color:var(--fg)}
+.att::before{content:"";width:10px;height:13px;border:1.5px solid var(--mut);border-radius:2px;flex:none}
+.flag{background:var(--youbg);color:var(--you);border:1px solid var(--youline)}
+.said{margin-top:10px;padding:8px 12px;border-radius:8px;font-size:14px;background:var(--okbg);border-left:3px solid var(--ok);white-space:pre-line;overflow-wrap:anywhere}
+.said.back{background:var(--backbg);border-left-color:var(--back)}
+.said small{display:block;font-size:12.5px;color:var(--mut);margin-top:2px;white-space:normal}
+.older>summary{display:inline-flex;align-items:center;min-height:44px;margin:0 0 18px 42px;padding:0 14px;border:1px solid var(--line2);border-radius:999px;color:var(--link);font-size:13.5px;font-weight:600;list-style:none}
+.older>summary::before{content:"▸";margin-right:8px}
+.older[open]>summary::before{content:"▾"}
+.asof{font-size:12px;color:var(--faint);margin-top:18px}
+.empty{color:var(--mut);font-size:14px;margin:0}
+.stage{background:var(--youbg);border:1px solid var(--youline);border-radius:12px;padding:14px 16px;margin:0 0 14px;font-size:14.5px}
+/* task page: sticky left rail; the asks on "Now"; the story below */
+.c2-body{display:grid;grid-template-columns:320px minmax(0,1fr);grid-template-areas:"rail now" "rail story";align-items:start}
+.c2-rail{grid-area:rail;position:sticky;top:0;max-height:100vh;overflow-y:auto;background:var(--bg2);border-right:1px solid var(--line);padding:22px 22px 28px}
+.c2-rail>section+section{margin-top:26px;padding-top:22px;border-top:1px solid var(--line)}
+.c2-now{grid-area:now;padding:26px 36px 4px;max-width:880px}
+.c2-now .spine::before{display:none}
+.c2-now .node{padding-bottom:8px}
+.c2-now .nh{margin-bottom:12px}
+.c2-story{grid-area:story;padding:18px 36px 64px;max-width:880px}
+.c2-story>h2{margin-bottom:12px}
+.nix{list-style:none;margin:0;padding:0}
+.nix a{display:flex;align-items:center;gap:10px;min-height:44px;padding:6px 12px;border-radius:9px;background:var(--youbg);border:1px solid var(--youline);color:var(--fg);text-decoration:none;font-size:14px;margin-bottom:6px}
+.nix a b{font-weight:650}
+.nix a span{margin-left:auto;font:12.5px ui-monospace,Menlo,Consolas,monospace;color:var(--you)}
+/* reader page: one document, the asks and status pinned beside it */
+.band.slim{padding:14px 32px 18px}
+.rtop{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.backto{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 16px 0 12px;border-radius:10px;background:var(--chip);color:var(--bandfg)!important;text-decoration:none;font-weight:650;font-size:14.5px;border:1px solid #3a3f49}
+.dname{font:650 18px/1.3 system-ui,sans-serif;margin:0;overflow-wrap:anywhere}
+.dmeta{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:13px;color:var(--bandmut);margin-top:8px}
+.dmeta .okk{color:#5fd394}
+.dmeta a{color:#9cc2ff;font-weight:600;display:inline-flex;align-items:center;min-height:44px}
+.jump{display:none}
+.r-body{display:grid;grid-template-columns:minmax(0,1fr) 410px;align-items:start}
+.r-doc{padding:28px 48px 64px;min-width:0}
+.r-doc>.md,.r-doc>.txt{max-width:720px}
+.r-doc iframe{width:100%;height:80vh;border:1px solid var(--line);border-radius:10px;background:#fff}
+.txt{white-space:pre-wrap;overflow-wrap:anywhere;font:13.5px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:0}
+.r-side{position:sticky;top:0;max-height:100vh;overflow-y:auto;background:var(--bg2);border-left:1px solid var(--line);padding:22px 20px 28px}
+.r-side>section+section{margin-top:24px;padding-top:20px;border-top:1px solid var(--line)}
+.r-side .ask{padding:14px 14px 12px}
+.r-side .q{font-size:15.5px}
+.r-side .opts{grid-template-columns:1fr}
+.r-side .since{margin-left:0;flex-basis:100%}
+.endback{margin-top:20px}
+.endback .backto{background:var(--card);color:var(--fg)!important;border-color:var(--line2)}
+/* d153: an ask's open questions as cards, options as a list, the recommended option marked */
+.plan .oqh{display:flex;align-items:center;gap:8px;margin:14px 0 8px;padding-top:12px;border-top:1px solid var(--line)}
+.plan .oqh:first-child{margin-top:0;padding-top:0;border-top:0}
+.plan .oqh .n{font:700 12px/1 system-ui,sans-serif;padding:3px 7px;border-radius:999px;background:var(--line);color:var(--mut)}
+.oqs{display:grid;gap:8px}
+.oq{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px 12px;min-width:0}
+.oq .qt{font-weight:650;margin:0 0 2px;display:flex;align-items:baseline;gap:8px}
+.oq .qn{font:700 12px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--mut);background:var(--bg2);border:1px solid var(--line);padding:3px 6px;border-radius:5px}
+.oq .qb{margin:0 0 8px;color:var(--fg)}
+.oq .qb>:last-child,.oq .qm>:last-child,.oq .qv>:last-child{margin-bottom:0}
+.oq .qv p{white-space:pre-line}
+.oq .qm{margin-top:8px}
+.plan .ol{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.ol li{display:flex;align-items:flex-start;gap:8px;margin:0;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--card);font-size:14.5px;line-height:1.45}
+.ol .lt{font:600 13px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--mut);flex:none}
+.ol .ot{flex:1;min-width:0}
+.ol .why{display:block;font-size:13px;color:var(--mut)}
+.ol li.rec{background:var(--okbg);border-color:var(--ok);border-left:4px solid var(--ok);font-weight:600}
+.ol li.rec .lt{color:var(--ok)}
+.ol li.rec .why{font-weight:400}
+/* picks: a lettered card on the Guildmaster's form is a radio group; each label is a 44px tap target, a changed pick
+shows its "Your answer" line, and the ask's answer row then hides Approved and puts Changes requested forward */
+.ol.pk li{padding:0}
+.ol.pk label{display:flex;align-items:flex-start;gap:8px;flex:1;min-width:0;min-height:44px;box-sizing:border-box;padding:8px 10px;cursor:pointer}
+.ol.pk input{flex:none;width:18px;height:18px;margin:2px 0 0;accent-color:var(--ok)}
+.ol.pk .ya{display:none;margin-top:4px;font-size:13px;font-weight:650;color:var(--you)}
+.ol.pk input:checked~.ot .ya{display:block}
+.ol.pk li:has(input:checked:not([value=""])){background:var(--youbg);border-color:var(--youline);border-left:4px solid var(--youdot)}
+.ask:has(.oqs:not(.ctl) .pk input:checked:not([value=""])) .opt[value="approved"]{display:none}
+.ask:has(.oqs:not(.ctl) .pk input:checked:not([value=""])) .opt[value="changes_requested"]{grid-column:1/-1;background:var(--youbg);border-color:var(--youline);border-left:6px solid var(--youdot)}
+/* on a plan approval's open questions (.ctl) a changed pick is that question's answer: Approved stays, and the
+tiles' line says the picks go with them */
+.opt .pkd{display:none}
+.ask:has(.ctl .pk input:checked:not([value=""])) .opt:has(.pkd) span:not(.pkd){display:none}
+.ask:has(.ctl .pk input:checked:not([value=""])) .opt .pkd{display:block}
+.oqs .cut{margin:0;color:var(--mut);font-size:13px}
+.badge{font:700 10.5px/1 system-ui,sans-serif;font-style:normal;text-transform:uppercase;letter-spacing:.06em;color:var(--on);background:var(--ok);padding:4px 7px;border-radius:5px;flex:none;align-self:center;white-space:nowrap}
+.opt.rec{grid-column:1/-1;background:var(--okbg);border-color:var(--ok);border-left-width:6px}
+.opt.rec b{display:flex;align-items:center;gap:8px}
+.opt.rec:not([disabled]):hover{background:var(--okbg);filter:brightness(.97)}
+/* d150: the Director's explanation of an ask, under its headline and above its summary */
+.dx{margin:0 0 12px;padding:10px 14px;border-radius:8px;border:1px solid var(--line);border-left:4px solid var(--run);background:var(--card)}
+.dx .dxh{margin:0 0 4px;font:650 12px/1.3 system-ui,sans-serif;text-transform:uppercase;letter-spacing:.06em;color:var(--mut)}
+.dx .dxh time{text-transform:none;letter-spacing:0;font-weight:400}
+.dx .md{font-size:15px;line-height:1.55}.dx .md>:last-child{margin-bottom:0}
+.dx .dxn{margin:0;font-size:14px;color:var(--faint)}
+.dx:has(.dxn){border-left-color:var(--line2);background:var(--bg2)}
+/* goldmark's output: headings, lists, tables, fenced code, quotes */
+.md{font-size:16px;line-height:1.65;overflow-wrap:anywhere}
+.md h1{font:700 26px/1.25 system-ui,sans-serif;margin:0 0 14px;letter-spacing:-.015em}
+.md h2{font:650 19px/1.3 system-ui,sans-serif;text-transform:none;letter-spacing:-.005em;color:var(--fg);margin:30px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line);display:block}
+.md h3{font:650 16px/1.35 system-ui,sans-serif;margin:22px 0 6px}
+.md p{margin:0 0 12px}
+.md ul,.md ol{margin:0 0 12px;padding-left:24px}.md li{margin:4px 0}
+.md blockquote{margin:0 0 14px;padding:4px 14px;border-left:4px solid var(--line2);color:var(--mut)}
+.md pre{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow-x:auto;margin:0 0 16px;font-size:13.5px;line-height:1.55}
+.md pre code{background:none;padding:0;font-size:inherit}
+.md table{display:block;overflow-x:auto;max-width:100%;border-collapse:collapse;margin:0 0 16px;border:1px solid var(--line);border-radius:10px;font-size:14.5px;line-height:1.45}
+.md th{text-align:left;font-weight:650;background:var(--bg2);border-bottom:1px solid var(--line2)}
+.md th,.md td{padding:9px 14px;vertical-align:top}
+.md tr+tr td{border-top:1px solid var(--line)}
+/* refusal page */
+.refusal{max-width:640px;margin:48px auto;padding:0 20px}
+.refusal h1{font:650 22px/1.3 system-ui,sans-serif;margin:0 0 10px}
+/* phone: band with status chips, then the asks, then the story, then the rest */
+@media (max-width:760px){
+ .band{padding:12px 16px 12px}
+ .crumb{font-size:12.5px}
+ .band h1{font-size:18px;margin:4px 0 10px}
+ .chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px;padding:0;list-style:none}
+ .chips li{display:flex;align-items:center;gap:6px;min-height:32px;padding:0 11px;border-radius:999px;background:var(--chip);font-size:13.5px;color:var(--bandfg)}
+ .chips a{color:#9cc2ff;font-weight:600}
+ .chips .c-you{background:#3a2c0c;color:#ffd166;font-weight:650}
+ .chips .c-ok{color:#5fd394;font-weight:650}.chips .c-bad{color:#ff9b9b;font-weight:650}
+ .steps{gap:3px}
+ .steps li{padding:0;height:0;border-top-width:5px;font-size:0;border-radius:3px}
+ .steps b{display:none}
+ .c2-body{display:flex;flex-direction:column}
+ .c2-rail{display:contents}
+ .c2-now{order:1;padding:16px 12px 0}
+ .c2-now .node{padding-left:0}.c2-now .node::before{display:none}
+ .c2-story{order:2;padding:12px 16px 20px}
+ .r-need{display:none}
+ .r-task{order:3}.r-docs{order:4}.r-status{order:5}
+ .r-task,.r-docs,.r-status{padding:20px 16px;background:var(--bg2);border-top:1px solid var(--line)}
+ .r-status{padding-bottom:48px}
+ .c2-rail>section+section{margin-top:0}
+ .ask{padding:14px 14px 12px}
+ .since{margin-left:0;flex-basis:100%}
+ .q{font-size:16.5px}
+ .opts{grid-template-columns:1fr}
+ .older>summary{margin-left:0}
+ .nh time{margin-left:0;flex-basis:100%;order:-1;font-size:12.5px}
+ .node{padding-left:38px}
+ .band.slim{padding:10px 14px 14px}
+ .dname{font-size:16px}
+ .dmeta{font-size:12.5px}
+ .jump{display:flex;position:sticky;top:0;z-index:3;gap:8px;padding:8px 10px;background:var(--bg);border-bottom:1px solid var(--line);box-shadow:var(--shadow)}
+ .jump a{display:flex;align-items:center;justify-content:center;min-height:44px;padding:0 14px;border-radius:10px;font-weight:650;font-size:14.5px;text-decoration:none}
+ .jump .jb{border:1px solid var(--line2);color:var(--fg)}
+ .jump .jn{flex:1;background:var(--youbg);color:var(--you);border:1px solid var(--youline)}
+ .band.slim .backto{display:none}
+ .r-body{display:block}
+ .r-doc{padding:18px 16px 24px}
+ .md{font-size:15.5px}
+ .md h1{font-size:22px}
+ .md h2{font-size:17.5px}
+ .md pre{font-size:12.5px;padding:12px}
+ .md th,.md td{padding:8px 10px}
+ .r-side{position:static;max-height:none;border-left:0;border-top:1px solid var(--line);padding:18px 12px 48px}
+ .r-side .q{font-size:16.5px}
+ .endback .backto{width:100%;justify-content:center}
+}
+/* d150: where it stands, in the band, and each story node's raw events */
+.ws{margin:-4px 0 14px;font-size:15.5px;line-height:1.45;color:var(--bandfg);max-width:80ch}
+.ws b{font-weight:650}
+.ws.you b{color:#ffd166}
+.ws .m{color:var(--bandmut);font-size:13.5px;margin-left:6px}
+/* d172: the task's grill mode, under where it stands */
+.gm{margin:-8px 0 14px;font-size:13px;color:var(--bandmut);max-width:80ch}
+.raw{font-size:13px}
+.raw>summary{color:var(--mut);font-weight:500;min-height:44px}
+.raw pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace;margin:0;color:var(--mut);background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+/* d222: the task list at / as a triage list: Needs you, then stage groups of one-line rows (Layout A) */
+.band.list{padding-bottom:2px}
+.band.list h1{margin-bottom:8px}
+.band.list .ws{margin:0 0 14px;font-size:14.5px}
+.tl{max-width:1240px;padding:24px 32px 64px;--cols:150px minmax(0,1fr) 34px 200px 50px 82px 80px}
+.rows{list-style:none;margin:0;padding:0}
+.tid{font:600 14px ui-monospace,Menlo,Consolas,monospace;display:inline-flex;align-items:center;min-height:44px;min-width:44px}
+/* the filter box, its chips and the sort */
+.fb{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;margin:0 0 14px}
+.fq{flex:1 1 240px;min-width:0;min-height:40px;padding:0 12px;border-radius:9px;border:1px solid var(--line2);background:var(--card);color:inherit;font:14.5px system-ui,sans-serif}
+.fc{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px}
+.fc .fl{color:var(--mut);font-weight:600;margin-right:2px}
+.cp{display:inline-flex;align-items:center;min-height:34px;padding:0 11px;border-radius:999px;border:1px solid var(--line2);background:var(--card);color:var(--fg);text-decoration:none;font-weight:600;font-variant-numeric:tabular-nums}
+.cp.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.cp i{font-style:normal;font-weight:500;color:var(--faint);margin-left:5px}
+.cp.on i{color:inherit;opacity:.75}
+.sortp{display:none}
+.rh{display:grid;grid-template-columns:var(--cols);gap:0 12px;align-items:center;padding:0 12px 0 17px;min-height:34px;font:650 11px/1.2 system-ui,sans-serif;text-transform:uppercase;letter-spacing:.07em;color:var(--mut);position:sticky;top:0;z-index:2;background:var(--bg);border-bottom:1px solid var(--line2);margin:0 0 10px}
+.rh a{color:var(--mut);text-decoration:none;display:flex;align-items:center;min-height:34px}
+.rh a::after{content:'↕';margin-left:4px;opacity:.45;font-size:12px}
+.rh a.on{color:var(--fg)}.rh a.on::after{content:'▾';opacity:1}.rh a.on.desc::after{content:'▴'}
+/* Needs you and the stage groups */
+.sg{margin:0 0 12px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--card)}
+.sg>summary,.sg>.sgh{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 12px;background:var(--bg2);border-left:4px solid var(--line2);list-style:none;cursor:pointer}
+.sg>summary::-webkit-details-marker{display:none}
+.sg>summary::before{content:'▸';width:1em;color:var(--mut)}
+.sg[open]>summary::before{content:'▾'}
+.sg h2{margin:0;font-size:15px}
+.sgm{font-size:13px;color:var(--mut);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sg.you>.sgh{border-left-color:var(--youdot);background:var(--youbg)}
+.sg.you h2{color:var(--you)}
+.sg.mv>summary{border-left-color:var(--run)}
+.sg.fin>summary{border-left-color:var(--ok)}
+/* one-line rows */
+.r{display:grid;grid-template-columns:var(--cols);gap:0 12px;align-items:center;min-height:44px;padding:0 12px 0 16px;border-top:1px solid var(--line);font-size:14px}
+.idc{display:flex;align-items:center;gap:6px;min-width:0}
+.r .tid{font-size:13px;white-space:nowrap}
+.tid .rp{color:var(--faint);font-weight:500}
+.rt{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.pri{justify-self:start;font:700 11px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:3px 6px;border-radius:5px;background:var(--bg2);color:var(--mut);border:1px solid var(--line)}
+.pri.p0{background:var(--badbg);color:var(--bad);border-color:transparent}.pri.p1{background:var(--youbg);color:var(--you);border-color:transparent}
+.stp{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--mut);font-size:13px}
+.stp b{color:var(--fg);font-weight:600}
+.sx{font-size:13px;color:var(--mut);font-variant-numeric:tabular-nums}
+.sx .lb{display:none}
+.prc{display:flex;align-items:center;gap:5px;font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.prc a{display:inline-flex;align-items:center;min-height:44px;font-weight:600}
+.ci{font-style:normal;font-weight:700}
+.ci.ok{color:var(--ok)}.ci.run{color:var(--run)}.ci.bad{color:var(--bad)}
+.r time{font-size:13px;color:var(--faint);white-space:nowrap;font-variant-numeric:tabular-nums;text-align:right}
+.r.you{background:var(--youbg);border-top-color:var(--youline)}
+.r .ak{grid-column:2/-1;margin:-10px 0 9px;font-size:13px;color:var(--you);min-width:0;overflow-wrap:anywhere}
+/* the merge queue: queue order, the front and what holds it */
+.qp{flex:none;width:18px;text-align:right;font:700 12px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--faint)}
+.r.front{background:var(--runbg)}.r.front .qp{color:var(--run)}
+.hm{font:700 10.5px/1 system-ui,sans-serif;text-transform:uppercase;letter-spacing:.06em;color:var(--you);border:1px solid var(--youline);background:var(--youbg);padding:3px 6px;border-radius:5px;margin-right:6px}
+.hold{margin:0;padding:9px 16px;font-size:13.5px;border-top:1px solid var(--line);background:var(--runbg);border-left:4px solid var(--run);overflow-wrap:anywhere}
+.hold b{font-weight:650}
+@media (max-width:760px){
+ .ws{font-size:14.5px;margin:0 0 10px}
+ .ws .m{display:block;margin:2px 0 0}
+ .band.list .ws{margin:0 0 8px}
+ .tl{padding:12px 10px 48px}
+ .fb{gap:8px}
+ .fq{flex-basis:100%;min-height:44px;font-size:16px}
+ .cp{min-height:44px;padding:0 13px}
+ .rh{display:none}
+ .sortp{display:flex;margin:-4px 0 12px}
+ .r{display:flex;flex-wrap:wrap;align-items:center;gap:0 10px;padding:0 12px 9px}
+ .r>span:empty{display:none}
+ .idc{order:0}
+ .prc{order:1}
+ .r time{order:2;margin-left:auto}
+ .rt{order:3;flex-basis:100%;white-space:normal;overflow-wrap:anywhere;font-size:14.5px;margin:-4px 0 2px}
+ .pri,.stp,.sx{order:4}
+ .stp{white-space:normal}
+ .sx .lb{display:inline}
+ .r .ak{order:5;flex-basis:100%;margin:2px 0 0}
+ .hold{padding:9px 12px}
+ .sgm{white-space:normal}
+}
+/* the conversation (docs/web.md#the-conversation): ledger rows, tag chips, talk under its ask, on Now and in the story */
+.tg{display:inline-flex;align-items:center;font:12px/1 ui-monospace,Menlo,Consolas,monospace;color:var(--mut);background:var(--bg2);border:1px solid var(--line2);border-radius:999px;padding:4px 9px;text-decoration:none;white-space:nowrap}
+.talk{margin:0}
+.ask .talk{margin:14px 0 0;padding-top:12px;border-top:1px dashed var(--line2)}
+.ask .talk>.pick{margin-top:0}
+.msg{border-left:3px solid var(--line2);padding:3px 0 3px 12px;margin:0 0 12px}
+.msg.dir{border-left-color:var(--run)}
+.msg.wait{border-left-color:var(--youdot)}
+.mh{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;font-size:13px;color:var(--mut)}
+.mh b{color:var(--fg);font-weight:650}
+.mh .src{color:var(--faint)}
+.mh time{margin-left:auto;color:var(--faint);font-variant-numeric:tabular-nums;white-space:nowrap}
+.mb{font-size:14.5px;line-height:1.55;margin-top:2px;overflow-wrap:anywhere}
+.mb p{margin:0 0 6px}.mb>:last-child{margin-bottom:0}.mb ul,.mb ol{margin:0 0 6px;padding-left:20px}.mb li{margin:2px 0}
+.mb pre{overflow-x:auto;font-size:12.5px}
+.th{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font:650 12px/1.3 system-ui,sans-serif;text-transform:uppercase;letter-spacing:.09em;color:var(--mut);margin:24px 0 8px}
+.th .tg{text-transform:none;letter-spacing:0}
+.talk>.fold{margin:0 0 6px}
+.talk>.fold>.talk{padding-top:4px}
+.talkf{margin-top:6px}
+.talkf>.talk{padding:4px 0 0}
+.stage.done{background:var(--okbg);border-color:var(--line)}
+/* Confirm and Say (docs/web.md#confirm-and-say): the amber recommendation box, its row's mark, a confirmation's row
+   and the Say box at the end of the stage's talk */
+.mh .rk{color:var(--you)}
+.msg.conf{border-left-color:var(--ok)}
+.recd{margin:0 0 12px;padding:10px 12px;border-radius:8px;background:var(--youbg);border:1px solid var(--youline)}
+.recd .ph{font-weight:650;font-size:13px;color:var(--you);margin:0 0 8px}
+.recd .opts{margin:0}
+.recst{margin:0 0 12px;padding:8px 12px;border-radius:8px;font-size:14px;color:var(--faint);background:var(--bg2);border-left:3px solid var(--line2)}
+.say{margin:12px 0 0;padding-top:4px;border-top:1px dashed var(--line2)}
+.ask+.round,.round{margin-top:14px}
+.rq{margin:10px 0 0}
+.rq .rrec,.rqa .rrec{margin:0 0 8px;font-size:14px;color:var(--mut)}
+.rq .rrec b,.rqa .rrec b{color:var(--fg);font-weight:600}
+.rq textarea{min-height:64px}
+.rq .saved{margin:4px 0 8px;font-size:12.5px;color:var(--faint)}
+.rq.done{background:var(--bg2)}
+.rq .rdone{margin:2px 0 0;display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 10px;font-size:14px}
+.rq .rdone b{color:var(--ok)}
+.rq .gist{color:var(--mut);min-width:0;overflow-wrap:anywhere}
+.lnk{margin-left:auto;background:none;border:0;padding:0 2px;min-height:32px;color:var(--link);font:inherit;font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.rbar{position:sticky;bottom:0;z-index:1;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:14px -18px 0;padding:10px 18px;background:var(--card);border-top:1px solid var(--line)}
+.rqa{margin:8px 0 0;padding:8px 12px;border-radius:8px;border:1px solid var(--line)}
+.rqa .qt{font-weight:650;margin:0 0 2px;display:flex;align-items:baseline;gap:8px}
+.rqa .qn{font:700 12px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--mut)}
+.rqa .ra{margin:0;color:var(--ok);font-weight:600;font-size:14px}
+.rqa .md>:last-child{margin-bottom:0}
+.fold.void>summary{color:var(--mut)}
+.newbar{position:sticky;top:0;z-index:5;background:var(--runbg);border:1px solid var(--run);border-left:4px solid var(--run);border-radius:10px;padding:10px 14px;margin:0 0 14px;font-size:14.5px;box-shadow:var(--shadow)}
+.newbar[hidden],.newbar [hidden]{display:none}
+.newbar p{margin:0}
+.newbar p+p{margin-top:6px}
+.newbar a{font-weight:650}
+</style><script>document.documentElement.classList.add('js')
+</script><script>// poll.js: the new-reply bar (docs/web.md#the-new-reply-bar). It asks the page's own since route, every 5 s while
+// the tab is visible and every 60 s while it is hidden, whether the Director has written since the page loaded, and
+// whether the server restarted since, which makes the page's form token out of date. It shows the bar, fills it with
+// textContent, links Reload to the talk and counts new messages in the tab's title; it never reloads the page and
+// never submits anything. The bar's data-* attributes are its only input; on a page with no bar it does nothing.
+(function () {
+  var bar = document.getElementById('newbar')
+  if (!bar || !window.fetch) {
+    return
+  }
+  var since = bar.getAttribute('data-since')
+  var base = bar.getAttribute('data-base')
+  var last = bar.getAttribute('data-last')
+  var start = bar.getAttribute('data-start')
+  var title = document.title
+  var news = bar.querySelector('.nbm')
+  var restarted = bar.querySelector('.nbs')
+  var timer = 0
+  function schedule() {
+    clearTimeout(timer)
+    timer = setTimeout(poll, document.visibilityState === 'hidden' ? 60000 : 5000)
+  }
+  function show(r) {
+    if (r.start !== start) {
+      restarted.hidden = false
+      bar.hidden = false
+    }
+    if (r.new > 0 && typeof r.tag === 'string') {
+      bar.querySelector('.nbt').textContent = '#' + r.tag
+      bar.querySelector('.nbw').textContent = r.at || ''
+      bar.querySelector('.nbr').setAttribute('href', base + '?seen=' + encodeURIComponent(String(r.last)) + '#' + encodeURIComponent(r.tag) + '-talk')
+      news.hidden = false
+      bar.hidden = false
+      document.title = '(' + r.new + ') ' + title
+    }
+  }
+  function poll() {
+    window.fetch(since + '?after=' + encodeURIComponent(last), {credentials: 'same-origin', cache: 'no-store', redirect: 'error'})
+      .then(function (res) { return res.ok ? res.json() : null })
+      .then(function (r) { if (r) { show(r) } })
+      .catch(function () {})
+      .then(schedule)
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') {
+      poll()
+    } else {
+      schedule()
+    }
+  })
+  schedule()
+})()
+</script></head>
+<body>
+<header class="band list">
+<div class="crumb"><b>All tasks</b></div>
+<h1>All tasks</h1>
+<p class="ws"><b>Nothing waits for you</b><span class="m">3 open · updated <time datetime="2026-11-05T14:52:00Z" title="Thu 5 Nov 2026, 14:52:00 UTC">now</time></span></p>
+</header>
+<main class="tl tri">
+<form class="fb" action="/" method="get" role="search"><input class="fq" type="search" name="q" value="" placeholder="Filter by id or title" aria-label="Filter by id or title">
+<div class="fc"><span class="fl">Priority</span><a class="cp on" href="/">All</a><a class="cp" href="/?p=p0">p0<i>1</i></a><a class="cp" href="/?p=p3">p3<i>2</i></a></div>
+</form>
+<div class="fc sortp"><span class="fl">Sort</span><a class="cp" href="/?sort=task">Id</a><a class="cp on" href="/?dir=desc&amp;sort=pri">Priority ▾</a><a class="cp" href="/?sort=stage">Stage</a><a class="cp" href="/?sort=pr">PR</a><a class="cp" href="/?sort=time">In state</a></div>
+<div class="rh"><a class="" href="/?sort=task">Task</a><span>Title</span><a class="on" href="/?dir=desc&amp;sort=pri">Pri</a><a class="" href="/?sort=stage">Stage · step</a><span>Slice</span><a class="" href="/?sort=pr">PR</a><a class="" href="/?sort=time">In state</a></div>
+<details class="sg mv" id="g-build" open><summary><h2>Build and review <span class="n">1</span></h2><span class="sgm">1 build</span></summary>
+<ul class="rows">
+<li class="r"><span class="idc"><a class="tid" href="/app/a3">a3</a></span><span class="rt" title="Three">Three</span><span></span><span class="stp"><b>build</b> · attempt 2</span><span class="sx"></span><span class="prc"></span><time datetime="2026-11-05T14:51:00Z" title="Thu 5 Nov 2026, 14:51:00 UTC">1 min ago</time></li>
+</ul></details>
+<details class="sg mv" id="g-ci" open><summary><h2>CI <span class="n">1</span></h2><span class="sgm">checks running on 1 PR</span></summary>
+<ul class="rows">
+<li class="r"><span class="idc"><a class="tid" href="/app/a1">a1</a></span><span class="rt" title="One">One</span><span></span><span class="stp"><b>CI</b> · checks running</span><span class="sx"></span><span class="prc"><a href="https://github.com/o/app/pull/7">#7</a><i class="ci run" title="CI running">●</i></span><time datetime="2026-11-05T12:40:00Z" title="Thu 5 Nov 2026, 12:40:00 UTC">2 h ago</time></li>
+</ul></details>
+<details class="sg" id="g-held" open><summary><h2>Held <span class="n">1</span></h2><span class="sgm">waiting on other tasks or the Director, paused or not started</span></summary>
+<ul class="rows">
+<li class="r"><span class="idc"><a class="tid" href="/app/a2">a2</a></span><span class="rt" title="Two">Two</span><span class="pri p0">p0</span><span class="stp">Waiting (mystery).</span><span class="sx"></span><span class="prc"></span><time datetime="2026-11-02T09:00:00Z" title="Mon 2 Nov 2026, 09:00:00 UTC">3 days ago</time></li>
+</ul></details>
+
+<p class="asof">Read from the store <time datetime="2026-11-05T14:52:00Z" title="Thu 5 Nov 2026, 14:52:00 UTC">now</time> · reload for newer</p>
+</main>
+</body></html>

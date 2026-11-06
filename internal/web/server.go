@@ -97,7 +97,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.EscapedPath() == "/" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
-		s.taskList(w)
+		s.taskList(w, r)
 		return
 	}
 	segs, ok := segments(r.URL.EscapedPath())
@@ -183,8 +183,8 @@ func (s *Server) read(w http.ResponseWriter, repo, id string) (Task, bool) {
 	return t, true
 }
 
-// taskList serves the task list, the same read-only page to everyone.
-func (s *Server) taskList(w http.ResponseWriter) {
+// taskList serves the task list, the same read-only page to everyone, filtered and sorted by r's query.
+func (s *Server) taskList(w http.ResponseWriter, r *http.Request) {
 	l, err := s.o.Source.Tasks()
 	switch {
 	case errors.Is(err, ErrBusy):
@@ -195,7 +195,7 @@ func (s *Server) taskList(w http.ResponseWriter) {
 		s.refuse(w, http.StatusInternalServerError, "The task list could not be read", "Guildhall could not read the tasks from the store. Reload, or ask the Director.")
 		return
 	}
-	s.render(w, http.StatusOK, "list", s.listView(l))
+	s.render(w, http.StatusOK, "list", s.listView(l, readListQuery(r.URL.Query())))
 }
 
 // taskPage serves the task page to whoever r is from: with the forms for the Guildmaster's login, read-only for

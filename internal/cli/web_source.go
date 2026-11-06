@@ -30,9 +30,13 @@ type webSource struct {
 	c clerkPaths
 }
 
-// Tasks reads the task list's model: every task open or closed in the last 7 days, as Clerk's /guild all lists them,
-// each with its where-it-stands sentence, its group and since when; the open ones in Clerk's order, by priority
-// then id, and the finished ones newest first.
+// webFinishedWindow is how long the task list shows a task after it finished: Recently finished covers 24 hours,
+// while Clerk's /guild all keeps clerkWindow.
+var webFinishedWindow = 24 * time.Hour
+
+// Tasks reads the task list's model: every open task and every task closed in the last 24 hours, each with its
+// where-it-stands sentence, its group, since when and its row's columns; the open ones in Clerk's order, by
+// priority then id, and the finished ones newest first.
 func (w webSource) Tasks() (web.TaskList, error) {
 	d, err := w.a.clerkReadWait(context.Background(), w.c, webLockWait)
 	if err != nil {
@@ -41,7 +45,7 @@ func (w webSource) Tasks() (web.TaskList, error) {
 	var shown []clerkTask
 	for _, v := range d.tasks {
 		ct := d.byKey[v.Repository+"/"+v.ID]
-		if v.State != store.TaskOpen && (ct.closedAt.IsZero() || d.now.Sub(ct.closedAt) > clerkWindow) {
+		if v.State != store.TaskOpen && (ct.closedAt.IsZero() || d.now.Sub(ct.closedAt) > webFinishedWindow) {
 			continue
 		}
 		shown = append(shown, ct)
@@ -69,19 +73,38 @@ func (w webSource) Tasks() (web.TaskList, error) {
 	return out, nil
 }
 
-// listed is the task's row of the task list. It reads no history: its asks are the status feed's, and its words
-// those of the where-it-stands line.
+// listed is the task's row of the task list. It reads no history: its asks are the status feed's, its attempt the
+// status feed's steps, its place in the merge queue the status feed's queues, and its words those of the
+// where-it-stands line.
 func (b webBuilder) listed() web.Listed {
 	v := b.ct.view
-	l := web.Listed{Repository: v.Repository, ID: v.ID, Title: oneLine(v.Title), Stands: b.d.stands(b.ct)}
+	l := web.Listed{Repository: v.Repository, ID: v.ID, Title: oneLine(v.Title), Stands: b.d.stands(b.ct), Priority: int(v.Priority)}
+	if sl := b.ct.status.Slices; sl != nil && sl.Total > 1 {
+		l.Slice, l.Slices = sl.Current, sl.Total
+	}
+	if pr := b.ct.pr; pr != nil {
+		l.PR = &web.PullRequest{Number: pr.Number, URL: pr.URL, Merged: b.ct.merging}
+		l.CI = b.listCI()
+	}
 	if v.State != store.TaskOpen {
 		at := b.ct.closedAt
 		l.Group, l.Where, l.Since = web.GroupFinished, b.where(nil, "", nil), &at
+		l.Finished = l.Stands
 		return l
 	}
+	if n, ok := b.next(); ok && n.Step != "" {
+		base, _ := workflow.ParseSliceStep(n.Step)
+		l.Step = b.stepWordsOf(base).noun
+		l.Attempt = b.listAttempt(n)
+	}
+	l.Queue = b.queuePlace()
 	asks := b.asks(nil)
-	l.Where = b.where(asks, b.directorStage(), b.directorWaits())
+	stage := b.directorStage()
+	l.Where = b.where(asks, stage, b.directorWaits())
 	l.Group = b.group(l.Where)
+	if l.Group == web.GroupYou {
+		l.Ask = b.askLine(asks, stage)
+	}
 	for _, a := range asks {
 		if l.Group == web.GroupYou && !a.Deferred && a.OpenedAt != nil && (l.Since == nil || a.OpenedAt.Before(*l.Since)) {
 			l.Since = a.OpenedAt
@@ -93,22 +116,106 @@ func (b webBuilder) listed() web.Listed {
 	return l
 }
 
-// group is the task list's group of an open task: waiting for the Guildmaster when its where-it-stands sentence
-// says so; moving while an attempt starts or runs, it waits for a slot, CI or the merge queue; otherwise waiting on
-// something else, such as its dependencies, the Director, a pause or its first start.
+// listCI is the task's checks as the list marks them: passed, failed or pending, "" when none are recorded.
+func (b webBuilder) listCI() string {
+	switch b.ct.checksState() {
+	case "CI passed":
+		return web.CIPassed
+	case "CI failed":
+		return web.CIFailed
+	case "CI pending", "no CI run":
+		return web.CIPending
+	}
+	return ""
+}
+
+// listAttempt is the attempt number of the task's next step: the status feed's latest attempt of that step, or the
+// one next.json names, 0 when it has none yet.
+func (b webBuilder) listAttempt(n clerkNext) int {
+	for _, s := range b.ct.status.Steps {
+		if s.Step == n.Step {
+			return max(s.Attempt, n.Attempt)
+		}
+	}
+	return n.Attempt
+}
+
+// queuePlace is the task's place in its repository's merge queue, nil while it is not in it.
+func (b webBuilder) queuePlace() *web.QueuePlace {
+	v := b.ct.view
+	for _, q := range b.d.status.MergeQueues {
+		if q.Repository != v.Repository {
+			continue
+		}
+		for _, e := range q.Entries {
+			if e.Task == v.ID {
+				return &web.QueuePlace{Position: e.Position, Front: e.Front, Held: e.Held, WaitingOn: e.WaitingOn}
+			}
+		}
+	}
+	return nil
+}
+
+// askLine names what a task waiting for the Guildmaster is asked, for its Needs you row: its open asks' phrases,
+// such as "Approval of the plan", the Director stage run with them, or its deferred asks.
+func (b webBuilder) askLine(asks []web.Ask, stage string) string {
+	var phrases []string
+	deferred := 0
+	for _, a := range asks {
+		if a.Deferred {
+			deferred++
+			continue
+		}
+		phrases = append(phrases, b.askPhrase(a))
+	}
+	switch {
+	case len(phrases) > 0:
+		return upperFirst(webJoin(phrases)) + "."
+	case stage != "":
+		return upperFirst(thePlace(b.stepWordsOf(stage).noun, 1)) + " runs in the Director's session with you."
+	case deferred > 0:
+		return "Later: " + webCount(deferred, "deferred ask") + ", held until other tasks merge."
+	}
+	return ""
+}
+
+// group is the task list's group of an open task: Needs you when its where-it-stands sentence waits for the
+// Guildmaster; CI while it waits for checks and the merge queue while it waits in one; while its next step starts,
+// runs or waits for a free slot, that step type's stage group (webStageGroup, Build and review for a type it does not
+// know); otherwise Held: it waits on its dependencies or the Director, or it is paused, parked or not started.
 func (b webBuilder) group(w web.Where) web.Group {
 	if w.You {
 		return web.GroupYou
 	}
 	n, ok := b.next()
 	if !ok {
-		return web.GroupOther
+		return web.GroupHeld
 	}
 	switch interp.Wait(n.Wait) {
-	case interp.WaitAttempt, interp.WaitQueued, interp.WaitChecks, interp.WaitMergeQueue:
-		return web.GroupMoving
+	case interp.WaitChecks:
+		return web.GroupCI
+	case interp.WaitMergeQueue:
+		return web.GroupMergeQueue
+	case interp.WaitAttempt, interp.WaitQueued:
+		base, _ := workflow.ParseSliceStep(n.Step)
+		return b.stageGroup(base)
 	}
-	return web.GroupOther
+	return web.GroupHeld
+}
+
+// stageGroup is the stage group of the bound workflow's step id: its type's, or, with no workflow, the type named
+// like the step; Build and review for a step of no known type.
+func (b webBuilder) stageGroup(id string) web.Group {
+	if g, ok := webStageGroup[b.stepType(id)]; ok {
+		return g
+	}
+	if id == "designer" {
+		return web.GroupPlan
+	}
+	if g, ok := webStageGroup[id]; ok {
+		return g
+	}
+	return web.GroupBuild
 }
 
 // directorWaits are the task's needs_me reasons that wait on the Director: all but its decisions and the install

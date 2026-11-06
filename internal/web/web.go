@@ -38,22 +38,34 @@ type Tail struct {
 	Newer []Message
 }
 
-// Group is the group of the task list a task is listed under.
+// Group is the group of the task list a task is listed under: Needs you, one of the stage groups, or Recently
+// finished.
 type Group string
 
 const (
-	// GroupYou is a task waiting on the Guildmaster: an open or deferred ask, or a Director stage run with them.
+	// GroupYou is a task waiting on the Guildmaster: an open or deferred ask, or a Director stage run with them. Needs
+	// you lists it, pinned above the stage groups.
 	GroupYou Group = "you"
-	// GroupMoving is a task that moves on its own: a running or starting attempt, a slot, CI or the merge queue.
-	GroupMoving Group = "moving"
-	// GroupOther is a task waiting on something else: its dependencies, the Director, a pause, or not started.
-	GroupOther Group = "other"
-	// GroupFinished is a task done or cancelled in the last 7 days.
+	// GroupPlan is a task whose next step, of a grill, research, plan, refute, document review, plan approval or
+	// design type, starts, runs or waits for a free slot.
+	GroupPlan Group = "plan"
+	// GroupBuild is a task whose next step, of a build, rebase, review, publish, validate, deliver, hallmark or
+	// handoff type, starts, runs or waits for a free slot.
+	GroupBuild Group = "build"
+	// GroupCI is a task waiting for the checks of its pull request.
+	GroupCI Group = "ci"
+	// GroupMergeQueue is a task waiting in its repository's merge queue.
+	GroupMergeQueue Group = "merge-queue"
+	// GroupHeld is an open task in no running stage: it waits on its dependencies or the Director, or it is paused,
+	// parked or not started.
+	GroupHeld Group = "held"
+	// GroupFinished is a task merged, done or cancelled in the last 24 hours.
 	GroupFinished Group = "finished"
 )
 
-// TaskList is the task list's model: every task of the copy that is open or finished in the last 7 days, in the
-// order the list shows each group's rows, as the store held them when ReadAt was taken.
+// TaskList is the task list's model: every task of the copy that is open or finished in the last 24 hours, in the
+// Source's order (open ones by priority then id, finished ones newest first), as the store held them when ReadAt was
+// taken. The page groups, sorts and filters them itself.
 type TaskList struct {
 	Tasks  []Listed
 	ReadAt time.Time
@@ -67,6 +79,34 @@ type Listed struct {
 	Where                 Where
 	Stands                string
 	Since                 *time.Time
+	// Priority is the task's priority, 0 (p0, urgent) to 5 (p5, someday); 3 (p3), the default, is left off the row.
+	Priority int
+	// Step is the task's next step as the list names it, such as "build" or "plan approval", "" for a task with no
+	// next step, and Attempt that step's latest attempt number, 0 when it has none yet.
+	Step    string
+	Attempt int
+	// Slice and Slices are a multi-PR task's current slice and its number of slices, both 0 for a one-slice task.
+	Slice, Slices int
+	// PR is the task's pull request, nil before one is published, and CI its checks: CIPassed, CIFailed, CIPending
+	// or "".
+	PR *PullRequest
+	CI string
+	// Ask names what a task waiting on the Guildmaster is asked, such as "Approval of the plan"; "" for any other.
+	Ask string
+	// Queue is the task's place in its repository's merge queue, nil while it is not in it.
+	Queue *QueuePlace
+	// Finished is how a finished task ended: "merged", "done" or "cancelled"; "" for an open task.
+	Finished string
+}
+
+// QueuePlace is a task's place in its repository's merge queue: its position from 1, whether it is the front,
+// whether the Director holds its merge, and what it waits on: "queue" behind the front, and for the front "ci",
+// "rebase" or "decision".
+type QueuePlace struct {
+	Position  int
+	Front     bool
+	Held      bool
+	WaitingOn string
 }
 
 // StepState is the state of a step in the stepper and of a node on the story's spine; each has its own colour, icon

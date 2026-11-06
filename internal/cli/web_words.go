@@ -42,6 +42,16 @@ var webStepWords = map[string]stepWords{
 	"handoff-wait":         {"handoff", "The handoff arrived"},
 }
 
+// webStageGroup is the task list's stage group of each built-in step type, for a task whose next step of that type
+// starts, runs or waits for a free slot; TestWebStageGroupsCoverEveryStepType keeps it complete. The list never
+// groups by step name, since workflows name their steps freely.
+var webStageGroup = map[string]web.Group{
+	"grill": web.GroupPlan, "research": web.GroupPlan, "plan": web.GroupPlan, "refute": web.GroupPlan,
+	"document-review": web.GroupPlan, "guildmaster-approval": web.GroupPlan, "design": web.GroupPlan,
+	"build": web.GroupBuild, "rebase": web.GroupBuild, "review": web.GroupBuild, "publish": web.GroupBuild,
+	"validate": web.GroupBuild, "deliver": web.GroupBuild, "hallmark": web.GroupBuild, "handoff-wait": web.GroupBuild,
+}
+
 // webUnattendedGrill is the stepper's name of a grill an Artisan runs, an unattended grill (docs/tasks.md#grill-mode),
 // whose row says finished rather than counting rounds with the Guildmaster; the story and documents keep the grill's
 // words.
