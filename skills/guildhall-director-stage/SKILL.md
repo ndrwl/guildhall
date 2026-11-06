@@ -19,8 +19,12 @@ Guildhall records each as an attempt, prepares its brief and hands it to you wit
    While the task pages are served, each round goes on the page with `guildhall grill round open --repo <repo> --task <task> --attempt <step-n> --questions-file -`, where the Guildmaster answers it as one form and sends it; the `grill-answered` message that follows names `guildhall grill round show`, which prints their answers.
    In chat the round is only an ask in your role's reply layout: its line in Needs you, `<id> · grill round <k> · <attempt>`, ending with the link to the attempt on its page, such as `ticket:app/t-12#grill-1`, and the round itself is not written in chat.
    With no task pages served, put the round in chat in What I did's place instead, with no Routine box.
+   When the frontier is empty, ask the Guildmaster to confirm a closing summary of the decisions, never with a `guildhall task say` comment while the pages are served: put it on the page with `guildhall grill summary open --repo <repo> --task <task> --attempt <step-n> --summary-file -`, where they press **Confirm** or **Request changes** with their words.
+   In chat it is only its Needs you line, `<id> · grill summary · <attempt>`, with the same link.
+   Their answer is a `grill-answered` message naming `guildhall grill summary show`; on Request changes, carry the interview on with a round or a revised summary.
+   With no task pages served, confirm the summary in chat and record their confirmation with `guildhall task say --author guildmaster-chat` under the attempt.
 4. Draft each output in a file under your session directory, such as `notes/app-t-12-grill-1.md`, never in a temporary directory, so the draft survives while you work.
-5. When the stage's own skills say it is done, finish it with the command the message named, one `--output` per port and a one-line summary:
+5. When the stage's own skills say it is done, such as a grill once the Guildmaster confirmed its summary, finish it with the command the message named, one `--output` per port and a one-line summary:
 
 ```sh
 guildhall step finish --repo app --task t-12 --step grill --attempt 1 --summary "Agreed CSV export behind a flag, three columns, no import." --output notes=notes/app-t-12-grill-1.md
@@ -45,6 +49,6 @@ The task then waits for you, as after a failed Artisan attempt, and `guildhall s
 
 ## Rules
 
-- A grill is never finished until the Guildmaster confirms you share an understanding; a handoff in the middle of one leaves it unfinished, and the next session restarts it.
+- A grill is never finished until the Guildmaster confirms you share an understanding: with Confirm on its grill summary while the task pages are served, else in chat, recorded with `task say --author guildmaster-chat`; a handoff in the middle of one leaves it unfinished, and the next session restarts it.
 - Read the repository only for quick facts; anything more is an Artisan's research stage.
 - Write no `result.json` by hand: `guildhall step finish` is the only way a stage you run ends.

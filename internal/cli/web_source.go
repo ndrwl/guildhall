@@ -63,14 +63,69 @@ func (w webSource) Tasks() (web.TaskList, error) {
 		return cmp.Or(cmp.Compare(a.view.Priority, b.view.Priority), strings.Compare(a.view.ID, b.view.ID), strings.Compare(a.view.Repository, b.view.Repository))
 	})
 	out := web.TaskList{ReadAt: d.now}
+	var builders []webBuilder
+	staged := false
 	for _, ct := range shown {
 		b := webBuilder{d: d, ct: ct, state: w.c.state}
 		if d.resolver != nil {
 			b.def, _ = d.resolver(ct.view.Repository)(ct.view.Workflow)
 		}
+		staged = staged || b.directorStage() != ""
+		builders = append(builders, b)
+	}
+	if staged {
+		// Only a task waiting on a Director stage can have a grill summary waiting on the Guildmaster: one read-only
+		// open reads those tasks' talk.
+		at, err := withRecords(storeRecords{path: w.c.store, wait: webLockWait}, true, nil, func(s *store.Store) ([]*time.Time, error) {
+			out := make([]*time.Time, len(builders))
+			for i, b := range builders {
+				if b.directorStage() == "" {
+					continue
+				}
+				t, err := openSummaryAt(s, b.ct.view.Repository, b.ct.view.ID)
+				if err != nil && !errors.Is(err, store.ErrNotFound) {
+					return nil, err
+				}
+				out[i] = t
+			}
+			return out, nil
+		})
+		if err != nil {
+			return web.TaskList{}, webBusy(err)
+		}
+		for i := range builders {
+			builders[i].summary = at[i]
+		}
+	}
+	for _, b := range builders {
 		out.Tasks = append(out.Tasks, b.listed())
 	}
 	return out, nil
+}
+
+// openSummaryAt is when the grill summary waiting on the Guildmaster on repo/task was put up: the task's latest
+// summary, not answered, under a running Director stage attempt; nil when none waits.
+func openSummaryAt(s *store.Store, repo, task string) (*time.Time, error) {
+	talk, err := s.Conversation(repo, task)
+	if err != nil {
+		return nil, err
+	}
+	var last *store.ConversationEntry
+	for i := range talk {
+		if talk[i].Kind == store.ConversationSummary {
+			last = &talk[i]
+		}
+	}
+	if last == nil || summaryAnswered(talk, last.Number) {
+		return nil, nil
+	}
+	if err := runningDirectorAttempt(s, repo, task, last.Tag); errors.Is(err, store.ErrInvalid) {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	}
+	at := last.At
+	return &at, nil
 }
 
 // listed is the task's row of the task list. It reads no history: its asks are the status feed's, its attempt the
@@ -109,6 +164,9 @@ func (b webBuilder) listed() web.Listed {
 		if l.Group == web.GroupYou && !a.Deferred && a.OpenedAt != nil && (l.Since == nil || a.OpenedAt.Before(*l.Since)) {
 			l.Since = a.OpenedAt
 		}
+	}
+	if at := b.summary; l.Group == web.GroupYou && at != nil && (l.Since == nil || at.Before(*l.Since)) {
+		l.Since = at
 	}
 	if at := b.ct.changedAt; l.Since == nil && !at.IsZero() {
 		l.Since = &at
@@ -251,9 +309,19 @@ func (w webSource) Task(repo, id string) (web.Task, error) {
 	if !ok {
 		return web.Task{}, web.ErrNotFound
 	}
-	h, err := withRecords(storeRecords{path: w.c.store, wait: webLockWait}, true, nil, func(s *store.Store) (store.TaskHistory, error) {
-		return s.TaskHistory(repo, id)
+	type read struct {
+		h       store.TaskHistory
+		summary *time.Time
+	}
+	got, err := withRecords(storeRecords{path: w.c.store, wait: webLockWait}, true, nil, func(s *store.Store) (read, error) {
+		h, err := s.TaskHistory(repo, id)
+		if err != nil {
+			return read{}, err
+		}
+		at, err := openSummaryAt(s, repo, id)
+		return read{h, at}, err
 	})
+	h := got.h
 	if errors.Is(err, store.ErrNotFound) {
 		return web.Task{}, web.ErrNotFound
 	}
@@ -265,6 +333,10 @@ func (w webSource) Task(repo, id string) (web.Task, error) {
 		def, _ = d.resolver(repo)(ct.view.Workflow)
 	}
 	b := webBuilder{d: d, ct: ct, h: h, tl: timeline(h), fl: files(h), def: def, state: w.c.state}
+	if b.directorStage() != "" {
+		// A grill summary waits on the Guildmaster only while its Director stage does.
+		b.summary = got.summary
+	}
 	return b.task(), nil
 }
 
@@ -308,6 +380,8 @@ type webBuilder struct {
 	fl    taskFiles
 	def   *workflow.Definition
 	state string
+	// summary is when the grill summary waiting on the Guildmaster was put up (openSummaryAt), nil when none waits.
+	summary *time.Time
 }
 
 func (b webBuilder) task() web.Task {
@@ -337,6 +411,7 @@ func (b webBuilder) task() web.Task {
 		at := b.tl.Attempts[n-1]
 		t.Tag = interp.DecisionID(at.Step, at.Number, false)
 		t.TagStage = webTagStage(t.Tag)
+		t.TagRunning = at.Outcome == ""
 	}
 	return t
 }

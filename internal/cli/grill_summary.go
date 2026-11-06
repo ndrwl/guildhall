@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -191,4 +192,98 @@ func showSummary(s *store.Store, repo, task, tag string, k int) (string, error) 
 	}
 	return fmt.Sprintf("# Grill summary %d of %s · %s · %s\n\n%s\n\n## The Guildmaster's words\n\n%s\n", k, tag, web.SummaryOutcome(a.Option),
 		a.At.UTC().Format("2006-01-02T15:04:05Z"), summary, words), nil
+}
+
+// Summary implements web.Answerer: a press of the grill summary's Confirm or Request changes records the answer and
+// the grill-answered message in one transaction and wakes the Director; a second press of the same button replays.
+func (w webAnswerer) Summary(p web.SummaryPost) error {
+	sent, err := withRecords(storeRecords{path: w.c.store, wait: webLockWait}, false, nil, func(s *store.Store) (string, error) {
+		return pageSummary(s, p)
+	})
+	if err != nil {
+		return webBusy(err)
+	}
+	if sent != "" {
+		w.wake(sent)
+	}
+	return nil
+}
+
+// pageSummary answers the grill summary p names in s, returning the id of the grill-answered message it sent, ""
+// for a replayed press.
+func pageSummary(s *store.Store, p web.SummaryPost) (string, error) {
+	t, err := s.Task(p.Repository, p.TaskID)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return "", web.Refuse(http.StatusNotFound, "there is no task "+p.Repository+"/"+p.TaskID)
+	case err != nil:
+		return "", err
+	}
+	talk, err := s.Conversation(p.Repository, p.TaskID)
+	if err != nil {
+		return "", err
+	}
+	var summary *store.ConversationEntry
+	newer := false
+	for i := range talk {
+		e := &talk[i]
+		switch {
+		case e.Tag != p.Tag:
+		case e.Kind == store.ConversationSummary && e.Number == p.Summary:
+			summary = e
+		case (e.Kind == store.ConversationSummary || e.Kind == store.ConversationRound) && e.Number > p.Summary:
+			newer = true
+		}
+	}
+	if summary == nil {
+		return "", web.Refuse(http.StatusNotFound, "this task has no such grill summary under "+p.Tag)
+	}
+	if a, ok := summaryAnswer(talk, summary.Number); ok {
+		if a.Option == p.Outcome {
+			// A second press of the button that answered it replays: it was answered once.
+			return "", nil
+		}
+		return "", web.Refuse(http.StatusConflict, "already answered: you chose "+web.SummaryOutcome(a.Option)+" on this summary, and that reached the Director; reload")
+	}
+	switch {
+	case t.State != store.TaskOpen:
+		return "", web.Refuse(http.StatusConflict, "this task is closed; its grill summary was never answered and takes nothing new")
+	case newer:
+		return "", web.Refuse(http.StatusConflict, "changed since you loaded the page: the Director opened a newer round or summary; reload")
+	}
+	if err := runningDirectorAttempt(s, p.Repository, p.TaskID, p.Tag); errors.Is(err, store.ErrInvalid) {
+		return "", web.Refuse(http.StatusConflict, "changed since you loaded the page: "+p.Tag+" is no longer running, so its summary cannot be answered")
+	} else if err != nil {
+		return "", err
+	}
+	words, err := pageText("your words", p.Words, store.MaxTextBytes)
+	if err != nil {
+		return "", err
+	}
+	words = strings.TrimSpace(words)
+	switch {
+	case p.Outcome != store.SummaryConfirmed && p.Outcome != store.SummaryChangesRequested:
+		return "", web.Refuse(http.StatusBadRequest, "the form names no button of the summary")
+	case p.Outcome == store.SummaryChangesRequested && words == "":
+		return "", web.Refuse(http.StatusBadRequest, "Request changes takes your words: write what to change in Your words")
+	}
+	text := web.SummaryAnswerText(p.Outcome, words)
+	if len(text) > store.MaxTextBytes {
+		return "", web.Refuse(http.StatusRequestEntityTooLarge, fmt.Sprintf("your words are over the limit of %d bytes (64 KiB) with the answer; shorten them and press again", store.MaxTextBytes))
+	}
+	k := summaryOrdinal(talk, *summary)
+	show := fmt.Sprintf("guildhall grill summary show --repo %s --task %s --attempt %s --summary %d", p.Repository, p.TaskID, p.Tag, k)
+	msg := fmt.Sprintf("Grill summary %d of %s of %s/%s was confirmed on the task page; read it and any words the Guildmaster added with %s, then write the notes from it and finish the stage.",
+		k, p.Tag, p.Repository, p.TaskID, show)
+	if p.Outcome == store.SummaryChangesRequested {
+		msg = fmt.Sprintf("Changes were requested to grill summary %d of %s of %s/%s on the task page; read the Guildmaster's words with %s, then carry the interview on with a round or a revised summary.",
+			k, p.Tag, p.Repository, p.TaskID, show)
+	}
+	x := web.Answer{Repository: p.Repository, TaskID: p.TaskID}
+	env := webEnvelope(x, web.SummaryID(p.Repository, p.TaskID, summary.Number), store.MessageGrillAnswered, msg)
+	say := &store.Saying{Author: store.ConversationGuildmasterPage, Tag: p.Tag, Kind: store.ConversationSummaryAnswer, Text: text, Round: summary.Number, Option: p.Outcome}
+	if err := webSendDirector(s, env, say); err != nil {
+		return "", err
+	}
+	return env.ID, nil
 }

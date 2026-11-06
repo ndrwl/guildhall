@@ -211,6 +211,25 @@ A round's buttons are refused as an answer is, with your words kept in the boxes
 Then nothing is saved: reload, and the words saved from the other tab are there; pressing the same button again after a dropped connection is not refused.
 A tab left open across an upgrade of Guildhall is refused in the same way once its round has any saved draft, and must be reloaded.
 
+## Grill summary
+
+When the interview is done, the Director puts its closing summary, the decisions it will record in short Markdown, on the page under the running attempt with `guildhall grill summary open --repo <id> --task <id> --attempt <attempt> --summary-file <path|->`, rather than asking you to confirm it in a comment.
+An attempt has one open ask at a time: the summary opens only once its last round is sent and its last summary answered, and no round opens while a summary waits for you.
+In chat the Director only lists it in Needs you, `<id> · grill summary · <attempt>`, with a link to `#<attempt>`.
+
+On Now, after the asks, the open summary is one card, **Grill summary**, anchored at its attempt, with the summary in full, a **Your words** box and two buttons, posted to `POST /<repo>/<task>/summary`:
+
+- **Confirm** agrees the summary; any words you add go into the notes as your own;
+- **Request changes** takes your words, what to change, and is refused with an empty box.
+
+The rail's Needs you counts the summary as an ask, "Grill summary", the stage line points to it, the band says "Waiting for you on the grill summary" and the task list puts the task under Waiting for you, since the summary was put up.
+Either button records your answer on the conversation and a `grill-answered` message to the Director in one store transaction, and wakes it; the message names the command that prints the summary, its outcome and your words, `guildhall grill summary show --repo <id> --task <id> --attempt <attempt> [--summary <k>]`, never your words.
+On Confirm the Director writes the notes and finishes the stage; on Request changes it carries the interview on, with a round or a revised summary.
+The page never finishes the stage itself.
+
+The answered summary folds to one Director row, "Grill summary · confirmed 21:06" or "Grill summary · changes requested 21:06", which opens to the summary and your words; one still unanswered when its attempt finished shows "⊘ Grill summary · not answered".
+A press is refused as an answer is, with your words kept in the box, and also when the task has closed, the attempt has finished, the Director opened a newer round or summary since you loaded the page, or the summary was already answered with the other button; pressing the same button again sends once.
+
 ## Plan open questions
 
 A plan approval asks its spec's open questions inside the approval, one at a time, with a grill round's controls.

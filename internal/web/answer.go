@@ -65,6 +65,12 @@ type Answer struct {
 // bound to p.Subject, and the boxes and mark are saved as its drafts, refusing unless the decision is still open;
 // p.Drafts is not read, and there is no Send round, since the approval's answer sends them.
 //
+// Summary records the Guildmaster's answer to the grill summary p names, Confirm or Request changes with their
+// words, on the task's conversation with a grill-answered message to the Director in one transaction, and wakes it.
+// It refuses, writing nothing, on a closed task, when the summary's attempt has finished, when a newer round or
+// summary of the attempt was opened since the page loaded, when the summary was answered with the other button, and
+// for Request changes with no words; a second press of the button that answered it replays and returns nil.
+//
 // With a.Plan, Answer first saves a.Boxes as the decision's drafts, then writes its answered questions after the
 // answer as PlanAnswersText; an answer that would then be over the limit is refused and the drafts are kept.
 //
@@ -75,6 +81,18 @@ type Answerer interface {
 	Send(a Answer) (string, error)
 	Say(a Answer) (string, error)
 	Round(p RoundPost) error
+	Summary(p SummaryPost) error
+}
+
+// SummaryPost is one press of a grill summary's Confirm or Request changes: the summary, by its tag and conversation
+// entry number, the outcome its button gives (SummaryConfirmed or SummaryChangesRequested), the words of its Your
+// words box as the form sent them, and the Tailscale login that pressed it.
+type SummaryPost struct {
+	Repository, TaskID, Tag string
+	Summary                 int
+	Outcome                 string
+	Words                   string
+	Login                   string
 }
 
 // The buttons of a round's form: Save, send later, Accept all recommendations and Send round for the whole round,
@@ -212,6 +230,9 @@ type pageState struct {
 	// shown again in place of the saved drafts.
 	RoundRefused string
 	RoundBoxes   map[int]string
+	// SummaryRefused is why the last press of the grill summary's buttons was refused, and SummaryWords the words its
+	// box held, shown again.
+	SummaryRefused, SummaryWords string
 }
 
 // readForm reads a POST's form, bounded by maxFormBytes, and reports whether it could; when it could not, it has

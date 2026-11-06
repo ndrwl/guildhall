@@ -19,6 +19,7 @@ func (nopAnswerer) Answer(Answer) error         { return nil }
 func (nopAnswerer) Send(Answer) (string, error) { return "", nil }
 func (nopAnswerer) Say(Answer) (string, error)  { return "", nil }
 func (nopAnswerer) Round(RoundPost) error       { return nil }
+func (nopAnswerer) Summary(SummaryPost) error   { return nil }
 
 // answeringTalkServer is talkServer answering for the Guildmaster's login.
 func answeringTalkServer(tasks ...Task) *Server {

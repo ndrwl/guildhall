@@ -21,6 +21,8 @@ type messageView struct {
 	Body template.HTML
 	// Round is a grill round's row, folded: sent, with its answers, or not sent; nil for any other message.
 	Round *roundView
+	// Summary is a grill summary's row, folded: answered, with its outcome and words, or not answered.
+	Summary *summaryView
 }
 
 // talkView is the talk on one attempt or decision shown on Now: its tag, its anchor <tag>-talk ("" when the talk
@@ -67,11 +69,19 @@ type talkPlan struct {
 	answers map[int]Message
 	ordinal map[int]int
 	open    *Message
+	// summaryAnswers are the summary-answer entries by the number of the summary they answer, which fold into its
+	// row; summaryOrdinal is each summary's place among its tag's summaries, from 1; summary is the grill summary
+	// the page asks as a card, the latest summary of the current attempt of an open task while that attempt runs,
+	// not answered, nil when there is none.
+	summaryAnswers map[int]Message
+	summaryOrdinal map[int]int
+	summary        *Message
 }
 
 func newTalkPlan(t Task, st pageState) *talkPlan {
 	p := &talkPlan{byTag: map[string][]Message{}, now: map[string]string{}, story: map[string]bool{}, waiting: map[string]bool{},
-		nodes: map[string]bool{}, guildmaster: st.Answer, answers: map[int]Message{}, ordinal: map[int]int{}}
+		nodes: map[string]bool{}, guildmaster: st.Answer, answers: map[int]Message{}, ordinal: map[int]int{},
+		summaryAnswers: map[int]Message{}, summaryOrdinal: map[int]int{}}
 	for _, n := range t.Story {
 		if n.Tag != "" {
 			p.nodes[n.Tag] = true
@@ -79,8 +89,8 @@ func newTalkPlan(t Task, st pageState) *talkPlan {
 	}
 	msgs := slices.Clone(t.Conversation)
 	slices.SortStableFunc(msgs, func(a, b Message) int { return a.Number - b.Number })
-	rounds := map[string]int{}
-	var latest *Message
+	rounds, summaries := map[string]int{}, map[string]int{}
+	var latest, summary *Message
 	for i, m := range msgs {
 		switch m.Kind {
 		case KindRoundAnswers:
@@ -91,14 +101,31 @@ func newTalkPlan(t Task, st pageState) *talkPlan {
 			if m.Tag == t.Tag {
 				latest = &msgs[i]
 			}
+		case KindSummaryAnswer:
+			if _, ok := p.summaryAnswers[m.Round]; !ok {
+				// A summary is answered once: its first answer is the answer.
+				p.summaryAnswers[m.Round] = m
+			}
+		case KindSummary:
+			summaries[m.Tag]++
+			p.summaryOrdinal[m.Number] = summaries[m.Tag]
+			if m.Tag == t.Tag {
+				summary = &msgs[i]
+			}
 		}
 	}
 	if _, sent := p.answers[latestNumber(latest)]; latest != nil && !sent && t.State == "open" {
 		p.open = latest
 	}
+	if _, answered := p.summaryAnswers[latestNumber(summary)]; summary != nil && !answered && t.State == "open" && t.TagRunning {
+		// A summary asks only while its attempt runs: one left unanswered when it finished folds as not answered.
+		p.summary = summary
+	}
 	for _, m := range msgs {
-		if m.Kind == KindRoundAnswers || (p.open != nil && m.Number == p.open.Number) {
-			// A round's answers fold into its row, and the open round is asked as a form of its own.
+		if m.Kind == KindRoundAnswers || m.Kind == KindSummaryAnswer || (p.open != nil && m.Number == p.open.Number) ||
+			(p.summary != nil && m.Number == p.summary.Number) {
+			// A round's or summary's answer folds into its row, and the open round or summary is asked as a card of
+			// its own.
 			continue
 		}
 		if _, ok := p.byTag[m.Tag]; !ok {
@@ -144,9 +171,13 @@ func (s *Server) messageView(t Task, p *talkPlan, m Message) messageView {
 	if !m.At.IsZero() {
 		v.Time = s.at(t, m.At)
 	}
-	if m.Kind == KindRound {
+	switch m.Kind {
+	case KindRound:
 		v.Round = s.roundRow(t, p, m)
 		v.Class += " round"
+	case KindSummary:
+		v.Summary = s.summaryRow(t, p, m)
+		v.Class += " summary"
 	}
 	return v
 }

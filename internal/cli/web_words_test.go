@@ -149,6 +149,11 @@ func TestWebWhereItStands(t *testing.T) {
 		return b
 	}
 	asks := []web.Ask{{ID: "review--s2-x2", Kind: "loop-exit"}, {ID: "grant-1", Kind: "grant"}, {ID: "deliver-1", Kind: "merge", Deferred: true}}
+	summary := func(b webBuilder) webBuilder {
+		at := time.Now()
+		b.summary = &at
+		return b
+	}
 	for _, c := range []struct {
 		name  string
 		b     webBuilder
@@ -163,6 +168,10 @@ func TestWebWhereItStands(t *testing.T) {
 			web.Where{Lead: "Waiting for you, later:", Rest: "1 deferred ask, held until other tasks merge.", You: true}},
 		{"stage", task(store.TaskOpen, "director-stage"), nil, "grill", nil,
 			web.Where{Lead: "Waiting for you in the Director's session:", Rest: "the grill runs there with you.", You: true}},
+		{"grill summary", summary(task(store.TaskOpen, "director-stage")), nil, "grill", nil,
+			web.Where{Lead: "Waiting for you on the grill summary:", Rest: "confirm it or request changes on the task page.", You: true}},
+		{"grill summary and an ask", summary(task(store.TaskOpen, "director-stage")), asks[1:], "grill", nil,
+			web.Where{Lead: "Waiting for you on 2 asks:", Rest: "a grant for an attempt, and the grill summary.", You: true}},
 		{"starting", task(store.TaskOpen, "attempt"), nil, "", nil, web.Where{Lead: "Moving:", Rest: "the slice 2 build is starting (attempt 3)."}},
 		{"director", task(store.TaskOpen, "director"), nil, "", []string{"checks of PR #4 failed"}, web.Where{Lead: "Waiting on the Director:", Rest: "checks of PR #4 failed."}},
 		{"checks", task(store.TaskOpen, "checks"), nil, "", nil, web.Where{Lead: "Moving:", Rest: "CI is running."}},

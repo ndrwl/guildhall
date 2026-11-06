@@ -66,7 +66,7 @@ that shows questions or answers draws them through these two, so a change here c
 <div class="opts">{{range .Tiles}}{{if $.Form}}<button class="opt{{if .Tone}} {{.Tone}}{{end}}{{if .Rec}} rec{{end}}" type="submit" name="option" value="{{.Option}}">{{else}}<button class="opt{{if .Tone}} {{.Tone}}{{end}}{{if .Rec}} rec{{end}}" type="button" disabled>{{end}}<b>{{.Word}}{{if .Rec}} <i class="badge">Recommended</i>{{end}}</b>{{if .Text}}<span>{{.Text}}</span>{{end}}{{if .Picked}}<span class="pkd">{{.Picked}}</span>{{end}}</button>{{end}}</div>{{end}}
 {{- if and .Form (not .Tiles)}}<div class="opts"><button class="opt pos" type="submit" name="send" value="answer"><b>Answer with your words</b><span>your words are the answer</span></button></div>{{end}}{{end}}
 
-{{define "msg"}}{{if .Round}}{{template "roundrow" .}}{{else}}<div class="{{.Class}}"><div class="mh"><b>{{.Who}}</b>{{if .Src}}<span class="src">{{.Src}}</span>{{end}}{{if .Rec}}<span class="rk">recommends <b>{{.Rec}}</b></span>{{end}}{{if .Time}}<time>{{.Time}}</time>{{end}}</div><div class="mb">{{.Body}}</div></div>{{end}}{{end}}
+{{define "msg"}}{{if .Round}}{{template "roundrow" .}}{{else if .Summary}}{{template "summaryrow" .}}{{else}}<div class="{{.Class}}"><div class="mh"><b>{{.Who}}</b>{{if .Src}}<span class="src">{{.Src}}</span>{{end}}{{if .Rec}}<span class="rk">recommends <b>{{.Rec}}</b></span>{{end}}{{if .Time}}<time>{{.Time}}</time>{{end}}</div><div class="mb">{{.Body}}</div></div>{{end}}{{end}}
 
 {{/* roundrow: a grill round folded into one Director row, sent with its answers or not sent
 (docs/web.md#grill-rounds). */}}
@@ -74,6 +74,25 @@ that shows questions or answers draws them through these two, so a change here c
 {{- if .Bad}}<div class="md">{{.Bad}}</div>{{end}}
 {{- range .Questions}}<div class="rqa"><p class="qt"><span class="qn">Q{{.N}}</span>{{.Title}}</p>{{if .Body}}<div class="qb">{{.Body}}</div>{{end}}<p class="rrec">Recommended: <b>{{.Rec}}</b></p>
 {{- if $.Round.Sent}}<p class="ra">{{if .Accepted}}✓ Accepted{{else}}✓ Your words{{end}}</p>{{if .Answer}}<div class="md">{{.Answer}}</div>{{end}}{{end}}</div>{{end}}</details>{{end}}</div></div>{{end}}
+
+{{/* summaryrow: a grill summary folded into one Director row, answered with its outcome and words or not
+answered (docs/web.md#grill-summary). */}}
+{{define "summaryrow"}}<div class="{{.Class}}"{{with .Summary}} id="{{.ID}}"{{end}}><div class="mh"><b>{{.Who}}</b>{{if .Time}}<time>{{.Time}}</time>{{end}}</div><div class="mb">{{with .Summary}}<details class="fold{{if .Void}} void{{end}}"><summary>{{.Line}}</summary><div class="md">{{.Body}}</div>
+{{- if .Outcome}}<p class="ra">✓ {{.Outcome}}</p>{{if .Answer}}<div class="md">{{.Answer}}</div>{{end}}{{end}}</details>{{end}}</div></div>{{end}}
+
+{{/* summary: the open grill summary as one card, Confirm or Request changes with the Guildmaster's words
+(docs/web.md#grill-summary). */}}
+{{define "summary"}}<div class="ask summary{{if .Refused}} refused{{end}}" id="{{.ID}}">
+{{- if .Form}}<form method="post" action="{{.Action}}"><input type="hidden" name="tag" value="{{.Tag}}"><input type="hidden" name="summary" value="{{.Number}}"><input type="hidden" name="token" value="{{.Token}}">{{end}}
+<div class="ah"><span class="kind">{{.Name}}</span><a class="aid" href="#{{.ID}}">#{{.Tag}}</a><a class="tg" href="#{{.Tag}}-talk">{{.Chip}}</a>{{if .Since}}<span class="since">{{.Since}}</span>{{end}}</div>
+<p class="q">The Director closes the grill with this summary of what you agreed. Confirm it, or request changes in your words.</p>
+<div class="plan md">{{.Body}}</div>
+{{- if .Refused}}<p class="state bad"><b>Refused · nothing sent:</b> {{.Refused}}.</p>{{end}}
+{{- if .Form}}<label class="yw" for="{{.ID}}-w">Your words <span>what to change; optional with Confirm</span></label><textarea id="{{.ID}}-w" name="text" rows="3">{{.Words}}</textarea>
+<div class="opts"><button class="opt pos rec" type="submit" name="act" value="confirm"><b>Confirm</b><span>the Director writes the notes from it and finishes the grill</span></button><button class="opt carry" type="submit" name="act" value="changes"><b>Request changes</b><span>your words say what to change; the interview carries on</span></button></div>{{end}}
+<p class="who">{{if .Form}}Answering as <b>{{.Login}}</b> · your Tailscale login{{else}}Only the Guildmaster's Tailscale login can answer here{{if .Login}}; you are {{.Login}}{{end}}.{{end}}</p>
+{{- if .Form}}</form>{{end}}
+</div>{{end}}
 
 {{/* round: the open grill round as one form, where every button saves every box first
 (docs/web.md#grill-rounds). */}}
@@ -149,7 +168,7 @@ appears; the script fills only the tag, the time and Reload's link, with textCon
 <section class="r-status"><h2>Status</h2>
 {{template "status" .}}
 </section>
-<section class="r-need"><h2>Needs you <span class="n{{if .Open}} you{{end}}">{{.Open}}</span></h2>{{if or .Asks .Round}}<ul class="nix">{{range .Asks}}{{if not .Deferred}}<li><a href="#{{.ID}}">{{if .Phrase}}<b>{{.Phrase}}</b>{{else}}<b>{{.KindName}}</b> {{if .SubjectName}}{{.SubjectName}}{{else if .Subject}}{{.Subject}}{{else}}{{range $i, $t := .Tiles}}{{if $i}}, {{end}}{{$t.Option}}{{end}}{{end}}{{end}}<span>#{{.ID}}</span></a></li>{{end}}{{end}}{{with .Round}}<li><a href="#{{.ID}}"><b>{{.Name}}</b> · {{.Progress}}<span>#{{.Tag}}</span></a></li>{{end}}</ul>{{end}}{{if not .Open}}<p class="empty">Nothing needs you on this task.</p>{{end}}</section>
+<section class="r-need"><h2>Needs you <span class="n{{if .Open}} you{{end}}">{{.Open}}</span></h2>{{if or .Asks .Round .Summary}}<ul class="nix">{{range .Asks}}{{if not .Deferred}}<li><a href="#{{.ID}}">{{if .Phrase}}<b>{{.Phrase}}</b>{{else}}<b>{{.KindName}}</b> {{if .SubjectName}}{{.SubjectName}}{{else if .Subject}}{{.Subject}}{{else}}{{range $i, $t := .Tiles}}{{if $i}}, {{end}}{{$t.Option}}{{end}}{{end}}{{end}}<span>#{{.ID}}</span></a></li>{{end}}{{end}}{{with .Round}}<li><a href="#{{.ID}}"><b>{{.Name}}</b> · {{.Progress}}<span>#{{.Tag}}</span></a></li>{{end}}{{with .Summary}}<li><a href="#{{.ID}}"><b>{{.Name}}</b><span>#{{.Tag}}</span></a></li>{{end}}</ul>{{end}}{{if not .Open}}<p class="empty">Nothing needs you on this task.</p>{{end}}</section>
 <section class="r-task"><h2>The task · in your words</h2>
 {{range .Context}}<blockquote class="w">“{{.Text}}”<cite>{{.Cite}}</cite></blockquote>{{else}}<p class="empty">No words of yours are recorded on this task.</p>{{end}}
 {{with .Grill}}{{if .HTML}}<details class="fold"><summary>What the grill decided · {{.Count}} {{plural .Count "decision" "decisions"}}</summary><div class="grill md">{{.HTML}}</div><a class="flink" href="{{.Href}}">Read {{.Name}}</a></details>{{else}}<a class="flink" href="{{.Href}}">What the grill decided · read {{.Name}}</a>{{end}}{{end}}
@@ -158,11 +177,12 @@ appears; the script fills only the tag, the time and Reload's link, with textCon
 </aside>
 <section class="c2-now"><ol class="spine"><li class="node {{if .Open}}you{{else}}ok{{end}}"><div class="nh"><span class="t">Now</span><span class="st">{{if .Open}}waiting on you · {{.Open}} {{plural .Open "ask" "asks"}}{{else}}nothing waits on you{{end}}</span>{{if .Since}}<time>{{.Since}}</time>{{end}}</div>
 {{with .Poll}}{{template "newbar" .}}
-{{end}}{{if and .Round .Status.Stage}}<p class="stage">The Director runs {{.Status.Stage}} with you; its {{lower .Round.Name}} is below, to answer here.</p>{{else if .Status.Stage}}<p class="stage">The Director runs {{.Status.Stage}} with you in its session; answer it there.</p>{{end}}
+{{end}}{{if and .Round .Status.Stage}}<p class="stage">The Director runs {{.Status.Stage}} with you; its {{lower .Round.Name}} is below, to answer here.</p>{{else if and .Summary .Status.Stage}}<p class="stage">The Director runs {{.Status.Stage}} with you; its grill summary is below, to confirm here.</p>{{else if .Status.Stage}}<p class="stage">The Director runs {{.Status.Stage}} with you in its session; answer it there.</p>{{end}}
 {{with .Gone}}{{template "gone" .}}{{end}}
 {{range .Asks}}{{template "ask" .}}{{end}}{{with .Round}}{{template "round" .}}
+{{end}}{{with .Summary}}{{template "summary" .}}
 {{end}}
-{{if .Closed}}<p class="stage done">{{.Closed}}</p>{{else if not (or .Asks .Round)}}{{if not .Status.Stage}}<p class="empty">{{.Status.Stands}}</p>{{end}}{{end}}
+{{if .Closed}}<p class="stage done">{{.Closed}}</p>{{else if not (or .Asks .Round .Summary)}}{{if not .Status.Stage}}<p class="empty">{{.Status.Stands}}</p>{{end}}{{end}}
 {{range .Talks}}{{template "talk" .}}{{end}}
 </li></ol></section>
 <section class="c2-story"><h2>The story · newest first</h2>

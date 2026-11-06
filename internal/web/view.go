@@ -51,6 +51,8 @@ type taskView struct {
 	Closed string
 	// Round is the current attempt's open grill round, asked as one form after the asks; nil when none is open.
 	Round *roundView
+	// Summary is the current attempt's open grill summary, asked as one card after the asks; nil when none is open.
+	Summary *summaryView
 	// Poll is the new-reply bar's data for poll.js, at the top of Now; nil where the page has no bar.
 	Poll *pollView
 }
@@ -279,6 +281,17 @@ func (s *Server) taskView(t Task, st pageState) taskView {
 	} else if st.RoundRefused != "" {
 		// The round is gone, such as one sent meanwhile: its refusal and words show at the top of Now.
 		v.Gone = &askView{KindName: "Not saved", First: "Your round was not saved", Refused: st.RoundRefused, Words: joinBoxes(st.RoundBoxes)}
+	}
+	if v.Summary = s.openSummary(t, talk, v.Base, st); v.Summary != nil {
+		// An open grill summary waits on the Guildmaster as an ask does, since it was put up.
+		v.Open++
+		if m := talk.summary; !m.At.IsZero() && (since == nil || m.At.Before(*since)) {
+			since = &m.At
+		}
+	} else if st.SummaryRefused != "" {
+		// The summary is gone, such as one answered meanwhile or its attempt finished: its refusal and words show at
+		// the top of Now.
+		v.Gone = &askView{KindName: "Not sent", First: "Your answer to the grill summary was not sent", Refused: st.SummaryRefused, Words: st.SummaryWords}
 	}
 	if since != nil {
 		v.Since = "since " + s.when(*since)
