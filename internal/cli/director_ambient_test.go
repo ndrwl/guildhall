@@ -166,7 +166,8 @@ func TestDirectorReloadKeepsTheAdoptedPane(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = input.Close(); _ = typing.Close() }()
-	app, stdout, stderr := supervisorApp(input, time.Millisecond)
+	// The long grace makes turn-ended end session 1, so the signal always reaches a live session.
+	app, stdout, stderr := supervisorApp(input, time.Hour)
 	app.Getenv = herdrEnv(nil)
 	done := make(chan int, 1)
 	go func() { done <- app.Run([]string{"director", "start", "--copy", dir}) }()

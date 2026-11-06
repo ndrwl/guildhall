@@ -168,7 +168,8 @@ func TestPlainReloadAppliesWithAGrillOpen(t *testing.T) {
 	// supervisedCopy.
 	approveRepo(t, d.store, cfg, "app")
 	newTask(t, d.store, cfg, "app", "Grill first")
-	done := supervise(t, dir, 0)
+	// The long grace makes turn-ended end session 1, so the signal always reaches a live session.
+	done := supervise(t, dir, time.Hour)
 	code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("t2")...)...)
 	if code != 0 || !strings.Contains(out, `"wait":"director-stage"`) {
 		t.Fatalf("task start: exit %d, %q, stderr %s", code, out, stderr)

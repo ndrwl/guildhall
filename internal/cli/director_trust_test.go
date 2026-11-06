@@ -48,7 +48,8 @@ func TestDirectorClaudeReloadReusesTrustedWorkspace(t *testing.T) {
 	}
 	writeFile(t, cfg, strings.Replace(string(data), "[director]\nadapter = \"fake\"", "[director]\nadapter = \"claude\"", 1))
 	t.Setenv("GUILDHALL_TEST_CLAUDE_TRUSTED_DIR", filepath.Join(dir, "director", "claude"))
-	done := supervise(t, dir, time.Nanosecond)
+	// The long grace makes turn-ended end session 1, so the signal always reaches a live session.
+	done := supervise(t, dir, time.Hour)
 	updated := strings.Replace(string(data), "[director]\nadapter = \"fake\"", "[director]\nadapter = \"claude\"", 1)
 	updated = strings.Replace(updated, "[local]\n", "[local]\nclaude_skills_director = '{\"preset\":\"director-v1\",\"account_sync\":true}'\n", 1)
 	writeFile(t, cfg, updated)
