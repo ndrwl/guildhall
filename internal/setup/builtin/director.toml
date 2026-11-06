@@ -138,3 +138,84 @@ if printf '%s' "$netmap" | grep -q '"holdAndDelegate"'; then
 fi
 echo "Tailscale SSH serves this machine with no check-mode rule"
 '''
+
+# The Windows forms, in Windows PowerShell, which every Windows machine has. tailscale-ssh has none: Tailscale does not
+# serve SSH on Windows, where the Steward reaches the machine through its own OpenSSH server.
+
+[[step]]
+id = "copy-dir"
+title = "Make the Director copy's directory and its state/steward/setup"
+tag = "fixable"
+os = ["windows"]
+undo = "Remove the directories it made while they are still empty, state\\steward\\setup and up, in File Explorer or with Remove-Item."
+
+[step.check]
+shell = "pwsh"
+script = '''
+$setup = $env:SETUP_COPY_DIR + '/state/steward/setup'
+if (-not $env:SETUP_COPY_DIR -or (Test-Path -LiteralPath $setup -PathType Container)) { exit 0 }
+Write-Output ($setup + ' is not a directory')
+exit 1
+'''
+
+[step.action]
+shell = "pwsh"
+script = '''
+New-Item -ItemType Directory -Force -Path ($env:SETUP_COPY_DIR + '/state/steward/setup') -ErrorAction Stop | Out-Null
+'''
+
+[[step]]
+id = "guildhall-pin"
+title = "Run the pinned Guildhall release"
+tag = "human"
+os = ["windows"]
+instructions = '''
+The Guildhall program on this machine is not the release the provisioning request pins (guildhall version prints
+"guildhall <release> ..."). Install the pinned release in place of it, so the new copy adopts that release, or change
+the request's [pins] guildhall and plan again.
+'''
+undo = "Install the release that was there before in its place."
+
+[step.check]
+shell = "pwsh"
+script = '''
+if (-not $env:SETUP_GUILDHALL_PIN) { exit 0 }
+try { $line = & $env:SETUP_GUILDHALL version 2>&1 | Select-Object -First 1 } catch { $line = $_.Exception.Message }
+if (('' + $line).StartsWith('guildhall ' + $env:SETUP_GUILDHALL_PIN + ' ')) { Write-Output $line; exit 0 }
+Write-Output ($env:SETUP_GUILDHALL + ' version prints "' + $line + '", not release ' + $env:SETUP_GUILDHALL_PIN)
+exit 1
+'''
+
+[[step]]
+id = "guildhall-on-path"
+title = "Put the Guildhall program on the PATH of SSH commands"
+tag = "human"
+os = ["windows"]
+instructions = '''
+The Steward runs Guildhall on this machine by its absolute path (the roster's guildhall_path), but release adopt
+pins the new copy to the guildhall that PATH finds, and the Director's Herdr tab types plain guildhall. In the
+environment of an SSH command, `where guildhall` must print that path first. Put its directory first on your user
+PATH, in PowerShell:
+
+    $bin = "$HOME\.local\bin"     # the directory of guildhall_path
+    [Environment]::SetEnvironmentVariable('Path', "$bin;" + [Environment]::GetEnvironmentVariable('Path', 'User'), 'User')
+
+Then check it from the Steward's machine with `ssh <alias> where guildhall`.
+'''
+undo = "Remove the directory you added from your user PATH (System Properties, Environment Variables)."
+
+[[step.prompt]]
+kind = "confirm"
+text = "Does `ssh <alias> where guildhall` print the roster's guildhall_path first now?"
+
+[step.check]
+shell = "pwsh"
+script = '''
+$want = $env:SETUP_GUILDHALL
+if ($want -notmatch '^[A-Za-z]:[/\\]') { exit 0 }
+$found = Get-Command guildhall -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+$path = if ($found) { $found.Source } else { 'missing' }
+if (($path -replace '\\', '/') -ieq ($want -replace '\\', '/')) { Write-Output ('guildhall on PATH is ' + $path); exit 0 }
+Write-Output ('guildhall on PATH is ' + $path + ', not ' + $want)
+exit 1
+'''

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -93,9 +94,13 @@ type ProvisionRequest struct {
 	StepFiles     []string `toml:"step_files" json:"step_files"`
 	// Bootstrap lets the dry run place Guildhall on a bare machine, one with no file at the roster's guildhall_path:
 	// the plan then only copies the Steward's own binary there and installs it (docs/steward.md#bootstrapping-a-bare-machine).
-	Bootstrap    bool                  `toml:"bootstrap" json:"bootstrap,omitempty"`
-	Pins         Pins                  `toml:"pins" json:"pins"`
-	Repositories []ProvisionRepository `toml:"repository" json:"repositories"`
+	Bootstrap bool `toml:"bootstrap" json:"bootstrap,omitempty"`
+	// BootstrapFrom is a directory, relative to the request, holding the cross-built Guildhall release a bootstrap
+	// places on a machine of another OS than the Steward's, such as a Windows one: guildhall and guildhall-launcher,
+	// .exe on Windows. Empty means the Steward's own binary.
+	BootstrapFrom string                `toml:"bootstrap_from" json:"bootstrap_from,omitempty"`
+	Pins          Pins                  `toml:"pins" json:"pins"`
+	Repositories  []ProvisionRepository `toml:"repository" json:"repositories"`
 }
 
 // Pins are the versions the provisioning installs or checks: Herdr's version, download URL and sha256 for the
@@ -152,6 +157,17 @@ func ParseProvisionRequest(data []byte, dir string) (*ProvisionRequest, error) {
 			r.StepFiles[i] = abs
 		}
 	}
+	if r.BootstrapFrom != "" {
+		from := r.BootstrapFrom
+		if !filepath.IsAbs(from) {
+			from = filepath.Join(dir, from)
+		}
+		abs, err := filepath.Abs(from)
+		if err != nil {
+			return nil, err
+		}
+		r.BootstrapFrom = abs
+	}
 	if err := r.check(); err != nil {
 		return nil, fmt.Errorf("provisioning request: %w", err)
 	}
@@ -171,10 +187,14 @@ func (r *ProvisionRequest) check() error {
 	if !workflow.ValidID(r.Director) {
 		fault("director %q must be a lowercase id", r.Director)
 	}
+	// Paths are checked here in either form, and against the machine's OS once the plan reads the roster.
 	for key, dir := range map[string]string{"copy_dir": r.CopyDir, "setup_dir": r.SetupDir} {
-		if !validDir(posixDirPattern, dir) {
-			fault("%s %q must be an absolute Linux path of letters, digits, '.', '_', '-' and '/'", key, dir)
+		if !validFile(dir) {
+			fault("%s %q must be an absolute Linux or Windows path of letters, digits, '.', '_', '-' and '/'", key, dir)
 		}
+	}
+	if r.BootstrapFrom != "" && !r.Bootstrap {
+		fault("bootstrap_from names the release a bootstrap places; set bootstrap = true with it")
 	}
 	if r.HerdrSession == "" || !SetPattern.MatchString("herdr_session="+r.HerdrSession) {
 		fault("herdr_session %q must name the Herdr session the Director's tab opens in, in letters, digits, '.', '_', '-'", r.HerdrSession)
@@ -194,8 +214,8 @@ func (r *ProvisionRequest) check() error {
 		if !ValidRemote(repo.Remote) {
 			fault("%s: remote %q must be an https:// URL or git@host:path of letters, digits, '.', '_', '~', '-' and '/'", where, repo.Remote)
 		}
-		if !validDir(posixDirPattern, repo.Path) {
-			fault("%s: path %q must be an absolute Linux path of letters, digits, '.', '_', '-' and '/'", where, repo.Path)
+		if !validFile(repo.Path) {
+			fault("%s: path %q must be an absolute Linux or Windows path of letters, digits, '.', '_', '-' and '/'", where, repo.Path)
 		} else if paths[repo.Path] {
 			fault("%s: path %q is the copy directory or another repository's", where, repo.Path)
 		}
@@ -228,6 +248,35 @@ func (r *ProvisionRequest) check() error {
 	}
 	if p.Guildhall != "" && !versionPattern.MatchString(p.Guildhall) {
 		fault("[pins] guildhall %q is not a release version", p.Guildhall)
+	}
+	if len(problems) > 0 {
+		return errors.New(strings.Join(problems, "; "))
+	}
+	return nil
+}
+
+// checkPaths refuses a request whose copy, setup or clone paths are not of the machine's OS's form, or, on Windows,
+// whose clone paths are the copy directory or each other's but for letter case, which Windows ignores.
+func (r *ProvisionRequest) checkPaths(goos OS) error {
+	var problems []string
+	paths := map[string]string{"copy_dir": r.CopyDir, "setup_dir": r.SetupDir}
+	for _, repo := range r.Repositories {
+		paths["repository "+repo.ID+" path"] = repo.Path
+	}
+	seen := map[string]bool{}
+	for _, key := range slices.Sorted(maps.Keys(paths)) {
+		p := paths[key]
+		if !validPath(goos, p) {
+			problems = append(problems, fmt.Sprintf("%s %q must be an absolute %s on a %s machine", key, p, pathForm(goos), goos))
+		}
+		if key == "setup_dir" || goos != OSWindows {
+			continue
+		}
+		if folded := strings.ToLower(p); seen[folded] {
+			problems = append(problems, fmt.Sprintf("%s %q is another clone path or the copy directory but for letter case, which Windows ignores", key, p))
+		} else {
+			seen[folded] = true
+		}
 	}
 	if len(problems) > 0 {
 		return errors.New(strings.Join(problems, "; "))
@@ -291,8 +340,11 @@ func (s *Setup) PlanProvision(ctx context.Context, req *ProvisionRequest, planDi
 		return nil, fmt.Errorf("%w: machine %q is not in the roster; add it to roster.toml first", ErrRosterConflict, req.Machine)
 	case !slices.Contains(m.Roles, RoleDirector):
 		return nil, fmt.Errorf("%w: machine %q lacks the director role; add it in roster.toml first", ErrRosterConflict, m.Label)
-	case m.OS != OSLinux:
-		return nil, fmt.Errorf("machine %q is %s: provisioning is built for Linux machines only so far", m.Label, m.OS)
+	case m.OS != OSLinux && m.OS != OSWindows:
+		return nil, fmt.Errorf("machine %q is %s: provisioning is built for Linux and Windows machines", m.Label, m.OS)
+	}
+	if err := req.checkPaths(m.OS); err != nil {
+		return nil, fmt.Errorf("provisioning request: %w", err)
 	}
 	entry := RosterEntry{Machine: m.Label, SSHAlias: m.SSHAlias, OS: m.OS, Director: req.Director, CopyDir: req.CopyDir}
 	for _, repo := range req.Repositories {
@@ -410,7 +462,8 @@ func (s *Setup) PlanProvision(ctx context.Context, req *ProvisionRequest, planDi
 			return nil, err
 		}
 		for _, st := range steps.Steps {
-			if st.ForOS("linux") {
+			// An id with forms for several operating systems is one plan step, for the machine's form.
+			if st.ForOS(string(m.OS)) {
 				p.Steps = append(p.Steps, gapStep(g, p.SetupDir, sf, st.ID, st.Tag, st.Title, ""))
 			}
 		}

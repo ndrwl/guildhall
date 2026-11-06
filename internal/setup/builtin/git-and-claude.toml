@@ -60,3 +60,62 @@ undo = "Uninstall Claude Code as its setup page describes."
 [[step.prompt]]
 kind = "confirm"
 text = "Is Claude Code installed, so `claude --version` prints a version?"
+
+# The Windows forms: the same checks, with the installs done by winget or Claude Code's own PowerShell installer.
+
+[[step]]
+id = "git"
+title = "Install Git"
+tag = "human"
+os = ["windows"]
+check = ["git", "--version"]
+instructions = '''
+Install Git for Windows, in your own terminal (winget asks for administrator rights when it needs them):
+
+    winget install --id Git.Git -e --source winget
+
+Then open a new terminal and run `git --version` to see it.
+'''
+undo = "Uninstall Git with winget uninstall --id Git.Git, or from Settings > Apps."
+
+[[step.prompt]]
+kind = "confirm"
+text = "Is Git installed, so `git --version` prints a version?"
+
+[[step]]
+id = "gh"
+title = "Install the GitHub CLI"
+tag = "human"
+os = ["windows"]
+check = ["gh", "--version"]
+instructions = '''
+Install the GitHub CLI, gh, in your own terminal:
+
+    winget install --id GitHub.cli -e --source winget
+
+Then open a new terminal and run `gh --version` to see it.
+'''
+undo = "Uninstall gh with winget uninstall --id GitHub.cli."
+
+[[step.prompt]]
+kind = "confirm"
+text = "Is the GitHub CLI installed, so `gh --version` prints a version?"
+
+[[step]]
+id = "claude"
+title = "Install Claude Code"
+tag = "human"
+os = ["windows"]
+check = ["claude", "--version"]
+instructions = '''
+Install Claude Code following https://code.claude.com/docs/en/setup; on Windows, in PowerShell, after Git:
+
+    irm https://claude.ai/install.ps1 | iex
+
+Then open a new terminal and run `claude --version` to see it. Do not sign in here; the sign-in step file does that.
+'''
+undo = "Uninstall Claude Code as its setup page describes."
+
+[[step.prompt]]
+kind = "confirm"
+text = "Is Claude Code installed, so `claude --version` prints a version?"

@@ -140,7 +140,7 @@ The Steward copy is self-contained, so moving it, such as from a laptop to a Lin
 
 A rollout only reaches machines and Director copies that are already in the roster.
 An existing Director copy is brought into the roster by a [takeover](#takeover), or by hand ([managing a Director copy](#managing-a-director-copy)).
-Creating the machine's Guildhall account, SSH setup and host-key trust come before the Steward reaches a machine. On a Linux roster machine the rest of R1.44-R1.51 is built as [provisioning](#provisioning): the doctor detects the machine's prerequisites and the plan previews each action (R1.44), a dry run comes first and the apply refuses a changed machine (R1.45), enrolment is a plan step (R1.46), Claude and forge sign-in and administrator installs are wizard steps whose commands are printed for the Guildmaster to run (R1.47), every step is check, act, verify and resumable (R1.48), the plan ends with a verified summary (R1.49), each tool comes from its own installer or a pinned, checksummed download (R1.50), and a bare machine is [bootstrapped](#bootstrapping-a-bare-machine) from the Steward's own checksummed binary (R1.51). The standalone `guildhall setup` wizard for the Guildmaster's own machine (R1.43) and native Windows are not built yet; the sign-in step is also the standalone [`guildhall signin`](signin.md), which checks, guides and verifies each runtime's sign-in on the machine it runs on.
+Creating the machine's Guildhall account, SSH setup and host-key trust come before the Steward reaches a machine. On a Linux or native Windows roster machine the rest of R1.44-R1.51 is built as [provisioning](#provisioning): the doctor detects the machine's prerequisites and the plan previews each action (R1.44), a dry run comes first and the apply refuses a changed machine (R1.45), enrolment is a plan step (R1.46), Claude and forge sign-in and administrator installs are wizard steps whose commands are printed for the Guildmaster to run (R1.47), every step is check, act, verify and resumable (R1.48), the plan ends with a verified summary (R1.49), each tool comes from its own installer or a pinned, checksummed download (R1.50), and a bare machine is [bootstrapped](#bootstrapping-a-bare-machine) from the Steward's own checksummed binary, or a cross-built one for another OS (R1.51). The standalone `guildhall setup` wizard for the Guildmaster's own machine (R1.43) is not built yet; the sign-in step is also the standalone [`guildhall signin`](signin.md), which checks, guides and verifies each runtime's sign-in on the machine it runs on.
 The engine such a wizard and d128's provisioning run on, [`guildhall setup`](setup.md), is built: its doctor reports a machine's gaps against step files and its wizard walks a person through the human ones, and a Steward's [provisioning](#provisioning) runs its doctor on a machine.
 A rollout never adds a machine, account, Director or repository to the roster, never creates a Director copy and never asks for or stores a credential.
 Each machine's other [secrets](secrets.md) are sops ciphertext encrypted to its own age key, from `guildhall secrets init`, and decrypted in memory by `director start` and `steward start`; the Steward sets and pushes them with [`steward secrets`](#secrets), a separate command from rollouts.
@@ -314,12 +314,13 @@ The allow-list is exactly ([decision](decisions/steward-fixed-remote-commands.md
 - `director reload --copy <copy_dir>`, reserved for [release upgrades](releases.md#guildhall-director-reload) and refused until that is built;
 - for an approved [takeover](#takeover) only ([decision](decisions/steward-setup-plans.md)): `director pause --copy <copy_dir>` and `director resume --copy <copy_dir>`; `backup now --copy <copy_dir>` and `store export --out <dir> --copy <copy_dir>`; and `director enrol --steward <label> --copy <copy_dir>`;
 - for an approved [provisioning](#provisioning) only: `setup doctor --json --steps <steps> --digest <hex> --setup-dir <dir> [--set <name>=<value>]...`, which only reads, and the same with `--fix --only <ids>` after `--json`, which closes only the fixable gaps it names; `store init --copy <copy_dir>`; `release adopt --copy <copy_dir>`; `director start --tab --copy <copy_dir>`; and `git clone -- <remote> <path>`, the one command whose program is `git`;
-- for an approved [bootstrap](#bootstrapping-a-bare-machine) only: `sha256sum <path>`, which only reads, the one command whose program is `sha256sum`, and `release install <version> --from <file> --sha256 <hex>`, run by the file it installs.
+- for an approved [bootstrap](#bootstrapping-a-bare-machine) only: `sha256sum <path>`, which only reads, the one command whose program is `sha256sum`, its Windows form `certutil -hashfile <path> SHA256`, the one command whose program is `certutil`, and `release install <version> --from <file> --sha256 <hex>`, run by the file it installs.
 
 A value other than the copy directory is held to the same rule: `--out`, `--setup-dir` and a clone's path take an absolute path in the restricted character set, `--steward` a lowercase id, `--digest` a lowercase hex sha256, `--only` comma-separated step ids, `--steps` a built-in step file's name or an absolute path, `--set` a lowercase name and a value of letters, digits, `.`, `_`, `~`, `+`, `:`, `/` and `-`, and a remote an `https://` URL or `git@host:path` of letters, digits, `.`, `_`, `~`, `-` and `/` with no `.` or `..` segment.
 A step file's contents never travel on a command line; only its path and digest do.
 Any other command, flag or argument is refused before `ssh` runs, and so is an alias that is not a plain roster alias.
 `ssh` joins the arguments with spaces for the remote side, which then parses them again, through `cmd.exe` or PowerShell on a Windows OpenSSH server and a POSIX shell elsewhere; every value is restricted to letters, digits, `.`, `_`, `-`, `/` and a drive's `:`, which all of them read the same way, so nothing is quoted.
+On a Windows machine every path, the program's, the copy's, the setup directory's and each clone's, is in its forward-slash form, `C:/Users/guild/...`, which Windows programs read as they are; the one value PowerShell would read otherwise, a comma-separated `--only`, is a single step id in every plan step.
 Each `ssh` run is bounded by a two-minute timeout, or fifteen minutes for a command that may take minutes (`setup doctor --fix`, `release adopt`, `release install`, `director start --tab` and `git clone`), and is cancelled as `scp` is, killing its process group on Unix and its process elsewhere.
 A command that exits non-zero, a refusing machine and a timeout are each reported with their diagnostic.
 
@@ -422,19 +423,19 @@ The `director-stuck` check compares the copy's times with the Steward's clock, s
 ## Takeover
 
 ```sh
-guildhall steward takeover --config <steward.toml> --machine <label> --director <name> --copy <dir> [--ssh-alias <alias>] --plan <dir> --dry-run
+guildhall steward takeover --config <steward.toml> --machine <label> --director <name> --copy <dir> [--ssh-alias <alias> [--os linux|windows]] --plan <dir> --dry-run
 guildhall steward approval request --plan <dir> [--copy <steward copy>]
 guildhall steward takeover --config <steward.toml> --plan <dir> --apply --approve <plan digest>
 guildhall steward takeover --config <steward.toml> --plan <dir> --abandon
 ```
 
 A takeover adopts an existing standalone Director copy into the roster as managed by this Steward, keeping its store, tasks, decisions and local settings ([decision](decisions/steward-setup-plans.md)).
-It is built for Linux machines; native Windows comes later.
+It is built for Linux and native Windows machines; on Windows the copy directory is a Windows path such as `C:/Users/guild/directors/ops`, and the remote commands run the roster's `guildhall_path`, such as `C:/Users/guild/bin/guildhall.exe`, or `guildhall` on the account's `PATH`.
 Each of its modes admits the Steward config as [rollout](#dry-run) and collect do, with the session's refusals, and needs the private config location to be a Git work tree.
 
 **Dry run.** The dry run reads the copy with `scp` and the read-only [remote commands](#remote-commands): its `config.toml`, its mode, which must be `standalone` with no `managed.toml`, and its session.
 It refuses, changing nothing, a copy that is not a director copy named `--director`, has inline `[managed]` settings or a repository whose `owner_machine` is not `--machine`, and a Director or copy directory the roster already lists.
-`--machine` is a roster label; a machine not yet in the roster needs `--ssh-alias`, and is proposed as a new `linux` machine with the `director` role.
+`--machine` is a roster label; a machine not yet in the roster needs `--ssh-alias`, and is proposed as a new machine with the `director` role, `linux` unless `--os windows` says otherwise. The copy directory must be of the machine's path form.
 It writes `plan.json`, a `guildhall.setup-plan/1` document, and `files/managed.toml` into the plan directory, and prints the copy, the roster diff and each step with its command.
 The first `managed.toml` has no managed key, so the copy's effective settings do not change; later rollouts bring the Steward's settings.
 The digest binds the copy's `config.toml`, its mode, the roster at the private config's `HEAD`, the planned file and every step, but not the session's state, which moves on its own; a dry run again into the same plan directory gives the same digest when nothing changed, and one whose apply has started is refused.
@@ -477,7 +478,8 @@ guildhall steward provision --config <steward.toml> --plan <dir> --apply --appro
 ```
 
 Provisioning makes a new managed Director copy on a roster machine that already has Guildhall, end to end, in one setup plan approved by its digest ([decision](decisions/steward-setup-plans.md)).
-It is built for Linux machines; a bare one is first [bootstrapped](#bootstrapping-a-bare-machine), and native Windows comes later.
+It is built for Linux and native Windows machines; a bare one is first [bootstrapped](#bootstrapping-a-bare-machine).
+On Windows the request's `copy_dir`, `setup_dir` and clone paths are Windows paths with forward slashes, such as `C:/Users/guild/directors/ops`, no two of the copy directory and clone paths equal but for letter case, and the pins name the Windows builds, such as `go1.27.2.windows-amd64.zip`; the doctor checks the [Windows forms](setup.md#built-in-step-files) of the built-ins, which have no `tailscale-ssh` step, since Tailscale does not serve SSH on Windows.
 
 **Request.** The request is strict TOML:
 
@@ -545,7 +547,7 @@ When a step fails, the Steward reads the step log, the setup journal and the doc
 ### Bootstrapping a bare machine
 
 A machine with no Guildhall cannot run the doctor, so with `bootstrap = true` in the request the dry run first runs `sha256sum <guildhall_path>` there ([decision](decisions/steward-setup-plans.md), R1.51).
-The roster must name the machine's `guildhall_path`: the absolute path of a file named `guildhall`, such as `/home/<user>/.local/bin/guildhall`, in a directory that exists.
+The roster must name the machine's `guildhall_path`: the absolute path of a file named `guildhall` (`guildhall.exe` on Windows), such as `/home/<user>/.local/bin/guildhall`, in a directory that exists.
 When `sha256sum` reports a file there, Guildhall is on the machine and the dry run plans the ordinary provisioning above.
 When it reports no such file, the plan only bootstraps Guildhall, with no doctor run and no roster change:
 
@@ -556,6 +558,22 @@ When it reports no such file, the plan only bootstraps Guildhall, with no doctor
 The binary is the Steward's own: it must be an installed release (not `dev`, not modified, with a release contract), built for the machine's OS, and the request's `[pins] guildhall`, when set, must be its version.
 A machine of another architecture fails the install with `exec format error`, and nothing else has run there.
 The launcher is the Steward's home's `bin/guildhall`, else `guildhall-launcher` beside the binary or on `PATH`.
+
+**A Windows machine.** On Windows `guildhall_path` names `guildhall.exe`, such as `C:/Users/<user>/.local/bin/guildhall.exe`, the launcher is copied beside it as `guildhall-launcher.exe`, and `certutil -hashfile <path> SHA256`, which every Windows machine has, takes the place of `sha256sum`: the dry run's check, and each check after a copy and before the install.
+A Steward on Linux has no binary of its own for Windows, so the request names a cross-built release with `bootstrap_from`, a directory relative to the request holding `guildhall.exe` and `guildhall-launcher.exe`:
+
+```sh
+GOOS=windows GOARCH=amd64 go install github.com/ndrwl/guildhall/cmd/guildhall@<version> github.com/ndrwl/guildhall/cmd/guildhall-launcher@<version>
+# puts both in $(go env GOPATH)/bin/windows_amd64
+```
+
+```toml
+bootstrap = true
+bootstrap_from = "/home/guild/go/bin/windows_amd64"
+```
+
+The Steward reads each file's Go build information without running it, and refuses one that is not that program, is built from modified source, is not for the machine's OS or not for the same architecture as the other, or whose binary reports no release version; the pin, when set, must be that version, and `release install` on the machine checks it is a release of that version, as for a Linux machine.
+The same `bootstrap_from` serves a Linux machine from a Steward on another OS.
 When the bootstrap is done, the Steward makes the dry run again with the same request; it now finds Guildhall at `guildhall_path` and plans the copy from the doctor's gaps, approved on its own.
 That plan's `director` step file includes `guildhall-on-path`, a wizard step while SSH commands' `PATH` does not find `guildhall_path` as `guildhall`, which `release adopt` needs; its `herdr`, `go` and `git-and-claude` steps install Herdr and Go into the user's directories from the pins and walk the Guildmaster through Git, the GitHub CLI and Claude Code.
 
@@ -589,7 +607,8 @@ A revision naming a `release` moves the copy's pin at its reload, and active tas
 - The rest of R1.31, the release pin and side-by-side release installs designed in [release upgrades](releases.md): the Guildhall home, `guildhall release install` and `status`, the pin, `guildhall release use` and `adopt`, the PATH launcher, tasks recording and running on their release, a standalone copy's `guildhall release rollback` and `release prune`, and the managed pin, `release` and `release_sha256` in `managed.toml` applied by `config reload`, are [built](releases.md#built-so-far). A rollout of a new `release` changes the pin once the release is installed or its binary is in the machine's `releases/.incoming/<version>/`; the rollout copying that binary itself and the remote `director reload` are not built yet.
 - `rollback`, which will restore a preserved revision for new tasks.
 - Tool installs (`guildhall steward install`, R1.7, R1.50) and audits (R1.32); learnings are [collected and triaged](#collection), and an adopted lesson ships by an ordinary rollout.
-- Takeover and provisioning on native Windows, the last slice of guildhall/d128, under the same [setup plans](decisions/steward-setup-plans.md), and the standalone `guildhall setup` wizard for the Guildmaster's own machine (R1.43).
+- The standalone `guildhall setup` wizard for the Guildmaster's own machine (R1.43).
+- Takeover and provisioning's live acceptance on native Windows, which the Guildmaster runs once on the laptop's Windows side: CI runs them only on a stand-in fleet, and the built-ins' Windows forms on Windows runners.
 - The [bootstrap](#bootstrapping-a-bare-machine)'s live acceptance, which the Guildmaster runs once on the Linux VDS: CI runs it only on a stand-in fleet.
 - The [takeover](#takeover)'s live acceptance, which the Guildmaster runs once on the laptop's WSL Director copy: CI runs it only on a stand-in fleet and a local copy.
 - Platform support: tests replace `scp` and `ssh` with stubs on Linux, Windows and macOS, and no platform is claimed as supported for rollouts until acceptance passes there (R1.27).

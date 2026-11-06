@@ -61,3 +61,61 @@ undo = "Remove the PATH line you added from your shell's startup file."
 [[step.prompt]]
 kind = "confirm"
 text = "Have you added the PATH line and started a shell that has it?"
+
+# The Windows forms: the same install into ~/.local/go from Go's Windows zip (go<version>.windows-<arch>.zip), and
+# the user PATH set in PowerShell.
+
+[[step]]
+id = "go"
+title = "Install Go into ~/.local/go"
+tag = "fixable"
+os = ["windows"]
+expect = "go${go_version}"
+creates = ["${home}/.local/go"]
+undo = "Remove ~/.local/go and its line in the setup manifest."
+
+[step.check]
+shell = "pwsh"
+script = '''
+$own = $env:SETUP_HOME + '/.local/go/bin/go.exe'
+if (Test-Path -LiteralPath $own -PathType Leaf) { & $own version; exit $LASTEXITCODE }
+$found = Get-Command go -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($found) { & $found.Source version; exit $LASTEXITCODE }
+Write-Output 'go is not on PATH or in ~/.local/go/bin'
+exit 1
+'''
+
+[step.fetch]
+url = "${go_url}"
+sha256 = "${go_sha256}"
+dest = "${home}/.local/go"
+unpack = "zip"
+strip = 1
+
+[step.verify]
+shell = "pwsh"
+script = '''
+& ($env:SETUP_HOME + '/.local/go/bin/go.exe') version
+exit $LASTEXITCODE
+'''
+
+[[step]]
+id = "go-on-path"
+title = "Put Go on your PATH"
+tag = "human"
+os = ["windows"]
+expect = "go${go_version}"
+check = ["go", "version"]
+instructions = '''
+Add Go's bin directories to the front of your user PATH, in PowerShell:
+
+    $go = "$HOME\.local\go\bin;$HOME\go\bin"
+    [Environment]::SetEnvironmentVariable('Path', "$go;" + [Environment]::GetEnvironmentVariable('Path', 'User'), 'User')
+
+Then open a new terminal and run `go version` to see it.
+'''
+undo = "Remove the two directories you added from your user PATH (System Properties, Environment Variables)."
+
+[[step.prompt]]
+kind = "confirm"
+text = "Have you set the PATH and opened a terminal that has it?"

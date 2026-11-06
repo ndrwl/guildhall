@@ -26,7 +26,7 @@ const stewardUsage = `Usage:
   guildhall steward collect [--machine <label>...] [--copy <dir>]
   guildhall steward rollout --config <steward.toml> --machine <label> [--machine <label>...] --plan <dir> --dry-run
   guildhall steward rollout --config <steward.toml> --machine <label> [--machine <label>...] --plan <dir> --apply [--approve <plan digest>]
-  guildhall steward takeover --config <steward.toml> --machine <label> --director <name> --copy <dir> [--ssh-alias <alias>] --plan <dir> --dry-run
+  guildhall steward takeover --config <steward.toml> --machine <label> --director <name> --copy <dir> [--ssh-alias <alias> [--os linux|windows]] --plan <dir> --dry-run
   guildhall steward takeover --config <steward.toml> --plan <dir> --apply --approve <plan digest>
   guildhall steward takeover --config <steward.toml> --plan <dir> --abandon
   guildhall steward secrets set --config <steward.toml> <machine> <NAME>

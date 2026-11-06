@@ -79,7 +79,7 @@ func TestFetchRefusesWrongChecksum(t *testing.T) {
 
 func requireUnix(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the built-in herdr and go step files are for Linux and macOS; slice 5 adds their Windows forms")
+		t.Skip("these tests run the Linux and macOS forms of the built-in step files, with sh stubs")
 	}
 }
 
