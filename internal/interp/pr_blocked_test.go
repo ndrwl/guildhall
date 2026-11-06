@@ -51,9 +51,10 @@ func TestMergeabilityWaitsForDirectorOncePerHeadAndState(t *testing.T) {
 			// waits, without repeating validate's report of the same head and state.
 			f.SetMergeability(forge.Mergeability{Head: head, Base: baseHead, State: "conflicting", Behind: 2, Files: []string{"docs/contracts/cli.md"}})
 			e.answer(t, "deliver-1", "merge")
-			count := len(e.inbox(t))
+			// The task claims the front and sends its merge-queued message, but no second mergeability report.
+			count := len(e.inboxButQueued(t))
 			want(t, e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "deliver-1"}), interp.Next{Wait: interp.WaitDirector, Step: "deliver"})
-			if len(e.inbox(t)) != count {
+			if len(e.inboxButQueued(t)) != count {
 				t.Fatal("deliver duplicated validate's report")
 			}
 		})

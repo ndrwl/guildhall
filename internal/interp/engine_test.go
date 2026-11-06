@@ -253,6 +253,15 @@ func (e *env) inbox(t *testing.T) []string {
 	return ids
 }
 
+// inboxButQueued is the Director's message ids but the merge-queued ones t7 sends when it claims the merge front, so
+// an unexpected enter or hold message still shows.
+func (e *env) inboxButQueued(t *testing.T) []string {
+	t.Helper()
+	return slices.DeleteFunc(e.inbox(t), func(id string) bool {
+		return strings.HasPrefix(id, "app.t7.merge-queued.") && strings.Contains(id, ".front.")
+	})
+}
+
 func sum(data []byte) string {
 	s := sha256.Sum256(data)
 	return hex.EncodeToString(s[:])

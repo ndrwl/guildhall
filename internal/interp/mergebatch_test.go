@@ -79,8 +79,13 @@ func TestBatchMemberReplaysOntoItsPredecessor(t *testing.T) {
 			if _, ok := e.messages(t)["app.t7.batch-link.deliver-1-link-1"]; !ok {
 				t.Fatalf("no batch-link message: %v", e.messages(t))
 			}
-			if !slices.ContainsFunc(mapValues(e.messages(t)), func(text string) bool { return strings.Contains(text, "in batch 2/2 that task t1 leads") }) {
-				t.Fatalf("no in-batch merge-queued message: %v", e.messages(t))
+			// Joining the batch moves the task's place but is not an event of its own: the batch-link message tells it, and
+			// the only merge-queued message is the one sent when the task entered the queue.
+			if slices.ContainsFunc(mapValues(e.messages(t)), func(text string) bool { return strings.Contains(text, "in batch 2/2 that task t1 leads") }) {
+				t.Fatalf("a merge-queued message for joining the batch: %v", e.messages(t))
+			}
+			if _, ok := e.messages(t)["app.t7.merge-queued.deliver.deliver-1"]; !ok {
+				t.Fatalf("no enter message: %v", e.messages(t))
 			}
 			publishes, _ := f.Calls()
 			want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), batchWait)

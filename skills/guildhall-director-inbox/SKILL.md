@@ -46,7 +46,7 @@ guildhall messages ack director app.t-1.attempt-failed.build-1
 | `merged` | The task's change merged and the task is done: tell the Guildmaster, then run `guildhall-self-review` when `director status` shows `quality.self_review` on. |
 | `merge-held` | The Guildmaster held the merge: ask what they want changed and give that as work. |
 | `pr-blocked` | The published PR conflicts or is behind and Guildhall could not rebase it itself: use the head, base tip, files and behind count to choose how to handle it; `guildhall-director-tasks` lists send-back, hold and abandonment options without prescribing one. |
-| `merge-queued` | An authorized merge waits in its repository's merge queue: no reply; it goes in the next Routine box with its place. |
+| `merge-queued` | An authorized merge waits in its repository's merge queue: no reply; it goes in the next Routine box, with its place when it enters, or that it reached the front or changed hold. |
 | `rebased` | Guildhall rebased the front's head onto the base tip and pushed it to the same PR, where its checks run next: no action and no reply; it goes in the next Routine box. |
 | `rebase-escalated` | A rebase had major conflicts, a behaviour change, red checks or review findings, and the build was sent back with them as feedback: no action unless the Guildmaster asks, and no reply; it goes in the next Routine box. |
 | `rebase-stuck` | The front rebased three times in one stay and still is not clear: decide whether to hold its merge, send it back or wait. |
