@@ -382,7 +382,7 @@ func Instruction(a Args) string {
 		`outputs lists each required file as {"path": "<relative path with / separators in the current directory>", "description": "<optional>"}. For succeeded file-producing stages it must not be empty; write the required files in the work directory before writing the result. A verdict in summary does not replace a review outcome file.`,
 		`If a custom prompt has no Result template, add status, summary and outputs to the fixed identity fields above, following the same required-file rules.`,
 		`For a build or other stage whose output is a code head, commit all tracked work and use outputs: []; Guildhall records your final Git HEAD directly, with no head file needed. Uncommitted tracked changes are refused; untracked notes alone are allowed.`,
-		"Use no other fields, and do not change task_id, attempt_id, schema or version.",
+		`Use no other fields, except an "outcome" where the prompt's Result template offers one, and do not change task_id, attempt_id, schema or version.`,
 		"",
 		"The Director may steer this attempt with steering messages: short texts, such as \"the base moved, rebase first\", that carry information only.",
 		"Any guildhall command you run prints this attempt's unacknowledged steering messages on stderr first; on long work, run guildhall messages now and then to list them.",

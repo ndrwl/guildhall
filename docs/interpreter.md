@@ -100,7 +100,7 @@ A `rejected` outcome, or any Guildmaster answer other than `approved` and `chang
 | loop exit of any looping step | `loop-exit` | The subject of the round that exhausted `max` or raised a dispute |
 | `audit`, after a sampled merge, opened only by releases before the audit was retired | `audit` | The head that merged |
 
-Every decision the engine opens is also sent to the Director's inbox as message `<repo>.<task>.decision.<id>`, type `decision`, every Director stage handed to it as `<repo>.<task>.stage.<step>-<n>`, type `director-stage`, and every failed or stopped attempt as `<repo>.<task>.attempt-failed.<step>-<n>`, type `attempt-failed`.
+Every decision the engine opens is also sent to the Director's inbox as message `<repo>.<task>.decision.<id>`, type `decision`, every Director stage handed to it as `<repo>.<task>.stage.<step>-<n>`, type `director-stage`, and every failed or stopped attempt as `<repo>.<task>.attempt-failed.<step>-<n>`, type `attempt-failed`, which names the result's structured [outcome](adapters.md#result-file) when a failed attempt reported one, such as `It reports: already delivered by <url>.`
 Every Artisan attempt starts under `Engine.Caps`, the [attempt caps](director.md#guard-rails), and a Director stage's through `Records.StartDirectorAttempt`, held but never capped or queued.
 One the running cap does not admit is [queued](#the-start-queue).
 One refused at the daily cap records and launches nothing, sends `<repo>.<task>.budget-refused.<YYYY-MM-DD>`, type `budget-refused`, once per UTC day, naming `step retry` for a refused retry and `task start` otherwise, and fails the advance with an error wrapping `store.ErrAttemptCap` that names the rail's setting.

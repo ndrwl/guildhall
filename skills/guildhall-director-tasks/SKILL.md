@@ -257,6 +257,7 @@ Report one cancel receipt per task to the Guildmaster.
 ## Closing work already delivered
 
 A build that finds its work already shipped commits nothing and fails with a summary starting `Already delivered by <pr url>` or `Already delivered by slice <j>`.
+A newer research, plan or build attempt also reports it as a structured outcome, which its `attempt-failed` message names: `It reports: already delivered by <url>.`, or `nothing to do: <reason>.` for a task that needs no change, which still has no close route, so retry or propose a cancel.
 Check the evidence (the PR is this repository's, merged, and holds each item the summary names), then propose the close to the Guildmaster before any cancel or retry, such as "Close d187 as delivered by #351?".
 After the yes, close the task's current slice; a one-PR task is slice 1 and takes `--by-pr` only:
 

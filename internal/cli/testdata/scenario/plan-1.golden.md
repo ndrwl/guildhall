@@ -48,6 +48,8 @@ When slices have already merged, keep their entries unchanged and rewrite only t
 Write the required `spec` port as a UTF-8 Markdown document at `spec.md` in your working directory.
 The prompt's Strict sections block shows a valid and an invalid example of each of these sections, with the error the invalid one gets.
 Submit your result with `guildhall result submit`, as the Result template says: it refuses a spec in another shape with the reason intake would give, so fix the spec and submit again until it prints `ok`.
+When a merged pull request of this repository already shipped everything the task asks for, write no spec and report `failed` with an `already-delivered` outcome naming it in `by_pr`, as the Result template shows; when the task needs no change at all, report `failed` with a `nothing-to-do` outcome saying why.
+Start the summary with `Already delivered by <pr url>` or `Nothing to do`, then give the evidence.
 
 ## Inputs
 
@@ -179,4 +181,18 @@ After writing the required files (or committing the code head), write this JSON 
     }
   ]
 }
+```
+
+### Already delivered or nothing to do
+
+When a merged pull request already shipped everything this stage asks for, or the task needs no change at all, say so with an `outcome` field beside the fields above: use status `failed` and `outputs: []`, commit nothing, start the summary as the stage guide says and give the evidence there. Guildhall reads the outcome rather than your summary; nothing closes until the Director or the Guildmaster confirms it. Leave the field out otherwise. For a change a merged pull request of this repository already shipped:
+
+```json
+"outcome": {"kind": "already-delivered", "by_pr": "https://github.com/owner/repo/pull/123"}
+```
+
+For a task that needs no change, with why in `reason`:
+
+```json
+"outcome": {"kind": "nothing-to-do", "reason": "Why the task needs no change."}
 ```
