@@ -26,7 +26,16 @@ const (
 type fakeAnswerer struct {
 	answers, sent, said []web.Answer
 	rounds              []web.RoundPost
+	summaries           []web.SummaryPost
 	err                 error
+}
+
+func (f *fakeAnswerer) Summary(p web.SummaryPost) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.summaries = append(f.summaries, p)
+	return nil
 }
 
 func (f *fakeAnswerer) Round(p web.RoundPost) error {

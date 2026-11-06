@@ -65,6 +65,7 @@ type Options struct {
 //	POST /<repo>/<task>/answer          an answer to one of the task's decisions, a confirmed recommendation, or words only
 //	POST /<repo>/<task>/say             words to the Director about the current stage, from the Say box
 //	POST /<repo>/<task>/round           a button of a grill round's form, which saves every box first
+//	POST /<repo>/<task>/summary         Confirm or Request changes on the open grill summary, with the Guildmaster's words
 //
 // Each path segment is path-escaped. Anything else, including any other method, is 404.
 // Any request whose Host is not Options.Host is 421, before routing, and every POST passes one gate (Server.gate).
@@ -111,6 +112,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		case "round":
 			s.round(w, r, segs[0], segs[1])
+			return
+		case "summary":
+			s.summary(w, r, segs[0], segs[1])
 			return
 		}
 	}

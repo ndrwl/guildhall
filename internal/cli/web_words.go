@@ -351,7 +351,7 @@ func webJoin(items []string) string {
 }
 
 // where is the task's where-it-stands sentence: who it waits on, in bold, and what for, built from its open asks,
-// a Director stage, its wait and its running attempt. Clerk's stands phrase is the fallback for a wait of no sentence.
+// the grill summary waiting on the Guildmaster (b.summary), a Director stage, its wait and its running attempt. Clerk's stands phrase is the fallback for a wait of no sentence.
 func (b webBuilder) where(asks []web.Ask, stage string, waits []string) web.Where {
 	v := b.ct.view
 	switch v.State {
@@ -374,6 +374,13 @@ func (b webBuilder) where(asks []web.Ask, stage string, waits []string) web.Wher
 			continue
 		}
 		phrases = append(phrases, b.askPhrase(a))
+	}
+	if b.summary != nil {
+		// The grill summary waits on the Guildmaster as an ask does.
+		if len(phrases) == 0 {
+			return web.Where{Lead: "Waiting for you on the grill summary:", Rest: "confirm it or request changes on the task page.", You: true}
+		}
+		phrases = append(phrases, "the grill summary")
 	}
 	if n := len(phrases); n > 0 {
 		return web.Where{Lead: "Waiting for you on " + webCount(n, "ask") + ":", Rest: webJoin(phrases) + ".", You: true}

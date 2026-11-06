@@ -169,6 +169,9 @@ type Task struct {
 	Tag string
 	// TagStage is Tag's step, such as grill, for its chip; "" when it names none.
 	TagStage string
+	// TagRunning says Tag's attempt is still running, so a grill summary under it can be answered; one left
+	// unanswered once it finished folds as not answered.
+	TagRunning bool
 	// Grill is the task's grill mode as task show prints it, such as "grill: unattended (director): <reason>" or
 	// "grill: live", shown in the band under where it stands (docs/tasks.md#grill-mode); "" for a task whose
 	// workflow has no grill.
@@ -223,13 +226,19 @@ const (
 	// and KindRoundAnswers the Guildmaster's answers to it (RoundAnswersText's), folded into the round's row.
 	KindRound        = "round"
 	KindRoundAnswers = "round-answers"
+	// KindSummary is the grill's closing summary the Director put on the page, which the page asks with Confirm and
+	// Request changes, and KindSummaryAnswer the Guildmaster's answer (SummaryAnswerText's), its outcome in Option,
+	// folded into the summary's row.
+	KindSummary       = "summary"
+	KindSummaryAnswer = "summary-answer"
 )
 
 // Message is one entry of the task's conversation: its number, who wrote it (an Author constant), the attempt or
 // decision it is about (its tag) and that tag's step (Stage, "" when the tag names none), its kind, its Markdown
 // text and when it was recorded. A recommendation's Option is the answer it recommends and Words the Guildmaster's
 // words the ask's Your words box is pre-filled with; a confirmation's Option is the answer it gave and Confirms the
-// number of the recommendation it confirmed. A round's answers name in Round the number of the round they answer.
+// number of the recommendation it confirmed. A round's answers name in Round the number of the round they answer,
+// and a summary's answer the number of the summary it answers, with its outcome as its Option.
 type Message struct {
 	Number           int
 	Author           string
