@@ -315,9 +315,32 @@ func (r *run) linkTitle() string {
 	return forgeTitle(r.task.Title, r.task.ID)
 }
 
+// linkBody is the body a push of link l, made by step s from published head h, gives the task's pull request: the
+// body the publish step s's head comes from wrote for h, with l named in its Guildhall section, so the pull request
+// still explains the change. It is deterministic, as publish's is. A head from another kind of step, which has no
+// pull request to push to, keeps a one-line body.
+func (r *run) linkBody(s workflow.Step, h string, l rebaseLink) (string, error) {
+	rebased := &prRebase{Step: s.ID, Onto: l.doc.Onto, Head: l.head, Kind: string(l.doc.Kind)}
+	if p, ok := r.publishStep(s); ok {
+		text, err := r.prText(p, h)
+		if err != nil {
+			return "", err
+		}
+		text.Rebased = rebased
+		_, body := pullRequestText(text)
+		return body, nil
+	}
+	body := fmt.Sprintf("Guildhall task %s/%s, rebased by step %s onto %s at %s (%s).\n", r.task.Repository, r.task.ID, s.ID, l.doc.Onto, l.head, l.doc.Kind)
+	if f := r.task.Fixes; f != nil {
+		body += fmt.Sprintf("\n%s `%s/%s`.\n", fixLine, f.Repository, f.ID)
+	}
+	return body, nil
+}
+
 // publishLink pushes link l's rebased head to the task's pull request, after moving the worktree to it, and records
-// the pull request as <link>-pr; a link already pushed returns its record. It tells the Director once.
-func (r *run) publishLink(s workflow.Step, repo config.Repository, l rebaseLink, pr *pullRequestDoc) (*pullRequestDoc, error) {
+// the pull request as <link>-pr; a link already pushed returns its record. The push keeps the body publish wrote for
+// published, the head step s rebased from, adding l to it (linkBody). It tells the Director once.
+func (r *run) publishLink(s workflow.Step, repo config.Repository, published string, l rebaseLink, pr *pullRequestDoc) (*pullRequestDoc, error) {
 	var out pullRequestDoc
 	if ok, err := r.readJSONDoc(l.name+"-pr", &out); err != nil || ok {
 		// A record from before titles were recorded has the link title it was published with.
@@ -331,9 +354,9 @@ func (r *run) publishLink(s workflow.Step, repo config.Repository, l rebaseLink,
 		return nil, err
 	}
 	title := r.linkTitle()
-	body := fmt.Sprintf("Guildhall task %s/%s, rebased by step %s onto %s at %s (%s).\n", r.task.Repository, r.task.ID, s.ID, l.doc.Onto, l.head, l.doc.Kind)
-	if f := r.task.Fixes; f != nil {
-		body += fmt.Sprintf("\nFixes a defect introduced by task `%s/%s`.\n", f.Repository, f.ID)
+	body, err := r.linkBody(s, published, l)
+	if err != nil {
+		return nil, err
 	}
 	pushed, err := r.e.Forge.Publish(r.ctx, forge.Change{Repository: repo.Path, Remote: pr.Remote, Branch: r.branch(), Head: l.head, Title: title, Body: body})
 	if err != nil {

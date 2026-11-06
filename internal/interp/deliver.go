@@ -243,12 +243,11 @@ func (r *run) putPullRequest(name, p string, d pullRequestDoc) error {
 // published returns the pull request of the publish step deliver's head comes from, or nil when it comes from
 // another kind of step.
 func (r *run) published(s workflow.Step, h string) (*pullRequestDoc, error) {
-	from, _, _ := strings.Cut(s.Inputs["head"][0], ".")
-	i := slices.IndexFunc(r.def.Steps, func(p workflow.Step) bool { return p.ID == from })
-	if i < 0 || r.def.Steps[i].Type != "publish" {
+	p, ok := r.publishStep(s)
+	if !ok {
 		return nil, nil
 	}
-	_, source, err := r.output(from, "head")
+	_, source, err := r.output(p.ID, "head")
 	if err != nil {
 		return nil, err
 	}
@@ -269,13 +268,28 @@ func (r *run) published(s workflow.Step, h string) (*pullRequestDoc, error) {
 	}
 	if pr.Title == "" {
 		// A record from before titles were recorded: its title is recomputed as the publish made it.
-		text, err := r.prText(r.def.Steps[i], h)
+		text, err := r.prText(p, h)
 		if err != nil {
 			return nil, err
 		}
 		pr.Title, _ = pullRequestText(text)
 	}
 	return &pr, nil
+}
+
+// publishStep returns the publish step step s's head input comes from, and false when it comes from another kind
+// of step.
+func (r *run) publishStep(s workflow.Step) (workflow.Step, bool) {
+	refs := s.Inputs["head"]
+	if len(refs) == 0 {
+		return workflow.Step{}, false
+	}
+	from, _, _ := strings.Cut(refs[0], ".")
+	i := slices.IndexFunc(r.def.Steps, func(p workflow.Step) bool { return p.ID == from })
+	if i < 0 || r.def.Steps[i].Type != "publish" {
+		return workflow.Step{}, false
+	}
+	return r.def.Steps[i], true
 }
 
 // deliver checks the repository's merge requirements (docs/configuration.md#merge-requirements), authorizes the
@@ -698,7 +712,7 @@ func (r *run) front(s workflow.Step, repo config.Repository, dl deliverHead, id,
 			continue
 		}
 		if cur.head != dl.head {
-			if cur.pr, err = r.publishLink(s, repo, links[len(links)-1], dl.pr); err != nil {
+			if cur.pr, err = r.publishLink(s, repo, dl.reviewed, links[len(links)-1], dl.pr); err != nil {
 				return false, Next{}, err
 			}
 			// The leader's link is its rebased head: the members replay onto it while its checks run.

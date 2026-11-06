@@ -375,7 +375,7 @@ func (r *run) validateRebase(s workflow.Step, k int, repo config.Repository, pub
 			continue
 		}
 		if cur != published {
-			if pr, err = r.publishLink(s, repo, links[len(links)-1], pr); err != nil {
+			if pr, err = r.publishLink(s, repo, published, links[len(links)-1], pr); err != nil {
 				return "", nil, false, Next{}, err
 			}
 		}
