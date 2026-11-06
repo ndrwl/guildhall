@@ -440,8 +440,16 @@ func TestAnswerTilesFillRow(t *testing.T) {
 	if !strings.Contains(css, `.opt[value="changes_requested"]{flex-basis:100%`) {
 		t.Error("Changes requested on a changed pick does not take a line of its own")
 	}
-	if strings.Contains(css, "grid-column") || strings.Contains(css, ".opts{grid-template-columns") {
-		t.Error("a tile rule still uses grid columns")
+	// Only tile rules are checked: other page rows (the task list's .r .ak, for one) may use grid columns.
+	for _, block := range strings.Split(css, "}") {
+		i := strings.LastIndexByte(block, '{')
+		if i < 0 {
+			continue
+		}
+		sel, body := block[:i], block[i+1:]
+		if (strings.Contains(sel, ".opt") || strings.Contains(sel, ".rbar")) && strings.Contains(body, "grid") {
+			t.Errorf("a tile rule still uses grid columns: %s{%s}", strings.TrimSpace(sel), body)
+		}
 	}
 	if !strings.Contains(css, ".r-side .opts>.opt{flex-basis:100%}") || !strings.Contains(css, " .opts>.opt{flex-basis:100%}") {
 		t.Error("the reader side panel or phone does not keep one tile per line")
