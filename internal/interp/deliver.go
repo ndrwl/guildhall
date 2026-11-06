@@ -658,7 +658,7 @@ func (r *run) front(s workflow.Step, repo config.Repository, dl deliverHead, id,
 		} else if err := r.leaveBatch(q, "its merge is held"); err != nil {
 			return false, Next{}, err
 		}
-		next, err := r.queued(s, q, true)
+		next, err := r.queued(s, q, id, true)
 		return false, next, err
 	}
 	if err := r.claim(s, repo, &q); err != nil {
@@ -669,8 +669,11 @@ func (r *run) front(s workflow.Step, repo config.Repository, dl deliverHead, id,
 			next, err := r.batchMember(s, repo, dl, id, q)
 			return false, next, err
 		}
-		next, err := r.queued(s, q, false)
+		next, err := r.queued(s, q, id, false)
 		return false, next, err
+	}
+	if err := r.atFront(s, q); err != nil {
+		return false, Next{}, err
 	}
 	// A leader whose batch is landing goes straight on with its train: its own pull request is behind the base once
 	// the train merged, and is never rebased again.

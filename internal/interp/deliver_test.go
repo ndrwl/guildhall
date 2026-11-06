@@ -384,14 +384,15 @@ func TestMergeUnreachable(t *testing.T) {
 			e.toSignOff(t)
 			e.answer(t, "deliver-1", "merge")
 			e.eng.Forge = unreachable{f}
-			n := len(e.inbox(t))
+			n := len(e.inboxButQueued(t))
 			if err := advanceErr(t, e, interp.Event{Kind: interp.DecisionAnswered, Decision: "deliver-1"}); !errors.Is(err, errUnreachable) {
 				t.Fatalf("advance = %v, want the forge's error", err)
 			}
 			if _, ok := e.documents(t)["deliver-1-refused"]; ok {
 				t.Errorf("an unreachable forge was recorded as a refusal")
 			}
-			if got := len(e.inbox(t)); got != n {
+			// Only the front's merge-queued message, sent before the merge was tried.
+			if got := len(e.inboxButQueued(t)); got != n {
 				t.Errorf("an unreachable forge sent %d messages", got-n)
 			}
 			e.eng.Forge = f

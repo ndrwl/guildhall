@@ -467,7 +467,8 @@ func TestSliceMergeCrashResumesAtTheNextSlice(t *testing.T) {
 	e.toMergeDecision(t, 1)
 	e.answer(t, "deliver-1", "merge")
 	real := e.eng.Outbox
-	e.eng.Outbox = failingOutbox{}
+	// The front's merge-queued message goes out before the merge; every message after it fails.
+	e.eng.Outbox = failingAfterFront{real}
 	if _, err := e.eng.Advance(t.Context(), interp.Event{Kind: interp.DecisionAnswered, Repository: "app", Task: "t7", Decision: "deliver-1"}); err == nil {
 		t.Fatal("advance with a failing outbox succeeded")
 	}
@@ -516,6 +517,17 @@ type failingOutbox struct{}
 
 func (failingOutbox) Send(store.Recipient, messaging.Envelope) (store.Receipt, error) {
 	return store.Receipt{}, errors.New("outbox down")
+}
+
+// failingAfterFront sends merge-queued messages, such as the one a task sends on claiming the merge front, through
+// its outbox and refuses every other, standing in for a crash after a merge at the front was recorded.
+type failingAfterFront struct{ interp.Outbox }
+
+func (o failingAfterFront) Send(to store.Recipient, m messaging.Envelope) (store.Receipt, error) {
+	if m.Type == store.MessageMergeQueued {
+		return o.Outbox.Send(to, m)
+	}
+	return failingOutbox{}.Send(to, m)
 }
 
 // planAgain is plan's attempt 2 after a send-back, writing spec.
