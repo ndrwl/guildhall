@@ -308,3 +308,36 @@ func TestPullRequestTextIsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// TestPullRequestRebasedLine: a rebase link's text names the rebase on one line after - Head: in the Guildhall
+// section, the fix line stays last and once, a body cut to maxBodyBytes keeps the line, and without a rebase the
+// text is publish's own.
+func TestPullRequestRebasedLine(t *testing.T) {
+	const line = "- Rebased: by step `deliver` onto `base` as head `rebased` (no_conflicts)\n"
+	rebased := &prRebase{Step: "deliver", Onto: "base", Head: "rebased", Kind: "no_conflicts"}
+	head := "- Head: `" + prHead + "`\n"
+
+	p := prBase()
+	p.Task.Fixes = &store.TaskRef{Repository: "app", ID: "t3"}
+	_, plain := pullRequestText(p)
+	if strings.Contains(plain, "- Rebased:") {
+		t.Errorf("publish's body names a rebase:\n%s", plain)
+	}
+	p.Rebased = rebased
+	_, body := pullRequestText(p)
+	if want := strings.Replace(plain, head, head+line, 1); body != want {
+		t.Errorf("rebased body:\n%s\nwant publish's body with the rebase line after - Head::\n%s", body, want)
+	}
+	if !strings.Contains(section(body, "Guildhall"), strings.TrimSpace(line)) {
+		t.Errorf("the rebase line is not in the Guildhall section:\n%s", body)
+	}
+	if !strings.HasSuffix(body, "\nFixes a defect introduced by task `app/t3`.\n") || strings.Count(body, fixLine) != 1 {
+		t.Errorf("the fix line is not last and once:\n%s", body)
+	}
+
+	p.Spec = "# Huge\n\n## Goal\n\nA goal.\n\n## Detail\n\n" + strings.Repeat("Lorem ipsum é dolor. ", 3000)
+	_, body = pullRequestText(p)
+	if len(body) > maxBodyBytes || !strings.Contains(body, line) || !strings.Contains(body, truncated) {
+		t.Errorf("cut body is %d bytes (cap %d), rebase line kept %v", len(body), maxBodyBytes, strings.Contains(body, line))
+	}
+}

@@ -44,6 +44,14 @@ type prText struct {
 	// request of each merged slice; 0 and nil for a one-slice task, whose text is unchanged.
 	Slice  int
 	Slices []prSlice
+	// Rebased is the rebase a rebase link's push to the pull request records, or nil for publish's own text.
+	Rebased *prRebase
+}
+
+// prRebase is the rebase link whose head a push to the pull request carries: the step that rebased, the base it
+// rebased onto, the rebased head and the rebase's kind.
+type prRebase struct {
+	Step, Onto, Head, Kind string
 }
 
 // prSlice is one slice of a multi-PR task as its pull request text lists it.
@@ -58,7 +66,7 @@ type prSlice struct {
 // pullRequestText returns the title and body of the pull request for p. It is deterministic: the same p gives
 // the same text, so a replayed publish asks the forge for no edit. Model-written text is neutralised before it is
 // placed, and the body is cut to maxBodyBytes, cutting the inlined spec first, then the build summary, then the
-// review list; the Guildhall section's names, head and fix line are never cut.
+// review list; the Guildhall section's names, head, rebase line and fix line are never cut.
 func pullRequestText(p prText) (title, body string) {
 	spec := strings.ReplaceAll(p.Spec, "\r\n", "\n")
 	parts := parseSpec(spec)
@@ -280,13 +288,18 @@ func review(p prText) string {
 	return strings.TrimSpace(b.String())
 }
 
-// guildhall is the Guildhall section's list: the task, the step, the head and the accepted spec, by name and digest.
+// guildhall is the Guildhall section's list: the task, the step, the head, the rebase a link's push carries when
+// there is one, and the accepted spec, by name and digest.
 func guildhall(p prText) string {
 	spec := "none was given to this step"
 	if p.SpecName != "" {
 		spec = fmt.Sprintf("`%s` (`%s`), sha256:%s", p.SpecName, p.SpecPath, p.SpecSHA256)
 	}
-	return fmt.Sprintf("- Task: `%s/%s`\n- Step: `%s`\n- Head: `%s`\n- Accepted spec: %s\n", p.Task.Repository, p.Task.ID, p.Step, p.Head, spec)
+	rebased := ""
+	if b := p.Rebased; b != nil {
+		rebased = fmt.Sprintf("- Rebased: by step `%s` onto `%s` as head `%s` (%s)\n", b.Step, b.Onto, b.Head, b.Kind)
+	}
+	return fmt.Sprintf("- Task: `%s/%s`\n- Step: `%s`\n- Head: `%s`\n%s- Accepted spec: %s\n", p.Task.Repository, p.Task.ID, p.Step, p.Head, rebased, spec)
 }
 
 var (
