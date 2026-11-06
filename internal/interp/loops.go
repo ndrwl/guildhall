@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/git"
@@ -76,13 +77,16 @@ type binding struct {
 }
 
 // retryContext is a Director retry of attempt Attempt, which ended Outcome, as the next attempt's prompt quotes it:
-// the Director's reason, the retried attempt's intake rejection and its result's summary, each possibly empty.
+// the Director's reason, the retried attempt's intake rejection, its result's summary and the structured outcome
+// its result reported, each possibly empty.
 type retryContext struct {
 	Attempt   int    `json:"attempt"`
 	Outcome   string `json:"outcome"`
 	Reason    string `json:"reason,omitempty"`
 	Rejection string `json:"rejection,omitempty"`
 	Summary   string `json:"summary,omitempty"`
+	// Reported is the retried result's outcome (docs/adapters.md#result-file), when it reported one.
+	Reported *adapter.Outcome `json:"reported,omitempty"`
 }
 
 // render is the retry context as the renderer takes it; nil when there is none.
@@ -90,7 +94,11 @@ func (c *retryContext) render() *render.Retry {
 	if c == nil {
 		return nil
 	}
-	return &render.Retry{Attempt: c.Attempt, Outcome: c.Outcome, Reason: c.Reason, Rejection: c.Rejection, Summary: c.Summary}
+	rt := &render.Retry{Attempt: c.Attempt, Outcome: c.Outcome, Reason: c.Reason, Rejection: c.Rejection, Summary: c.Summary}
+	if c.Reported != nil {
+		rt.Reported = c.Reported.Label()
+	}
+	return rt
 }
 
 type boundInput struct {

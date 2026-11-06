@@ -45,7 +45,13 @@ const (
 	NoAnswer adaptertest.Behaviour = "no-answer"
 	// Fenced succeeds with its final message inside a ```json fence.
 	Fenced adaptertest.Behaviour = "fenced"
+	// Delivered returns a failed final message whose outcome says DeliveredBy already shipped the change, in the
+	// strict schema's form, with by_slice and reason null.
+	Delivered adaptertest.Behaviour = "delivered"
 )
+
+// DeliveredBy is the pull request Delivered's outcome names.
+const DeliveredBy = "https://github.com/owner/repo/pull/351"
 
 // QuotaMessage is the error TurnFailed reports.
 const QuotaMessage = "You've hit your usage limit. Try again later."
@@ -333,6 +339,9 @@ func play(b adaptertest.Behaviour, promptDir string) (int, error) {
 	case adaptertest.Succeed, adaptertest.ExitErrorAfterResult, NoUsage, Fenced:
 	case adaptertest.Fail:
 		final["status"], final["answer"] = "failed", nil
+	case Delivered:
+		final["status"], final["answer"] = "failed", nil
+		final["outcome"] = map[string]any{"kind": "already-delivered", "by_pr": DeliveredBy, "by_slice": nil, "reason": nil}
 	case NoAnswer:
 		final["answer"] = nil
 	case adaptertest.WrongIdentity:

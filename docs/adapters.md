@@ -50,6 +50,28 @@ The result file is JSON, one object, version 1:
 | `summary` | Not blank |
 | `outputs` | Required, possibly empty; each `path` is a clean relative path with `/` separators inside the working directory |
 | `landed_ref` | Optional; no whitespace or control characters |
+| `outcome` | Optional; a structured outcome, below, only with status `failed` and empty `outputs` |
+
+A research, plan or build attempt that finds nothing to build reports it with `outcome` beside a `failed` status, rather than only in its summary:
+
+```json
+"outcome": {"kind": "already-delivered", "by_pr": "https://github.com/owner/repo/pull/351"}
+"outcome": {"kind": "already-delivered", "by_slice": 1}
+"outcome": {"kind": "nothing-to-do", "reason": "Why the task needs no change."}
+```
+
+| Kind | Fields |
+|---|---|
+| `already-delivered` | Exactly one of `by_pr`, the http or https URL of the merged pull request that shipped the change, and `by_slice`, the number, 1 or more, of an earlier slice of a multi-PR task that delivered it; no `reason` |
+| `nothing-to-do` | `reason`, not blank, saying why the task needs no change; no `by_pr` or `by_slice` |
+
+The field is optional in version 1, as `landed_ref` is, so `version` stays 1 and a result without it reads as before.
+Parsing refuses an unknown kind, a missing or extra field, an outcome with status `succeeded` and one listing outputs.
+Intake, and `guildhall result submit` and `result check` with it, also refuse an outcome on any step but research, plan and build, such as a review, hallmark or rebase, and `by_slice` anywhere but a slice after the first of a multi-PR task, naming an earlier slice: before the slice range starts a task counts as one pull request, so only `by_pr` is accepted there.
+They check where the outcome may stand, not its evidence; whether the pull request merged is checked when the Director closes the task with [`slice delivered`](tasks.md#a-slice-already-delivered).
+An accepted outcome ends the attempt `failed` with no intake rejection, and the [`attempt-failed` message](interpreter.md#replay-and-recovery) names it, for example `It reports: already delivered by https://github.com/owner/repo/pull/351.`; a retry's prompt quotes it under "Reported outcome", and the [spend report](spend.md) labels the attempt by its kind.
+Only the research, plan and build prompts' Result template offers the field, and `by_slice` only for a slice after the first; the Claude instruction allows it where the template does, and a Codex answer contract carries it only when it sets `Outcomes`.
+The engine reads the outcome, never the summary: the summary's `Already delivered by …` opening stays a convention for the Director to read.
 
 Guildhall rejects a result file that is larger than 1 MiB, is UTF-16 or not exactly one JSON object, repeats a key, has an unknown or missing field, or breaks a rule above.
 All field names, including nested output fields, must use the exact lowercase spelling shown above; alternate casing and case-folded duplicates are rejected.

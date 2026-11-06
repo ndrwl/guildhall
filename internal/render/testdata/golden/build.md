@@ -66,3 +66,17 @@ After writing the required files (or committing the code head), write this JSON 
   "outputs": []
 }
 ```
+
+### Already delivered or nothing to do
+
+When a merged pull request already shipped everything this stage asks for, or the task needs no change at all, say so with an `outcome` field beside the fields above: use status `failed` and `outputs: []`, commit nothing, start the summary as the stage guide says and give the evidence there. Guildhall reads the outcome rather than your summary; nothing closes until the Director or the Guildmaster confirms it. Leave the field out otherwise. For a change a merged pull request of this repository already shipped:
+
+```json
+"outcome": {"kind": "already-delivered", "by_pr": "https://github.com/owner/repo/pull/123"}
+```
+
+For a task that needs no change, with why in `reason`:
+
+```json
+"outcome": {"kind": "nothing-to-do", "reason": "Why the task needs no change."}
+```

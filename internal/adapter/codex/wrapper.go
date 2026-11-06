@@ -86,6 +86,10 @@ type Answer struct {
 	// Check refuses a document that breaks the step's contract. promptDir is the directory of the attempt's prompt
 	// file, beside which its inputs are.
 	Check func(promptDir string, doc []byte) error
+	// Outcomes lets a failed final message carry a structured result outcome, already-delivered or nothing-to-do
+	// (docs/adapters.md#result-file), as only research, plan and build steps may (workflow.ReportsOutcome); the
+	// instruction and the output schema then name the field, and the wrapper carries it into the result.
+	Outcomes bool
 }
 
 // Answers are the answer contracts by workflow step, the step of the attempt id (artisan.ParseAttemptID). A step
@@ -153,7 +157,7 @@ func ParseArgs(argv []string) (Args, error) {
 // Instruction is the prompt Codex is given for attempt a under answer contract ans: read and follow the prompt
 // file, write nothing, and return the result fields and the answer document as one JSON object, the final message.
 func Instruction(a Args, ans Answer) string {
-	return strings.Join([]string{
+	lines := []string{
 		fmt.Sprintf("You are a Guildhall Artisan working on task %s, attempt %s, in the current directory.", a.TaskID, a.AttemptID),
 		"Read the prompt file below and follow it; the inputs and skills directories it names are beside it.",
 		"",
@@ -165,26 +169,49 @@ func Instruction(a Args, ans Answer) string {
 		`- "status": "succeeded" when the prompt's work is done, "failed" when it is not;`,
 		`- "summary": one or more sentences saying what was done, or why it failed;`,
 		fmt.Sprintf(`- "answer": the content of %s, the JSON object the prompt describes, when status is "succeeded"; null when it is "failed".`, ans.File),
-		"",
-	}, "\n")
+	}
+	if ans.Outcomes {
+		lines = append(lines, `- "outcome": null, unless status is "failed" because a merged pull request already shipped the change or the task needs no change: then the outcome object the prompt's Result template describes, with kind and, null where unused, by_pr, by_slice and reason.`)
+	}
+	return strings.Join(append(lines, ""), "\n")
 }
 
 // OutputSchema is the JSON Schema of the final message for answer contract ans: status, summary and answer, each
-// required, answer being ans.Schema or null.
+// required, answer being ans.Schema or null, and, when ans.Outcomes, outcome, required too in Codex's strict form,
+// being an outcome object or null.
 func OutputSchema(ans Answer) []byte {
 	answer := json.RawMessage(`{"type": "null"}`)
 	if len(ans.Schema) > 0 {
 		answer = json.RawMessage(`{"anyOf": [` + string(ans.Schema) + `, {"type": "null"}]}`)
 	}
+	required := []string{"status", "summary", "answer"}
+	properties := map[string]any{
+		"status":  map[string]any{"type": "string", "enum": []string{string(adapter.StatusSucceeded), string(adapter.StatusFailed)}},
+		"summary": map[string]any{"type": "string"},
+		"answer":  answer,
+	}
+	if ans.Outcomes {
+		required = append(required, "outcome")
+		properties["outcome"] = map[string]any{"anyOf": []any{
+			map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"required":             []string{"kind", "by_pr", "by_slice", "reason"},
+				"properties": map[string]any{
+					"kind":     map[string]any{"type": "string", "enum": []string{string(adapter.OutcomeAlreadyDelivered), string(adapter.OutcomeNothingToDo)}},
+					"by_pr":    map[string]any{"type": []string{"string", "null"}},
+					"by_slice": map[string]any{"type": []string{"integer", "null"}},
+					"reason":   map[string]any{"type": []string{"string", "null"}},
+				},
+			},
+			map[string]any{"type": "null"},
+		}}
+	}
 	data, _ := json.Marshal(map[string]any{
 		"type":                 "object",
 		"additionalProperties": false,
-		"required":             []string{"status", "summary", "answer"},
-		"properties": map[string]any{
-			"status":  map[string]any{"type": "string", "enum": []string{string(adapter.StatusSucceeded), string(adapter.StatusFailed)}},
-			"summary": map[string]any{"type": "string"},
-			"answer":  answer,
-		},
+		"required":             required,
+		"properties":           properties,
 	})
 	return append(data, '\n')
 }
@@ -378,6 +405,32 @@ type finalMessage struct {
 	Status  *adapter.Status `json:"status"`
 	Summary *string         `json:"summary"`
 	Answer  json.RawMessage `json:"answer"`
+	// Outcome is the final message's structured outcome, when its answer contract lets it carry one; null is nil.
+	Outcome *finalOutcome `json:"outcome"`
+}
+
+// finalOutcome is an outcome as the strict output schema has Codex return it: every field present, null where
+// unused.
+type finalOutcome struct {
+	Kind    adapter.OutcomeKind `json:"kind"`
+	ByPR    *string             `json:"by_pr"`
+	BySlice *int                `json:"by_slice"`
+	Reason  *string             `json:"reason"`
+}
+
+// outcome is o as the result carries it.
+func (o *finalOutcome) outcome() *adapter.Outcome {
+	out := &adapter.Outcome{Kind: o.Kind}
+	if o.ByPR != nil {
+		out.ByPR = *o.ByPR
+	}
+	if o.BySlice != nil {
+		out.BySlice = *o.BySlice
+	}
+	if o.Reason != nil {
+		out.Reason = *o.Reason
+	}
+	return out
 }
 
 // decide reads final, Codex's last agent message, under answer contract ans for attempt a: the result to publish
@@ -412,6 +465,18 @@ func decide(a Args, ans Answer, final *string) (adapter.Result, []byte, error) {
 		return refuse("final message lacks status or summary")
 	}
 	r := adapter.Result{Identity: a.Identity, Status: *m.Status, Summary: *m.Summary, Outputs: []adapter.Output{}}
+	if m.Outcome != nil {
+		switch {
+		case !ans.Outcomes:
+			return refuse("the step reports no outcome, but the final message has one")
+		case *m.Status != adapter.StatusFailed:
+			return refuse("an outcome pairs with status %q, not %q", adapter.StatusFailed, *m.Status)
+		}
+		r.Outcome = m.Outcome.outcome()
+		if err := r.Validate(); err != nil {
+			return refuse("outcome: %v", err)
+		}
+	}
 	switch *m.Status {
 	case adapter.StatusFailed:
 		return r, nil, nil

@@ -12,6 +12,7 @@ An absent store is an error, not an empty report.
 
 Each row groups repository, task, step, rerun label, recorded profile, role, adapter, model and outcome.
 The outcome is `succeeded`, `failed` or `stopped` as the store records it, `running` for an attempt not yet finished, or `refused` for an attempt whose result intake refused; refusal is checked first, because the store records a refused attempt as failed.
+A failed attempt whose result reported a structured [outcome](adapters.md#result-file) is `already-delivered` or `nothing-to-do` instead of `failed`, so finding the work already shipped is not counted as a plain failure.
 Every recorded attempt is counted, including running attempts whose current spend is unknown.
 The store's spend takes precedence over an attempt's `usage.json`; the file is used only when the store has no spend.
 Missing usage is unknown, not zero measured usage; malformed usage is an error rather than silently discarded evidence.
@@ -51,7 +52,9 @@ Director attempts follow the same rule.
 |---|---|---|
 | `first` | N = 1 | none |
 | `after-refusal` | N > 1 | refused at intake (it has an intake rejection) |
-| `after-failure` | N > 1 | failed |
+| `after-already-delivered` | N > 1 | failed, its result reporting an `already-delivered` outcome |
+| `after-nothing-to-do` | N > 1 | failed, its result reporting a `nothing-to-do` outcome |
+| `after-failure` | N > 1 | failed otherwise |
 | `after-stop` | N > 1 | stopped |
 | `send-back` | N > 1 | succeeded: a review or validate loop, `guildhall step send-back` or an automatic conflict rerun |
 | `unknown` | N > 1 | missing or still running |

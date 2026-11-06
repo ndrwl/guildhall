@@ -279,6 +279,7 @@ func TestClaudeArgs(t *testing.T) {
 		"Only if the command cannot run", "write the result to " + claude.DraftFile(spec.ResultFile) + " instead",
 		`"schema":"guildhall.artisan-result"`, `"version":1`, `"task_id":"task-1"`, `"attempt_id":"attempt-1"`,
 		`"succeeded"`, `"failed"`, "outputs", "Use the prompt's Result template, including its required outputs entries.",
+		`except an "outcome" where the prompt's Result template offers one`,
 	} {
 		if !strings.Contains(in, s) {
 			t.Errorf("Instruction lacks %q:\n%s", s, in)

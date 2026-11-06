@@ -176,7 +176,7 @@ guildhall slice delivered --repo <id> --task <id> --slice <k> (--by-slice <j> | 
 
 `slice delivered` closes a task's current slice whose work an earlier slice or a merged pull request already delivered, so its build had nothing to commit ([a slice already delivered](tasks.md#a-slice-already-delivered)).
 A one-PR task is slice 1 of 1: `--slice 1 --by-pr <url>` closes the whole task `done`, and is the route for a task whose change another merged pull request shipped, rather than `task cancel`.
-A build in that case reports `failed` with a summary starting `Already delivered by slice <j>` or `Already delivered by <pr url>`; the Director checks the evidence and runs this command, rather than retrying the same empty work or cancelling a task whose work merged.
+A build in that case reports `failed` with a summary starting `Already delivered by slice <j>` or `Already delivered by <pr url>`, and an `already-delivered` [outcome](adapters.md#result-file) the `attempt-failed` message names; the Director checks the evidence and runs this command, rather than retrying the same empty work or cancelling a task whose work merged.
 It feeds [`slice-delivered`](interpreter.md#events) under the same flags, task lock and admission gates as `task start`.
 It is valid only when the task is open, `--slice` is its current slice and has no merge record, none of its attempts is running, `--reason` is not empty, and exactly one piece of evidence is given: `--by-slice <j>`, an earlier slice of the task with a merge record, or `--by-pr <url>`, a pull request of the task's repository that the forge reports merged.
 A one-PR task takes `--by-pr` only; `--by-slice` is refused with "delivers one pull request; name the PR that shipped it with --by-pr".
