@@ -16,7 +16,7 @@ const RebaseReportFile = "rebase.json"
 // outputInstructions is part of the generated agent-facing protocol. It lives
 // outside baseline prose so even an old copy's overridden guide gets the current
 // port formats and the same result template in every runtime.
-func outputInstructions(id Identity, revisions *workflow.Revisions, branch string, strict []spec.Example, surface Surface) string {
+func outputInstructions(id Identity, revisions *workflow.Revisions, branch string, strict []spec.Example, surface Surface, slice *Slice) string {
 	if branch == "" {
 		branch = "guildhall/" + id.Task
 	}
@@ -93,6 +93,29 @@ func outputInstructions(id Identity, revisions *workflow.Revisions, branch strin
 	}{adapter.ResultSchema, adapter.ResultVersion, adapter.Result{Identity: adapter.Identity{TaskID: id.Task, AttemptID: fmt.Sprintf("%s-%d", id.Step, id.Attempt)}, Status: adapter.StatusSucceeded, Summary: "What was done, in one or more sentences.", Outputs: outputs}}
 	data, _ := json.MarshalIndent(result, "", "  ")
 	fmt.Fprintf(&b, "\n## Result template\n\n%s Keep schema, version, task_id and attempt_id unchanged. Use status `succeeded` only when the work and required outputs are complete; otherwise use `failed` and explain why in summary (failed results may use an empty outputs list).\n\n```json\n%s\n```\n", SubmitStep, data)
+	if workflow.ReportsOutcome(id.Kind) {
+		b.WriteString(outcomeInstructions(slice))
+	}
+	return b.String()
+}
+
+// outcomeInstructions is the Result template's part on the optional structured outcome (docs/adapters.md#result-file),
+// which only research, plan and build prompts carry (workflow.ReportsOutcome). It offers by_slice only for a slice
+// after the first of a multi-PR task, the only place intake accepts it.
+func outcomeInstructions(slice *Slice) string {
+	var b strings.Builder
+	b.WriteString("\n### Already delivered or nothing to do\n\n" +
+		"When a merged pull request already shipped everything this stage asks for, or the task needs no change at all, say so with an `outcome` field beside the fields above: " +
+		"use status `failed` and `outputs: []`, commit nothing, start the summary as the stage guide says and give the evidence there. " +
+		"Guildhall reads the outcome rather than your summary; nothing closes until the Director or the Guildmaster confirms it. Leave the field out otherwise. " +
+		"For a change a merged pull request of this repository already shipped:\n\n" +
+		"```json\n\"outcome\": {\"kind\": \"already-delivered\", \"by_pr\": \"https://github.com/owner/repo/pull/123\"}\n```\n")
+	if slice != nil && len(slice.Entries) > 1 && slice.Current > 1 {
+		fmt.Fprintf(&b, "\nFor a change an earlier slice of this task already delivered, its number, from 1 to %d, in place of `by_pr`:\n\n"+
+			"```json\n\"outcome\": {\"kind\": \"already-delivered\", \"by_slice\": 1}\n```\n", slice.Current-1)
+	}
+	b.WriteString("\nFor a task that needs no change, with why in `reason`:\n\n" +
+		"```json\n\"outcome\": {\"kind\": \"nothing-to-do\", \"reason\": \"Why the task needs no change.\"}\n```\n")
 	return b.String()
 }
 

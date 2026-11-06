@@ -290,6 +290,26 @@ func TestPromptNamesItsSlice(t *testing.T) {
 	}
 }
 
+// TestPromptOffersBySliceAfterTheFirstSlice: a build prompt's outcome part offers by_slice, up to the slice before
+// it, only for slice 2 or later of a multi-PR task; slice 1 and a one-PR task are offered by_pr alone, and a review
+// prompt has no outcome part.
+func TestPromptOffersBySliceAfterTheFirstSlice(t *testing.T) {
+	const outcome, bySlice = "\n### Already delivered or nothing to do\n", `"by_slice": 1`
+	got := slicePrompt(t, "build", &Slice{Current: 3, Entries: threeSlices})
+	if !strings.Contains(got, outcome) || !strings.Contains(got, bySlice) || !strings.Contains(got, "its number, from 1 to 2,") {
+		t.Errorf("slice 3 build prompt does not offer by_slice:\n%s", got)
+	}
+	for _, slice := range []*Slice{nil, {Current: 1, Entries: threeSlices}} {
+		got := slicePrompt(t, "build", slice)
+		if !strings.Contains(got, outcome) || !strings.Contains(got, `"by_pr"`) || strings.Contains(got, bySlice) {
+			t.Errorf("build prompt with %+v:\n%s", slice, got)
+		}
+	}
+	if got := slicePrompt(t, "review", &Slice{Current: 2, Entries: threeSlices}); strings.Contains(got, outcome) || strings.Contains(got, `"outcome": {`) {
+		t.Errorf("review prompt carries an outcome:\n%s", got)
+	}
+}
+
 // TestPromptWithoutSlicesHasNoSliceSection: no slice, or a one-entry list, renders no "## Slice" section.
 func TestPromptWithoutSlicesHasNoSliceSection(t *testing.T) {
 	for _, slice := range []*Slice{nil, {Current: 1, Entries: threeSlices[:1]}} {

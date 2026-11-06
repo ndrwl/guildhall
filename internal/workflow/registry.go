@@ -246,6 +246,13 @@ func Kinds() []Kind {
 	return append([]Kind(nil), kinds...)
 }
 
+// ReportsOutcome reports whether an attempt of a step of type typ may report a structured result outcome,
+// already-delivered or nothing-to-do (docs/adapters.md#result-file): research, plan and build may; review, hallmark,
+// rebase and every later step may not.
+func ReportsOutcome(typ string) bool {
+	return typ == "research" || typ == "plan" || typ == "build"
+}
+
 // LookupKind returns the built-in kind with this type and version.
 func LookupKind(typ string, version int) (Kind, bool) {
 	for _, k := range kinds {

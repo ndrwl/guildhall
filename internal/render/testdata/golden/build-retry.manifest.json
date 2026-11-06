@@ -11,7 +11,7 @@
   },
   "prompt": {
     "path": "prompt.md",
-    "digest": "sha256:351de89c0e81e63c48d22e578cec2dfe72120f91301c5b2c8e10ebfe08bcf8df"
+    "digest": "sha256:94ac0a80345c664f0c84bd6915fca2d5122f07f41a172d6c5772f87a7746305e"
   },
   "role": {
     "path": "roles/artisan.md",

@@ -714,6 +714,8 @@ func (r *run) attempted(s workflow.Step) (bool, Next, error) {
 		text := fmt.Sprintf("Attempt %d of step %s %s; the Director decides what happens next.", a.Number, s.ID, a.Outcome)
 		if a.IntakeRejection != "" {
 			text += " Result rejected: " + a.IntakeRejection
+		} else if a.Outcome == store.AttemptFailed {
+			text += r.outcomeText(s.ID, a.Number)
 		}
 		err := r.notify(fmt.Sprintf("attempt-failed.%s-%d", s.ID, a.Number), store.MessageAttemptFailed, text)
 		return false, Next{Wait: WaitDirector, Step: s.ID, Attempt: a.Number}, err
@@ -798,7 +800,7 @@ func (r *run) retryContext(step string, n int) *retryContext {
 	}
 	c := &retryContext{Attempt: a.Number, Outcome: string(a.Outcome), Reason: ev.Reason, Rejection: a.IntakeRejection}
 	if res, err := adapter.ReadResult(r.resultFile(step, a.Number), r.identity(step, a.Number)); err == nil {
-		c.Summary = res.Summary
+		c.Summary, c.Reported = res.Summary, res.Outcome
 	}
 	return c
 }
@@ -1091,6 +1093,9 @@ func (r *run) takeResult(s workflow.Step, a *store.StageAttempt) error {
 		}
 		return fmt.Errorf("interp: result of %s attempt %d: %w", s.ID, a.Number, err)
 	}
+	if err := r.checkResultOutcome(s, res); err != nil {
+		return r.rejectResult(s, a, err)
+	}
 	outcome := store.AttemptFailed
 	if res.Status == adapter.StatusSucceeded {
 		c, err := r.checkOutputs(s, a.Number, res.Outputs)
@@ -1143,6 +1148,9 @@ type checked struct {
 // *resultRejection with the reason intake records; any other error is operational. Engine.CheckResult and
 // takeResult both reach checkOutputs, so `guildhall result check` and intake give the same reason.
 func (r *run) checkResult(s workflow.Step, n int, res adapter.Result) error {
+	if err := r.checkResultOutcome(s, res); err != nil {
+		return err
+	}
 	if res.Status != adapter.StatusSucceeded {
 		return nil
 	}

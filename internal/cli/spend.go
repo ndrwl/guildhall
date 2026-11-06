@@ -215,13 +215,17 @@ const (
 	rerunAfterRefusal = "after-refusal"
 	rerunAfterFailure = "after-failure"
 	rerunAfterStop    = "after-stop"
-	rerunSendBack     = "send-back"
-	rerunUnknown      = "unknown"
+	// A predecessor that failed reporting a structured outcome is labelled by it: after-already-delivered or
+	// after-nothing-to-do.
+	rerunAfterPrefix = "after-"
+	rerunSendBack    = "send-back"
+	rerunUnknown     = "unknown"
 )
 
-// rerunLabel labels at by its predecessor in byStep, the task's full attempt list keyed by step and number.
+// rerunLabel labels at by its predecessor in byStep, the task's full attempt list keyed by step and number, and
+// reported, the structured outcome each failed attempt's result reported, keyed the same way.
 // A refusal is checked before the outcome, since it is stored as failed over any launcher outcome.
-func rerunLabel(byStep map[string]map[int]store.StageAttempt, at store.StageAttempt) string {
+func rerunLabel(byStep map[string]map[int]store.StageAttempt, reported map[string]map[int]adapter.OutcomeKind, at store.StageAttempt) string {
 	if at.Number <= 1 {
 		return rerunFirst
 	}
@@ -231,6 +235,8 @@ func rerunLabel(byStep map[string]map[int]store.StageAttempt, at store.StageAtte
 		return rerunUnknown
 	case prev.IntakeRejection != "":
 		return rerunAfterRefusal
+	case reported[at.Step][prev.Number] != "":
+		return rerunAfterPrefix + string(reported[at.Step][prev.Number])
 	case prev.Outcome == store.AttemptFailed:
 		return rerunAfterFailure
 	case prev.Outcome == store.AttemptStopped:
@@ -285,11 +291,14 @@ func readSpend(s spendStore, state, repository, taskID string, since time.Time, 
 			}
 			// Built before the --since filter, so a filter never changes a label.
 			byStep := map[string]map[int]store.StageAttempt{}
+			reported := map[string]map[int]adapter.OutcomeKind{}
 			for _, at := range attempts {
 				if byStep[at.Step] == nil {
 					byStep[at.Step] = map[int]store.StageAttempt{}
+					reported[at.Step] = map[int]adapter.OutcomeKind{}
 				}
 				byStep[at.Step][at.Number] = at
+				reported[at.Step][at.Number] = reportedOutcome(state, repo, task.ID, at)
 			}
 			for _, at := range attempts {
 				var started time.Time
@@ -316,8 +325,8 @@ func readSpend(s spendStore, state, repository, taskID string, since time.Time, 
 					}
 					u = store.Spend{Tokens: store.Measure(usage.Tokens), InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CacheCreationInputTokens: usage.CacheCreationInputTokens, CacheReadInputTokens: usage.CacheReadInputTokens, Cost: store.Measure(usage.Cost), CostUSD: usage.CostUSD}
 				}
-				rerun := rerunLabel(byStep, at)
-				key := spendGroup{Repository: repo, Task: task.ID, Step: at.Step, Rerun: rerun, Profile: "unavailable", Role: "unavailable", Adapter: "unavailable", Model: "unavailable", Outcome: spendOutcome(at)}
+				rerun := rerunLabel(byStep, reported, at)
+				key := spendGroup{Repository: repo, Task: task.ID, Step: at.Step, Rerun: rerun, Profile: "unavailable", Role: "unavailable", Adapter: "unavailable", Model: "unavailable", Outcome: spendOutcome(at, reported[at.Step][at.Number])}
 				if err := spendManifest(dir, at, &key); err != nil {
 					return out, err
 				}
@@ -363,17 +372,35 @@ func readSpend(s spendStore, state, repository, taskID string, since time.Time, 
 	return out, nil
 }
 
-// spendOutcome classifies an attempt as succeeded, failed, stopped, refused or running.
+// spendOutcome classifies an attempt as succeeded, failed, stopped, refused or running, or, for a failed attempt
+// whose result reported a structured outcome, by that outcome's kind, already-delivered or nothing-to-do.
 // Refusal comes first: RejectAttempt stores a refused attempt as failed.
-func spendOutcome(at store.StageAttempt) string {
+func spendOutcome(at store.StageAttempt, reported adapter.OutcomeKind) string {
 	switch {
 	case at.IntakeRejection != "":
 		return "refused"
 	case at.Outcome == "":
 		return "running"
+	case reported != "":
+		return string(reported)
 	default:
 		return string(at.Outcome)
 	}
+}
+
+// reportedOutcome is the kind of the structured outcome the result of at, an attempt of task in repo under the
+// attempt state directory state, reported: "" unless at failed with no intake rejection and its result reads with an
+// outcome (docs/adapters.md#result-file).
+func reportedOutcome(state, repo, task string, at store.StageAttempt) adapter.OutcomeKind {
+	if at.Outcome != store.AttemptFailed || at.IntakeRejection != "" {
+		return ""
+	}
+	key := artisan.AttemptKey{Repository: repo, TaskID: task, Step: at.Step, Attempt: at.Number}
+	res, err := adapter.ReadResult(filepath.Join(key.Dir(state), artisan.ResultFile), adapter.Identity{TaskID: task, AttemptID: key.AttemptID()})
+	if err != nil || res.Outcome == nil {
+		return ""
+	}
+	return res.Outcome.Kind
 }
 
 func spendManifest(dir string, at store.StageAttempt, key *spendGroup) error {

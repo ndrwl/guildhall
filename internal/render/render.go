@@ -119,6 +119,9 @@ type Retry struct {
 	Reason    string
 	Rejection string
 	Summary   string
+	// Reported labels the structured outcome the retried attempt's result reported, such as "already delivered by
+	// <url>" (adapter.Outcome.Label); empty when it reported none.
+	Reported string
 }
 
 // Main is where a code-head attempt's task branch stands against the default branch as the attempt launches.
@@ -344,7 +347,7 @@ func (r Rendered) write(m *Manifest, inputData [][]byte, found []foundSkill, tit
 	}
 	text := composePrompt(m, title, detail, instructions, role, guide, standards, reviewBase, retry, main, slice, surface, baseline.Policies, baseline.PolicyError)
 	if actor == workflow.ArtisanActor {
-		text += outputInstructions(m.Identity, revisions, branch, strict, surface)
+		text += outputInstructions(m.Identity, revisions, branch, strict, surface, slice)
 	}
 	prompt := []byte(text)
 	if err := os.WriteFile(r.PromptPath, prompt, 0o644); err != nil {
@@ -440,6 +443,9 @@ func retrySection(retry *Retry) string {
 	quote("Director's reason:", retry.Reason, "None given.")
 	if strings.TrimSpace(retry.Rejection) != "" {
 		quote("Intake rejection:", retry.Rejection, "")
+	}
+	if strings.TrimSpace(retry.Reported) != "" {
+		quote("Reported outcome:", retry.Reported, "")
 	}
 	quote("Previous summary:", retry.Summary, "None recorded.")
 	b.WriteString("Address this in your attempt; the stage guide and required outputs still apply.\n")

@@ -14,4 +14,6 @@ Untracked notes alone do not block intake.
 When an earlier slice or a merged pull request already delivered everything the current slice asks for, commit nothing and report `failed`.
 A task with no slices counts as one slice, so this applies when a merged pull request already delivered everything it asks for.
 Start the summary with `Already delivered by slice <j>` or `Already delivered by <pr url>`, then give the evidence: which item each named slice or pull request delivers.
+Also add the result's `outcome`, as the Result template shows: `already-delivered` with `by_pr`, or `by_slice` for an earlier slice.
+When the task needs no change at all, report `failed` with a `nothing-to-do` outcome and its reason instead, committing nothing.
 The Director confirms it with `guildhall slice delivered`, which closes the slice, or the whole task when it has one slice.

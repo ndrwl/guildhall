@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -75,6 +76,51 @@ type Output struct {
 	Description string `json:"description,omitempty"`
 }
 
+// OutcomeKind is what a failed attempt's structured outcome reports instead of a plain failure.
+type OutcomeKind string
+
+// Outcome kinds.
+const (
+	// OutcomeAlreadyDelivered reports that another merged pull request, or an earlier slice, already shipped the
+	// change the attempt was to make.
+	OutcomeAlreadyDelivered OutcomeKind = "already-delivered"
+	// OutcomeNothingToDo reports that the task needs no change at all.
+	OutcomeNothingToDo OutcomeKind = "nothing-to-do"
+)
+
+// Outcome is a result's optional structured outcome (docs/adapters.md#result-file): an already-delivered outcome
+// names exactly one of ByPR, the merged pull request's URL, and BySlice, an earlier slice of a multi-PR task; a
+// nothing-to-do outcome gives Reason. It pairs only with status failed and no outputs. Which steps may report one,
+// and whether by_slice is allowed, is the engine's to check, not the file's.
+type Outcome struct {
+	Kind    OutcomeKind `json:"kind"`
+	ByPR    string      `json:"by_pr,omitempty"`
+	BySlice int         `json:"by_slice,omitempty"`
+	Reason  string      `json:"reason,omitempty"`
+}
+
+// Label is the outcome as reports name it: "already delivered by <url>", "already delivered by slice <j>" or
+// "nothing to do: <reason>".
+func (o Outcome) Label() string {
+	switch {
+	case o.Kind == OutcomeNothingToDo:
+		return "nothing to do: " + o.Reason
+	case o.BySlice > 0:
+		return fmt.Sprintf("already delivered by slice %d", o.BySlice)
+	default:
+		return "already delivered by " + o.ByPR
+	}
+}
+
+// outcomeFile is an outcome's on-disk shape: kind and by_slice by pointer, so a missing kind or a given 0 is refused
+// rather than read as absent.
+type outcomeFile struct {
+	Kind    *OutcomeKind `json:"kind"`
+	ByPR    string       `json:"by_pr,omitempty"`
+	BySlice *int         `json:"by_slice,omitempty"`
+	Reason  string       `json:"reason,omitempty"`
+}
+
 // Result is the content of a version 1 result file.
 type Result struct {
 	Identity
@@ -82,19 +128,21 @@ type Result struct {
 	Summary   string   `json:"summary"`
 	Outputs   []Output `json:"outputs"`
 	LandedRef string   `json:"landed_ref,omitempty"`
+	Outcome   *Outcome `json:"outcome,omitempty"`
 }
 
 // resultFile is the on-disk shape, with every field required by pointer so a
 // missing field is distinguishable from an empty one.
 type resultFile struct {
-	Schema    *string   `json:"schema"`
-	Version   *int      `json:"version"`
-	TaskID    *string   `json:"task_id"`
-	AttemptID *string   `json:"attempt_id"`
-	Status    *Status   `json:"status"`
-	Summary   *string   `json:"summary"`
-	Outputs   *[]Output `json:"outputs"`
-	LandedRef string    `json:"landed_ref,omitempty"`
+	Schema    *string      `json:"schema"`
+	Version   *int         `json:"version"`
+	TaskID    *string      `json:"task_id"`
+	AttemptID *string      `json:"attempt_id"`
+	Status    *Status      `json:"status"`
+	Summary   *string      `json:"summary"`
+	Outputs   *[]Output    `json:"outputs"`
+	LandedRef string       `json:"landed_ref,omitempty"`
+	Outcome   *outcomeFile `json:"outcome,omitempty"`
 }
 
 func malformed(format string, args ...any) error {
@@ -126,6 +174,18 @@ func ParseResult(data []byte, want Identity) (Result, error) {
 		Outputs:   *f.Outputs,
 		LandedRef: f.LandedRef,
 	}
+	if o := f.Outcome; o != nil {
+		switch {
+		case o.Kind == nil:
+			return Result{}, malformed("outcome.kind is required")
+		case o.BySlice != nil && *o.BySlice < 1:
+			return Result{}, malformed("outcome.by_slice %d must be a slice number, 1 or more", *o.BySlice)
+		}
+		r.Outcome = &Outcome{Kind: *o.Kind, ByPR: o.ByPR, Reason: o.Reason}
+		if o.BySlice != nil {
+			r.Outcome.BySlice = *o.BySlice
+		}
+	}
 	if err := r.validate(); err != nil {
 		return Result{}, err
 	}
@@ -135,6 +195,10 @@ func ParseResult(data []byte, want Identity) (Result, error) {
 	}
 	return r, nil
 }
+
+// Validate checks r against the content rules ParseResult and WriteResult apply, such as an outcome's shape, so a
+// wrapper can refuse a result before it writes anything; a refusal wraps ErrMalformedResult.
+func (r Result) Validate() error { return r.validate() }
 
 // validate checks the content rules shared by reading and writing.
 func (r Result) validate() error {
@@ -155,6 +219,50 @@ func (r Result) validate() error {
 	}
 	if r.LandedRef != "" && strings.ContainsFunc(r.LandedRef, func(c rune) bool { return c <= ' ' || c == 0x7f }) {
 		return malformed("landed_ref %q contains whitespace or control characters", r.LandedRef)
+	}
+	if r.Outcome != nil {
+		if err := r.Outcome.validate(); err != nil {
+			return err
+		}
+		if r.Status != StatusFailed {
+			return malformed("an outcome pairs with status %q, not %q", StatusFailed, r.Status)
+		}
+		if len(r.Outputs) > 0 {
+			return malformed("a result with an outcome lists no outputs")
+		}
+	}
+	return nil
+}
+
+// validate checks an outcome's shape: a known kind with exactly the fields that kind takes.
+func (o Outcome) validate() error {
+	switch o.Kind {
+	case OutcomeAlreadyDelivered:
+		switch {
+		case o.Reason != "":
+			return malformed("an %s outcome takes by_pr or by_slice, not reason", o.Kind)
+		case o.ByPR != "" && o.BySlice != 0:
+			return malformed("an %s outcome names by_pr or by_slice, not both", o.Kind)
+		case o.ByPR == "" && o.BySlice == 0:
+			return malformed("an %s outcome names the merged pull request in by_pr, or the earlier slice in by_slice", o.Kind)
+		case o.BySlice < 0:
+			return malformed("outcome.by_slice %d must be a slice number, 1 or more", o.BySlice)
+		case o.ByPR != "":
+			u, err := url.Parse(o.ByPR)
+			if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" ||
+				strings.ContainsFunc(o.ByPR, func(c rune) bool { return c <= ' ' || c == 0x7f }) {
+				return malformed("outcome.by_pr %q must be the pull request's http or https URL", o.ByPR)
+			}
+		}
+	case OutcomeNothingToDo:
+		switch {
+		case o.ByPR != "" || o.BySlice != 0:
+			return malformed("a %s outcome takes reason, not by_pr or by_slice", o.Kind)
+		case strings.TrimSpace(o.Reason) == "":
+			return malformed("a %s outcome says why in reason", o.Kind)
+		}
+	default:
+		return malformed("outcome.kind %q must be %q or %q", o.Kind, OutcomeAlreadyDelivered, OutcomeNothingToDo)
 	}
 	return nil
 }
