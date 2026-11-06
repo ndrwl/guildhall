@@ -29,13 +29,15 @@ type MergeQueue interface {
 	ReleaseMergeFront(mutationID, repository, taskID string) (store.Receipt, error)
 	// ClaimMergeBatch claims the front as ClaimMergeFront does and, with size above 1, the batch the claimer leads
 	// (docs/interpreter.md#merge-batches); LeaveMergeBatch, SetMergeBatchLink and SetMergeBatchState change it, and
-	// SetMergeBatchTrain and SetMergeBatchReady record its train pull request and its members' readiness to land.
+	// SetMergeBatchTrain and SetMergeBatchReady record its train pull request and its members' readiness to land, and
+	// SetMergeBatchVerdict a member's read of its own link's checks once the train is red.
 	ClaimMergeBatch(mutationID, repository, taskID string, slice, size int) (store.Receipt, error)
 	LeaveMergeBatch(mutationID, repository, taskID string) (store.Receipt, error)
 	SetMergeBatchLink(mutationID, repository, taskID string, slice int, link string) (store.Receipt, error)
 	SetMergeBatchState(mutationID, repository, leader string, state store.MergeBatchState, base string) (store.Receipt, error)
 	SetMergeBatchTrain(mutationID, repository, leader string, train store.MergeTrain) (store.Receipt, error)
 	SetMergeBatchReady(mutationID, repository, taskID, link string) (store.Receipt, error)
+	SetMergeBatchVerdict(mutationID, repository, taskID, link, verdict string) (store.Receipt, error)
 	// SetMergeHold holds or releases a task's merge; the engine only releases one, for a task merged outside Guildhall.
 	SetMergeHold(mutationID, repository, taskID string, held bool) (store.Receipt, error)
 }
@@ -373,11 +375,18 @@ func (r *run) publishLink(s workflow.Step, repo config.Repository, published str
 // headChecks reads the checks of rebased head x on pull request pr for step s, as validate does, paced by
 // ChecksRefresh, and records a finished read as <step>-<k>-checks-<x>. Under flaky_checks a failed read first gives
 // its failed jobs their one rerun, as validate's does, and a passed read sends its flake messages. It returns the recorded result, or nil with the
-// wait while they are pending.
+// wait while they are pending. A read of the same head bound to another pull request, as a batch member's link and
+// its train's head can be, is <step>-<k>-checks-<x>-pr-<number>, so no pull request's checks stand for another's.
 func (r *run) headChecks(s workflow.Step, k int, repo config.Repository, x string, pr *pullRequestDoc) (*validationDoc, Next, error) {
-	name := fmt.Sprintf("%s-checks-%s", DecisionID(s.ID, k, false), x)
+	name, file := fmt.Sprintf("%s-checks-%s", DecisionID(s.ID, k, false), x), "checks-"+x
 	var v validationDoc
-	if ok, err := r.readJSONDoc(name, &v); err != nil || ok {
+	ok, err := r.readJSONDoc(name, &v)
+	if err == nil && ok && v.Number != pr.Number {
+		name, file = fmt.Sprintf("%s-pr-%d", name, pr.Number), fmt.Sprintf("%s-pr-%d", file, pr.Number)
+		v = validationDoc{}
+		ok, err = r.readJSONDoc(name, &v)
+	}
+	if err != nil || ok {
 		if err == nil && v.Verdict == validationPassed {
 			// A crash between the record and its flake messages still sends them; a resend is harmless.
 			err = r.notifyFlakes(s, name, v)
@@ -406,12 +415,12 @@ func (r *run) headChecks(s workflow.Step, k int, repo config.Repository, x strin
 		if stop, next, err := r.rerunFailed(s, repo, pr, x, &v, pending); err != nil || stop {
 			return nil, next, err
 		}
-		return &v, Next{}, r.putJSONDoc(name, DecisionID(s.ID, k, false), "checks-"+x+".json", v)
+		return &v, Next{}, r.putJSONDoc(name, DecisionID(s.ID, k, false), file+".json", v)
 	}
 	if err := r.passedReruns(s, repo, x, &v); err != nil {
 		return nil, Next{}, err
 	}
-	if err := r.putJSONDoc(name, DecisionID(s.ID, k, false), "checks-"+x+".json", v); err != nil {
+	if err := r.putJSONDoc(name, DecisionID(s.ID, k, false), file+".json", v); err != nil {
 		return nil, Next{}, err
 	}
 	return &v, Next{}, r.notifyFlakes(s, name, v)

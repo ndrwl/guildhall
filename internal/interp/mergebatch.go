@@ -127,6 +127,10 @@ func (r *run) batchMember(s workflow.Step, repo config.Repository, dl deliverHea
 		}
 		return r.queued(s, q, false)
 	}
+	// A red train is bisected on the members' own link checks.
+	if b.State == store.BatchRed {
+		return r.bisectMember(s, repo, id, q, l, h)
+	}
 	// Once the train's checks passed, the member runs its merge gates against its link and marks itself ready.
 	if b.State == store.BatchLanding && b.Train != nil && !me.Ready {
 		wait, why, err := r.authorizeLink(s, repo, dl, id, l, own, *b)

@@ -29,16 +29,24 @@ type mergeQueueEntry struct {
 }
 
 // batchPlace is a task's place in its repository's merge batch: its 1-based place among the members, the leader
-// first, the number of members, the leader, and the batch's state.
+// first, the number of members, the leader, the batch's state, and the URL of its train pull request once opened.
 type batchPlace struct {
 	Place  int                   `json:"place"`
 	Size   int                   `json:"size"`
 	Leader string                `json:"leader"`
 	State  store.MergeBatchState `json:"state"`
+	Train  string                `json:"train,omitempty"`
 }
 
-// String is "in batch <place>/<size> (<state>)".
+// String is "in batch <place>/<size> (<state>)", with ", <train url>" in the parentheses while the batch is landing,
+// landed or red.
 func (b batchPlace) String() string {
+	switch b.State {
+	case store.BatchLanding, store.BatchLanded, store.BatchRed:
+		if b.Train != "" {
+			return fmt.Sprintf("in batch %d/%d (%s, %s)", b.Place, b.Size, b.State, b.Train)
+		}
+	}
 	return fmt.Sprintf("in batch %d/%d (%s)", b.Place, b.Size, b.State)
 }
 
@@ -64,6 +72,9 @@ func mergeQueues(s *store.Store, repos []string) ([]mergeQueue, error) {
 			entry := mergeQueueEntry{Task: e.TaskID, Position: i + 1, Priority: e.Priority, ReadyAt: e.ReadyAt, PR: e.PR, Held: e.Held, Front: e.Front, WaitingOn: "queue"}
 			if b := q.Batch; b != nil && b.Member(e.TaskID) > 0 {
 				entry.Batch = &batchPlace{Place: b.Member(e.TaskID), Size: len(b.Members), Leader: b.Leader, State: b.State}
+				if b.Train != nil {
+					entry.Batch.Train = b.Train.URL
+				}
 			}
 			if e.Front {
 				if entry.WaitingOn, err = frontWait(s, repo, e.TaskID); err != nil {

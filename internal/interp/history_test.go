@@ -109,6 +109,10 @@ func TestRecordPlace(t *testing.T) {
 			func(p Place) string {
 				return fmt.Sprintf("%s-checks-%s", DecisionID(workflow.SliceStep(p.Step, p.Slice), p.Round, false), head)
 			}},
+		{"deliver-2-checks-" + head + "-pr-4", Place{Step: "deliver", Slice: 1, Round: 2, Part: "checks"},
+			func(p Place) string {
+				return fmt.Sprintf("%s-checks-%s-pr-4", DecisionID(workflow.SliceStep(p.Step, p.Slice), p.Round, false), head)
+			}},
 		// Pinned by the precedence: a context or link record name reads as a round-1 decision.
 		{"context-1", Place{Step: "context", Slice: 1, Round: 1}, decision},
 		{"links-2", Place{Step: "links", Slice: 1, Round: 2}, decision},

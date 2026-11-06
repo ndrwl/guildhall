@@ -360,7 +360,8 @@ func claimFront(tx *bolt.Tx, repository, taskID string, slice, size int) error {
 type MergeBatchState string
 
 // The batch states. A batch is assembled by its members' replays, tested on its last link's checks, and landed or
-// found red; a red batch, or one whose base moved before it landed, is assembled again.
+// found red; a red batch is bisected on its members' link checks and its green members tested again, and a batch
+// whose base moved before it landed is assembled again.
 const (
 	BatchAssembling MergeBatchState = "assembling"
 	BatchTesting    MergeBatchState = "testing"
@@ -375,14 +376,21 @@ var batchMoves = map[MergeBatchState][]MergeBatchState{
 	BatchTesting:    {BatchAssembling, BatchLanding, BatchRed},
 	BatchLanding:    {BatchAssembling, BatchLanded},
 	BatchLanded:     {},
-	BatchRed:        {BatchAssembling, BatchLanding},
+	BatchRed:        {BatchAssembling, BatchTesting, BatchLanding},
 }
+
+// The verdicts a member of a red batch records of its own link's checks (SetMergeBatchVerdict).
+const (
+	VerdictPassed = "passed"
+	VerdictFailed = "failed"
+)
 
 // MergeBatchMember is one task of a batch, in its stay'th time at or behind the front. Slice is the slice the member
 // merges, 0 until it is recorded; Link is the member's link head, its head replayed onto the previous member's link
 // (the first member's onto the base), empty until it is published. Ready reports that the member passed its merge
 // gates for its link while the batch is landing; Finished that it recorded the landed train's merge and left the
-// queue.
+// queue. Verdict is the member's read of its own link's checks once the batch's train was red, passed or failed,
+// empty until recorded and cleared with its link.
 type MergeBatchMember struct {
 	TaskID   string `json:"task_id"`
 	Slice    int    `json:"slice,omitempty"`
@@ -390,6 +398,7 @@ type MergeBatchMember struct {
 	Link     string `json:"link,omitempty"`
 	Ready    bool   `json:"ready,omitempty"`
 	Finished bool   `json:"finished,omitempty"`
+	Verdict  string `json:"verdict,omitempty"`
 }
 
 // MergeTrain is a batch's train pull request: the remote and pull request it is, the head it was last pushed at, and
@@ -421,7 +430,8 @@ func (b MergeBatch) Member(task string) int {
 
 // leaveBatch takes taskID out of the batch: the leader's leaving ends the batch, and a member's removes it alone and
 // clears the links of the members after it, which replay onto its predecessor's link, sending a batch testing or
-// landing back to assembling. A landed batch keeps its members: with finish, as when a member leaves the queue after
+// landing back to assembling. A member leaving a red batch, as its culprit does, takes the members after it out too,
+// leaving them queued, so the members before it are tested again on their own links. A landed batch keeps its members: with finish, as when a member leaves the queue after
 // recording the train's merge, the member is marked finished, and the batch is removed once every member is.
 func leaveBatch(b *bolt.Bucket, taskID string, finish bool) error {
 	var mb MergeBatch
@@ -447,18 +457,23 @@ func leaveBatch(b *bolt.Bucket, taskID string, finish bool) error {
 	if i == 0 {
 		return nil
 	}
+	if mb.State == BatchRed {
+		mb.Members = mb.Members[:i-1]
+		return putJSON(b, mergeBatchKey, mb)
+	}
 	mb.Members = slices.Delete(mb.Members, i-1, i)
 	clearLinks(&mb, i-1)
 	return putJSON(b, mergeBatchKey, mb)
 }
 
-// clearLinks clears the links of the batch's members from index i on, which replayed onto a link that no longer
-// precedes them; a batch testing or landing goes back to assembling, since its train no longer holds them all.
+// clearLinks clears the links and verdicts of the batch's members from index i on, which replayed onto a link that
+// no longer precedes them; a batch testing, landing or red goes back to assembling, since its train no longer holds
+// them all.
 func clearLinks(mb *MergeBatch, i int) {
 	for j := i; j < len(mb.Members); j++ {
-		mb.Members[j].Link = ""
+		mb.Members[j].Link, mb.Members[j].Verdict = "", ""
 	}
-	if mb.State == BatchTesting || mb.State == BatchLanding {
+	if mb.State == BatchTesting || mb.State == BatchLanding || mb.State == BatchRed {
 		mb.State = BatchAssembling
 	}
 	clearReady(mb)
@@ -508,8 +523,9 @@ func (s *Store) LeaveMergeBatch(mutationID, repository, taskID string) (Receipt,
 }
 
 // SetMergeBatchLink records a member's slice and link head in the standing batch. The task must be a member, the
-// slice at least 1 and the link a full commit id, and the batch not landed. A changed link clears the links of the
-// members after it, since they replay onto it again, and sends a batch testing or landing back to assembling.
+// slice at least 1 and the link a full commit id, and the batch not landed. A changed link clears the member's
+// verdict and the links of the members after it, since they replay onto it again, and sends a batch testing, landing
+// or red back to assembling.
 func (s *Store) SetMergeBatchLink(mutationID, repository, taskID string, slice int, link string) (Receipt, error) {
 	if err := validateIDs(repository, taskID); err != nil {
 		return Receipt{}, err
@@ -537,6 +553,7 @@ func (s *Store) SetMergeBatchLink(mutationID, repository, taskID string, slice i
 		}
 		i := mb.Member(taskID) - 1
 		if mb.Members[i].Link != link {
+			mb.Members[i].Verdict = ""
 			clearLinks(&mb, i+1)
 		}
 		mb.Members[i].Slice, mb.Members[i].Link = slice, link
@@ -664,6 +681,46 @@ func (s *Store) SetMergeBatchReady(mutationID, repository, taskID, link string) 
 			return invalid("link %s is not the link %q of task %s/%s", link, mb.Members[i].Link, repository, taskID)
 		}
 		mb.Members[i].Ready = true
+		return putJSON(b, mergeBatchKey, mb)
+	})
+}
+
+// SetMergeBatchVerdict records verdict, VerdictPassed or VerdictFailed, as a member's read of the checks of link, its
+// recorded link, while the standing batch is red (docs/interpreter.md#red-batches). A batch that is not red, a task
+// that is not a member, a link that is not its own, an unknown verdict, and a verdict that changes once recorded are
+// ErrInvalid.
+func (s *Store) SetMergeBatchVerdict(mutationID, repository, taskID, link, verdict string) (Receipt, error) {
+	if err := validateIDs(repository, taskID); err != nil {
+		return Receipt{}, err
+	}
+	if !isCommitID(link) {
+		return Receipt{}, invalid("link %q is not a full commit id", link)
+	}
+	if verdict != VerdictPassed && verdict != VerdictFailed {
+		return Receipt{}, invalid("unknown link verdict %q", verdict)
+	}
+	req := struct {
+		Repository string `json:"repository"`
+		TaskID     string `json:"task_id"`
+		Link       string `json:"link"`
+		Verdict    string `json:"verdict"`
+	}{repository, taskID, link, verdict}
+	return s.mutate(mutationID, "set-merge-batch-verdict", req, func(tx *bolt.Tx, rc *Receipt) error {
+		rc.Repository, rc.TaskID, rc.Record = repository, taskID, MergeQueueRecord
+		b, mb, err := standingBatch(tx, repository, taskID)
+		if err != nil {
+			return err
+		}
+		i := mb.Member(taskID) - 1
+		switch m := mb.Members[i]; {
+		case mb.State != BatchRed:
+			return invalid("the merge batch of %s is %s, not red", repository, mb.State)
+		case m.Link != link:
+			return invalid("link %s is not the link %q of task %s/%s", link, m.Link, repository, taskID)
+		case m.Verdict != "" && m.Verdict != verdict:
+			return invalid("task %s/%s already recorded its link %s %s", repository, taskID, link, m.Verdict)
+		}
+		mb.Members[i].Verdict = verdict
 		return putJSON(b, mergeBatchKey, mb)
 	})
 }
