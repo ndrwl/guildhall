@@ -761,6 +761,11 @@ func (r *run) front(s workflow.Step, repo config.Repository, dl deliverHead, id,
 		}
 		if err := r.rebaseFront(s, k, repo, id, q.stay, cur.head, m, links); err != nil {
 			if errors.Is(err, errRebaseStuck) || errors.Is(err, ErrUnsupported) {
+				if errors.Is(err, errRebaseStuck) {
+					if err := r.endStuckBatch(q, repo); err != nil {
+						return false, Next{}, err
+					}
+				}
 				return false, Next{Wait: WaitDirector, Step: s.ID}, r.stuck(s, cur.head, m, err)
 			}
 			return false, Next{}, err
@@ -778,13 +783,7 @@ func (r *run) rebaseFront(s workflow.Step, k int, repo config.Repository, id str
 	if err != nil {
 		return err
 	}
-	rounds := 0
-	for _, l := range all {
-		if l.doc.Authorization == id && l.doc.Stay == stay {
-			rounds++
-		}
-	}
-	if rounds >= maxRebaseRounds {
+	if rebaseRounds(all, id, stay) >= maxRebaseRounds {
 		return errRebaseStuck
 	}
 	doc, err := r.replay(repo, cur, m.Base)
@@ -800,6 +799,17 @@ func (r *run) rebaseFront(s workflow.Step, k int, repo config.Repository, id str
 	}
 	name := rebaseName(s.ID, k, n)
 	return r.putJSONDoc(name, DecisionID(s.ID, k, false), fmt.Sprintf("rebase-%d.json", n), doc)
+}
+
+// rebaseRounds counts the rebases of all made under authorization id in front stay stay.
+func rebaseRounds(all []rebaseLink, id string, stay int) int {
+	n := 0
+	for _, l := range all {
+		if l.doc.Authorization == id && l.doc.Stay == stay {
+			n++
+		}
+	}
+	return n
 }
 
 // pendingEscalation returns the escalation of head cur under authorization id: a recorded one, or the one a recorded

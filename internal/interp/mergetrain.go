@@ -101,15 +101,16 @@ func (r *run) batchTrain() (*store.MergeTrain, error) {
 // and the batch testing, it pushes the last link to the batch's train branch and opens the train pull request, reads
 // that pull request's own checks, and on green moves the batch to landing and marks itself ready. When every member
 // is ready it squash-merges the train, records the merge on the batch and moves it to landed, and then finishes as
-// each member does. A red train ends the batch: its pull request is closed and the leader merges alone, as does a
-// leader whose batch shrank to itself. It reports false when the task merges its own pull request.
+// each member does. A red train is bisected (bisectTrain); a train whose base moved under it is assembled again
+// (reassemble); and a leader whose batch shrank to itself closes the train and merges alone. It reports false when
+// the task merges its own pull request.
 func (r *run) leadTrain(s workflow.Step, id string, repo config.Repository, h string, pr *pullRequestDoc) (bool, Next, error) {
 	mq, view, ok, err := r.standingQueue()
 	if err != nil || !ok {
 		return false, Next{}, err
 	}
 	b := view.Batch
-	if b == nil || b.Leader != r.task.ID || b.State == store.BatchRed {
+	if b == nil || b.Leader != r.task.ID {
 		return false, Next{}, nil
 	}
 	if b.State == store.BatchLanded {
@@ -121,15 +122,36 @@ func (r *run) leadTrain(s workflow.Step, id string, repo config.Repository, h st
 		if b.Train == nil {
 			return false, Next{}, nil
 		}
-		return false, Next{}, r.endTrain(mq, *b, repo, "the merge batch shrank to its leader")
+		why := "the merge batch shrank to its leader"
+		if b.State == store.BatchRed {
+			why = "the batch was red and every member after task " + b.Leader + " left it, so its link, already green, merges alone"
+		}
+		return false, Next{}, r.endTrain(mq, *b, repo, why)
 	}
 	wait := Next{Wait: WaitMergeQueue, Step: s.ID}
 	if b.Members[0].Link != h || b.State == store.BatchAssembling || slices.ContainsFunc(b.Members, func(m store.MergeBatchMember) bool { return m.Link == "" }) {
 		// The members are still replaying onto the links before them.
 		return true, wait, nil
 	}
+	// The queue's own authorization and stay name the leader's link checks and rebases, as the front's loop does.
+	queued, stay := id, b.Stay
+	if i := slices.IndexFunc(view.Entries, func(e store.QueuedEntry) bool { return e.TaskID == r.task.ID }); i >= 0 {
+		queued = cmp.Or(view.Entries[i].Authorization, id)
+	}
 	p, _ := parseDecision(id)
 	k := p.round
+	if b.State == store.BatchRed {
+		stop, alone, next, err := r.bisectTrain(s, repo, mq, *b, queued, h, pr)
+		if err != nil || stop {
+			return true, next, err
+		}
+		if alone {
+			return false, Next{}, nil
+		}
+		if b, err = r.batchOf(mq); err != nil || b == nil {
+			return true, wait, err
+		}
+	}
 	train, err := r.publishTrain(s, k, repo, mq, *b, pr)
 	if err != nil {
 		return false, Next{}, err
@@ -139,7 +161,21 @@ func (r *run) leadTrain(s workflow.Step, id string, repo config.Repository, h st
 		return true, next, err
 	}
 	if v.Verdict != validationPassed {
-		return false, Next{}, r.redTrain(mq, *b, repo, train, v)
+		// A red train, after its one rerun, is bisected on its members' own link checks.
+		if err := r.redTrain(mq, *b, train, v); err != nil {
+			return false, Next{}, err
+		}
+		if b, err = r.batchOf(mq); err != nil || b == nil || b.State != store.BatchRed {
+			return true, wait, err
+		}
+		stop, alone, next, err := r.bisectTrain(s, repo, mq, *b, queued, h, pr)
+		switch {
+		case err != nil || stop:
+			return true, next, err
+		case alone:
+			return false, Next{}, nil
+		}
+		return true, wait, nil
 	}
 	if b, err = r.batchOf(mq); err != nil || b == nil {
 		return true, wait, err
@@ -168,6 +204,10 @@ func (r *run) leadTrain(s workflow.Step, id string, repo config.Repository, h st
 		return true, wait, nil
 	}
 	merged, next, err := r.mergeTrain(s, id, repo, train)
+	if errors.Is(err, errTrainBehind) {
+		// The base moved under the train: the batch is assembled again on the new tip.
+		return true, wait, r.reassemble(s, repo, mq, *b, queued, stay, err)
+	}
 	if err != nil || merged == nil {
 		return true, next, err
 	}
@@ -293,24 +333,39 @@ func prNumber(url string) int {
 	return n
 }
 
-// redTrain ends the batch whose train's checks v failed: it records the batch red, closes the train pull request
-// and tells the Director, and the leader merges alone. Its members keep their places and are batched again.
-func (r *run) redTrain(mq MergeQueue, b store.MergeBatch, repo config.Repository, train *pullRequestDoc, v *validationDoc) error {
-	if _, err := mq.SetMergeBatchState(r.batchMutation("merge-batch-state", b, string(store.BatchRed)+":"+batchRound(b)), r.task.Repository, r.task.ID, store.BatchRed, ""); err != nil {
+// redTrain records the batch whose train's checks v failed, after their one rerun, red, and tells the Director that
+// each member's own link checks are read next to find the member that broke it (bisectTrain).
+func (r *run) redTrain(mq MergeQueue, b store.MergeBatch, train *pullRequestDoc, v *validationDoc) error {
+	mutation := r.batchMutation("merge-batch-state", b, string(store.BatchRed)+":"+batchRound(b))
+	if _, err := mq.SetMergeBatchState(mutation, r.task.Repository, r.task.ID, store.BatchRed, ""); err != nil {
 		return err
 	}
-	why := fmt.Sprintf("the checks of merge train %s at %s failed: %s", train.URL, train.Head, strings.Join(v.Failing, ", "))
-	return r.endTrain(mq, b, repo, why)
+	text := fmt.Sprintf("The checks of merge train %s at %s, of the merge batch task %s/%s leads (%d tasks), failed: %s. Each member's own link checks are read next; the first member whose link is red goes back to build, and the members before it land without it.",
+		train.URL, train.Head, r.task.Repository, b.Leader, len(b.Members), strings.Join(v.Failing, ", "))
+	return r.notify("batch-red."+b.Leader+"."+strconv.Itoa(b.Stay)+"."+batchRound(b), store.MessageMergeQueued, text)
+}
+
+// closeTrain closes the batch's train pull request, when it has one, with the comment "Closed by Guildhall: <why>.
+// <then>".
+func (r *run) closeTrain(b store.MergeBatch, repo config.Repository, why, then string) error {
+	t := b.Train
+	if t == nil {
+		return nil
+	}
+	comment := fmt.Sprintf("Closed by Guildhall: %s. %s", why, then)
+	_, err := r.e.Forge.Close(r.ctx, forge.Close{Repository: repo.Path, Remote: t.Remote, Number: t.Number, Comment: comment})
+	if errors.Is(err, forge.ErrRefused) {
+		// A train already closed, as after a crash between the close and the batch's end, stays as it is.
+		return nil
+	}
+	return err
 }
 
 // endTrain ends the batch the task leads, for why, closing its train pull request when it has one, and tells the
 // Director; the leader then merges alone and the members keep their places.
 func (r *run) endTrain(mq MergeQueue, b store.MergeBatch, repo config.Repository, why string) error {
-	if t := b.Train; t != nil {
-		comment := fmt.Sprintf("Closed by Guildhall: %s. The merge batch ends, task %s merges alone, and the other members are batched again.", why, b.Leader)
-		if _, err := r.e.Forge.Close(r.ctx, forge.Close{Repository: repo.Path, Remote: t.Remote, Number: t.Number, Comment: comment}); err != nil {
-			return err
-		}
+	if err := r.closeTrain(b, repo, why, fmt.Sprintf("The merge batch ends, task %s merges alone, and the other members are batched again.", b.Leader)); err != nil {
+		return err
 	}
 	if _, err := mq.LeaveMergeBatch(r.batchMutation("merge-batch-leave", b, digest.Of([]byte(why)).Hex()[:12]), r.task.Repository, r.task.ID); err != nil {
 		return err
@@ -321,8 +376,9 @@ func (r *run) endTrain(mq MergeQueue, b store.MergeBatch, repo config.Repository
 
 // mergeTrain squash-merges the train pull request at its head, under the authorization id of the leader's own
 // merge: a train the forge already reports merged at that head, as after a crash between the merge and its record,
-// is read back rather than merged again. A merge the forge refuses is recorded as id's refusal and waits for the
-// Director. It returns nil with the wait when nothing merged.
+// is read back rather than merged again. A train behind or conflicting with the base, observed before the merge or
+// once the forge refused it, is errTrainBehind; any other merge the forge refuses is recorded as id's refusal and
+// waits for the Director. It returns nil with the wait when nothing merged.
 func (r *run) mergeTrain(s workflow.Step, id string, repo config.Repository, train *pullRequestDoc) (*forge.PullRequest, Next, error) {
 	if reader, ok := r.e.Forge.(PullRequestReader); ok {
 		got, err := reader.PullRequest(r.ctx, forge.View{Repository: repo.Path, Remote: train.Remote, Number: train.Number})
@@ -336,8 +392,21 @@ func (r *run) mergeTrain(s workflow.Step, id string, repo config.Repository, tra
 			return &got, Next{}, nil
 		}
 	}
+	behind := func() error {
+		m, err := r.observe(repo, train, train.Head)
+		if err != nil || !obstructed(m) {
+			return err
+		}
+		return fmt.Errorf("%w: train pull request %s is %s base %s", errTrainBehind, train.URL, m.State, m.Base)
+	}
+	if err := behind(); err != nil {
+		return nil, Next{}, err
+	}
 	merged, err := r.e.Forge.Merge(r.ctx, forge.Merge{Repository: repo.Path, Remote: train.Remote, Number: train.Number, Head: train.Head, Title: train.Title})
 	if errors.Is(err, forge.ErrRefused) {
+		if err := behind(); err != nil {
+			return nil, Next{}, err
+		}
 		reason := err.Error()
 		if err := r.recordRefusal(id, refusalDoc{Schema: refusalSchema, Remote: train.Remote, Number: train.Number, URL: train.URL, Head: train.Head, Reason: reason}); err != nil {
 			return nil, Next{}, err

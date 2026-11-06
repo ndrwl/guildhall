@@ -75,6 +75,14 @@ func parseSequencePart(name string) (place, bool) {
 		p.part = "checks"
 		return p, ok
 	}
+	// <decision>-checks-<head>-pr-<n>: the same head's checks read bound to another pull request.
+	if i := len(segs) - 4; i >= 2 && segs[i] == "checks" && digest.ValidHead(segs[i+1]) && segs[i+2] == "pr" {
+		if n, err := strconv.Atoi(segs[i+3]); err == nil && n >= 1 && strconv.Itoa(n) == segs[i+3] {
+			p, ok := parseDecision(strings.Join(segs[:i], "-"))
+			p.part = "checks"
+			return p, ok
+		}
+	}
 	if len(segs) >= 5 && segs[len(segs)-3] == "rebase" && slices.Contains(rebaseFollowOns, segs[len(segs)-1]) {
 		segs = segs[:len(segs)-1]
 	}

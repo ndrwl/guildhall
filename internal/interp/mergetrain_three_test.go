@@ -89,6 +89,37 @@ func (e *env) toMergeAs(t *testing.T, s *store.Store, id string) {
 // at commitN(4) with its own checks green.
 func trainOfThree(t *testing.T) (*env, *forgetest.Fake, *store.Store) {
 	t.Helper()
+	e, f, _, s := trainOfThreeReady(t)
+	return e, f, s
+}
+
+// trainOfThreeReady is trainOfThree with the workspaces double.
+func trainOfThreeReady(t *testing.T) (*env, *forgetest.Fake, *queueWorkspaces, *store.Store) {
+	t.Helper()
+	e, f, ws, s := trainOfThreeTesting(t)
+	f.SetChecks(repoRemote, commitN(4), ciPassed...)
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), batchWait)
+	if b := batchOf(t, s); b.State != store.BatchLanding || !b.Members[0].Ready {
+		t.Fatalf("batch after the green train = %+v", b)
+	}
+
+	// Each member authorizes its link and is ready.
+	for _, id := range []string{"t9", "t8"} {
+		want(t, e.advanceTask(t, id, interp.Event{Kind: interp.TaskCreated}), batchWait)
+	}
+	if b := batchOf(t, s); !b.Members[1].Ready || !b.Members[2].Ready {
+		t.Fatalf("batch with every member authorized = %+v", b)
+	}
+	if _, merges := f.Calls(); merges != 0 {
+		t.Fatalf("merged %d times before the leader's advance", merges)
+	}
+	return e, f, ws, s
+}
+
+// trainOfThreeTesting is trainOfThree up to the train pull request #4 opened at commitN(4), its checks pending and
+// the batch testing.
+func trainOfThreeTesting(t *testing.T) (*env, *forgetest.Fake, *queueWorkspaces, *store.Store) {
+	t.Helper()
 	e, f, ws := queueEnv(t, backends[1])
 	e.eng.Config.Repositories[0].Merge.MergeBatchSize = ptr(3)
 	s := peer(t, e, "t1")
@@ -136,23 +167,7 @@ func trainOfThree(t *testing.T) (*env, *forgetest.Fake, *store.Store) {
 	if train := prNumbered(t, f, 4); train.Branch != trainBranch || train.Head != commitN(4) {
 		t.Fatalf("train = %+v", train)
 	}
-	f.SetChecks(repoRemote, commitN(4), ciPassed...)
-	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), batchWait)
-	if b := batchOf(t, s); b.State != store.BatchLanding || !b.Members[0].Ready {
-		t.Fatalf("batch after the green train = %+v", b)
-	}
-
-	// Each member authorizes its link and is ready.
-	for _, id := range []string{"t9", "t8"} {
-		want(t, e.advanceTask(t, id, interp.Event{Kind: interp.TaskCreated}), batchWait)
-	}
-	if b := batchOf(t, s); !b.Members[1].Ready || !b.Members[2].Ready {
-		t.Fatalf("batch with every member authorized = %+v", b)
-	}
-	if _, merges := f.Calls(); merges != 0 {
-		t.Fatalf("merged %d times before the leader's advance", merges)
-	}
-	return e, f, s
+	return e, f, ws, s
 }
 
 // wantTrainLanded checks the outcome of a landed train of t7, t9 and t8: the train #4 merged once, the three member

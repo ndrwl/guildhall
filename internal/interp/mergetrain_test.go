@@ -246,11 +246,35 @@ func TestTrainLeaderCrashReplay(t *testing.T) {
 	}
 }
 
-// TestTrainRedEndsBatch: a train whose own checks fail ends the batch: its pull request is closed with why, the
-// Director is told, and the leader merges its own pull request alone, its members keeping their places.
+// TestTrainRedEndsBatch: a train whose own checks fail is recorded red and bisected: the leader records its own
+// link's verdict and waits for its members'. With every link green the train's red is its own, so the batch ends:
+// its pull request is closed with why, the Director is told, and the leader merges its own pull request alone, its
+// members keeping their places.
 func TestTrainRedEndsBatch(t *testing.T) {
 	e, f, _, s := leadToTesting(t)
 	f.SetChecks(repoRemote, commitN(4), ciFailed...)
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), batchWait)
+	b := batchOf(t, s)
+	if b.State != store.BatchRed || b.Members[0].Verdict != store.VerdictPassed || b.Members[1].Verdict != "" || prNumbered(t, f, 2).State != forge.Open {
+		t.Fatalf("red batch = %+v", b)
+	}
+	if !slices.ContainsFunc(mapValues(e.messages(t)), func(text string) bool { return strings.Contains(text, "Each member's own link checks are read next") }) {
+		t.Fatalf("no batch-red message: %v", e.messages(t))
+	}
+	// A verdict is recorded only while the batch is red, at the member's own link, and never changes.
+	if _, err := s.SetMergeBatchVerdict("v-wrong", "app", "t9", commitN(4), store.VerdictPassed); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("verdict at another link = %v", err)
+	}
+	if _, err := s.SetMergeBatchVerdict("v-t7", "app", "t7", head2, store.VerdictFailed); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("changed verdict = %v", err)
+	}
+	// The members are still reading theirs: the leader waits.
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), batchWait)
+	for _, m := range []struct{ id, link string }{{"t9", commitN(3)}, {"t8", commitN(4)}} {
+		if _, err := s.SetMergeBatchVerdict("verdict-"+m.id, "app", m.id, m.link, store.VerdictPassed); err != nil {
+			t.Fatal(err)
+		}
+	}
 	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), done)
 	if train := prNumbered(t, f, 2); train.State != forge.Closed {
 		t.Fatalf("train = %+v, want closed", train)
@@ -258,7 +282,7 @@ func TestTrainRedEndsBatch(t *testing.T) {
 	if own := prNumbered(t, f, 1); own.State != forge.Merged || own.Head != head2 {
 		t.Fatalf("own pull request = %+v, want merged at the leader's link", own)
 	}
-	if _, comments := f.Closes(); len(comments) != 1 || !strings.Contains(comments[0], "checks of merge train") {
+	if _, comments := f.Closes(); len(comments) != 1 || !strings.Contains(comments[0], "checks of merge train") || !strings.Contains(comments[0], "every member's own link checks passed") {
 		t.Fatalf("close comments = %q", comments)
 	}
 	found := slices.ContainsFunc(mapValues(e.messages(t)), func(text string) bool { return strings.Contains(text, "The merge batch task app/t7 leads ended") })
