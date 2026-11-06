@@ -108,33 +108,43 @@ func TestListFeedUnavailable(t *testing.T) {
 }
 
 // TestListFeedRefusals: a wrong Host is 421 before the Source is read; a busy store, or busy stats alone, is 503;
-// any other failure 500 with no detail, logged; and a POST is 404.
+// any other failure 500 with no detail, logged; and a POST is 404. Every refusal of the feed is a JSON error,
+// never the HTML refusal page.
 func TestListFeedRefusals(t *testing.T) {
+	jsonRefusal := func(name string, w *httptest.ResponseRecorder, status int, reason string) {
+		t.Helper()
+		var body struct {
+			Error string `json:"error"`
+		}
+		ct := w.Header().Get("Content-Type")
+		err := json.Unmarshal(w.Body.Bytes(), &body)
+		if w.Code != status || ct != "application/json" || err != nil || body.Error != reason || strings.Contains(w.Body.String(), "<") {
+			t.Errorf("%s: status %d, Content-Type %q, body %q", name, w.Code, ct, w.Body)
+		}
+	}
 	s, src := listServer(fixtureList())
 	r := request(http.MethodGet, "/list.json", nil)
 	r.Host = "evil.example:80"
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, r)
-	if w.Code != http.StatusMisdirectedRequest || src.calls != 0 || w.Header().Get("Content-Security-Policy") != CSP {
-		t.Errorf("wrong host: status %d, %d Source calls", w.Code, src.calls)
+	if src.calls != 0 || w.Header().Get("Content-Security-Policy") != CSP {
+		t.Errorf("wrong host: %d Source calls", src.calls)
 	}
+	jsonRefusal("wrong host", w, http.StatusMisdirectedRequest, "wrong address")
 	src.err = ErrBusy
-	if w := get(t, s, "/list.json"); w.Code != http.StatusServiceUnavailable {
-		t.Errorf("busy: status %d", w.Code)
-	}
+	jsonRefusal("busy", get(t, s, "/list.json"), http.StatusServiceUnavailable, "busy")
 	src.err, src.statsErr = nil, ErrBusy
-	if w := get(t, s, "/list.json"); w.Code != http.StatusServiceUnavailable {
-		t.Errorf("busy stats: status %d", w.Code)
-	}
-	if w := get(t, s, "/"); w.Code != http.StatusServiceUnavailable {
+	jsonRefusal("busy stats", get(t, s, "/list.json"), http.StatusServiceUnavailable, "busy")
+	if w := get(t, s, "/"); w.Code != http.StatusServiceUnavailable || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") {
 		t.Errorf("busy stats on the page: status %d", w.Code)
 	}
 	var logged []string
 	s.o.Log = func(l string) { logged = append(logged, l) }
 	src.statsErr = errors.New("statfs /secret/state: permission denied")
 	w = get(t, s, "/list.json")
-	if w.Code != http.StatusInternalServerError || strings.Contains(w.Body.String(), "/secret") {
-		t.Errorf("failure: status %d\n%s", w.Code, w.Body)
+	jsonRefusal("failure", w, http.StatusInternalServerError, "failed")
+	if strings.Contains(w.Body.String(), "/secret") {
+		t.Errorf("failure: detail in body\n%s", w.Body)
 	}
 	if len(logged) != 1 || !strings.Contains(logged[0], "permission denied") {
 		t.Errorf("logged %q", logged)

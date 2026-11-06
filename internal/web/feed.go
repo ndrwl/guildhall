@@ -117,21 +117,37 @@ type feedMachine struct {
 
 // listFeed handles GET /list.json, the task list's data for the page's own script: read-only for every login, the
 // same Source read as the page, through ServeHTTP's Host check and headers. A busy store is 503 and any other
-// failure 500 with no detail.
+// failure 500 with no detail; every refusal is feedRefuse's JSON, never HTML.
 func (s *Server) listFeed(w http.ResponseWriter) {
-	l, st, ok := s.readList(w)
+	l, st, ok := s.readList(w, feedRefuse)
 	if !ok {
 		return
 	}
 	b, err := json.Marshal(s.feed(l, st))
 	if err != nil {
 		s.log("web: the task list feed: " + err.Error())
-		s.refuse(w, http.StatusInternalServerError, "The task list could not be read", "Guildhall could not read the tasks from the store.")
+		feedRefuse(w, http.StatusInternalServerError, "", "")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(append(b, '\n'))
+}
+
+// feedRefuse writes the feed's refusal for status as application/json: {"error":"busy"} for 503, {"error":
+// "wrong address"} for 421 and {"error":"failed"} for anything else. It takes readList's refusal arguments but
+// ignores the page's title and words, so the feed carries no HTML and no detail.
+func feedRefuse(w http.ResponseWriter, status int, _, _ string) {
+	reason := "failed"
+	switch status {
+	case http.StatusServiceUnavailable:
+		reason = "busy"
+	case http.StatusMisdirectedRequest:
+		reason = "wrong address"
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write([]byte(`{"error":"` + reason + `"}` + "\n"))
 }
 
 // feed is the feed's reply for l and st, from the page's own model in its default order.
