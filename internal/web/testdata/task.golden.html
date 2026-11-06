@@ -361,7 +361,22 @@ tiles' line says the picks go with them */
 .hm{font:700 10.5px/1 system-ui,sans-serif;text-transform:uppercase;letter-spacing:.06em;color:var(--you);border:1px solid var(--youline);background:var(--youbg);padding:3px 6px;border-radius:5px;margin-right:6px}
 .hold{margin:0;padding:9px 16px;font-size:13.5px;border-top:1px solid var(--line);background:var(--runbg);border-left:4px solid var(--run);overflow-wrap:anywhere}
 .hold b{font-weight:650}
+/* the stats strip: Work, Spend and Machine as text; on a phone a <details> folded to one line */
+.strip{margin:0 0 16px;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+.strip>summary{display:none}
+.stb{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0}
+.stc{padding:10px 16px 12px;min-width:0}
+.stc+.stc{border-left:1px solid var(--line)}
+.stc h2{margin:0 0 4px;font:650 11px/1.4 system-ui,sans-serif;text-transform:uppercase;letter-spacing:.07em;color:var(--mut)}
+.stc ul{list-style:none;margin:0;padding:0;font-size:13.5px;line-height:1.55;color:var(--mut);font-variant-numeric:tabular-nums}
+.stc li{overflow-wrap:anywhere}
+.stc b{color:var(--fg);font-weight:650}
+.stc a{display:inline-flex;align-items:center;min-height:44px;margin:-12px 0;font-weight:600}
+.sd{font-weight:500;text-transform:none;letter-spacing:0;color:var(--faint)}
 @media (max-width:760px){
+ .strip>summary{display:flex;align-items:center;min-height:44px;padding:0 12px;font-size:13.5px;font-weight:600;font-variant-numeric:tabular-nums;cursor:pointer;overflow-wrap:anywhere}
+ .stb{grid-template-columns:minmax(0,1fr);border-top:1px solid var(--line)}
+ .stc+.stc{border-left:0;border-top:1px solid var(--line)}
  .ws{font-size:14.5px;margin:0 0 10px}
  .ws .m{display:block;margin:2px 0 0}
  .band.list .ws{margin:0 0 8px}
