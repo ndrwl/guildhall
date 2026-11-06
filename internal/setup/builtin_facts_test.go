@@ -97,6 +97,18 @@ func TestBuiltinGuildhallFacts(t *testing.T) {
 		t.Errorf("another release: gaps %v, want guildhall-pin", got)
 	}
 
+	// guildhall-on-path: plain guildhall passes; an absolute guildhall_path must be what PATH finds.
+	if got := gapIDs(t, sb, "director", nil); slices.Contains(got, "guildhall-on-path") {
+		t.Errorf("plain guildhall: gaps %v", got)
+	}
+	if got := gapIDs(t, sb, "director", map[string]string{"guildhall": guildhall}); slices.Contains(got, "guildhall-on-path") {
+		t.Errorf("guildhall_path on PATH: gaps %v", got)
+	}
+	elsewhere := shellStub(t, t.TempDir(), "guildhall", "exit 0\n")
+	if got := gapIDs(t, sb, "director", map[string]string{"guildhall": elsewhere}); !slices.Contains(got, "guildhall-on-path") {
+		t.Errorf("guildhall_path not on PATH: gaps %v, want guildhall-on-path", got)
+	}
+
 	for _, c := range []struct {
 		name, prefs, netmap string
 		gap                 bool

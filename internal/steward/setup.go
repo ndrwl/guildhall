@@ -141,6 +141,8 @@ type SetupPlan struct {
 	// with ErrCopyExists a copy directory with a config or store and a clone path that is not empty.
 	Preflight *StepFile      `json:"preflight,omitempty"`
 	Doctor    []setup.Report `json:"doctor,omitempty"`
+	// Bootstrap is set on a provisioning plan for a bare machine, which only places and installs Guildhall there.
+	Bootstrap *Bootstrap `json:"bootstrap,omitempty"`
 
 	// session is the copy's session state the dry run saw, shown but not bound: it moves on its own.
 	session string
@@ -207,6 +209,8 @@ type Setup struct {
 	// status to report the session started with its tab, checking every PollEvery; zero means 2 minutes and 2
 	// seconds.
 	StartWait, PollEvery time.Duration
+	// Self names the Steward's own Guildhall release, which a provisioning plan copies to a bare machine.
+	Self func() (SelfBinary, error)
 }
 
 func (s *Setup) signature() git.Signature {

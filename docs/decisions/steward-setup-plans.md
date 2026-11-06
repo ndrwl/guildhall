@@ -42,16 +42,21 @@ For it the allow-list gains `setup doctor --json` with `--steps`, `--digest`, `-
 Step file contents never travel on a command line, only their path and digest.
 The Steward never runs a wizard, `sudo` or a human step, and never holds a secret.
 
+A **bare machine**, one with no file at the roster's `guildhall_path`, first gets a provisioning plan that only places Guildhall ([bootstrapping a bare machine](../steward.md#bootstrapping-a-bare-machine), the grill's Q4 (a)): the Steward's own release binary and its launcher are copied there with `scp`, each checked with `sha256sum` before the binary first runs, and the binary installs itself with `release install <version> --from <file> --sha256 <hex>`.
+The doctor needs Guildhall on the machine, so the rest of the provisioning is a second dry run of the same request, approved on its own.
+For it the allow-list gains `sha256sum <path>`, an absolute path, the one command whose program is `sha256sum`, and `release install <version> --from <file> --sha256 <hex>`, with a release version, an absolute path and a lowercase hex sha256.
+
 ## Alternatives rejected
 
 - A general remote shell for the agent to diagnose and fix with: it would undo the [fixed remote commands](steward-fixed-remote-commands.md) record's reason, since quoting differs between servers and roster values are not fully trusted.
 - Adding takeover steps to the rollout plan: every rollout digest and approval would change, and a rollout never adds to the roster.
 - Committing the roster entry before the steps run: a failed takeover would leave the roster naming a copy that is not managed, which the next rollout would refuse; the entry is committed last.
 - Refusing a copy with no `[backup]` table: a local store export is a full, restorable copy that does not depend on d97.
+- Bootstrapping a bare machine and provisioning its copy in one plan: the doctor's gaps, which make the plan's steps, cannot be known before Guildhall is on the machine, so the Guildmaster would approve steps not yet derived.
 
 ## Consequences
 
 Rollout plans and digests are unchanged.
 A machine whose `guildhall` predates a takeover command fails that step with its diagnostic, and the plan resumes there once it is upgraded.
 A takeover that is abandoned before the copy is changed resumes the session it paused; once `managed.toml` is published it can only be finished.
-Provisioning runs every install as an approved step file on the [setup engine](setup-engine-from-firstmate.md) under the same approval and plan kind; later slices of d128 add a bare machine and native Windows.
+Provisioning runs every install as an approved step file on the [setup engine](setup-engine-from-firstmate.md) under the same approval and plan kind; a later slice of d128 adds native Windows.

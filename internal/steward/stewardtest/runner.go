@@ -34,6 +34,7 @@ const (
 	windowsCopy     = "C:/Users/guild/directors/games"
 	windowsProgram  = "C:/Users/guild/bin/guildhall.exe"
 	setupDir        = "/home/guild/.guildhall/setup"
+	bareProgram     = "/home/guild/.local/bin/guildhall"
 	sha             = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	unknownCommand  = `guildhall: unknown command "config"`
 	modeJSON        = `{"mode":"managed","authorized":true}` + "\n"
@@ -103,6 +104,8 @@ func RunRunnerContract(t *testing.T, newHarness func(t *testing.T) RunnerHarness
 				steward.StartTabCommand(steward.DefaultGuildhall, posixCopy),
 				steward.CloneCommand("git@github.com:guild/infra.git", "/home/guild/src/infra"),
 				steward.CloneCommand("https://github.com/guild/infra.git", "/home/guild/src/infra"),
+				steward.HashCommand(bareProgram),
+				steward.InstallFromCommand(bareProgram, "v0.0.0-20261105160445-9fb699fffce8", bareProgram, sha),
 			}
 			for _, argv := range cmds {
 				if _, err := h.Runner().Run(context.Background(), Alpha, argv); err != nil {
@@ -152,6 +155,19 @@ func RunRunnerContract(t *testing.T, newHarness func(t *testing.T) RunnerHarness
 				{steward.DefaultGuildhall, "release", "install", "v1", "--copy", posixCopy},
 				{steward.DefaultGuildhall, "director", "start", "--copy", posixCopy},
 				{steward.DefaultGuildhall, "director", "start", "claude", "--tab", "--copy", posixCopy},
+				// sha256sum reads one absolute path; release install takes a version, the file and its sha256 only.
+				{"sha256sum", "guildhall"},
+				{"sha256sum", "-c", bareProgram},
+				{"sha256sum", bareProgram, "/etc/shadow"},
+				{"sha256sum", bareProgram + ";id"},
+				{"/usr/bin/sha256sum", bareProgram},
+				{"sha512sum", bareProgram},
+				steward.InstallFromCommand(bareProgram, "v1;id", bareProgram, sha),
+				steward.InstallFromCommand(bareProgram, "v1", "guildhall", sha),
+				steward.InstallFromCommand(bareProgram, "v1", bareProgram, "sha256:"+sha),
+				{bareProgram, "release", "install", "v1", "--from", bareProgram},
+				{bareProgram, "release", "install", "v1", "--from", bareProgram, "--sha256", sha, "--copy", posixCopy},
+				{bareProgram, "release", "install", "--launcher", "--from", bareProgram},
 			} {
 				if _, err := h.Runner().Run(context.Background(), Alpha, argv); !errors.Is(err, steward.ErrNotAllowed) {
 					t.Errorf("Run %q: error %v, want steward.ErrNotAllowed", argv, err)

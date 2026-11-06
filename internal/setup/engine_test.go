@@ -311,7 +311,7 @@ func TestParseRefusals(t *testing.T) {
 
 func TestBuiltins(t *testing.T) {
 	want := map[string][]string{
-		"director":       {"copy-dir", "guildhall-pin", "tailscale-ssh"},
+		"director":       {"copy-dir", "guildhall-pin", "guildhall-on-path", "tailscale-ssh"},
 		"git-and-claude": {"git", "gh", "claude"},
 		"go":             {"go", "go-on-path"},
 		"herdr":          {"herdr", "herdr-session"},

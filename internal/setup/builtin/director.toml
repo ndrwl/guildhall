@@ -1,6 +1,7 @@
 # What a new Director copy needs on its machine before a Steward's provisioning plan writes its files there
 # (docs/steward.md#provisioning): the copy directory and its state/steward/setup, where the plan's own step files are
-# copied; the Guildhall release the plan pins; and Tailscale SSH with no check-mode rule, which the Steward's
+# copied; the Guildhall release the plan pins; the guildhall_path a bootstrapped machine runs being the guildhall on
+# the PATH of SSH commands; and Tailscale SSH with no check-mode rule, which the Steward's
 # batch-mode ssh cannot pass. With no copy_dir or guildhall_pin, as when a person runs the doctor over every built-in,
 # those steps pass; the Tailscale step passes on a machine whose Tailscale does not serve SSH.
 schema = "guildhall.steps/1"
@@ -57,6 +58,44 @@ case "$line" in
 "guildhall $SETUP_GUILDHALL_PIN "*) echo "$line"; exit 0 ;;
 esac
 echo "$SETUP_GUILDHALL version prints \"$line\", not release $SETUP_GUILDHALL_PIN"
+exit 1
+'''
+
+[[step]]
+id = "guildhall-on-path"
+title = "Put the Guildhall program on the PATH of SSH commands"
+tag = "human"
+os = ["linux", "darwin"]
+instructions = '''
+The Steward runs Guildhall on this machine by its absolute path (the roster's guildhall_path), but release adopt
+pins the new copy to the guildhall that PATH finds, and the Director's Herdr tab types plain guildhall. In the
+environment of an SSH command, `command -v guildhall` must print that path. Put its directory first on PATH in a
+file non-interactive SSH shells read: for bash, near the top of ~/.bashrc, above any line that returns early for
+non-interactive shells:
+
+    export PATH="$HOME/.local/bin:$PATH"     # the directory of guildhall_path
+
+Then check it from the Steward's machine with `ssh <alias> command -v guildhall`.
+'''
+undo = "Remove the PATH line you added."
+
+[[step.prompt]]
+kind = "confirm"
+text = "Does `ssh <alias> command -v guildhall` print the roster's guildhall_path now?"
+
+[step.check]
+shell = "sh"
+script = '''
+case "$SETUP_GUILDHALL" in
+/*) ;;
+*) exit 0 ;;
+esac
+found=$(command -v guildhall 2>/dev/null || true)
+if [ "$found" = "$SETUP_GUILDHALL" ]; then
+  echo "guildhall on PATH is $found"
+  exit 0
+fi
+echo "guildhall on PATH is ${found:-missing}, not $SETUP_GUILDHALL"
 exit 1
 '''
 
