@@ -644,3 +644,135 @@ func TestQueueHeldFrontReleasedAfterAFailedPush(t *testing.T) {
 		t.Fatalf("claim by t9 after the held front's release = %v", err)
 	}
 }
+
+// mergeQueued is t7's merge-queued messages: their texts by message id.
+func mergeQueued(t *testing.T, e *env) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for id, text := range e.messages(t) {
+		if strings.HasPrefix(id, "app.t7.merge-queued.") {
+			out[id] = text
+		}
+	}
+	return out
+}
+
+// wantMergeQueued fails unless t7 has sent n merge-queued messages, after step.
+func wantMergeQueued(t *testing.T, e *env, step string, n int) map[string]string {
+	t.Helper()
+	got := mergeQueued(t, e)
+	if len(got) != n {
+		t.Fatalf("%s: %d merge-queued message(s), want %d: %v", step, len(got), n, got)
+	}
+	return got
+}
+
+// TestQueueMessagesOnlyOnEnterAndFront: d230. A task waiting in the merge queue sends merge-queued when it enters the
+// queue and when it claims the front, and nothing when its place, the queue's length or the front changes: a new entry
+// behind it, a merge at the front and the next task's claim send it nothing, and a re-advance at the front sends
+// nothing more.
+func TestQueueMessagesOnlyOnEnterAndFront(t *testing.T) {
+	e, f, _ := queueEnv(t, backends[1])
+	s := e.h.Records.(*store.Store)
+	peer(t, e, "t1")
+	peer(t, e, "t2")
+	if _, err := s.ClaimMergeFront("front-t1", "app", "t1"); err != nil {
+		t.Fatal(err)
+	}
+	e.answer(t, "deliver-1", "merge")
+	want(t, e.advance(t, answeredMerge), queuedWait)
+	wantMergeQueued(t, e, "enter", 1)
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), queuedWait)
+	wantMergeQueued(t, e, "re-advance", 1)
+
+	peer(t, e, "t8")
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), queuedWait)
+	wantMergeQueued(t, e, "a new entry behind", 1)
+
+	if _, err := s.LeaveMergeQueue("leave-t1", "app", "t1", false); err != nil {
+		t.Fatal(err)
+	}
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), queuedWait)
+	wantMergeQueued(t, e, "no task holds the front", 1)
+	if _, err := s.ClaimMergeFront("front-t2", "app", "t2"); err != nil {
+		t.Fatal(err)
+	}
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), queuedWait)
+	wantMergeQueued(t, e, "t2 claims the front", 1)
+
+	// t2 merges and t7 claims the front, held there by a forge refusing the merge.
+	if _, err := s.LeaveMergeQueue("leave-t2", "app", "t2", false); err != nil {
+		t.Fatal(err)
+	}
+	f.Refuse("blocked by a test")
+	refused := interp.Next{Wait: interp.WaitDirector, Step: "deliver", Decision: "deliver-1"}
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), refused)
+	wantMergeQueued(t, e, "t7 claims the front", 2)
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), refused)
+	got := wantMergeQueued(t, e, "re-advance at the front", 2)
+	if text := got["app.t7.merge-queued.deliver.deliver-1"]; text != "Task app/t7 is authorized to merge and waits in the merge queue at place 3 of 3; task t1 holds the front." {
+		t.Fatalf("enter message = %v", got)
+	}
+	if text := got["app.t7.merge-queued.deliver.front.1"]; text != "Task app/t7 reached the front of the merge queue of app; Guildhall brings it up to date and merges it." {
+		t.Fatalf("front message = %v", got)
+	}
+}
+
+// TestQueueMessagesOnHoldChanges: d230. A queued task sends merge-queued at each change of its hold: held, unheld
+// with its place, and held again; a re-advance after each sends nothing more.
+func TestQueueMessagesOnHoldChanges(t *testing.T) {
+	e, _, _ := queueEnv(t, backends[1])
+	s := e.h.Records.(*store.Store)
+	peer(t, e, "t1")
+	if _, err := s.ClaimMergeFront("front-t1", "app", "t1"); err != nil {
+		t.Fatal(err)
+	}
+	e.answer(t, "deliver-1", "merge")
+	want(t, e.advance(t, answeredMerge), queuedWait)
+	wantMergeQueued(t, e, "enter", 1)
+	steps := []struct {
+		held bool
+		id   string
+		text string
+	}{
+		{true, "app.t7.merge-queued.deliver.hold.1", "The merge of task app/t7 is held (task hold-merge)"},
+		{false, "app.t7.merge-queued.deliver.hold.2", "The merge of task app/t7 is no longer held: it waits in the merge queue at place 2 of 2; task t1 holds the front."},
+		{true, "app.t7.merge-queued.deliver.hold.3", "The merge of task app/t7 is held (task hold-merge)"},
+	}
+	for i, st := range steps {
+		if _, err := s.SetMergeHold(fmt.Sprintf("hold-%d", i), "app", "t7", st.held); err != nil {
+			t.Fatal(err)
+		}
+		want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), queuedWait)
+		got := wantMergeQueued(t, e, fmt.Sprintf("hold change %d", i+1), i+2)
+		if !strings.HasPrefix(got[st.id], st.text) {
+			t.Fatalf("hold change %d: message %s = %q, want %q", i+1, st.id, got[st.id], st.text)
+		}
+		want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), queuedWait)
+		wantMergeQueued(t, e, fmt.Sprintf("re-advance after hold change %d", i+1), i+2)
+	}
+}
+
+// TestQueueHoldBeforeEntryIsNotAChange: d230. A task held and unheld before its merge is authorized sends only its
+// enter message across two advances behind the front: its hold changed before it entered the queue.
+func TestQueueHoldBeforeEntryIsNotAChange(t *testing.T) {
+	e, _, _ := queueEnv(t, backends[1])
+	s := e.h.Records.(*store.Store)
+	peer(t, e, "t1")
+	if _, err := s.ClaimMergeFront("front-t1", "app", "t1"); err != nil {
+		t.Fatal(err)
+	}
+	for i, held := range []bool{true, false} {
+		if _, err := s.SetMergeHold(fmt.Sprintf("hold-%d", i), "app", "t7", held); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e.answer(t, "deliver-1", "merge")
+	want(t, e.advance(t, answeredMerge), queuedWait)
+	wantMergeQueued(t, e, "enter", 1)
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), queuedWait)
+	got := wantMergeQueued(t, e, "re-advance", 1)
+	if _, ok := got["app.t7.merge-queued.deliver.deliver-1"]; !ok {
+		t.Fatalf("messages = %v, want only the enter message", got)
+	}
+}

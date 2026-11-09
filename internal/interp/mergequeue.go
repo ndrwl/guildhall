@@ -535,23 +535,53 @@ func (r *run) claim(s workflow.Step, repo config.Repository, q *queue) error {
 	return nil
 }
 
-// queued is the wait of a task behind the front, with one merge-queued message per place and front.
-func (r *run) queued(s workflow.Step, q queue, held bool) (Next, error) {
+// queued is the wait of a task behind the front, queued under authorization id, with a merge-queued message only
+// when the task enters the queue or its hold changes, never for a change of place, queue length or front. Each
+// message id names the event, not the text, so a later advance that renders another place under the same id is
+// dropped by notify as already reported:
+//   - merge-queued.<step>.<id> when it enters, behind the front and not held: one per authorization, so a rejoin
+//     after a send-back is told again;
+//   - merge-queued.<step>.hold.<n> when it is held, or when it is unheld and a hold value was set since it joined,
+//     n being the number of hold-merge values set for it, so each hold and unhold is told once.
+//
+// A hold value set before the task joined, before its merge was authorized or while an earlier slice waited, is not a
+// change of this stay: an unheld task is told only that it entered. The step in each id keeps a later slice's
+// messages apart from slice 1's.
+func (r *run) queued(s workflow.Step, q queue, id string, held bool) (Next, error) {
 	next := Next{Wait: WaitMergeQueue, Step: s.ID}
-	pos := q.view.Position(r.task.ID)
-	front := "no task"
-	if f := q.view.Front; f != nil {
-		front = "task " + f.TaskID
+	place := func() string {
+		pos := q.view.Position(r.task.ID)
+		if b := q.view.Batch; b != nil && b.Member(r.task.ID) > 1 {
+			return fmt.Sprintf("in the merge queue at place %d of %d, in batch %d/%d that task %s leads from the front; its head is replayed onto the link of task %s before it.",
+				pos, len(q.view.Entries), b.Member(r.task.ID), len(b.Members), b.Leader, b.Members[b.Member(r.task.ID)-2].TaskID)
+		}
+		front := "no task"
+		if f := q.view.Front; f != nil {
+			front = "task " + f.TaskID
+		}
+		return fmt.Sprintf("in the merge queue at place %d of %d; %s holds the front.", pos, len(q.view.Entries), front)
 	}
-	text := fmt.Sprintf("Task %s/%s is authorized to merge and waits in the merge queue at place %d of %d; %s holds the front.", r.task.Repository, r.task.ID, pos, len(q.view.Entries), front)
-	if b := q.view.Batch; b != nil && b.Member(r.task.ID) > 1 {
-		text = fmt.Sprintf("Task %s/%s is authorized to merge and waits in the merge queue at place %d of %d, in batch %d/%d that task %s leads from the front; its head is replayed onto the link of task %s before it.",
-			r.task.Repository, r.task.ID, pos, len(q.view.Entries), b.Member(r.task.ID), len(b.Members), b.Leader, b.Members[b.Member(r.task.ID)-2].TaskID)
-	}
-	if held {
+	what := "merge-queued." + s.ID + "." + id
+	text := fmt.Sprintf("Task %s/%s is authorized to merge and waits %s", r.task.Repository, r.task.ID, place())
+	switch n := q.view.HoldChanges[r.task.ID]; {
+	case held:
+		what = fmt.Sprintf("merge-queued.%s.hold.%d", s.ID, n)
 		text = fmt.Sprintf("The merge of task %s/%s is held (task hold-merge): it stays authorized and keeps its place by ready time, but the queue skips it until it is unheld.", r.task.Repository, r.task.ID)
+	case n > q.view.HoldJoined[r.task.ID]:
+		what = fmt.Sprintf("merge-queued.%s.hold.%d", s.ID, n)
+		text = fmt.Sprintf("The merge of task %s/%s is no longer held: it waits %s", r.task.Repository, r.task.ID, place())
 	}
-	return next, r.notify("merge-queued."+digest.Of([]byte(text)).Hex()[:12], store.MessageMergeQueued, text)
+	return next, r.notify(what, store.MessageMergeQueued, text)
+}
+
+// atFront tells the Director, once per stay, that the task running step s claimed the front of its repository's
+// merge queue. Records that keep no queue make every task the front, so nothing is sent for them.
+func (r *run) atFront(s workflow.Step, q queue) error {
+	if q.q == nil || !q.front {
+		return nil
+	}
+	return r.notify(fmt.Sprintf("merge-queued.%s.front.%d", s.ID, q.stay), store.MessageMergeQueued,
+		fmt.Sprintf("Task %s/%s reached the front of the merge queue of %s; Guildhall brings it up to date and merges it.", r.task.Repository, r.task.ID, r.task.Repository))
 }
 
 // leave takes the task out of the queue: keeping its ready time after a build send-back, removing it after a merge.

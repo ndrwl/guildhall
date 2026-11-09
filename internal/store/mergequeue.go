@@ -50,12 +50,14 @@ type MergeFront struct {
 }
 
 // MergeHold is the Director's hold-merge of a task: while Held, the task stays authorized and keeps its ready time
-// but is skipped by the queue. History holds every value set, in order.
+// but is skipped by the queue. History holds every value set, in order, and Joined the length History had when the
+// task last joined the merge queue under a new authorization, so the values after it were set while it was queued.
 type MergeHold struct {
 	Repository string `json:"repository"`
 	TaskID     string `json:"task_id"`
 	Held       bool   `json:"held"`
 	History    []bool `json:"history"`
+	Joined     int    `json:"joined,omitempty"`
 }
 
 // MergeHoldRecord is the receipt record of a task's hold-merge.
@@ -75,13 +77,17 @@ type QueuedEntry struct {
 // MergeQueue is a repository's merge queue as one read: the tasks waiting in it, front first and then in queue
 // order, and the front, nil when no task holds it. Batch is the batch the standing front leads, nil when it leads
 // none, as always while batching is off. Out are the entries of tasks out of the queue that keep their
-// ready time, and Holds every task's hold-merge, held or not.
+// ready time, Holds every task's hold-merge, held or not, HoldChanges the number of hold-merge values set for each
+// task with a hold record, the length of its MergeHold.History, and HoldJoined that number when the task last joined
+// the queue under a new authorization, its MergeHold.Joined.
 type MergeQueue struct {
-	Entries []QueuedEntry     `json:"entries"`
-	Front   *MergeFront       `json:"front,omitempty"`
-	Batch   *MergeBatch       `json:"batch,omitempty"`
-	Out     []MergeQueueEntry `json:"-"`
-	Holds   map[string]bool   `json:"-"`
+	Entries     []QueuedEntry     `json:"entries"`
+	Front       *MergeFront       `json:"front,omitempty"`
+	Batch       *MergeBatch       `json:"batch,omitempty"`
+	Out         []MergeQueueEntry `json:"-"`
+	Holds       map[string]bool   `json:"-"`
+	HoldChanges map[string]int    `json:"-"`
+	HoldJoined  map[string]int    `json:"-"`
 }
 
 // Position returns the 1-based place of task in the queue, 0 when it is not queued.
@@ -149,9 +155,35 @@ func (s *Store) JoinMergeQueue(mutationID, repository, taskID, authorization, re
 				return err
 			}
 		}
+		if !e.Queued || e.Authorization != authorization {
+			if err := markHoldJoined(tx, repository, taskID); err != nil {
+				return err
+			}
+		}
 		e.Authorization, e.Queued, e.PR = authorization, true, pr
 		return putJSON(b, []byte(taskID), e)
 	})
+}
+
+// markHoldJoined records on the task's hold-merge record, if it has one, that the task joins the merge queue now, so
+// the hold values set so far predate this stay in the queue.
+func markHoldJoined(tx *bolt.Tx, repository, taskID string) error {
+	b := repoBucket(tx, repository, bucketMergeHolds)
+	if b == nil {
+		return nil
+	}
+	var h MergeHold
+	switch err := getJSON(b, []byte(taskID), &h); {
+	case errors.Is(err, ErrNotFound):
+		return nil
+	case err != nil:
+		return err
+	}
+	if h.Joined == len(h.History) {
+		return nil
+	}
+	h.Joined = len(h.History)
+	return putJSON(b, []byte(taskID), h)
 }
 
 // readyAt is the commit time of the latest receipt of the task whose record is record and that answers a decision
@@ -748,13 +780,14 @@ func (s *Store) MergeQueue(repository string) (MergeQueue, error) {
 // front first. A front whose task left the queue or is closed does not stand and is read as no front; a held front
 // stands until its task releases it.
 func readMergeQueue(tx *bolt.Tx, repository string) (MergeQueue, error) {
-	q := MergeQueue{Entries: []QueuedEntry{}, Out: []MergeQueueEntry{}, Holds: map[string]bool{}}
+	q := MergeQueue{Entries: []QueuedEntry{}, Out: []MergeQueueEntry{}, Holds: map[string]bool{}, HoldChanges: map[string]int{}, HoldJoined: map[string]int{}}
 	var holds []MergeHold
 	if err := scan(repoBucket(tx, repository, bucketMergeHolds), nil, &holds); err != nil {
 		return MergeQueue{}, err
 	}
 	for _, h := range holds {
 		q.Holds[h.TaskID] = h.Held
+		q.HoldChanges[h.TaskID], q.HoldJoined[h.TaskID] = len(h.History), h.Joined
 	}
 	b := repoBucket(tx, repository, bucketMergeQueue)
 	if b == nil {

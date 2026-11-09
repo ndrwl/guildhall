@@ -2,6 +2,8 @@ package interp_test
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/ndrwl/guildhall/internal/forge"
@@ -117,5 +119,87 @@ func TestQueueReplayedClaimMakesNoFront(t *testing.T) {
 	}
 	if front, entry := frontOf(t, s); front == nil || front.TaskID != "t0" || entry.Front {
 		t.Fatalf("front = %+v, t7 entry = %+v, want t0 at the front", front, entry)
+	}
+}
+
+// TestQueueLaterSliceEntersAgain: d230. Slice 2 entering the merge queue sends its own merge-queued message even when
+// its place, the queue's length and the front read as slice 1's did.
+func TestQueueLaterSliceEntersAgain(t *testing.T) {
+	e, _, _ := newSliceEnv(t, backends[1], true, sliceScript(t, threeSlices, 1, 2)...)
+	s := e.h.Records.(*store.Store)
+	e.toAccepted(t)
+	e.toMergeDecision(t, 1)
+	peer(t, e, "t0")
+	if _, err := s.ClaimMergeFront("front-t0", "app", "t0"); err != nil {
+		t.Fatal(err)
+	}
+	want(t, e.mergeSlice(t, 1), queuedWait)
+	if _, err := s.LeaveMergeQueue("leave-t0", "app", "t0", false); err != nil {
+		t.Fatal(err)
+	}
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "build--s2", Attempt: 1})
+
+	want(t, e.toMergeDecision(t, 2), interp.Next{Wait: interp.WaitDecision, Step: "deliver--s2", Decision: "deliver--s2-1"})
+	if _, err := s.JoinMergeQueue("rejoin-t0", "app", "t0", "deliver-2", "document/deliver-1-authorized", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ClaimMergeFront("front-t0-2", "app", "t0"); err != nil {
+		t.Fatal(err)
+	}
+	want(t, e.mergeSlice(t, 2), interp.Next{Wait: interp.WaitMergeQueue, Step: "deliver--s2"})
+	const text = "Task app/t7 is authorized to merge and waits in the merge queue at place 2 of 2; task t0 holds the front."
+	entered := 0
+	for _, got := range mergeQueued(t, e) {
+		if got == text {
+			entered++
+		}
+	}
+	if entered != 2 {
+		t.Fatalf("enter messages = %d, want one per slice: %v", entered, mergeQueued(t, e))
+	}
+}
+
+// TestQueueLaterSliceAfterSlice1HoldChanges: d230. A task held and unheld while slice 1 waited in the merge queue
+// sends, for slice 2, only the enter message across two advances behind the front: its hold changed before slice 2
+// entered.
+func TestQueueLaterSliceAfterSlice1HoldChanges(t *testing.T) {
+	e, _, _ := newSliceEnv(t, backends[1], true, sliceScript(t, threeSlices, 1, 2)...)
+	s := e.h.Records.(*store.Store)
+	e.toAccepted(t)
+	e.toMergeDecision(t, 1)
+	peer(t, e, "t0")
+	if _, err := s.ClaimMergeFront("front-t0", "app", "t0"); err != nil {
+		t.Fatal(err)
+	}
+	want(t, e.mergeSlice(t, 1), queuedWait)
+	for i, held := range []bool{true, false} {
+		if _, err := s.SetMergeHold(fmt.Sprintf("hold-%d", i), "app", "t7", held); err != nil {
+			t.Fatal(err)
+		}
+		want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), queuedWait)
+	}
+	if _, err := s.LeaveMergeQueue("leave-t0", "app", "t0", false); err != nil {
+		t.Fatal(err)
+	}
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "build--s2", Attempt: 1})
+
+	want(t, e.toMergeDecision(t, 2), interp.Next{Wait: interp.WaitDecision, Step: "deliver--s2", Decision: "deliver--s2-1"})
+	if _, err := s.JoinMergeQueue("rejoin-t0", "app", "t0", "deliver-2", "document/deliver-1-authorized", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ClaimMergeFront("front-t0-2", "app", "t0"); err != nil {
+		t.Fatal(err)
+	}
+	queued2 := interp.Next{Wait: interp.WaitMergeQueue, Step: "deliver--s2"}
+	want(t, e.mergeSlice(t, 2), queued2)
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), queued2)
+	var slice2 []string
+	for id := range mergeQueued(t, e) {
+		if strings.HasPrefix(id, "app.t7.merge-queued.deliver--s2.") {
+			slice2 = append(slice2, id)
+		}
+	}
+	if len(slice2) != 1 || slice2[0] != "app.t7.merge-queued.deliver--s2.deliver--s2-1" {
+		t.Fatalf("slice 2 merge-queued messages = %v, want only its enter message", slice2)
 	}
 }

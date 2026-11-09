@@ -137,12 +137,12 @@ func (r *run) bisectMember(s workflow.Step, repo config.Repository, id string, q
 	q.view = view
 	b := view.Batch
 	if v.Verdict == validationPassed || b == nil || b.Member(r.task.ID) == 0 {
-		return r.queued(s, q, false)
+		return r.queued(s, q, id, false)
 	}
 	place := b.Member(r.task.ID)
 	for _, m := range b.Members[:place-1] {
 		if m.Verdict != store.VerdictPassed {
-			return r.queued(s, q, false)
+			return r.queued(s, q, id, false)
 		}
 	}
 	why := linkFailed(place, l.head(), v)
