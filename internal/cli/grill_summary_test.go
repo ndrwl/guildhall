@@ -60,7 +60,7 @@ func TestGrillSummaryOpen(t *testing.T) {
 		"file with show":    {"", append(slices.Clone(show), "--summary-file", "-"), 2, "--summary-file goes with summary open"},
 		"questions file":    {"", append(slices.Clone(open), "--questions-file", "-"), 2, "flag provided but not defined"},
 		"bad attempt":       {testSummary, []string{"summary", "open", "--store", path, "--repo", "app", "--task", "a-grill", "--attempt", "Grill 1", "--summary-file", "-"}, 2, "must be ids"},
-		"not a subcommand":  {"", []string{"summary", "close"}, 2, "grill takes round open, round show, summary open or summary show"},
+		"not a subcommand":  {"", []string{"summary", "close"}, 2, "grill takes round open, round show, round answer, summary open or summary show"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if code, _, errOut := runGrill(t, c.stdin, c.args...); code != c.code || !strings.Contains(errOut, c.says) {

@@ -22,6 +22,7 @@ import (
 
 const grillUsage = `usage: guildhall grill round open --store <path> --repo <id> --task <id> --attempt <step-n> --questions-file <path|->
        guildhall grill round show --store <path> --repo <id> --task <id> --attempt <step-n> [--round <k>]
+       guildhall grill round answer --store <path> --repo <id> --task <id> --attempt <step-n> [--round <k>] --answers-file <path|->
        guildhall grill summary open --store <path> --repo <id> --task <id> --attempt <step-n> --summary-file <path|->
        guildhall grill summary show --store <path> --repo <id> --task <id> --attempt <step-n> [--summary <k>]
 --copy <dir>, or the copy found from the current directory, may stand in for --store: the copy's director.store
@@ -30,6 +31,11 @@ grill-2: the questions file is the round in the guildhall-grill format, each que
 body and a last line "Recommended: <answer>", numbered from Q1; - reads it from standard input. The page asks it as
 one form, and the Guildmaster's Send round sends a grill-answered message.
 round show prints the attempt's latest sent round, or its round k, with the Guildmaster's answers, as Markdown.
+round answer records the answers the Guildmaster gave in chat to the attempt's latest round, or its round k, as the
+round's answers, so the page shows it sent, and sends no grill-answered message. The answers file has one block per
+question, numbered from Q1 like the round: its **Q<n>. <title>** line, then Accepted, or Accepted: <the
+recommendation>, with any words given with it after, or the Guildmaster's words; - reads it from standard input. A
+round already sent is refused; running the same answer command again prints the original receipt.
 summary open puts the grill's closing summary, Markdown from the summary file, on the task page under the running
 attempt, for the Guildmaster to Confirm or Request changes; either sends a grill-answered message.
 summary show prints the attempt's latest answered summary, or its summary k, with its outcome and the Guildmaster's
@@ -37,7 +43,7 @@ words, as Markdown.
 An attempt has one open ask at a time: a round or a summary opens only once the attempt's previous round is sent and
 its previous summary answered. Running the same open command again prints the original receipt and writes nothing.`
 
-// grill runs `guildhall grill round open|show` and `guildhall grill summary open|show` (docs/web.md#grill-rounds).
+// grill runs `guildhall grill round open|show|answer` and `guildhall grill summary open|show` (docs/web.md#grill-rounds).
 // It exits 0 on success, 1 when the store refuses or fails and 2 on a usage error.
 func (a *App) grill(args []string) int {
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
@@ -46,8 +52,8 @@ func (a *App) grill(args []string) int {
 		}
 		return 0
 	}
-	if len(args) < 2 || (args[0] != "round" && args[0] != "summary") || (args[1] != "open" && args[1] != "show") {
-		_, _ = fmt.Fprintf(a.Stderr, "guildhall: grill takes round open, round show, summary open or summary show\n%s\n", grillUsage)
+	if len(args) < 2 || (args[0] != "round" && args[0] != "summary") || (args[1] != "open" && args[1] != "show" && (args[0] != "round" || args[1] != "answer")) {
+		_, _ = fmt.Fprintf(a.Stderr, "guildhall: grill takes round open, round show, round answer, summary open or summary show\n%s\n", grillUsage)
 		return 2
 	}
 	if args[0] == "summary" {
@@ -71,7 +77,8 @@ func (a *App) grillRound(sub string, args []string) int {
 	task := fl.String("task", "", "task id")
 	attempt := fl.String("attempt", "", "the Director stage attempt, such as grill-2")
 	questions := fl.String("questions-file", "", "the round's questions, or - for standard input")
-	round := fl.Int("round", 0, "the attempt's round to show, from 1")
+	answersFile := fl.String("answers-file", "", "the Guildmaster's answers given in chat, or - for standard input")
+	round := fl.Int("round", 0, "the attempt's round to show or answer, from 1")
 	if err := fl.Parse(args); err != nil {
 		return usage(err.Error())
 	}
@@ -90,8 +97,12 @@ func (a *App) grillRound(sub string, args []string) int {
 		return usage(name + " requires --questions-file")
 	case sub == "open" && *round != 0:
 		return usage("--round goes with round show")
-	case sub == "show" && *questions != "":
+	case sub != "open" && *questions != "":
 		return usage("--questions-file goes with round open")
+	case sub == "answer" && *answersFile == "":
+		return usage(name + " requires --answers-file")
+	case sub != "answer" && *answersFile != "":
+		return usage("--answers-file goes with round answer")
 	case *round < 0:
 		return usage("--round counts the attempt's rounds from 1")
 	}
@@ -110,6 +121,22 @@ func (a *App) grillRound(sub string, args []string) int {
 			return fail(err)
 		}
 		if _, err := fmt.Fprint(a.Stdout, out); err != nil {
+			return 1
+		}
+		return 0
+	}
+	if sub == "answer" {
+		given, err := a.readText("answers", *answersFile, store.MaxTextBytes)
+		if err != nil {
+			return fail(err)
+		}
+		rc, err := withStore(*path, false, func(s *store.Store) (store.Receipt, error) {
+			return answerRound(s, *repo, *task, *attempt, *round, given)
+		})
+		if err != nil {
+			return fail(err)
+		}
+		if err := json.NewEncoder(a.Stdout).Encode(rc); err != nil {
 			return 1
 		}
 		return 0
@@ -139,6 +166,66 @@ func (a *App) grillRound(sub string, args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// answerRound records given, the answers the Guildmaster gave in chat to round k of tag, or with k 0 its latest
+// round, as the round's answers authored guildmaster-chat, in the text the page sends, and sends no message: the
+// Director wrote them itself. It reads the round and checks it is unsent in the same open of the store it writes in,
+// so a Send round on the page and this command never both answer it. Running it again with the same answers replays
+// the receipt; any other answer to a sent round is refused.
+func answerRound(s *store.Store, repo, task, tag string, k int, given string) (store.Receipt, error) {
+	t, err := s.Task(repo, task)
+	if err != nil {
+		return store.Receipt{}, err
+	}
+	talk, err := s.Conversation(repo, task)
+	if err != nil {
+		return store.Receipt{}, err
+	}
+	var pick *store.ConversationEntry
+	n := 0
+	for i := range talk {
+		if e := &talk[i]; e.Tag == tag && e.Kind == store.ConversationRound {
+			n++
+			if k == 0 || n == k {
+				pick = e
+			}
+		}
+	}
+	switch {
+	case pick == nil && k > 0:
+		return store.Receipt{}, fmt.Errorf("%w: %s of %s/%s has %d rounds, not a round %d", store.ErrNotFound, tag, repo, task, n, k)
+	case pick == nil:
+		return store.Receipt{}, fmt.Errorf("%w: %s of %s/%s has no round to answer; open one with grill round open", store.ErrNotFound, tag, repo, task)
+	}
+	k = roundOrdinal(talk, *pick)
+	qs, err := web.ParseRound(pick.Text)
+	if err != nil {
+		return store.Receipt{}, fmt.Errorf("round %d of %s does not read: %w", k, tag, err)
+	}
+	answers, err := web.ParseGivenAnswers(qs, given)
+	if err != nil {
+		return store.Receipt{}, fmt.Errorf("%w: the answers to round %d of %s do not read: %v", store.ErrInvalid, k, tag, err)
+	}
+	text := web.RoundAnswersText(qs, answers)
+	mutation := mutationID("grill-round-answer", repo, task, tag, strconv.Itoa(pick.Number), digest.Of([]byte(text)).Hex())
+	if r, err := s.Receipt(mutation); err == nil && r.Repository == repo && r.TaskID == task {
+		return r, nil
+	}
+	if t.State != store.TaskOpen {
+		return store.Receipt{}, fmt.Errorf("%w: task %s/%s is %s; its talk takes nothing new", store.ErrInvalid, repo, task, t.State)
+	}
+	if err := runningDirectorAttempt(s, repo, task, tag); err != nil {
+		return store.Receipt{}, err
+	}
+	if a, ok := roundAnswers(talk, pick.Number); ok {
+		where := "on the task page"
+		if a.Author == store.ConversationGuildmasterChat {
+			where = "from chat with other answers"
+		}
+		return store.Receipt{}, fmt.Errorf("%w: round %d of %s is already sent %s; read its answers with grill round show", store.ErrInvalid, k, tag, where)
+	}
+	return s.AddConversation(mutation, repo, task, store.Saying{Author: store.ConversationGuildmasterChat, Tag: tag, Kind: store.ConversationRoundAnswers, Text: text, Round: pick.Number})
 }
 
 // checkRoundOpen refuses a round unless tag names a running Director stage attempt of the open task repo/task with
@@ -336,7 +423,10 @@ func pageRound(s *store.Store, p web.RoundPost, boxes map[int]string) (string, e
 	if round == nil {
 		return "", web.Refuse(http.StatusNotFound, "this task has no such round under "+p.Tag)
 	}
-	if roundSent(talk, round.Number) {
+	if a, ok := roundAnswers(talk, round.Number); ok {
+		if a.Author == store.ConversationGuildmasterChat {
+			return "", web.Refuse(http.StatusConflict, "already sent: you answered this round in chat and the Director recorded those answers, so nothing more is saved")
+		}
 		if p.Act == web.RoundSend {
 			// A second Send round of a round already sent replays: it was sent once.
 			return "", nil

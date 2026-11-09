@@ -94,6 +94,41 @@ func TestRoundAnswers(t *testing.T) {
 	}
 }
 
+// TestParseGivenAnswers: answers given in chat read per question, with Accepted or the Guildmaster's words; the text
+// RoundAnswersText writes reads back as its answers; a wrong count, an empty answer, another answer than the
+// recommendation under Accepted and a preamble are refused.
+func TestParseGivenAnswers(t *testing.T) {
+	qs, _ := ParseRound(roundText)
+	given := "\n**Q1. Where?**\nAccepted\n\n**Q2. Fold?**\nAccepted: yes, to one line with Change.\nand keep the gist short\n\n" +
+		"**Q3.**\nRefuse.\n```\n**Q4. not a head**\n```\n\n**Q4. Advance?**\nYour words:\n\nNo."
+	got, err := ParseGivenAnswers(qs, given)
+	want := []RoundAnswer{{Accepted: true}, {Accepted: true, Words: "and keep the gist short"}, {Words: "Refuse.\n```\n**Q4. not a head**\n```"}, {Words: "No."}}
+	if err != nil || len(got) != 4 {
+		t.Fatalf("ParseGivenAnswers = %+v, %v", got, err)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("Q%d = %+v, want %+v", i+1, got[i], want[i])
+		}
+	}
+	back, err := ParseGivenAnswers(qs, RoundAnswersText(qs, want))
+	if err != nil || back[0] != want[0] || back[1] != want[1] || back[3] != want[3] {
+		t.Errorf("RoundAnswersText's text reads back as %+v, %v", back, err)
+	}
+	for name, c := range map[string]struct{ text, says string }{
+		"too few":         {"**Q1. A**\nAccepted", "answer 1 question; the round asks 4"},
+		"out of order":    {"**Q2. A**\nAccepted", "headed Q2"},
+		"preamble":        {"Round 1:\n" + given, "start with the first question"},
+		"empty answer":    {strings.Replace(given, "No.", "", 1), "Q4 has no answer"},
+		"another answer":  {strings.Replace(given, "Accepted\n", "Accepted: in chat\n", 1), `Q1 is Accepted: "in chat"`},
+		"words only line": {strings.Replace(given, "Your words:\n\nNo.", "Your words:", 1), "Q4 has no answer"},
+	} {
+		if _, err := ParseGivenAnswers(qs, c.text); err == nil || !strings.Contains(err.Error(), c.says) {
+			t.Errorf("%s: %v, want it to say %q", name, err, c.says)
+		}
+	}
+}
+
 // roundTask is talkTask with grill-2's round 1 sent and round 2 open and half filled: Q1 accepted, Q2 answered with
 // words, Q3 holding words not yet an answer and Q4 empty.
 func roundTask() Task {

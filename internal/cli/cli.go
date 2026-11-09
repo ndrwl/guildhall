@@ -151,8 +151,9 @@ Commands:
                  list open decisions, show one and record the Guildmaster's answer
   decide open --store <path> --repo <id> --task <id> (--question <text> | --question-file <path|->) [--option <text>]... [--recommend <option>]
                  open the Director's own question to the Guildmaster on a task, as a question decision
-  grill round open|show --store <path> --repo <id> --task <id> --attempt <step-n> ...
-                 put a grill round on the task page, asked as one form the Guildmaster sends, and print a sent round's answers
+  grill round open|show|answer --store <path> --repo <id> --task <id> --attempt <step-n> ...
+                 put a grill round on the task page, asked as one form the Guildmaster sends, print a sent round's answers,
+                 and record their chat answers as the round's
   grill summary open|show --store <path> --repo <id> --task <id> --attempt <step-n> ...
                  put the grill's closing summary on the task page to Confirm or Request changes, and print its answer
   decide defer|undefer --store <path> --repo <id> --task <id> --decision <id> [--until-merged <repo>/<task>... --reason <text>]

@@ -163,6 +163,68 @@ func ParseRoundAnswers(qs []RoundQuestion, text string) []RoundAnswer {
 	return out
 }
 
+// ParseGivenAnswers reads the answers the Guildmaster gave to a round's questions qs outside the page, in chat, as
+// the Director writes them for grill round answer: one block per question, numbered from Q1 in order like the round,
+// each a **Q<n>. <title>** line (the title is the Director's copy and is not checked), then either a line "Accepted"
+// or "Accepted: <the recommendation>", with any words given with it after, or the Guildmaster's words, after an
+// optional "Your words:" line. The text RoundAnswersText writes reads back as the answers it wrote. It refuses a
+// block count other than the round's, a question with no answer and an Accepted line naming another answer than the
+// recommendation.
+func ParseGivenAnswers(qs []RoundQuestion, text string) ([]RoundAnswer, error) {
+	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+	var blocks [][]string
+	fence := false
+	for _, l := range lines {
+		if strings.HasPrefix(l, "```") || strings.HasPrefix(l, "~~~") {
+			fence = !fence
+		}
+		m := givenHead.FindStringSubmatch(strings.TrimRight(l, " \t"))
+		if fence || m == nil {
+			if len(blocks) == 0 {
+				if strings.TrimSpace(l) != "" {
+					return nil, errors.New("the answers start with the first question's line, **Q1. <title>**")
+				}
+				continue
+			}
+			blocks[len(blocks)-1] = append(blocks[len(blocks)-1], l)
+			continue
+		}
+		if n, _ := strconv.Atoi(m[1]); n != len(blocks)+1 {
+			return nil, fmt.Errorf("an answer is headed Q%d; the answers are numbered from Q1 in order, as the round's questions are", n)
+		}
+		blocks = append(blocks, nil)
+	}
+	if len(blocks) != len(qs) {
+		return nil, fmt.Errorf("the answers answer %d %s; the round asks %d", len(blocks), plural(len(blocks), "question", "questions"), len(qs))
+	}
+	out := make([]RoundAnswer, len(qs))
+	for i, q := range qs {
+		block := strings.TrimSpace(strings.Join(blocks[i], "\n"))
+		first, rest, _ := strings.Cut(block, "\n")
+		first = strings.TrimSpace(first)
+		if named, ok := strings.CutPrefix(first, "Accepted"); ok && (named == "" || named == "." || strings.HasPrefix(named, ":")) {
+			named = strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(named, "."), ":"))
+			if named != "" && named != q.Recommended {
+				return nil, fmt.Errorf("the answer to Q%d is Accepted: %q, but the round recommends %q; give an answer other than the recommendation as the Guildmaster's words", q.N, named, q.Recommended)
+			}
+			out[i] = RoundAnswer{Accepted: true, Words: strings.TrimSpace(rest)}
+			continue
+		}
+		if first == wordsLine {
+			block = rest
+		}
+		words := strings.TrimSpace(block)
+		if words == "" {
+			return nil, fmt.Errorf("question Q%d has no answer: write Accepted, or the Guildmaster's words", q.N)
+		}
+		out[i] = RoundAnswer{Words: words}
+	}
+	return out, nil
+}
+
+// givenHead is an answer's first line in ParseGivenAnswers, **Q<n>. <title>** with the title not checked.
+var givenHead = regexp.MustCompile(`^\*\*Q([0-9]+)\.(.*)\*\*$`)
+
 // RoundTally says how a round's answers went, such as "3 accepted, 1 your words".
 func RoundTally(answers []RoundAnswer) string {
 	accepted := 0
