@@ -173,7 +173,7 @@ func TestRoundOnThePage(t *testing.T) {
 <div class="opts">`,
 		`<button class="opt" type="submit" name="act" value="save"><b>Save, send later</b>`,
 		`<button class="opt pos" type="submit" name="act" value="send"><b>Send round</b><span>2 still to answer</span></button>`,
-		`<span>saves every box; nothing is sent</span></button><button class="opt rec" type="submit" name="act" value="accept-all"><b>Accept all recommendations</b><span>accepts every question with an empty box; your words are kept</span></button><button class="opt pos" type="submit" name="act" value="send">`,
+		`<span>saves every box; nothing is sent</span></button><button class="opt rec" type="submit" name="act" value="accept-all"><b>Accept all recommendations</b><span>accepts every question with an empty box; your words are kept</span></button><button class="opt rec" type="submit" name="act" value="accept-send"><b>Accept all and send</b><span>accepts every question still to answer and sends the round</span></button><button class="opt pos" type="submit" name="act" value="send">`,
 		`<li><a href="#grill-2"><b>Grill round 2</b> · 2 of 4<span>#grill-2</span></a></li>`,
 		`<span class="n you">2</span>`,
 		`its grill round 2 is below, to answer here.`,
@@ -228,13 +228,25 @@ func TestRoundOnThePage(t *testing.T) {
 	if page := render(t, answeringTalkServer(), worded, gmState); strings.Contains(page, `value="accept-all"`) || !strings.Contains(page, `value="send"`) {
 		t.Error("Accept all recommendations shows with no empty unmarked question")
 	}
+	// Accept all and send answers a question holding words too, so it stays while any question is unanswered, and goes
+	// once none is, when Send round alone sends.
+	if page := render(t, answeringTalkServer(), worded, gmState); !strings.Contains(page, `value="accept-send"`) {
+		t.Error("Accept all and send does not show with unanswered questions holding words")
+	}
+	all := roundTask()
+	for _, n := range []int{3, 4} {
+		all.Drafts = append(all.Drafts, Draft{Tag: "grill-2", Round: 13, Question: n, Number: 10 + n, Mark: DraftAccept, At: *at("2026-11-03 21:44")})
+	}
+	if page := render(t, answeringTalkServer(), all, gmState); strings.Contains(page, `value="accept-send"`) || !strings.Contains(page, `every question answered`) {
+		t.Error("Accept all and send shows with every question answered")
+	}
 
 	// Anyone else reads the round with no form and no boxes.
 	ro := get(t, talkServer(roundTask()), "/guildhall/d145").Body.String()
 	if strings.Contains(ro, "<textarea") || strings.Contains(ro, `action="/guildhall/d145/round"`) || !strings.Contains(ro, `<div class="ask round" id="grill-2">`) {
 		t.Error("the read-only page offers the round's form")
 	}
-	if strings.Contains(ro, "Accept all recommendations") {
+	if strings.Contains(ro, "Accept all recommendations") || strings.Contains(ro, "Accept all and send") {
 		t.Error("the read-only page offers Accept all recommendations")
 	}
 }

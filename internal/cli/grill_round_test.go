@@ -327,6 +327,73 @@ func TestGrillRoundAcceptAll(t *testing.T) {
 	}
 }
 
+// TestGrillRoundAcceptAllAndSend: Accept all and send saves every box, accepts every unmarked question, keeping the
+// words in its box, leaves a question answered with words or accepted as it is, and sends the round once with a
+// grill-answered message that wakes the Director; pressed again it replays, and any other button is then refused as
+// already sent.
+func TestGrillRoundAcceptAllAndSend(t *testing.T) {
+	h, path, log := pageFixture(t)
+	startGrill(t, path)
+	if code, _, errOut := runGrill(t, acceptAllRound, "round", "open", "--store", path, "--repo", "app", "--task", "a-grill", "--attempt", "grill-1", "--questions-file", "-"); code != 0 {
+		t.Fatalf("grill round open = %d %s", code, errOut)
+	}
+	press := func(act string, boxes map[int]string) (int, string, string) {
+		t.Helper()
+		form := url.Values{"tag": {"grill-1"}, "round": {"1"}, "act": {act}}
+		if drafts := pageRoundDrafts(h); drafts != "" {
+			form.Set("drafts", drafts)
+		}
+		for n, w := range boxes {
+			form.Set("text-"+string(rune('0'+n)), w)
+		}
+		w := postRoute(t, h, "a-grill", "round", form)
+		return w.Code, w.Header().Get("Location"), w.Body.String()
+	}
+	if !strings.Contains(gmPage(h, "a-grill"), `value="accept-send"`) {
+		t.Fatal("an open round with questions to answer does not offer Accept all and send")
+	}
+	// Q1 empty; Q2 answered with words; Q3 accepted; Q4 unmarked with saved words; Q5 empty.
+	press("words-2", map[int]string{1: "", 2: "Yes, off by default.", 3: "", 4: "Admins only?", 5: ""})
+	press("accept-3", map[int]string{1: "", 3: "", 4: "Admins only?", 5: ""})
+	if code, loc, body := press("accept-send", map[int]string{1: "", 4: "Admins only?", 5: ""}); code != http.StatusSeeOther || loc != "/app/a-grill#grill-1-talk" {
+		t.Fatalf("accept-send: %d %q\n%s", code, loc, body)
+	}
+	d := pageDrafts(t, path, "a-grill")
+	for _, n := range []int{1, 3, 4, 5} {
+		if d[n].Mark != store.DraftAccept {
+			t.Errorf("Q%d = %+v; want accepted", n, d[n])
+		}
+	}
+	if d[2].Mark != store.DraftWords || d[2].Text != "Yes, off by default." || d[4].Text != "Admins only?" {
+		t.Errorf("Q2 = %+v, Q4 = %+v; want their words kept", d[2], d[4])
+	}
+	got := conversation(t, path, "app", "a-grill")
+	if len(got) != 2 || got[1].Kind != store.ConversationRoundAnswers || got[1].Author != store.ConversationGuildmasterPage ||
+		!strings.Contains(got[1].Text, "**Q1. Which format?**\nAccepted: CSV only.") ||
+		!strings.Contains(got[1].Text, "**Q2. Behind a flag?**\nYour words:\n\nYes, off by default.") ||
+		!strings.Contains(got[1].Text, "**Q4. Who can export?**\nAccepted: every member.") ||
+		!strings.Contains(got[1].Text, "Admins only?") ||
+		!strings.Contains(got[1].Text, "**Q5. Where does the button sit?**\nAccepted: in the toolbar.") {
+		t.Fatalf("conversation = %+v", got)
+	}
+	msgs := pageMessages(t, path)
+	if len(msgs) != 1 || msgs[0].ID != web.RoundID("app", "a-grill", 1) || msgs[0].Type != store.MessageGrillAnswered {
+		t.Fatalf("messages = %+v", msgs)
+	}
+	if !slices.ContainsFunc(log.events, func(e string) bool { return strings.Contains(e, "grill-answered 1") }) {
+		t.Errorf("events %q: Accept all and send does not wake the Director", log.events)
+	}
+	if code, _, body := press("accept-send", nil); code != http.StatusSeeOther {
+		t.Fatalf("a second accept-send: %d\n%s", code, body)
+	}
+	if again := conversation(t, path, "app", "a-grill"); len(again) != 2 || len(pageMessages(t, path)) != 1 {
+		t.Fatalf("a second accept-send sent again: %+v", again)
+	}
+	if code, _, body := press("accept-all", nil); code != http.StatusConflict || !strings.Contains(body, "already sent") {
+		t.Fatalf("accept-all on a sent round: %d\n%s", code, body)
+	}
+}
+
 // chatAnswers are the Guildmaster's answers to testRound given in chat, as the Director writes them.
 const chatAnswers = `**Q1. Which format?**
 Accepted
