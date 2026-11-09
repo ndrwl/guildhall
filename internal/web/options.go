@@ -64,6 +64,10 @@ var meanings = map[string]map[string]Meaning{
 		"pick": {"make a task of each id on the lines below", TonePositive},
 		"none": {"make no follow-up tasks", ToneNeutral},
 	},
+	"close": {
+		"close": {"close it done with nothing merged for it", TonePositive},
+		"retry": {"run the step again", ToneCarryOn},
+	},
 }
 
 // OptionMeaning is what option means for a decision of kind, and whether the table describes it; an option it does

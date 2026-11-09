@@ -61,7 +61,7 @@ const twoSlices = "# Two\n\n## Goal\n\nTwo pull requests.\n\n## Slices\n\n1. **P
 func TestSliceDeliveredHelpAndValidation(t *testing.T) {
 	d := newRunDirector(t)
 	code, out, stderr := d.run(t, "slice", "delivered", "--help")
-	if code != 0 || !strings.Contains(out, "--by-slice") || !strings.Contains(out, "--by-pr") || stderr != "" {
+	if code != 0 || !strings.Contains(out, "--by-slice") || !strings.Contains(out, "--by-pr") || !strings.Contains(out, "--no-change") || stderr != "" {
 		t.Fatalf("help = %d %q %q", code, out, stderr)
 	}
 	for _, args := range [][]string{
@@ -70,6 +70,9 @@ func TestSliceDeliveredHelpAndValidation(t *testing.T) {
 		{"--task", "t1", "--slice", "0", "--by-slice", "1", "--reason", "r"},
 		{"--task", "t1", "--slice", "2", "--reason", "r"},
 		{"--task", "t1", "--slice", "2", "--by-slice", "1", "--by-pr", "https://forge.invalid/1", "--reason", "r"},
+		{"--task", "t1", "--slice", "1", "--no-change", "--by-pr", "https://forge.invalid/1", "--reason", "r"},
+		{"--task", "t1", "--slice", "2", "--no-change", "--by-slice", "1", "--reason", "r"},
+		{"--task", "t1", "--slice", "1", "--no-change"},
 		{"--task", "t1", "--slice", "2", "--by-slice", "x", "--reason", "r"},
 		{"--task", "t1", "--slice", "2", "--by-slice", "1", "--reason", "r", "extra"},
 	} {
@@ -237,5 +240,34 @@ func TestSliceDeliveredClosesAOnePRTask(t *testing.T) {
 	}
 	if code, _, stderr := c.cancel(t, "--reason", "Too late.", "t1"); code != 1 || !strings.Contains(stderr, "is done") {
 		t.Errorf("task cancel of the done task: exit %d, %s", code, stderr)
+	}
+}
+
+// TestSliceDeliveredNoChange: slice delivered --no-change closes a one-PR task that needs no change done, with no
+// pull request; the Director is sent a slice-delivered message saying so, director status shows "no change needed",
+// and running it again prints the same wait and writes nothing.
+func TestSliceDeliveredNoChange(t *testing.T) {
+	c := newCancelDirector(t)
+	args := []string{"--task", "t1", "--slice", "1", "--no-change", "--reason", "The flag already defaults to off."}
+	code, out, stderr := c.sliceDelivered(t, args...)
+	if code != 0 || out != `{"wait":"done","step":"deliver"}`+"\n" {
+		t.Fatalf("slice delivered --no-change: exit %d, %q %s", code, out, stderr)
+	}
+	if got := c.task(t, "t1"); got.State != store.TaskDone {
+		t.Errorf("task state = %s, want done", got.State)
+	}
+	m, err := withStore(c.store, true, func(s *store.Store) (store.Message, error) {
+		return s.Message("app.t1.slice-delivered.delivered-1")
+	})
+	if err != nil || m.Type != store.MessageSliceDelivered || !strings.Contains(m.Text, "closed the task as needing no change") {
+		t.Errorf("slice-delivered message = %+v, %v", m, err)
+	}
+	code, status, stderr := c.run(t, "director", "status", "--json", "--store", c.store, "--state", c.state, "--config", c.config)
+	if code != 0 || !strings.Contains(status, `"delivered_by":"no change needed"`) {
+		t.Errorf("director status: exit %d, %s\n%s", code, stderr, status)
+	}
+	before := c.receipts(t)
+	if code, again, stderr := c.sliceDelivered(t, args...); code != 0 || again != out || c.receipts(t) != before {
+		t.Errorf("slice delivered --no-change again: exit %d, %q %s", code, again, stderr)
 	}
 }

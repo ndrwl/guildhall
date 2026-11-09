@@ -49,6 +49,8 @@ records the whole text as the answer, `approve` as the choice and `Keep the migr
 A `question` decision, such as one [`decide open`](#decide-open) opened, always takes free text: an answer whose first line names an option sets the choice and note as above, and any other non-blank answer, such as `neither, do c`, is recorded as the answer with no choice or note.
 Every other kind refuses an answer whose first line names none of its options.
 
+A close decision, `close-<step>-<n>`, kind `close`, offers `close` and `retry` ([an attempt that reports it is already delivered](tasks.md#an-attempt-that-reports-it-is-already-delivered)); a note on the following lines goes into a retry's context.
+
 A finished hallmark's `follow-ups` decision, kind `follow-ups`, offers `pick` and `none` ([decision](decisions/report-only-workflows.md#the-guildmaster-picks-the-follow-ups)); `pick` takes the picked ids on the following lines, so this answer:
 
 ```

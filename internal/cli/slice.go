@@ -15,19 +15,21 @@ import (
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
-const sliceDeliveredUsage = `usage: guildhall slice delivered --repo <id> --task <id> --slice <k> (--by-slice <j> | --by-pr <url>) --reason <text>
+const sliceDeliveredUsage = `usage: guildhall slice delivered --repo <id> --task <id> --slice <k> (--by-slice <j> | --by-pr <url> | --no-change) --reason <text>
   [--copy <dir> | --store <path> --config <file> --state <dir>]
-Close a task's current slice as already delivered by an earlier slice or a merged pull request.
+Close a task's current slice as already delivered by an earlier slice or a merged pull request, or as needing no change.
 --by-slice names an earlier slice of the task with a merge record; --by-pr a pull request of the task's repository
-that the forge reports merged. The slice closes with nothing merged for it: the task moves to the next slice, or is
-done after its last. A one-PR task is slice 1 of 1: --slice 1 --by-pr closes it done, and --by-slice is refused.
+that the forge reports merged; --no-change names neither, and --reason says why no change is needed. The slice closes
+with nothing merged for it: the task moves to the next slice, or is done after its last. A one-PR task is slice 1 of
+1: --slice 1 --by-pr or --no-change closes it done, and --by-slice is refused.
 A slice that is not current or has merged, and a running attempt, are refused.
 Prints the task's next wait as task start does; running it again after the close prints where the task waits.
 Examples (run inside the copy):
   guildhall slice delivered --repo app --task t-12 --slice 2 --by-slice 1 --reason "Slice 1 shipped every slice 2 item"
   guildhall slice delivered --repo app --task t-12 --slice 3 --by-pr https://github.com/o/app/pull/296 --reason "#296 shipped it"
   guildhall slice delivered --repo app --task t-13 --slice 1 --by-pr https://github.com/o/app/pull/351 --reason "#351 shipped the change"
-Flags: --repo, --task, --slice, --reason and one of --by-slice or --by-pr are required; --copy, --store, --config,
+  guildhall slice delivered --repo app --task t-14 --slice 1 --no-change --reason "the setting already defaults to off"
+Flags: --repo, --task, --slice, --reason and one of --by-slice, --by-pr or --no-change are required; --copy, --store, --config,
 --state default to the selected copy; --help needs no store.`
 
 // slice runs `guildhall slice`: the Director's verbs on one slice of a task, a one-PR task's being slice 1 of 1.
@@ -39,8 +41,8 @@ func (a *App) slice(args []string) int {
 }
 
 // sliceDelivered runs `guildhall slice delivered`: it feeds slice-delivered for the Director's close of a task's
-// current slice, or a one-PR task, whose work an earlier slice or a merged pull request already delivered
-// (docs/running.md#slice-delivered). It advances the task under its lock, as task start does, and prints its next
+// current slice, or a one-PR task, whose work an earlier slice or a merged pull request already delivered, or that
+// needs no change (docs/running.md#slice-delivered). It advances the task under its lock, as task start does, and prints its next
 // wait. A task the close already finished prints done.
 func (a *App) sliceDelivered(args []string) int {
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
@@ -57,7 +59,8 @@ func (a *App) sliceDelivered(args []string) int {
 	slice := fl.String("slice", "", "the current slice, closed as delivered")
 	bySlice := fl.String("by-slice", "", "the earlier slice whose merge delivered it")
 	byPR := fl.String("by-pr", "", "the URL of the merged pull request that delivered it")
-	reason := fl.String("reason", "", "the evidence that the slice's work is delivered")
+	noChange := fl.Bool("no-change", false, "close it as needing no change")
+	reason := fl.String("reason", "", "the evidence that the slice's work is delivered, or why it needs no change")
 	if err := fl.Parse(args); err != nil {
 		return a.usageError("slice delivered: " + err.Error() + "\n" + sliceDeliveredUsage)
 	}
@@ -73,15 +76,15 @@ func (a *App) sliceDelivered(args []string) int {
 		return a.usageError(fmt.Sprintf("slice delivered: unexpected argument %q", fl.Arg(0)))
 	case !workflow.ValidID(*task) || kerr != nil || k < 1 || strings.TrimSpace(*reason) == "":
 		return a.usageError("slice delivered: --task, a positive --slice and a nonempty --reason are required")
-	case (*bySlice == "") == (*byPR == ""):
-		return a.usageError("slice delivered: give one of --by-slice or --by-pr")
+	case *noChange && (*bySlice != "" || *byPR != ""), !*noChange && (*bySlice == "") == (*byPR == ""):
+		return a.usageError("slice delivered: give one of --by-slice, --by-pr or --no-change")
 	case jerr != nil || *bySlice != "" && j < 1:
 		return a.usageError("slice delivered: --by-slice takes a positive slice number")
 	}
 	if err := f.listed(); err != nil {
 		return a.fail(fmt.Errorf("slice delivered: %w", err))
 	}
-	ev := interp.Event{Kind: interp.SliceDelivered, Repository: f.repo, Task: *task, Slice: k, BySlice: j, PullRequest: *byPR, Reason: *reason}
+	ev := interp.Event{Kind: interp.SliceDelivered, Repository: f.repo, Task: *task, Slice: k, BySlice: j, PullRequest: *byPR, NoChange: *noChange, Reason: *reason}
 	n, err := a.advance(f, ev)
 	if errors.Is(err, interp.ErrTaskClosed) {
 		if code, ok := a.deliveredDone(f, *task, k); ok {

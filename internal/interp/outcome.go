@@ -2,6 +2,7 @@ package interp
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/workflow"
@@ -37,17 +38,17 @@ func (r *run) checkResultOutcome(s workflow.Step, res adapter.Result) error {
 	return nil
 }
 
-// outcomeText is how the attempt-failed message names attempt n of step's structured outcome, " It reports: <label>."
-// with the Director's next move, or "" when its result has none or cannot be read. Until the close decision lands,
-// the Director acts on it by hand.
-func (r *run) outcomeText(step string, n int) string {
+// outcomeText is how the attempt-failed message names attempt n of step's structured outcome, " It reports: <label>.",
+// then why, the reason its evidence did not hold so no close decision was opened (closeOrRetry), with the Director's
+// next move; "" when its result has none or cannot be read.
+func (r *run) outcomeText(step string, n int, why string) string {
 	res, err := adapter.ReadResult(r.resultFile(step, n), r.identity(step, n))
 	if err != nil || res.Outcome == nil {
 		return ""
 	}
 	text := " It reports: " + res.Outcome.Label() + "."
-	if res.Outcome.Kind == adapter.OutcomeAlreadyDelivered {
-		text += " Check it and close it with guildhall slice delivered, or retry it."
+	if why != "" {
+		text += " Guildhall did not ask to close it: " + strings.TrimRight(why, ". ") + "."
 	}
-	return text
+	return text + " Close it with guildhall slice delivered once its evidence holds, or retry it."
 }

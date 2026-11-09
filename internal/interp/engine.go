@@ -57,7 +57,8 @@ type Event struct {
 	// or whose succeeded work the Director sends back (StepSentBack).
 	Step    string
 	Attempt int
-	// Decision is the id of the answered decision (DecisionAnswered only).
+	// Decision is the id of the answered decision (DecisionAnswered), or for a SliceDelivered the engine feeds itself,
+	// the close decision whose close answer it follows; the Director's SliceDelivered leaves it empty.
 	Decision string
 	// Reason is the Director's reason for a retry (AttemptRetried), required feedback for StepSentBack, or the
 	// required brief for DesignRequested.
@@ -69,6 +70,9 @@ type Event struct {
 	// merge delivered its work, or PullRequest the URL of the merged pull request that did, exactly one of the two.
 	Slice, BySlice int
 	PullRequest    string
+	// NoChange is SliceDelivered closing the slice, or one-PR task, as needing no change, with neither BySlice nor
+	// PullRequest (docs/tasks.md#a-slice-already-delivered).
+	NoChange bool
 }
 
 // Wait says what a task waits for after an advance.
@@ -574,6 +578,8 @@ func (r *run) intake(ev Event) error {
 	case DesignRequested:
 		return r.designRequested(ev)
 	case SliceDelivered:
+		// Only the engine's own close, after a close decision's answer, names the decision it follows.
+		ev.Decision = ""
 		return r.sliceDelivered(ev)
 	case DecisionAnswered:
 		d := r.decision(ev.Decision)
@@ -704,6 +710,10 @@ func (r *run) attempted(s workflow.Step) (bool, Next, error) {
 		r.retry = &Event{Kind: AttemptRetried, Repository: r.task.Repository, Task: r.task.ID, Step: s.ID, Attempt: a.Number}
 		fallthrough
 	case a.Outcome != store.AttemptSucceeded && r.retry != nil && r.retry.Step == s.ID && r.retry.Attempt == a.Number:
+		// A Director retry answers the attempt's close decision, if one is still open.
+		if err := r.voidClose(s.ID, a.Number, fmt.Sprintf("the Director retried attempt %d of step %s", a.Number, s.ID)); err != nil {
+			return false, Next{}, err
+		}
 		next, err := r.start(s)
 		if next.Wait == WaitQueued {
 			// The reason is sent once the attempt launches.
@@ -715,7 +725,12 @@ func (r *run) attempted(s workflow.Step) (bool, Next, error) {
 		if a.IntakeRejection != "" {
 			text += " Result rejected: " + a.IntakeRejection
 		} else if a.Outcome == store.AttemptFailed {
-			text += r.outcomeText(s.ID, a.Number)
+			// A reported outcome whose evidence holds asks the Guildmaster to close or retry instead.
+			asked, done, next, why, err := r.closeOrRetry(s, a)
+			if err != nil || asked {
+				return done, next, err
+			}
+			text += r.outcomeText(s.ID, a.Number, why)
 		}
 		err := r.notify(fmt.Sprintf("attempt-failed.%s-%d", s.ID, a.Number), store.MessageAttemptFailed, text)
 		return false, Next{Wait: WaitDirector, Step: s.ID, Attempt: a.Number}, err

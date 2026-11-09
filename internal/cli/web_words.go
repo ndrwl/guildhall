@@ -181,6 +181,11 @@ var webAskWords = map[store.DecisionKind]askWords{
 		tones:    map[web.Tone]string{web.TonePositive: "You picked follow-ups", web.ToneNeutral: "You chose no follow-ups"},
 		answered: "You answered the follow-ups", void: "An earlier follow-ups ask was withdrawn",
 	},
+	store.DecisionClose: {
+		open: "An attempt reports the work needs nothing more", phrase: "whether to close the task",
+		tones:    map[web.Tone]string{web.TonePositive: "You closed it with nothing merged", web.ToneCarryOn: "You asked for another attempt"},
+		answered: "You answered whether to close the task", void: "An earlier ask to close the task was withdrawn",
+	},
 	// The untyped kind is the handoff wait's (render.Question).
 	"": {
 		open: "The handoff waits for you", phrase: "the handoff",

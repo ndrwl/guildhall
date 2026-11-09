@@ -154,6 +154,11 @@ const (
 	// Guildmaster picks some or none, and answering it records the answer only: the Director creates a task for each
 	// pick (docs/decisions/report-only-workflows.md).
 	DecisionFollowUps DecisionKind = "follow-ups"
+	// DecisionClose asks the Guildmaster whether to close a task, or its current slice, whose research, plan or build
+	// attempt reported its change already delivered or no change needed (docs/tasks.md#an-attempt-that-reports-it-is-already-delivered),
+	// bound to the proposed delivery record. Its options are close and retry; answering it records the answer only,
+	// and the advance after it closes or retries.
+	DecisionClose DecisionKind = "close"
 )
 
 // SubjectKind names what a decision's answer binds to.
@@ -995,13 +1000,13 @@ func validateDecision(d Decision) error {
 		return err
 	}
 	switch d.Kind {
-	case DecisionApproval, DecisionReview, DecisionLoopExit, DecisionMerge, DecisionAudit, DecisionFollowUps:
+	case DecisionApproval, DecisionReview, DecisionLoopExit, DecisionMerge, DecisionAudit, DecisionFollowUps, DecisionClose:
 		if d.Subject == nil {
 			return invalid("a %s decision needs a subject", d.Kind)
 		}
 	case DecisionQuestion, DecisionGrant:
 	default:
-		return invalid("decision kind %q must be one of approval, review, loop-exit, merge, question, audit, follow-ups or grant", d.Kind)
+		return invalid("decision kind %q must be one of approval, review, loop-exit, merge, question, audit, follow-ups, close or grant", d.Kind)
 	}
 	if sub := d.Subject; sub != nil {
 		_, err := digest.Parse(sub.Digest)
