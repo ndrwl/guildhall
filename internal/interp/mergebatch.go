@@ -98,7 +98,7 @@ func (r *run) batchMember(s workflow.Step, repo config.Repository, dl deliverHea
 	place := b.Member(r.task.ID)
 	pred, me := b.Members[place-2], b.Members[place-1]
 	if pred.Link == "" {
-		return r.queued(s, q, false)
+		return r.queued(s, q, id, false)
 	}
 	own, err := r.chain(dl.head, s.ID)
 	if err != nil {
@@ -109,13 +109,13 @@ func (r *run) batchMember(s workflow.Step, repo config.Repository, dl deliverHea
 	l, err := r.recordBatchLink(s, p.round, repo, id, *b, me, h, pred.Link)
 	switch {
 	case errors.Is(err, errRebaseRunning):
-		return r.leftBatch(s, q, "an attempt of the task is running, so its head cannot be replayed")
+		return r.leftBatch(s, q, id, "an attempt of the task is running, so its head cannot be replayed")
 	case err != nil:
 		return Next{}, err
 	case l.doc.Kind != config.RebaseNoConflicts:
-		return r.leftBatch(s, q, fmt.Sprintf("replaying head %s onto the link %s of task %s is %s (%s)", h, pred.Link, pred.TaskID, l.doc.Kind, l.doc.Reason))
+		return r.leftBatch(s, q, id, fmt.Sprintf("replaying head %s onto the link %s of task %s is %s (%s)", h, pred.Link, pred.TaskID, l.doc.Kind, l.doc.Reason))
 	case repo.Merge.Requires.Guildmaster() && repo.Merge.NeedsReapproval(config.RebaseNoConflicts):
-		return r.leftBatch(s, q, fmt.Sprintf("its approval does not carry over a no_conflicts replay under reapprove_after_rebase = %s", repo.Merge.Reapprove()))
+		return r.leftBatch(s, q, id, fmt.Sprintf("its approval does not carry over a no_conflicts replay under reapprove_after_rebase = %s", repo.Merge.Reapprove()))
 	}
 	if me.Link != l.head() {
 		if _, err := r.publishBatchLink(s, repo, l, dl.pr, place, len(b.Members)); err != nil {
@@ -125,7 +125,7 @@ func (r *run) batchMember(s workflow.Step, repo config.Repository, dl deliverHea
 		if _, err := q.q.SetMergeBatchLink(r.batchMutation("merge-batch-link", *b, l.name), r.task.Repository, r.task.ID, slice, l.head()); err != nil {
 			return Next{}, err
 		}
-		return r.queued(s, q, false)
+		return r.queued(s, q, id, false)
 	}
 	// A red train is bisected on the members' own link checks.
 	if b.State == store.BatchRed {
@@ -140,7 +140,7 @@ func (r *run) batchMember(s workflow.Step, repo config.Repository, dl deliverHea
 		case wait != nil:
 			return *wait, nil
 		case why != "":
-			return r.leftBatch(s, q, why)
+			return r.leftBatch(s, q, id, why)
 		}
 		if _, err := q.q.SetMergeBatchReady(r.batchMutation("merge-batch-ready", *b, batchRound(*b)), r.task.Repository, r.task.ID, l.head()); err != nil {
 			return Next{}, err
@@ -151,7 +151,7 @@ func (r *run) batchMember(s workflow.Step, repo config.Repository, dl deliverHea
 		}
 		q.view = view
 	}
-	return r.queued(s, q, false)
+	return r.queued(s, q, id, false)
 }
 
 // batchMutation is the mutation id of a batch change of kind by this task, unique to the batch b and to what.
@@ -216,8 +216,8 @@ func (r *run) publishBatchLink(s workflow.Step, repo config.Repository, l batchL
 	return &out, r.notify("batch-link."+l.name, store.MessageRebased, text)
 }
 
-// leftBatch takes the task out of its batch, telling the Director why, and waits in the queue.
-func (r *run) leftBatch(s workflow.Step, q queue, why string) (Next, error) {
+// leftBatch takes the task out of its batch, telling the Director why, and waits in the queue under authorization id.
+func (r *run) leftBatch(s workflow.Step, q queue, id, why string) (Next, error) {
 	b := *q.view.Batch
 	if err := r.leaveBatch(q, why); err != nil {
 		return Next{}, err
@@ -232,7 +232,7 @@ func (r *run) leftBatch(s workflow.Step, q queue, why string) (Next, error) {
 		return Next{}, err
 	}
 	q.view = view
-	return r.queued(s, q, false)
+	return r.queued(s, q, id, false)
 }
 
 // leaveBatch takes the task out of the standing batch it is a member of behind the leader, if any.
