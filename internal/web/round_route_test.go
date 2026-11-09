@@ -22,19 +22,20 @@ func roundForm(act string, boxes map[string]string) url.Values {
 }
 
 // TestRoundPosts: each button reaches the Answerer's Round with the round, the button, its question and every box's
-// words, and redirects to the round, the question or, after Send round, the attempt's talk.
+// words, and redirects to the round, the question or, after Send round or Accept all and send, the attempt's talk.
 func TestRoundPosts(t *testing.T) {
 	for act, want := range map[string]struct {
 		act      string
 		question int
 		location string
 	}{
-		"save":       {web.RoundSave, 0, "/guildhall/d122#grill-2"},
-		"send":       {web.RoundSend, 0, "/guildhall/d122#grill-2-talk"},
-		"accept-all": {web.RoundAcceptAll, 0, "/guildhall/d122#grill-2"},
-		"accept-3":   {web.RoundAccept, 3, "/guildhall/d122#grill-2-q3"},
-		"words-1":    {web.RoundWords, 1, "/guildhall/d122#grill-2-q1"},
-		"change-30":  {web.RoundChange, 30, "/guildhall/d122#grill-2-q30"},
+		"save":        {web.RoundSave, 0, "/guildhall/d122#grill-2"},
+		"send":        {web.RoundSend, 0, "/guildhall/d122#grill-2-talk"},
+		"accept-all":  {web.RoundAcceptAll, 0, "/guildhall/d122#grill-2"},
+		"accept-send": {web.RoundAcceptSend, 0, "/guildhall/d122#grill-2-talk"},
+		"accept-3":    {web.RoundAccept, 3, "/guildhall/d122#grill-2-q3"},
+		"words-1":     {web.RoundWords, 1, "/guildhall/d122#grill-2-q1"},
+		"change-30":   {web.RoundChange, 30, "/guildhall/d122#grill-2-q30"},
 	} {
 		f := &fakeAnswerer{}
 		w := request(answering(t, f), http.MethodPost, "/guildhall/d122/round", gmAddr, roundForm(act, map[string]string{"text-1": "CSV only.", "text-3": "", "text-31": "never read"}), nil)

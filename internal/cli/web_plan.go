@@ -70,8 +70,12 @@ func planNumbers(plan []web.PlanQuestion) []int {
 }
 
 // pagePlanPress does one press of a plan approval's question controls in s: every box saved as a draft under the
-// decision, with the button's mark on its question.
+// decision, with the button's mark on its question. A plan approval's answer sends its questions, so a button that
+// sends a round, or accepts them all, is refused.
 func pagePlanPress(s *store.Store, p web.RoundPost, boxes map[int]string) error {
+	if web.Sends(p.Act) || p.Act == web.RoundAcceptAll {
+		return web.Refuse(http.StatusBadRequest, "the form names no button of the open questions")
+	}
 	if err := planOpen(s, p.Repository, p.TaskID, p.Tag, p.Subject); err != nil {
 		return err
 	}

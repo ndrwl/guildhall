@@ -377,8 +377,8 @@ func showRound(s *store.Store, repo, task, tag string, k int) (string, error) {
 }
 
 // Round implements web.Answerer: every box the form showed is saved as a draft of its question first, in one open
-// of the store with the rest, so no press loses words; then the button's mark is saved, or Send round records the
-// answers and the grill-answered message in one transaction and wakes the Director. A press of a plan approval's
+// of the store with the rest, so no press loses words; then the button's mark is saved, or Send round, or Accept
+// all and send after accepting every unmarked question in that save, records the answers and the grill-answered message in one transaction and wakes the Director. A press of a plan approval's
 // question controls (p.Plan) saves its drafts the same way (pagePlanPress) and sends nothing.
 func (w webAnswerer) Round(p web.RoundPost) error {
 	boxes, err := pageBoxes(p.Boxes)
@@ -427,8 +427,8 @@ func pageRound(s *store.Store, p web.RoundPost, boxes map[int]string) (string, e
 		if a.Author == store.ConversationGuildmasterChat {
 			return "", web.Refuse(http.StatusConflict, "already sent: you answered this round in chat and the Director recorded those answers, so nothing more is saved")
 		}
-		if p.Act == web.RoundSend {
-			// A second Send round of a round already sent replays: it was sent once.
+		if web.Sends(p.Act) {
+			// A second Send round, or Accept all and send, of a round already sent replays: it was sent once.
 			return "", nil
 		}
 		return "", web.Refuse(http.StatusConflict, "already sent: this round's answers reached the Director, so nothing more is saved")
@@ -459,7 +459,7 @@ func pageRound(s *store.Store, p web.RoundPost, boxes map[int]string) (string, e
 	if err != nil {
 		return "", err
 	}
-	if p.Act != web.RoundSend {
+	if !web.Sends(p.Act) {
 		return "", nil
 	}
 	var left []int
@@ -533,6 +533,11 @@ func savePageDrafts(s *store.Store, p web.RoundPost, round int, ns []int, boxes 
 		if p.Act == web.RoundAcceptAll && d.Mark == store.DraftUnmarked && d.Text == "" {
 			// Accept all recommendations takes the recommendation only where the box is empty: a question with
 			// words, marked or not, keeps them as the Guildmaster left them.
+			d.Mark = store.DraftAccept
+		}
+		if p.Act == web.RoundAcceptSend && d.Mark == store.DraftUnmarked {
+			// Accept all and send answers every question left: one with no answer yet takes the recommendation, with
+			// any words in its box kept beside it, and one accepted or answered with words keeps its answer.
 			d.Mark = store.DraftAccept
 		}
 		if d.Mark != store.DraftPick {

@@ -111,6 +111,29 @@ func TestGrillRoundStaleAcceptAllRefused(t *testing.T) {
 	}
 }
 
+// TestGrillRoundStaleAcceptSendRefused: a stale tab's Accept all and send is refused with 409, accepting and sending
+// nothing; the current tab's press sends.
+func TestGrillRoundStaleAcceptSendRefused(t *testing.T) {
+	h, path := openGrillRound(t)
+	b := pageRoundDrafts(h)
+	pressRound(t, h, pageRoundDrafts(h), "words-1", map[int]string{1: "CSV only.", 2: "", 3: ""})
+	if code, body := pressRound(t, h, b, "accept-send", map[int]string{1: "", 2: "", 3: ""}); code != http.StatusConflict || !strings.Contains(body, staleReason) {
+		t.Fatalf("stale accept-send: %d\n%s", code, body)
+	}
+	if d := pageDrafts(t, path, "a-grill"); d[1].Mark != store.DraftWords || d[2].Mark != "" || d[3].Mark != "" {
+		t.Fatalf("drafts after a stale accept-send = %+v", d)
+	}
+	if msgs := pageMessages(t, path); len(msgs) != 0 {
+		t.Fatalf("a stale accept-send sent %+v", msgs)
+	}
+	if code, body := pressRound(t, h, pageRoundDrafts(h), "accept-send", map[int]string{2: "", 3: ""}); code != http.StatusSeeOther {
+		t.Fatalf("accept-send: %d\n%s", code, body)
+	}
+	if msgs := pageMessages(t, path); len(msgs) != 1 || msgs[0].Type != store.MessageGrillAnswered {
+		t.Fatalf("accept-send sent %+v", msgs)
+	}
+}
+
 // TestGrillRoundStaleSendRefused: with every question answered on both tabs, tab A changes Q1's words; tab B's Send
 // round is refused and sends nothing.
 func TestGrillRoundStaleSendRefused(t *testing.T) {

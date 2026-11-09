@@ -22,7 +22,7 @@ type roundView struct {
 	Drafts    int
 	Questions []roundQuestionView
 	// Total is how many questions it asks and Left how many have no answer yet; Acceptable is how many of those
-	// have an empty saved box, which Accept all recommendations accepts.
+	// have an empty saved box, which Accept all recommendations accepts; Accept all and send shows while Left is not 0.
 	Total, Left, Acceptable int
 	// Form says the request is from the Guildmaster's login, which answers as Login; Answering says the page answers
 	// at all.
