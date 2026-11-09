@@ -219,6 +219,12 @@ appears; the script fills only the tag, the time and Reload's link, with textCon
 </body></html>
 {{end}}
 
+{{define "strip"}}<details class="strip" id="stats" open><summary>{{.Summary}}</summary><div class="stb">
+<section class="stc" aria-label="Work"><h2>Work</h2><ul><li><b>{{.Running}}</b></li><li>{{.StartQueue}}</li><li>{{.MergeQueue}}{{range $i, $f := .Fronts}}{{if $i}},{{else}} · front{{end}} <a href="{{$f.Href}}">{{$f.Name}}</a>{{end}}</li><li>{{.Merged}}</li></ul></section>
+<section class="stc" aria-label="Spend"><h2>Spend <span class="sd">{{.Day}}</span></h2><ul><li><b>{{.Cost}}</b>{{with .CostNote}} <span class="sd">{{.}}</span>{{end}}</li><li>{{.Attempts}}</li><li>{{.Tokens}}</li></ul></section>
+<section class="stc" aria-label="Machine"><h2>Machine</h2><ul><li><b>{{.Load}}</b> · {{.Cores}}</li><li>{{.Memory}}</li><li>{{.Disk}}</li></ul></section>
+</div></details>{{end}}
+
 {{define "time"}}<time datetime="{{.ISO}}" title="{{.Title}}">{{.Text}}</time>{{end}}
 
 {{define "row"}}<li class="r{{if .You}} you{{end}}{{if .Front}} front{{end}}"><span class="idc">{{if .Position}}<span class="qp">{{.Position}}</span>{{end}}<a class="tid" href="{{.Href}}">{{if .Repo}}<span class="rp">{{.Repo}}</span>{{end}}{{.ID}}</a></span><span class="rt" title="{{.Title}}">{{.Title}}</span>{{if .Pri}}<span class="pri {{.Pri}}">{{.Pri}}</span>{{else}}<span></span>{{end}}<span class="stp">{{if .Held}}<span class="hm">held</span>{{end}}{{if .Step}}<b>{{.Step}}</b>{{end}}{{.Rest}}</span><span class="sx">{{if .Slice}}<span class="lb">slice </span>{{.Slice}}{{end}}</span><span class="prc">{{with .PR}}{{if $.PRHref}}<a href="{{$.PRHref}}">#{{.Number}}</a>{{else}}#{{.Number}}{{end}}{{if $.CI.Mark}}<i class="ci {{$.CI.Class}}" title="{{$.CI.Word}}">{{$.CI.Mark}}</i>{{end}}{{end}}</span>{{with .Time}}{{template "time" .}}{{else}}<span></span>{{end}}{{if .Ask}}<span class="ak">{{.Ask}}</span>{{end}}</li>{{end}}
@@ -242,6 +248,7 @@ appears; the script fills only the tag, the time and Reload's link, with textCon
 <p class="ws{{if .You}} you{{end}}"><b>{{.Count}}</b><span class="m">{{.Meta}} · updated {{template "time" .ReadAt}}</span></p>
 </header>
 <main class="tl tri">
+{{template "strip" .Strip}}
 {{if .Needs}}<section class="sg you" id="g-you"><div class="sgh"><h2>Needs you <span class="n you">{{len .Needs}}</span></h2><span class="sgm">oldest ask first</span></div><ul class="rows">
 {{range .Needs}}{{template "row" .}}
 {{end}}</ul></section>

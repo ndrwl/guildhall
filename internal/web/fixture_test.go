@@ -16,6 +16,19 @@ type fakeSource struct {
 	err   error
 	calls int
 	tails int
+	stats Stats
+	// statsErr fails Stats alone.
+	statsErr error
+}
+
+func (f *fakeSource) Stats() (Stats, error) {
+	if f.err != nil {
+		return Stats{}, f.err
+	}
+	if f.statsErr != nil {
+		return Stats{}, f.statsErr
+	}
+	return f.stats, nil
 }
 
 func (f *fakeSource) Tasks() (TaskList, error) {

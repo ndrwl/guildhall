@@ -100,6 +100,8 @@ type listView struct {
 	Count, Meta string
 	You         bool
 	ReadAt      timeView
+	// Strip is the stats strip, full width above Needs you.
+	Strip stripView
 	// Needs are the tasks waiting for the Guildmaster, oldest ask first, which the filter never hides.
 	Needs []listRow
 	// Query is the filter and sort in effect, Clear the list's URL without the filter, and the chips and sort links
@@ -150,6 +152,9 @@ type queueBanner struct {
 type listRow struct {
 	Repo, ID, Href, Title string
 	Pri                   string
+	// Repository, Priority and Attempt are the task's own, which the feed carries for sorting in the browser.
+	Repository        string
+	Priority, Attempt int
 	// Step is the bold part of the stage and step cell and Rest what follows it, such as "build" and " · attempt 2";
 	// Held marks a merge-queue entry the Director holds.
 	Step, Rest string
@@ -182,8 +187,8 @@ func ciMarkOf(ci string) ciMark {
 	return ciMark{}
 }
 
-func (s *Server) listView(l TaskList, q listQuery) listView {
-	v := listView{Style: style, Scripts: scripts, ReadAt: s.timeAt(l.ReadAt, l.ReadAt), Query: q}
+func (s *Server) listView(l TaskList, st Stats, q listQuery) listView {
+	v := listView{Style: style, Scripts: scripts, ReadAt: s.timeAt(l.ReadAt, l.ReadAt), Query: q, Strip: newStripView(st)}
 	multi := false
 	for _, t := range l.Tasks {
 		multi = multi || t.Repository != l.Tasks[0].Repository
@@ -370,7 +375,8 @@ func sortListed(ts []Listed, q listQuery) {
 }
 
 func (s *Server) listRow(t Listed, l TaskList, multi bool) listRow {
-	r := listRow{ID: t.ID, Href: taskHref(t.Repository, t.ID), Title: t.Title, PR: t.PR, CI: ciMarkOf(t.CI), Ask: t.Ask, You: t.Group == GroupYou}
+	r := listRow{ID: t.ID, Href: taskHref(t.Repository, t.ID), Title: t.Title, PR: t.PR, CI: ciMarkOf(t.CI), Ask: t.Ask, You: t.Group == GroupYou,
+		Repository: t.Repository, Priority: t.Priority, Attempt: t.Attempt}
 	if multi {
 		r.Repo = t.Repository + "/"
 	}
