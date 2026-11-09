@@ -52,10 +52,30 @@ guildhall grill round open --repo app --task t-12 --attempt grill-1 --questions-
 ```
 
 The page asks the round as one form: for each question the Guildmaster accepts your recommendation or answers in their own words, can save and come back, and sends the whole round once every question has an answer.
-In chat, the round is only its Needs you line, `t-12 · grill round 1 · grill-1`, ending with the link to the attempt on its page, such as `ticket:app/t-12#grill-1`; never write the round's questions in chat too.
-A new round opens only once the Guildmaster has sent the one before it, and not while your closing summary waits for their answer.
+In chat, the round is its Needs you line, `t-12 · grill round 1 · grill-1`, ending with the link to the attempt on its page, such as `ticket:app/t-12#grill-1`, and, in the reply where it opens, the same numbered questions with your recommendations, so the Guildmaster can answer in either place.
+A new round opens only once the Guildmaster has answered the one before it, on the page or in chat, and not while your closing summary waits for their answer.
 
-Sending the round wakes you with a `grill-answered` message, which names the command that prints the answers:
+When they answer the round in chat, record their answers on the round before anything else, so the page shows it answered rather than still waiting on them:
+
+```sh
+guildhall grill round answer --repo app --task t-12 --attempt grill-1 --answers-file - <<'ANSWERS'
+**Q1. Which format?**
+Accepted
+
+**Q2. Behind a flag?**
+Accepted: yes.
+Off by default.
+
+**Q3. Import too?**
+Export only, and say so in the docs.
+ANSWERS
+```
+
+Write one block per question of the round, in order, each its `**Q<n>. <title>**` line, then `Accepted` when they took your recommendation, with any words they added after it, or their own answer in their words; a reply such as "all accepted" is `Accepted` for every question.
+The command refuses a round already sent on the page, a block count other than the round's and a question with no answer; it sends no `grill-answered` message, so carry on in the same turn as below.
+When they answered only some questions in chat, do not record the round: ask them to answer the rest, in chat or on the page.
+
+Sending the round on the page wakes you with a `grill-answered` message, which names the command that prints the answers:
 
 ```sh
 guildhall grill round show --repo app --task t-12 --attempt grill-1
@@ -64,7 +84,7 @@ guildhall grill round show --repo app --task t-12 --attempt grill-1
 Each answer is `Accepted: <your recommendation>`, sometimes with words after it, or `Your words:` and their words.
 Read them as answers given in the interview, recompute the frontier, and open the next round or, when the frontier is empty, put your closing summary on the page as Finishing says.
 The page never finishes the stage: you still do, as Finishing says.
-Anything they tell you in the stage's talk or in chat counts as well; reply on the page with `guildhall task say` under the attempt.
+Anything else they tell you in the stage's talk or in chat counts as well; reply on the page with `guildhall task say` under the attempt.
 
 With no task pages served, ask each round in chat as before and wait for their answers there.
 
@@ -80,7 +100,7 @@ While the task pages are served, put it on the page under the grill's running at
 guildhall grill summary open --repo app --task t-12 --attempt grill-1 --summary-file - < notes/app-t-12-grill-1-summary.md
 ```
 
-The page shows it as a **Grill summary** card with **Confirm** and **Request changes**, and the Guildmaster's words with either.
+The page shows it as a **Grill summary** card with **Confirm** and **Request changes**, and the Guildmaster's words with either; **Confirm** is the confirmation this section asks for, so a grill answered wholly on the page needs no typing in chat.
 In chat it is only its Needs you line, `t-12 · grill summary · grill-1`, ending with the link to the attempt on its page, such as `ticket:app/t-12#grill-1`; never write the summary in chat too.
 Then wait: their answer wakes you with a `grill-answered` message, which names the command that prints the summary, its outcome and their words:
 

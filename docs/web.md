@@ -192,7 +192,7 @@ Every form on the page posts through one gate: the page must answer at all, the 
 A grill the Director runs with you puts each round on the page, under its attempt, with `guildhall grill round open --repo <id> --task <id> --attempt <attempt> --questions-file <path|->`.
 The round is the questions in the [`guildhall-grill`](../skills/guildhall-grill/SKILL.md) format, each a `**Q<n>. <title>**` line, its body and a last line `Recommended: <answer>`, numbered from Q1; the command refuses any other text, an attempt that is not a running Director stage, a closed task, and a new round while the attempt's last one is not sent, and running it again writes nothing new.
 A resumed or reopened grill is a new attempt, so its rounds open under that attempt.
-In chat the Director only lists the round in Needs you, with a link to `#<attempt>`, such as `#grill-2`.
+In chat the Director lists the round in Needs you, with a link to `#<attempt>`, such as `#grill-2`, and writes the same numbered questions with its recommendations, so you can answer the round in either place.
 
 On Now, after the asks, the open round is one card, **Grill round <k>**, anchored at its attempt, and one form, posted to `POST /<repo>/<task>/round`:
 
@@ -210,6 +210,13 @@ It never sends; press **Send round** once you have looked over the round. With n
 Once every question is answered it records the round's answers on the conversation and a `grill-answered` message to the Director in one store transaction, and wakes it; pressing it twice sends once.
 The message names the round and the command that prints the answers, `guildhall grill round show --repo <id> --task <id> --attempt <attempt> [--round <k>]`, never your words.
 The sent round folds to one Director row, such as "Round 1 · 4 questions · sent 21:06 · 3 accepted, 1 your words", which opens to each question and its answer.
+
+When you answer the round in chat instead, the Director records your answers as the round's with `guildhall grill round answer --repo <id> --task <id> --attempt <attempt> [--round <k>] --answers-file <path|->`, so the page folds it as sent just the same and the next round can open.
+The answers file has one block per question, numbered from Q1 like the round: its `**Q<n>. <title>**` line, then `Accepted`, or `Accepted: <the recommendation>`, with any words you gave with it after, or your words, after an optional `Your words:` line; `grill round show` prints the answers in the page's form.
+Without `--round` it answers the attempt's latest round.
+It refuses a closed task, an attempt that is not a running Director stage, a round the attempt does not have, an answer count other than the round's and a round already sent; running it again with the same answers writes nothing new.
+It reads the round and writes its answers in one store transaction, so a round is answered once, on the page or in chat: a round answered in chat refuses every button of its page, Send round too, with "already sent".
+It sends the Director no `grill-answered` message, since the Director wrote the answers itself.
 
 The page never advances the task: the Director reads the answers, opens the next round or finishes the grill with `step finish` as before.
 The rail's Needs you counts the open round as an ask, with its progress, such as "Grill round 2 · 4 of 6".

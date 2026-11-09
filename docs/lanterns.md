@@ -42,7 +42,7 @@ An unmarked reply is neutral gray, never silently green; a marker later in the t
 
 A reply in the Director's [fixed layout](director.md#chat-address) is drawn in sections inside the same frame.
 Lanterns splits it into the marker line, Needs you, What I did and the Routine box, and draws the first three with Claude's own drawing, so markdown, bold and links look as they do today.
-A grill round is asked on the [task page](web.md#grill-rounds), so its reply is Needs you with the round's line and link, split as any other, as is the grill summary's line, `<id> · grill summary · <attempt>`, linked to `#<attempt>` ([grill summary](web.md#grill-summary)); only with no task pages served does a round sit in What I did's place.
+A grill round is asked on the [task page](web.md#grill-rounds) and in chat, so its reply is Needs you with the round's line and link, split as any other, then the round's questions in What I did's place; the grill summary's line, `<id> · grill summary · <attempt>`, linked to `#<attempt>` ([grill summary](web.md#grill-summary)), is split the same way.
 A thin rule in the frame's color sets off What I did and the Routine box, and the Routine box gets a single-line border whose top edge reads `routine` and its `as of #<sequence>`.
 Any reply that is not exactly the layout, any doubt in the split and any drawing error give the single frame as before.
 Without function hooks nothing is drawn and the same text reads as plain markdown.

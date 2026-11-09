@@ -83,7 +83,7 @@ func TestGrillRoundOpen(t *testing.T) {
 		"closed task":      {testRound, []string{"round", "open", "--store", path, "--repo", "app", "--task", "a-merged2", "--attempt", "grill-1", "--questions-file", "-"}, 1, "is done"},
 		"no questions":     {"", []string{"round", "open", "--store", path, "--repo", "app", "--task", "a-grill", "--attempt", "grill-1"}, 2, "requires --questions-file"},
 		"round with open":  {testRound, append(slices.Clone(args), "--round", "1"), 2, "--round goes with round show"},
-		"not a subcommand": {"", []string{"round", "close"}, 2, "grill takes round open, round show, summary open or summary show"},
+		"not a subcommand": {"", []string{"round", "close"}, 2, "grill takes round open, round show, round answer, summary open or summary show"},
 		"bad attempt":      {testRound, []string{"round", "open", "--store", path, "--repo", "app", "--task", "a-grill", "--attempt", "Grill 1", "--questions-file", "-"}, 2, "must be ids"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -324,5 +324,210 @@ func TestGrillRoundAcceptAll(t *testing.T) {
 		"\n\n**Q4. Who can export?**\nYour words:\n\nAdmins only.\n\n**Q5. Where does the button sit?**\nYour words:\n\nA menu, not the toolbar."
 	if len(got) != 2 || got[1].Text != want {
 		t.Fatalf("conversation = %+v", got)
+	}
+}
+
+// chatAnswers are the Guildmaster's answers to testRound given in chat, as the Director writes them.
+const chatAnswers = `**Q1. Which format?**
+Accepted
+
+**Q2. Behind a flag?**
+Accepted: yes.
+Off by default.
+
+**Q3. Import too?**
+Export only, and say so in the docs.`
+
+// openTestRound opens testRound under a-grill's attempt.
+func openTestRound(t *testing.T, path, attempt string) {
+	t.Helper()
+	if code, _, errOut := runGrill(t, testRound, "round", "open", "--store", path, "--repo", "app", "--task", "a-grill", "--attempt", attempt, "--questions-file", "-"); code != 0 {
+		t.Fatalf("grill round open = %d %s", code, errOut)
+	}
+}
+
+// TestGrillRoundAnswer: round answer records the Guildmaster's chat answers as the round's answers, authored
+// guildmaster-chat in the page's text, and sends no message; round show prints them, the page folds the round as
+// sent and refuses a Send round or save on it, and the next round opens. A rerun replays; a different answer, a
+// wrong count and a round already sent on the page are refused.
+func TestGrillRoundAnswer(t *testing.T) {
+	h, path, log := pageFixture(t)
+	startGrill(t, path)
+	openTestRound(t, path, "grill-1")
+	args := []string{"round", "answer", "--store", path, "--repo", "app", "--task", "a-grill", "--attempt", "grill-1", "--answers-file", "-"}
+	if code, _, errOut := runGrill(t, "**Q1. Which format?**\nAccepted", args...); code != 1 || !strings.Contains(errOut, "answer 1 question; the round asks 3") {
+		t.Errorf("a wrong count = %d %s", code, errOut)
+	}
+	code, out, errOut := runGrill(t, chatAnswers, args...)
+	if code != 0 || !strings.Contains(out, `"record":"conversation/2"`) {
+		t.Fatalf("grill round answer = %d %s %s", code, out, errOut)
+	}
+	if again, rerun, _ := runGrill(t, chatAnswers, append(slices.Clone(args), "--round", "1")...); again != 0 || rerun != out {
+		t.Errorf("rerun = %d %s, want %s", again, rerun, out)
+	}
+	if code, _, errOut := runGrill(t, strings.Replace(chatAnswers, "Export only", "Import too", 1), args...); code != 1 || !strings.Contains(errOut, "round 1 of grill-1 is already sent from chat") {
+		t.Errorf("a different second answer = %d %s", code, errOut)
+	}
+	want := "**Q1. Which format?**\nAccepted: CSV only.\n\n**Q2. Behind a flag?**\nAccepted: yes.\n\nOff by default.\n\n**Q3. Import too?**\nYour words:\n\nExport only, and say so in the docs."
+	got := conversation(t, path, "app", "a-grill")
+	if len(got) != 2 || got[1].Saying != (store.Saying{Author: store.ConversationGuildmasterChat, Tag: "grill-1", Kind: store.ConversationRoundAnswers, Text: want, Round: 1}) {
+		t.Fatalf("conversation = %+v", got)
+	}
+	if msgs := pageMessages(t, path); len(msgs) != 0 {
+		t.Errorf("round answer sent %+v", msgs)
+	}
+	if slices.ContainsFunc(log.events, func(e string) bool { return strings.Contains(e, "grill-answered") }) {
+		t.Errorf("events %q: round answer woke the Director", log.events)
+	}
+	code, out, errOut = runGrill(t, "", "round", "show", "--store", path, "--repo", "app", "--task", "a-grill", "--attempt", "grill-1")
+	if code != 0 || !strings.Contains(out, "· 2 accepted, 1 your words\n\n"+want) {
+		t.Fatalf("grill round show = %d %q %s", code, out, errOut)
+	}
+	body := gmPage(h, "a-grill")
+	if strings.Contains(body, `action="/app/a-grill/round"`) || !strings.Contains(body, `<summary>Round 1 · 3 questions · sent `) {
+		t.Errorf("the round answered in chat does not fold as sent:\n%s", body)
+	}
+	for _, act := range []string{"send", "save"} {
+		w := postRoute(t, h, "a-grill", "round", url.Values{"tag": {"grill-1"}, "round": {"1"}, "act": {act}})
+		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "you answered this round in chat") {
+			t.Errorf("%s on the page after round answer: %d\n%s", act, w.Code, w.Body)
+		}
+	}
+	if msgs := pageMessages(t, path); len(msgs) != 0 {
+		t.Errorf("the page sent %+v", msgs)
+	}
+	openTestRound(t, path, "grill-1")
+
+	// A round sent on the page takes no chat answers.
+	if code, _, errOut := runGrill(t, chatAnswers, append(slices.Clone(args), "--round", "3")...); code != 1 || !strings.Contains(errOut, "has 2 rounds, not a round 3") {
+		t.Errorf("no such round = %d %s", code, errOut)
+	}
+	for _, act := range []string{"accept-1", "accept-2", "accept-3", "send"} {
+		form := url.Values{"tag": {"grill-1"}, "round": {"3"}, "act": {act}}
+		if drafts := pageRoundDrafts(h); drafts != "" {
+			form.Set("drafts", drafts)
+		}
+		if w := postRoute(t, h, "a-grill", "round", form); w.Code != http.StatusSeeOther {
+			t.Fatalf("%s: %d\n%s", act, w.Code, w.Body)
+		}
+	}
+	if code, _, errOut := runGrill(t, chatAnswers, args...); code != 1 || !strings.Contains(errOut, "round 2 of grill-1 is already sent on the task page") {
+		t.Errorf("answer after the page sent it = %d %s", code, errOut)
+	}
+	if n := len(conversation(t, path, "app", "a-grill")); n != 4 {
+		t.Errorf("conversation has %d entries, want 4", n)
+	}
+}
+
+// TestGrillRoundAnswerRefused: round answer refuses an attempt that has finished, a closed task, an attempt with no
+// round of its own and usage errors, writing nothing.
+func TestGrillRoundAnswerRefused(t *testing.T) {
+	answer := func(t *testing.T, path, attempt string) (int, string) {
+		t.Helper()
+		code, _, errOut := runGrill(t, chatAnswers, "round", "answer", "--store", path, "--repo", "app", "--task", "a-grill", "--attempt", attempt, "--answers-file", "-")
+		return code, errOut
+	}
+	// grilled is a page fixture whose a-grill has testRound open under grill-1, then change applied.
+	grilled := func(t *testing.T, change func(s *store.Store) (store.Receipt, error)) string {
+		t.Helper()
+		_, path, _ := pageFixture(t)
+		startGrill(t, path)
+		openTestRound(t, path, "grill-1")
+		if _, err := withStore(path, false, change); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	t.Run("finished attempt", func(t *testing.T) {
+		path := grilled(t, func(s *store.Store) (store.Receipt, error) {
+			return s.FinishAttempt("finish-grill", "app", "a-grill", "grill", 1, store.AttemptSucceeded)
+		})
+		if code, errOut := answer(t, path, "grill-1"); code != 1 || !strings.Contains(errOut, "has finished (succeeded)") {
+			t.Errorf("= %d %s", code, errOut)
+		}
+		if n := len(conversation(t, path, "app", "a-grill")); n != 1 {
+			t.Errorf("the refusal wrote: %d entries", n)
+		}
+	})
+	t.Run("closed task", func(t *testing.T) {
+		path := grilled(t, func(s *store.Store) (store.Receipt, error) {
+			return s.CancelTask("cancel", "app", "a-grill", "not needed")
+		})
+		if code, errOut := answer(t, path, "grill-1"); code != 1 || !strings.Contains(errOut, "is cancelled; its talk takes nothing new") {
+			t.Errorf("= %d %s", code, errOut)
+		}
+	})
+	t.Run("artisan attempt", func(t *testing.T) {
+		path := grilled(t, func(s *store.Store) (store.Receipt, error) {
+			if _, err := s.FinishAttempt("finish-grill", "app", "a-grill", "grill", 1, store.AttemptSucceeded); err != nil {
+				return store.Receipt{}, err
+			}
+			return s.StartAttempt("artisan-grill", "app", "a-grill", "grill")
+		})
+		// grill-2 is an unattended grill: grill-1's round is not its, and it can have none of its own.
+		if code, errOut := answer(t, path, "grill-2"); code != 1 || !strings.Contains(errOut, "grill-2 of app/a-grill has no round to answer") {
+			t.Errorf("= %d %s", code, errOut)
+		}
+	})
+	t.Run("usage", func(t *testing.T) {
+		_, path, _ := pageFixture(t)
+		for name, c := range map[string]struct {
+			args []string
+			says string
+		}{
+			"no answers file":     {[]string{"round", "answer", "--store", path, "--repo", "app", "--task", "a-grill", "--attempt", "grill-1"}, "requires --answers-file"},
+			"answers with show":   {[]string{"round", "show", "--store", path, "--repo", "app", "--task", "a-grill", "--attempt", "grill-1", "--answers-file", "-"}, "--answers-file goes with round answer"},
+			"questions on answer": {[]string{"round", "answer", "--store", path, "--repo", "app", "--task", "a-grill", "--attempt", "grill-1", "--answers-file", "-", "--questions-file", "-"}, "--questions-file goes with round open"},
+			"summary answer":      {[]string{"summary", "answer"}, "grill takes round open, round show, round answer"},
+		} {
+			if code, _, errOut := runGrill(t, "", c.args...); code != 2 || !strings.Contains(errOut, c.says) {
+				t.Errorf("%s = %d %s", name, code, errOut)
+			}
+		}
+	})
+}
+
+// TestGrillRoundReopened pins which grills take rounds: once the grill has finished, a design's changes_requested
+// reopens it as a new Director attempt, grill-2, whose rounds open, are answered and are numbered from round 1 again;
+// an unattended (Artisan) grill attempt takes no round.
+func TestGrillRoundReopened(t *testing.T) {
+	_, path, _ := pageFixture(t)
+	startGrill(t, path)
+	openTestRound(t, path, "grill-1")
+	if code, _, errOut := runGrill(t, chatAnswers, "round", "answer", "--store", path, "--repo", "app", "--task", "a-grill", "--attempt", "grill-1", "--answers-file", "-"); code != 0 {
+		t.Fatalf("answer grill-1's round = %d %s", code, errOut)
+	}
+	// The engine's reopening (interp's TestDesignChangesRequestedReopensTheGrill) leaves grill-1 succeeded and hands
+	// grill attempt 2 to the Director.
+	if _, err := withStore(path, false, func(s *store.Store) (store.Receipt, error) {
+		if _, err := s.FinishAttempt("finish-grill", "app", "a-grill", "grill", 1, store.AttemptSucceeded); err != nil {
+			return store.Receipt{}, err
+		}
+		return s.StartDirectorAttempt("test-grill-2", "app", "a-grill", "grill", false)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := runGrill(t, testRound, "round", "open", "--store", path, "--repo", "app", "--task", "a-grill", "--attempt", "grill-1", "--questions-file", "-"); code != 1 || !strings.Contains(errOut, "has finished") {
+		t.Errorf("a round under the finished grill-1 = %d %s", code, errOut)
+	}
+	openTestRound(t, path, "grill-2")
+	if code, _, errOut := runGrill(t, chatAnswers, "round", "answer", "--store", path, "--repo", "app", "--task", "a-grill", "--attempt", "grill-2", "--answers-file", "-"); code != 0 {
+		t.Fatalf("answer grill-2's round = %d %s", code, errOut)
+	}
+	if code, out, errOut := runGrill(t, "", "round", "show", "--store", path, "--repo", "app", "--task", "a-grill", "--attempt", "grill-2", "--round", "1"); code != 0 || !strings.HasPrefix(out, "# Round 1 of grill-2 · 3 questions · sent ") {
+		t.Errorf("grill-2's first round = %d %q %s", code, out, errOut)
+	}
+
+	// An unattended grill, an Artisan's attempt, takes no round.
+	if _, err := withStore(path, false, func(s *store.Store) (store.Receipt, error) {
+		if _, err := s.FinishAttempt("finish-grill-2", "app", "a-grill", "grill", 2, store.AttemptSucceeded); err != nil {
+			return store.Receipt{}, err
+		}
+		return s.StartAttempt("artisan-grill-3", "app", "a-grill", "grill")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := runGrill(t, testRound, "round", "open", "--store", path, "--repo", "app", "--task", "a-grill", "--attempt", "grill-3", "--questions-file", "-"); code != 1 || !strings.Contains(errOut, "is an Artisan's") {
+		t.Errorf("a round under the unattended grill-3 = %d %s", code, errOut)
 	}
 }
