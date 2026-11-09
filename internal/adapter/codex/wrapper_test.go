@@ -234,6 +234,48 @@ func TestRunPublishesFailed(t *testing.T) {
 	}
 }
 
+// TestRunCarriesTheOutcome: under an answer contract that lets a step report an outcome, the instruction and the
+// output schema name the field and a failed final message's outcome reaches the result, its null fields dropped;
+// the judge's contract, which does not, publishes nothing for the same message.
+func TestRunCarriesTheOutcome(t *testing.T) {
+	codextest.Install(t)
+	spec := codextest.Attempt(t, codextest.Prompt(codextest.Delivered))
+	outcomes := quality.CodexAnswer
+	outcomes.Outcomes = true
+	if err := runSpec(t, spec, adapter.Settings{}, codex.Answers{workflow.JudgeStep: outcomes}); err != nil {
+		t.Fatalf("Run = %v; stderr %s", err, lastErr.String())
+	}
+	r, err := adapter.ReadResult(spec.ResultFile, spec.Identity)
+	want := adapter.Outcome{Kind: adapter.OutcomeAlreadyDelivered, ByPR: codextest.DeliveredBy}
+	if err != nil || r.Status != adapter.StatusFailed || len(r.Outputs) != 0 || r.Outcome == nil || *r.Outcome != want {
+		t.Errorf("result = %+v, %v; want a failed result with outcome %+v", r, err, want)
+	}
+	got, err := codextest.RecordedArgs(spec.PromptFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got[len(got)-1], `- "outcome": null, unless status is "failed"`) {
+		t.Errorf("instruction does not name the outcome: %q", got[len(got)-1])
+	}
+	var s struct {
+		Required   []string                   `json:"required"`
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	if data, err := os.ReadFile(filepath.Join(filepath.Dir(spec.ResultFile), codex.OutputSchemaFile)); err != nil || json.Unmarshal(data, &s) != nil ||
+		!slices.Contains(s.Required, "outcome") || !strings.Contains(string(s.Properties["outcome"]), `"already-delivered"`) {
+		t.Errorf("output schema = %+v, %v", s, err)
+	}
+
+	spec, err = run(t, codextest.Delivered, adapter.Settings{})
+	if !errors.Is(err, codex.ErrNoAnswer) || !strings.Contains(err.Error(), "reports no outcome") {
+		t.Errorf("judge Run = %v, want ErrNoAnswer naming the outcome", err)
+	}
+	noResult(t, spec)
+	if data, err := os.ReadFile(filepath.Join(filepath.Dir(spec.ResultFile), codex.OutputSchemaFile)); err != nil || strings.Contains(string(data), "outcome") {
+		t.Errorf("judge output schema names an outcome: %s, %v", data, err)
+	}
+}
+
 // TestRunPublishesNothingWithoutAValidAnswer: a malformed final message, an answer the judge's contract refuses, a
 // succeeded message with no answer, no final message, and a quota error with a failed turn each publish nothing,
 // and the error names why.

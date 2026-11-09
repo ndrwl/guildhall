@@ -56,6 +56,13 @@ type Response struct {
 	summary string
 	files   []File
 	hang    bool
+	outcome *adapter.Outcome
+}
+
+// Report writes a failed result with no outputs carrying outcome, a structured already-delivered or nothing-to-do
+// outcome (docs/adapters.md#result-file). An outcome adapter.WriteResult refuses makes the launch fail.
+func Report(summary string, outcome adapter.Outcome) Response {
+	return Response{status: adapter.StatusFailed, summary: summary, outcome: &outcome}
 }
 
 // Succeed writes files into the working directory, then a succeeded result listing them as outputs.
@@ -421,7 +428,7 @@ func respond(spec interp.Spec, r Response) error {
 		}
 		outputs = append(outputs, adapter.Output{Path: f.Path})
 	}
-	return adapter.WriteResult(spec.ResultFile, adapter.Result{Identity: spec.Identity, Status: r.status, Summary: r.summary, Outputs: outputs})
+	return adapter.WriteResult(spec.ResultFile, adapter.Result{Identity: spec.Identity, Status: r.status, Summary: r.summary, Outputs: outputs, Outcome: r.outcome})
 }
 
 func writeAtomic(target string, data []byte) error {

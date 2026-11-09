@@ -338,6 +338,56 @@ func (s fixedSpendStore) Attempts(string, string) ([]store.StageAttempt, error) 
 }
 func (s fixedSpendStore) Receipts() ([]store.Receipt, error) { return s.receipts, nil }
 
+// TestSpendReportLabelsReportedOutcomes: a failed attempt whose result reported an outcome is labelled by its kind,
+// as is the attempt after it; a plain failure, and a refused attempt whose result carries one, keep their labels.
+func TestSpendReportLabelsReportedOutcomes(t *testing.T) {
+	state := t.TempDir()
+	at := func(step string, n int, o store.AttemptOutcome, outcome *adapter.Outcome) store.StageAttempt {
+		a := store.StageAttempt{Repository: "app", TaskID: "t1", Step: step, Number: n, Outcome: o}
+		if outcome != nil {
+			key := artisan.AttemptKey{Repository: "app", TaskID: "t1", Step: step, Attempt: n}
+			if err := os.MkdirAll(key.Dir(state), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			r := adapter.Result{Identity: adapter.Identity{TaskID: "t1", AttemptID: key.AttemptID()}, Status: adapter.StatusFailed, Summary: "Already delivered.", Outcome: outcome}
+			if err := adapter.WriteResult(filepath.Join(key.Dir(state), artisan.ResultFile), r); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return a
+	}
+	delivered := &adapter.Outcome{Kind: adapter.OutcomeAlreadyDelivered, ByPR: "https://github.com/o/app/pull/351"}
+	nothing := &adapter.Outcome{Kind: adapter.OutcomeNothingToDo, Reason: "Already the default."}
+	refused := at("plan", 1, store.AttemptFailed, nothing)
+	refused.IntakeRejection = "step plan reports no outcome"
+	s := fixedSpendStore{attempts: []store.StageAttempt{
+		at("build", 1, store.AttemptFailed, delivered),
+		at("build", 2, store.AttemptFailed, nil),
+		at("build", 3, store.AttemptSucceeded, nil),
+		at("build--s2", 1, store.AttemptFailed, nothing),
+		at("build--s2", 2, store.AttemptSucceeded, nil),
+		refused,
+	}}
+	got, err := readSpend(s, state, "", "", time.Time{}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := map[string]string{}
+	for _, r := range got.Rows {
+		rows[r.Step] += r.Rerun + "/" + r.Outcome + ","
+	}
+	want := map[string]string{
+		"build":     "after-already-delivered/failed,after-failure/succeeded,first/already-delivered,",
+		"build--s2": "after-nothing-to-do/succeeded,first/nothing-to-do,",
+		"plan":      "first/refused,",
+	}
+	for step, w := range want {
+		if rows[step] != w {
+			t.Errorf("%s rows = %q, want %q", step, rows[step], w)
+		}
+	}
+}
+
 func TestSpendReportLabelsUnknownPredecessors(t *testing.T) {
 	at := func(step string, n int, o store.AttemptOutcome) store.StageAttempt {
 		return store.StageAttempt{Repository: "app", TaskID: "t1", Step: step, Number: n, Outcome: o}

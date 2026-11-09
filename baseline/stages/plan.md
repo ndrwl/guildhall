@@ -15,3 +15,5 @@ When slices have already merged, keep their entries unchanged and rewrite only t
 Write the required `spec` port as a UTF-8 Markdown document at `spec.md` in your working directory.
 The prompt's Strict sections block shows a valid and an invalid example of each of these sections, with the error the invalid one gets.
 Submit your result with `guildhall result submit`, as the Result template says: it refuses a spec in another shape with the reason intake would give, so fix the spec and submit again until it prints `ok`.
+When a merged pull request of this repository already shipped everything the task asks for, write no spec and report `failed` with an `already-delivered` outcome naming it in `by_pr`, as the Result template shows; when the task needs no change at all, report `failed` with a `nothing-to-do` outcome saying why.
+Start the summary with `Already delivered by <pr url>` or `Nothing to do`, then give the evidence.
