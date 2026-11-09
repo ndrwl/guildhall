@@ -68,3 +68,44 @@ func TestIdentityContract(t *testing.T) {
 		t.Errorf("Probe of an exited, reaped process = %v, %v; want gone", lv, err)
 	}
 }
+
+// LookupChild reads the caller's own unreaped child, live or exited, with the identity Lookup gave it alive; once
+// reaped it is gone.
+func TestLookupChildReadsAnExitedUnreapedChild(t *testing.T) {
+	dir := t.TempDir()
+	release := filepath.Join(dir, "release")
+	cmd := artisantest.Command(dir, artisantest.Worker{Release: release})
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	reaped := false
+	t.Cleanup(func() {
+		if !reaped {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+		}
+	})
+	pid := cmd.Process.Pid
+	alive, err := artisan.Lookup(pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := artisan.LookupChild(pid); got != alive || err != nil {
+		t.Errorf("LookupChild of a live child = %v, %v; want %v", got, err, alive)
+	}
+	if err := os.WriteFile(release, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	testenv.WaitFor(t, "the child to exit", func() bool {
+		_, err := artisan.Lookup(pid)
+		return err != nil
+	})
+	if got, err := artisan.LookupChild(pid); got != alive || err != nil {
+		t.Errorf("LookupChild of an exited, unreaped child = %v, %v; want %v", got, err, alive)
+	}
+	_ = cmd.Wait()
+	reaped = true
+	if got, err := artisan.LookupChild(pid); err == nil && got == alive {
+		t.Errorf("LookupChild of a reaped child = %v, want an error", got)
+	}
+}
