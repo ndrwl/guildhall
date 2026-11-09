@@ -593,12 +593,22 @@ func (j *Judge) gather(ctx context.Context, sr SelfReview) (gathered, error) {
 	if err != nil {
 		return gathered{}, err
 	}
+	// taken holds, by recorded path, the first document gathered there: an approval is recorded as an alias of the
+	// document it approves, at the same path and digest, and the judge is given that file once.
+	taken := map[string]store.DocumentRef{}
 	for _, d := range docs {
 		if strings.HasPrefix(d.Name, workflow.JudgeStep+"-") {
 			continue
 		}
 		if !filepath.IsLocal(filepath.FromSlash(d.Path)) || path.Clean(d.Path) != d.Path || strings.Contains(d.Path, `\`) {
 			return refuse("document %s's path %q is not a relative path inside the document directory", d.Name, d.Path)
+		}
+		if first, ok := taken[d.Path]; ok {
+			if first.SHA256 != d.SHA256 {
+				return refuse("document %s has path %s recorded with another digest by document %s", d.Name, d.Path, first.Name)
+			}
+			g.documents = append(g.documents, d)
+			continue
 		}
 		data, err := os.ReadFile(filepath.Join(j.DocumentDir, filepath.FromSlash(d.Path)))
 		if err != nil {
@@ -607,6 +617,7 @@ func (j *Judge) gather(ctx context.Context, sr SelfReview) (gathered, error) {
 		if digest.Of(data).Hex() != d.SHA256 {
 			return refuse("document %s does not have its recorded digest", d.Name)
 		}
+		taken[d.Path] = d
 		g.documents = append(g.documents, d)
 		g.files = append(g.files, input{d.Path, data})
 	}

@@ -123,3 +123,79 @@ func TestStartReplayGathersTheInputs(t *testing.T) {
 		t.Errorf("attempts %+v, want the recorded one only", e.judgeAttempts())
 	}
 }
+
+// TestStartGivesAnAliasedDocumentOnce is the regression test of incident quality-judge-duplicate-accepted-spec:
+// the workflow records an approval as an alias of the approved document, at the same path and digest, and Start
+// refused with "input … is given twice". The judge is given the file once and the prompt lists it under each name.
+func TestStartGivesAnAliasedDocumentOnce(t *testing.T) {
+	for name, docs := range map[string][2][2]string{
+		"an accepted spec":   {{"plan-1-spec", "tasks/app/t-1/plan-1/spec.md"}, {"accept-1-spec", "tasks/app/t-1/plan-1/spec.md"}},
+		"an approved design": {{"designer-2-design", "tasks/app/t-1/designer-2/design.md"}, {"design-1-design", "tasks/app/t-1/designer-2/design.md"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			const text = "# Document\n\nSort the list.\n"
+			e := newEnv(t, judgeConfig)
+			for _, d := range docs {
+				e.document(d[0], d[1], text)
+			}
+			got, err := e.judge.Start(context.Background(), "app", "t-1", 1)
+			if err != nil || got.Attempt != 1 {
+				t.Fatalf("Start = %+v, %v; want attempt 1 launched", got, err)
+			}
+			if len(e.l.calls) != 1 || len(e.judgeAttempts()) != 1 {
+				t.Errorf("launches %+v and attempts %+v, want one of each", e.l.calls, e.judgeAttempts())
+			}
+			prompt := filepath.Join(e.key(1).Dir(e.judge.StateDir), "prompt")
+			if data, err := os.ReadFile(filepath.Join(prompt, render.InputsDir, filepath.FromSlash(docs[0][1]))); err != nil || string(data) != text {
+				t.Errorf("input %s = %q, %v; want %q", docs[0][1], data, err, text)
+			}
+			promptText, err := os.ReadFile(filepath.Join(prompt, render.PromptFile))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, d := range docs {
+				if s := d[0] + ": `inputs/" + d[1] + "`"; !strings.Contains(string(promptText), s) {
+					t.Errorf("prompt does not list %q:\n%s", s, promptText)
+				}
+			}
+		})
+	}
+}
+
+// TestStartRefusesTwoDocumentsAtOnePathWithDifferentDigests: two records at one path with different digests are a
+// real conflict, refused with ErrInputs before any attempt is recorded or launched.
+func TestStartRefusesTwoDocumentsAtOnePathWithDifferentDigests(t *testing.T) {
+	e := newEnv(t, judgeConfig)
+	e.document("plan-1-spec", "tasks/app/t-1/plan-1/spec.md", "# Spec\n")
+	e.document("accept-1-spec", "tasks/app/t-1/plan-1/spec.md", "# Another spec\n")
+	if _, err := e.judge.Start(context.Background(), "app", "t-1", 1); !errors.Is(err, quality.ErrInputs) {
+		t.Errorf("Start = %v, want ErrInputs", err)
+	}
+	if len(e.l.calls) != 0 || len(e.judgeAttempts()) != 0 {
+		t.Errorf("a refused start launched %+v and recorded %+v", e.l.calls, e.judgeAttempts())
+	}
+}
+
+// TestStartRecoversAnAttemptStuckOnAnAlias: an attempt recorded before the fix, whose preparation stopped at the
+// duplicate input and left a stale prompt.partial, is prepared, published and launched by the next Start, and no
+// second attempt is recorded.
+func TestStartRecoversAnAttemptStuckOnAnAlias(t *testing.T) {
+	e := newEnv(t, judgeConfig)
+	e.document("plan-1-spec", "tasks/app/t-1/plan-1/spec.md", "# Spec\n")
+	e.document("accept-1-spec", "tasks/app/t-1/plan-1/spec.md", "# Spec\n")
+	if _, err := e.s.StartAttempt("judge", "app", "t-1", workflow.JudgeStep); err != nil {
+		t.Fatal(err)
+	}
+	dir := e.key(1).Dir(e.judge.StateDir)
+	e.write(filepath.Join(dir, "prompt.partial", render.InputsDir, "tasks", "app", "t-1", "plan-1", "spec.md"), "# Spec\n")
+	got, err := e.judge.Start(context.Background(), "app", "t-1", 1)
+	if err != nil || got.Attempt != 1 {
+		t.Fatalf("Start = %+v, %v; want recorded attempt 1 launched", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "prompt", render.PromptFile)); err != nil {
+		t.Errorf("prompt not published: %v", err)
+	}
+	if len(e.l.calls) != 1 || e.l.calls[0].Key != e.key(1) || len(e.judgeAttempts()) != 1 {
+		t.Errorf("launches %+v and attempts %+v, want attempt 1 launched once and recorded once", e.l.calls, e.judgeAttempts())
+	}
+}
