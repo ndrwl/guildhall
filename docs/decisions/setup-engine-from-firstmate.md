@@ -37,6 +37,6 @@ The Guildmaster asked instead for Go versions, and whether they would let the St
 
 ## Consequences
 
-One engine covers Linux, macOS and native Windows; the built-in step files are Linux and macOS forms until d128's Windows slice adds theirs.
+One engine covers Linux, macOS and native Windows; each built-in step has a Windows form of the same id in the same file, in place of Firstmate's separate `.ps1` script, so the two forms are reviewed side by side.
 The engine runs any check, act and script a step file names, so a step file's safety rests on its digest being approved; the engine never runs `sudo`, and a step that needs administrator rights is tagged `human`.
 d128's provisioning slice builds on it: the Steward runs `setup doctor --json` on a machine, and plans each gap as a fix or a wizard the Guildmaster runs.

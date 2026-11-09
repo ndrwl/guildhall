@@ -59,4 +59,5 @@ For it the allow-list gains `sha256sum <path>`, an absolute path, the one comman
 Rollout plans and digests are unchanged.
 A machine whose `guildhall` predates a takeover command fails that step with its diagnostic, and the plan resumes there once it is upgraded.
 A takeover that is abandoned before the copy is changed resumes the session it paused; once `managed.toml` is published it can only be finished.
-Provisioning runs every install as an approved step file on the [setup engine](setup-engine-from-firstmate.md) under the same approval and plan kind; a later slice of d128 adds native Windows.
+Provisioning runs every install as an approved step file on the [setup engine](setup-engine-from-firstmate.md) under the same approval and plan kind, on Linux and native Windows machines alike.
+On Windows the paths are the roster's forward-slash Windows paths, the built-ins run their Windows forms, and the bootstrap's hash check is `certutil -hashfile <path> SHA256`, added to the allow-list as the one command whose program is `certutil`, with an absolute path and the `SHA256` algorithm only; a Steward on another OS bootstraps it from a cross-built release named by the request's `bootstrap_from`, whose Go build information it checks without running it.

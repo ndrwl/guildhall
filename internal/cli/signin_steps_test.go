@@ -20,15 +20,40 @@ func TestSigninStepsMatchRuntimes(t *testing.T) {
 	for _, r := range signinRuntimes() {
 		runtimeIDs = append(runtimeIDs, r.name+"-sign-in")
 	}
+	// The Linux forms are compared whole; a Windows form of its own (gh-sign-in's, as Windows has no env program)
+	// must set the same variables and run the same status command.
+	var linux []setup.Step
 	for _, s := range steps.Steps {
-		stepIDs = append(stepIDs, s.ID)
+		if s.ForOS("linux") {
+			linux = append(linux, s)
+			stepIDs = append(stepIDs, s.ID)
+		}
+	}
+	for _, r := range signinRuntimes() {
+		w, ok := steps.Step(r.name+"-sign-in", "windows")
+		if !ok || !w.ForOS("windows") {
+			t.Errorf("%s-sign-in has no Windows form", r.name)
+			continue
+		}
+		if w.Check.Script == "" {
+			continue
+		}
+		for _, kv := range r.Env {
+			k, v, _ := strings.Cut(kv, "=")
+			if !strings.Contains(w.Check.Script, "$env:"+k+" = '"+v+"'") {
+				t.Errorf("%s-sign-in's Windows check does not set %s", r.name, kv)
+			}
+		}
+		if status := strings.Join(r.Status, " "); !strings.Contains(w.Check.Script, " "+status+"\n") {
+			t.Errorf("%s-sign-in's Windows check does not run %s %s", r.name, r.Program, status)
+		}
 	}
 	if !slices.Equal(runtimeIDs, stepIDs) {
 		t.Fatalf("sign-in step ids = %q, want one <runtime>-sign-in per signinRuntimes entry, in order: %q", stepIDs, runtimeIDs)
 	}
 
 	for i, r := range signinRuntimes() {
-		s := steps.Steps[i]
+		s := linux[i]
 		t.Run(r.name, func(t *testing.T) {
 			var want []string
 			if len(r.Env) > 0 {

@@ -18,7 +18,8 @@ Keep every plan under your copy's `rollouts/` directory, one new directory per t
    guildhall steward takeover --config <your copy>/config.toml --machine <label> --director <name> --copy <copy dir> --plan <your copy>/rollouts/takeover-<name> --dry-run
    ```
 
-   Add `--ssh-alias <alias>` only for a machine not in the roster.
+   Add `--ssh-alias <alias>` only for a machine not in the roster, with `--os windows` when it is a native Windows machine.
+   On Windows the copy directory is a Windows path with forward slashes, such as `C:/Users/<user>/directors/<name>`.
    A refusal changes nothing: tell the Guildmaster why in plain English, such as a repository whose `owner_machine` names another machine, a copy that already has a `managed.toml`, or a roster that already lists the Director, and stop.
 3. Show the Guildmaster the plan: the copy and its session, the roster diff, every step and the plan digest.
    Say that the session will be paused while running attempts finish, and that the copy's settings do not change.
@@ -58,6 +59,7 @@ Keep each plan in a new directory such as `rollouts/provision-<director>`.
 
 1. Ask the Guildmaster for the roster machine, the Director's name, its copy and setup directories there, the Herdr session its tab opens in, each repository's id, remote and path, and any pins; write them as a request file in your copy (`docs/steward.md#provisioning`).
    When the machine has no Guildhall yet, add `bootstrap = true` and make sure the roster names its `guildhall_path`, such as `/home/<user>/.local/bin/guildhall`, in a directory that exists; with Go and Herdr missing too, ask for their pins (`docs/steward.md#bootstrapping-a-bare-machine`).
+   On a native Windows machine every path is a Windows path with forward slashes, `guildhall_path` names `guildhall.exe`, the pins name the Windows builds, and a bootstrap needs `bootstrap_from`: ask the Guildmaster for a directory holding `guildhall.exe` and `guildhall-launcher.exe` cross-built at the release to place, as `docs/steward.md#bootstrapping-a-bare-machine` shows.
    When the machine needs an install no built-in step file covers, write a step file of your own beside the request and name it in `step_files`; every change it makes must be a `check`, `action` and `verify`, and anything that needs administrator rights a `human` step.
 2. Dry-run:
 
@@ -67,7 +69,7 @@ Keep each plan in a new directory such as `rollouts/provision-<director>`.
 
    A refusal changes nothing: tell the Guildmaster why, such as a copy directory that already has a config or store, a clone path that is not empty, or a missing Herdr with no pins, and stop.
 3. Show the Guildmaster the plan: the doctor's gaps, every step, each step file you wrote in full with its digest, the config it writes and the plan digest.
-   Say which steps are theirs to run on the machine, including any Guildhall fact the doctor found missing: the pinned Guildhall release (`guildhall-pin`), `guildhall_path` on the `PATH` of SSH commands (`guildhall-on-path`), Tailscale SSH without a check-mode rule (`tailscale-ssh`) and a running Herdr server for the session (`herdr-session`).
+   Say which steps are theirs to run on the machine, including any Guildhall fact the doctor found missing: the pinned Guildhall release (`guildhall-pin`), `guildhall_path` on the `PATH` of SSH commands (`guildhall-on-path`), Tailscale SSH without a check-mode rule (`tailscale-ssh`, never on Windows) and a running Herdr server for the session (`herdr-session`).
 4. Open the approval decision as for a takeover, and give them its answer command; never answer it yourself.
 5. Once they answered `approve`, apply:
 
