@@ -409,3 +409,58 @@ func TestGrillFold(t *testing.T) {
 		t.Error("the grill fold is not a link when the document cannot give its decisions")
 	}
 }
+
+// TestAnswerTilesFillRow pins d218's one layout rule for tile rows: .opts and the grill round's .rbar are wrapping
+// flex rows whose tiles grow to fill their line, a recommended tile (and Changes requested on a changed pick) takes
+// a line of its own, and no tile spans grid columns: an auto-fit grid kept every track when the recommended tile
+// spanned them, leaving "Answer with my words" or "Changes requested" a quarter of the row. The round bar's bleed
+// follows its card's padding through --askpad, so it lines up with the card on phone too.
+func TestAnswerTilesFillRow(t *testing.T) {
+	css := string(style)
+	rule := func(sel string) string {
+		t.Helper()
+		i := strings.Index(css, "\n"+sel+"{")
+		if i < 0 {
+			t.Fatalf("no top-level rule %q", sel)
+		}
+		rest := css[i+len(sel)+2:]
+		return rest[:strings.IndexByte(rest, '}')]
+	}
+	for _, sel := range []string{".opts", ".rbar"} {
+		if r := rule(sel); !strings.Contains(r, "display:flex") || !strings.Contains(r, "flex-wrap:wrap") || strings.Contains(r, "grid") {
+			t.Errorf("%s is not a wrapping flex row: %s", sel, r)
+		}
+	}
+	if r := rule(".opts>.opt,.rbar>.opt"); !strings.Contains(r, "flex:1 1 150px") || !strings.Contains(r, "min-width:0") {
+		t.Errorf("tiles do not grow to fill their line: %s", r)
+	}
+	if r := rule(".opt.rec"); !strings.Contains(r, "flex-basis:100%") {
+		t.Errorf(".opt.rec does not take a line of its own: %s", r)
+	}
+	if !strings.Contains(css, `.opt[value="changes_requested"]{flex-basis:100%`) {
+		t.Error("Changes requested on a changed pick does not take a line of its own")
+	}
+	// Only tile rules are checked: other page rows (the task list's .r .ak, for one) may use grid columns.
+	for _, block := range strings.Split(css, "}") {
+		i := strings.LastIndexByte(block, '{')
+		if i < 0 {
+			continue
+		}
+		sel, body := block[:i], block[i+1:]
+		if (strings.Contains(sel, ".opt") || strings.Contains(sel, ".rbar")) && strings.Contains(body, "grid") {
+			t.Errorf("a tile rule still uses grid columns: %s{%s}", strings.TrimSpace(sel), body)
+		}
+	}
+	if !strings.Contains(css, ".r-side .opts>.opt{flex-basis:100%}") || !strings.Contains(css, " .opts>.opt{flex-basis:100%}") {
+		t.Error("the reader side panel or phone does not keep one tile per line")
+	}
+	if r := rule(".rbar"); !strings.Contains(r, "margin:14px calc(-1*var(--askpad)) 0") || !strings.Contains(r, "padding:10px var(--askpad)") {
+		t.Errorf(".rbar's bleed does not follow --askpad: %s", r)
+	}
+	if r := rule(".ask"); !strings.Contains(r, "--askpad:18px") || !strings.Contains(r, "padding:16px var(--askpad) 14px") {
+		t.Errorf(".ask's padding does not use --askpad: %s", r)
+	}
+	if !strings.Contains(css, ".r-side .ask{--askpad:14px;") || !strings.Contains(css, " .ask{--askpad:14px;") {
+		t.Error("the reader side panel's or phone's card does not set --askpad")
+	}
+}

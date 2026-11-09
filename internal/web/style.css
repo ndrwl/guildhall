@@ -45,7 +45,7 @@ button{font:inherit;color:inherit}
 .sl{list-style:none;margin:4px 0 0;padding:0;font-size:13.5px}.sl li{margin:2px 0}.sl .cur{font-weight:650}
 .waits{margin:6px 0 0;padding-left:18px;font-size:13.5px;color:var(--mut)}
 /* one ask */
-.ask{background:var(--card);border:1px solid var(--youline);border-left:5px solid var(--youdot);border-radius:12px;padding:16px 18px 14px;box-shadow:var(--shadow)}
+.ask{--askpad:18px;background:var(--card);border:1px solid var(--youline);border-left:5px solid var(--youdot);border-radius:12px;padding:16px var(--askpad) 14px;box-shadow:var(--shadow)}
 .ask+.ask{margin-top:14px}
 .ask.def{border-left-style:dashed}
 .ah{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px}
@@ -63,7 +63,9 @@ button{font:inherit;color:inherit}
 .ctx>div{padding:0 12px 10px}.ctx p{margin:0}
 .ctx pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace;margin:0}
 .pick{font-size:13px;color:var(--mut);margin:12px 0 6px;font-weight:600}
-.opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+/* d218: one layout rule for tile rows; tiles grow to fill their line, and a recommended tile takes a line of its own */
+.opts{display:flex;flex-wrap:wrap;gap:8px}
+.opts>.opt,.rbar>.opt{flex:1 1 150px;min-width:0}
 .opt{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;text-align:left;min-height:56px;padding:8px 12px;border-radius:10px;border:1px solid var(--line2);border-left:4px solid var(--line2);background:var(--card)}
 .opt b{font-size:15px;font-weight:650}
 .opt span{font-size:12.5px;color:var(--mut);line-height:1.35}
@@ -170,9 +172,9 @@ button{font:inherit;color:inherit}
 .txt{white-space:pre-wrap;overflow-wrap:anywhere;font:13.5px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:0}
 .r-side{position:sticky;top:0;max-height:100vh;overflow-y:auto;background:var(--bg2);border-left:1px solid var(--line);padding:22px 20px 28px}
 .r-side>section+section{margin-top:24px;padding-top:20px;border-top:1px solid var(--line)}
-.r-side .ask{padding:14px 14px 12px}
+.r-side .ask{--askpad:14px;padding:14px var(--askpad) 12px}
 .r-side .q{font-size:15.5px}
-.r-side .opts{grid-template-columns:1fr}
+.r-side .opts>.opt{flex-basis:100%}
 .r-side .since{margin-left:0;flex-basis:100%}
 .endback{margin-top:20px}
 .endback .backto{background:var(--card);color:var(--fg)!important;border-color:var(--line2)}
@@ -205,7 +207,7 @@ shows its "Your answer" line, and the ask's answer row then hides Approved and p
 .ol.pk input:checked~.ot .ya{display:block}
 .ol.pk li:has(input:checked:not([value=""])){background:var(--youbg);border-color:var(--youline);border-left:4px solid var(--youdot)}
 .ask:has(.oqs:not(.ctl) .pk input:checked:not([value=""])) .opt[value="approved"]{display:none}
-.ask:has(.oqs:not(.ctl) .pk input:checked:not([value=""])) .opt[value="changes_requested"]{grid-column:1/-1;background:var(--youbg);border-color:var(--youline);border-left:6px solid var(--youdot)}
+.ask:has(.oqs:not(.ctl) .pk input:checked:not([value=""])) .opt[value="changes_requested"]{flex-basis:100%;background:var(--youbg);border-color:var(--youline);border-left:6px solid var(--youdot)}
 /* on a plan approval's open questions (.ctl) a changed pick is that question's answer: Approved stays, and the
 tiles' line says the picks go with them */
 .opt .pkd{display:none}
@@ -213,7 +215,7 @@ tiles' line says the picks go with them */
 .ask:has(.ctl .pk input:checked:not([value=""])) .opt .pkd{display:block}
 .oqs .cut{margin:0;color:var(--mut);font-size:13px}
 .badge{font:700 10.5px/1 system-ui,sans-serif;font-style:normal;text-transform:uppercase;letter-spacing:.06em;color:var(--on);background:var(--ok);padding:4px 7px;border-radius:5px;flex:none;align-self:center;white-space:nowrap}
-.opt.rec{grid-column:1/-1;background:var(--okbg);border-color:var(--ok);border-left-width:6px}
+.opt.rec{flex-basis:100%;background:var(--okbg);border-color:var(--ok);border-left-width:6px}
 .opt.rec b{display:flex;align-items:center;gap:8px}
 .opt.rec:not([disabled]):hover{background:var(--okbg);filter:brightness(.97)}
 /* d150: the Director's explanation of an ask, under its headline and above its summary */
@@ -263,10 +265,10 @@ tiles' line says the picks go with them */
  .r-task,.r-docs,.r-status{padding:20px 16px;background:var(--bg2);border-top:1px solid var(--line)}
  .r-status{padding-bottom:48px}
  .c2-rail>section+section{margin-top:0}
- .ask{padding:14px 14px 12px}
+ .ask{--askpad:14px;padding:14px var(--askpad) 12px}
  .since{margin-left:0;flex-basis:100%}
  .q{font-size:16.5px}
- .opts{grid-template-columns:1fr}
+ .opts>.opt{flex-basis:100%}
  .older>summary{margin-left:0}
  .nh time{margin-left:0;flex-basis:100%;order:-1;font-size:12.5px}
  .node{padding-left:38px}
@@ -422,7 +424,7 @@ tiles' line says the picks go with them */
 .rq .rdone b{color:var(--ok)}
 .rq .gist{color:var(--mut);min-width:0;overflow-wrap:anywhere}
 .lnk{margin-left:auto;background:none;border:0;padding:0 2px;min-height:32px;color:var(--link);font:inherit;font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
-.rbar{position:sticky;bottom:0;z-index:1;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:14px -18px 0;padding:10px 18px;background:var(--card);border-top:1px solid var(--line)}
+.rbar{position:sticky;bottom:0;z-index:1;display:flex;flex-wrap:wrap;gap:8px;margin:14px calc(-1*var(--askpad)) 0;padding:10px var(--askpad);background:var(--card);border-top:1px solid var(--line)}
 .rqa{margin:8px 0 0;padding:8px 12px;border-radius:8px;border:1px solid var(--line)}
 .rqa .qt{font-weight:650;margin:0 0 2px;display:flex;align-items:baseline;gap:8px}
 .rqa .qn{font:700 12px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--mut)}
