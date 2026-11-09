@@ -71,7 +71,7 @@ func fixtureList() TaskList {
 }
 
 func listServer(l TaskList) (*Server, *fakeSource) {
-	src := &fakeSource{list: l}
+	src := &fakeSource{list: l, stats: fixtureStats()}
 	return New(Options{Source: src, Location: time.UTC, Host: testHost}), src
 }
 
@@ -176,7 +176,7 @@ func TestTaskList(t *testing.T) {
 	}
 	inOrder(t, body, `id="g-you"`, `/firstmate/f31"`, `/guildhall/d219"`, `/guildhall/d222"`, `<form class="fb"`, `class="rh"`,
 		`id="g-plan"`, `/guildhall/d225"`, `id="g-build"`, `/guildhall/d215"`, `/firstmate/f29"`, `id="g-ci"`, `/guildhall/d211"`,
-		`id="g-merge-queue"`, `<p class="hold">`, `/guildhall/d208"`, `/guildhall/d204"`, `/guildhall/d201"`,
+		`id="g-merge-queue"`, `<p class="hold">`, `class="tid" href="/guildhall/d208"`, `/guildhall/d204"`, `/guildhall/d201"`,
 		`id="g-held"`, `/guildhall/d217"`, `/guildhall/d203"`, `id="g-done"`, `/guildhall/d223"`, `/firstmate/f26"`, `class="asof"`)
 	checkGolden(t, "list.golden.html", body)
 
@@ -194,13 +194,16 @@ func TestTaskList(t *testing.T) {
 // no sentence falls back to Clerk's phrase; testdata/list.one.golden.html.
 func TestTaskListOneRepository(t *testing.T) {
 	read := at("2026-11-05 14:52")
-	s, _ := listServer(TaskList{ReadAt: *read, Tasks: []Listed{
+	s, src := listServer(TaskList{ReadAt: *read, Tasks: []Listed{
 		{Repository: "app", ID: "a1", Title: "One", Group: GroupCI, Priority: 3, Step: "validation", Since: at("2026-11-05 12:40"), PR: &PullRequest{Number: 7, URL: "https://github.com/o/app/pull/7"}, CI: CIPending},
 		{Repository: "app", ID: "a2", Title: "Two", Group: GroupHeld, Priority: 0, Stands: "waiting (mystery)", Since: at("2026-11-02 09:00")},
 		{Repository: "app", ID: "a3", Title: "Three", Group: GroupBuild, Priority: 3, Step: "build", Attempt: 2, Since: at("2026-11-05 14:51")},
 	}})
+	// a quiet copy: nothing queued to merge, no config's cap, and a machine that gives only its cores
+	src.stats = Stats{Running: 1, Day: *at("2026-11-05 00:00"), Spend: Spend{Attempts: 2, CostUSD: 1.5, CostMeasure: "measured"}, Machine: Vitals{Cores: 2}}
 	body := get(t, s, "/").Body.String()
 	for _, want := range []string{
+		`<summary>1 running · 0 to merge · 0 merged · $1.50 today</summary>`, `<li>none in the merge queue</li>`, `<b>load unavailable</b> · 2 cores`,
 		`<p class="ws"><b>Nothing waits for you</b><span class="m">3 open · updated <time`,
 		`<a class="tid" href="/app/a1">a1</a>`, `<span class="stp">Waiting (mystery).</span>`, `<span class="pri p0">p0</span>`,
 		`>3 days ago</time>`, `>2 h ago</time>`, `>1 min ago</time>`,
@@ -210,7 +213,7 @@ func TestTaskListOneRepository(t *testing.T) {
 		}
 	}
 	_, page, _ := strings.Cut(body, "</head>")
-	for _, bad := range []string{`id="g-you"`, `id="g-done"`, `class="rp"`, "Repository</span>", "merge queue"} {
+	for _, bad := range []string{`id="g-you"`, `id="g-done"`, `class="rp"`, "Repository</span>", `id="g-merge-queue"`, "in the merge queue ·"} {
 		if strings.Contains(page, bad) {
 			t.Errorf("task list holds %s", bad)
 		}

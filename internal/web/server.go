@@ -57,6 +57,7 @@ type Options struct {
 // Server serves the task list, the task pages and reader pages from its Source. Its routes are:
 //
 //	GET /                               the task list, read-only
+//	GET /list.json                      the task list's rows, groups and stats, as JSON, read-only
 //	GET /<repo>/<task>                  the task page
 //	GET /<repo>/<task>/doc/<name>       the reader page of one of the task's documents
 //	GET /<repo>/<task>/doc/<name>/raw   the document as text/plain
@@ -94,11 +95,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.Set("Referrer-Policy", "same-origin")
 	h.Set("Cache-Control", "no-store")
 	if !sameHost(r.Host, s.o.Host) {
+		if r.URL.EscapedPath() == "/list.json" {
+			feedRefuse(w, http.StatusMisdirectedRequest, "", "")
+			return
+		}
 		s.refuse(w, http.StatusMisdirectedRequest, "Wrong address", "Open this page by its [web] address, "+s.o.Host+".")
 		return
 	}
 	if r.URL.EscapedPath() == "/" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
 		s.taskList(w, r)
+		return
+	}
+	if r.URL.EscapedPath() == "/list.json" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		s.listFeed(w)
 		return
 	}
 	segs, ok := segments(r.URL.EscapedPath())
@@ -189,17 +198,32 @@ func (s *Server) read(w http.ResponseWriter, repo, id string) (Task, bool) {
 
 // taskList serves the task list, the same read-only page to everyone, filtered and sorted by r's query.
 func (s *Server) taskList(w http.ResponseWriter, r *http.Request) {
-	l, err := s.o.Source.Tasks()
-	switch {
-	case errors.Is(err, ErrBusy):
-		s.refuse(w, http.StatusServiceUnavailable, "The store is busy", "The Director is writing to the store. Reload in a moment.")
-		return
-	case err != nil:
-		s.log("web: read the task list: " + err.Error())
-		s.refuse(w, http.StatusInternalServerError, "The task list could not be read", "Guildhall could not read the tasks from the store. Reload, or ask the Director.")
+	l, st, ok := s.readList(w, s.refuse)
+	if !ok {
 		return
 	}
-	s.render(w, http.StatusOK, "list", s.listView(l, readListQuery(r.URL.Query())))
+	s.render(w, http.StatusOK, "list", s.listView(l, st, readListQuery(r.URL.Query())))
+}
+
+// readList reads the task list and its stats from the Source, writing the refusal for an error with refuse, and
+// reports whether it did: 503 for a busy store, and 500 with no detail for any other failure, logged. The page
+// refuses with its HTML refusal page and the feed with its JSON refusal.
+func (s *Server) readList(w http.ResponseWriter, refuse func(w http.ResponseWriter, status int, title, words string)) (TaskList, Stats, bool) {
+	l, err := s.o.Source.Tasks()
+	var st Stats
+	if err == nil {
+		st, err = s.o.Source.Stats()
+	}
+	switch {
+	case errors.Is(err, ErrBusy):
+		refuse(w, http.StatusServiceUnavailable, "The store is busy", "The Director is writing to the store. Reload in a moment.")
+		return TaskList{}, Stats{}, false
+	case err != nil:
+		s.log("web: read the task list: " + err.Error())
+		refuse(w, http.StatusInternalServerError, "The task list could not be read", "Guildhall could not read the tasks from the store. Reload, or ask the Director.")
+		return TaskList{}, Stats{}, false
+	}
+	return l, st, true
 }
 
 // taskPage serves the task page to whoever r is from: with the forms for the Guildmaster's login, read-only for
