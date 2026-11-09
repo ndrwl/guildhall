@@ -586,9 +586,10 @@ const (
 	MessageMergeHeld    = "merge-held"
 	MessageMergeRefused = "merge-refused"
 	MessageMerged       = "merged"
-	// MessageSliceDelivered: the Director closed a multi-PR task's slice as already delivered by an earlier slice or a
-	// merged pull request (`guildhall slice delivered`); no code merged, so it is never a merged message and counts
-	// toward no maintenance cadence.
+	// MessageSliceDelivered: the Director (`guildhall slice delivered`), or the Guildmaster through a close decision,
+	// closed a task's slice, or a one-PR task, as already delivered by an earlier slice or a merged pull request, or as
+	// needing no change; its text names which. No code merged, so it is never a merged message and counts toward no
+	// maintenance cadence.
 	MessageSliceDelivered = "slice-delivered"
 	// MessageFinished: a task whose workflow has no deliver step, such as a hallmark, ran every step and is done,
 	// with no pull request; it is never a merged message, so it counts toward no maintenance cadence.

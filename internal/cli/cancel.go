@@ -190,6 +190,10 @@ func (a *App) cancelTask(f advanceFlags, task, reason string) error {
 	}
 	say("task %s/%s cancelled: %s", f.repo, task, reason)
 	for _, it := range progress.Items {
+		if it.State == interp.SliceAlreadyDelivered && it.DeliveredBy == interp.NoChangeNeeded {
+			say("slice %d of %d (%s) was closed before the cancel as needing no change", it.Index, progress.Total, it.Title)
+			continue
+		}
 		if it.State == interp.SliceAlreadyDelivered {
 			say("slice %d of %d (%s) was closed before the cancel as already delivered by %s", it.Index, progress.Total, it.Title, it.DeliveredBy)
 			continue

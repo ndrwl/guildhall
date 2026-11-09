@@ -450,6 +450,9 @@ func (d clerkData) stands(ct clerkTask) string {
 				case store.DecisionFollowUps:
 					// A hallmark's ranked follow-ups: nothing to approve, only the Guildmaster's pick.
 					return "waiting for your pick"
+				case store.DecisionClose:
+					// An attempt reported its work already delivered or not needed: close or retry.
+					return "waiting for you to close or retry"
 				}
 				return "waiting for your approval"
 			}

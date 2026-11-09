@@ -257,7 +257,9 @@ Report one cancel receipt per task to the Guildmaster.
 ## Closing work already delivered
 
 A build that finds its work already shipped commits nothing and fails with a summary starting `Already delivered by <pr url>` or `Already delivered by slice <j>`.
-A newer research, plan or build attempt also reports it as a structured outcome, which its `attempt-failed` message names: `It reports: already delivered by <url>.`, or `nothing to do: <reason>.` for a task that needs no change, which still has no close route, so retry or propose a cancel.
+A newer research, plan or build attempt also reports it as a structured outcome, `already-delivered` or `nothing-to-do` for a task that needs no change.
+When Guildhall can check that outcome's evidence, it opens a `close` decision, `close-<step>-<n>`, "Close d187 as delivered by #351?" or "Close d187: no change needed?", with the options `close` and `retry`, and sends you a `decision` message instead of `attempt-failed`: present it to the Guildmaster as any decision and never answer it yourself; once answered, `guildhall task start --decision close-<step>-<n>` closes the task or slice, or starts the retry.
+Otherwise its `attempt-failed` message names it, `It reports: already delivered by <url>.` or `nothing to do: <reason>.`, with why Guildhall did not ask; then you propose the close by hand.
 Check the evidence (the PR is this repository's, merged, and holds each item the summary names), then propose the close to the Guildmaster before any cancel or retry, such as "Close d187 as delivered by #351?".
 After the yes, close the task's current slice; a one-PR task is slice 1 and takes `--by-pr` only:
 
@@ -265,6 +267,7 @@ After the yes, close the task's current slice; a one-PR task is slice 1 and take
 guildhall slice delivered --repo app --task a12 --slice 1 --by-pr https://github.com/o/app/pull/351 --reason "#351 shipped every item of the spec."
 ```
 
+For a task, or slice, that needs no change, use `--no-change` with the reason instead of `--by-pr`, after the Guildmaster's yes to "Close d187: no change needed?".
 It records the delivery, sends a `slice-delivered` message and closes the slice; after the last, or for a one-PR task, the task is `done`, its dependents released, and `director status` shows `delivered_by`.
 It counts toward no hallmark.
 A forge that cannot read pull requests refuses `--by-pr`; there a multi-PR slice can still name an earlier slice with `--by-slice <j>`, and a one-PR task has only cancel left.

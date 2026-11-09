@@ -739,5 +739,6 @@ func DecisionOptions() map[store.DecisionKind][][]string {
 		store.DecisionLoopExit:  {slices.Clone(exitOptions), slices.Clone(validationExitOptions)},
 		store.DecisionMerge:     {slices.Clone(mergeOptions)},
 		store.DecisionFollowUps: {slices.Clone(followUpsOptions)},
+		store.DecisionClose:     {slices.Clone(closeOptions)},
 	}
 }

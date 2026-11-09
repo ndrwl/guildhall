@@ -334,8 +334,8 @@ type statusTask struct {
 	// Slices is a multi-PR task's progress through its accepted spec's slices; omitted for a one-slice task
 	// (docs/decisions/multi-pr-tasks.md).
 	Slices *statusSlices `json:"slices,omitempty"`
-	// DeliveredBy, for a done one-PR task the Director closed as already delivered, is the merged pull request's URL
-	// that shipped its change (docs/tasks.md#a-slice-already-delivered); omitted for any other task.
+	// DeliveredBy, for a done one-PR task closed as already delivered, by the Director or a close decision, is the
+	// merged pull request's URL that shipped its change, or "no change needed" for one closed as needing none (docs/tasks.md#a-slice-already-delivered); omitted for any other task.
 	DeliveredBy string `json:"delivered_by,omitempty"`
 }
 
@@ -352,8 +352,8 @@ type statusSlice struct {
 	Title       string             `json:"title"`
 	State       string             `json:"state"`
 	PullRequest *statusPullRequest `json:"pull_request,omitempty"`
-	// DeliveredBy, for a slice in state delivered, is what already delivered its work: "slice <j>" or a pull
-	// request's URL.
+	// DeliveredBy, for a slice in state delivered, is what already delivered its work: "slice <j>", a pull
+	// request's URL, or "no change needed".
 	DeliveredBy string `json:"delivered_by,omitempty"`
 }
 

@@ -13,9 +13,11 @@ import (
 
 const shippedBy = "https://github.com/owner/app/pull/351"
 
-// TestAttemptFailedNamesTheOutcome: a plan whose failed result reports an outcome passes the result check and intake,
-// ends failed with no rejection, and the attempt-failed message names the outcome, with the Director's next move for
-// an already-delivered one; the task stays open, waiting on the Director.
+// TestAttemptFailedNamesTheOutcome: a plan whose failed result reports an already-delivered outcome passes the result
+// check and intake and ends failed with no rejection; with no forge to check its pull request, no close decision is
+// opened, and the attempt-failed message names the outcome, why it was not asked and the Director's next move; the
+// task stays open, waiting on the Director. A nothing-to-do outcome needs no evidence, so it asks the Guildmaster
+// (close_decision_test.go).
 func TestAttemptFailedNamesTheOutcome(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -23,9 +25,7 @@ func TestAttemptFailedNamesTheOutcome(t *testing.T) {
 		says    []string
 	}{
 		{"already delivered", adapter.Outcome{Kind: adapter.OutcomeAlreadyDelivered, ByPR: shippedBy},
-			[]string{"It reports: already delivered by " + shippedBy + ".", "guildhall slice delivered"}},
-		{"nothing to do", adapter.Outcome{Kind: adapter.OutcomeNothingToDo, Reason: "The flag is already the default."},
-			[]string{"It reports: nothing to do: The flag is already the default."}},
+			[]string{"It reports: already delivered by " + shippedBy + ".", "Guildhall did not ask to close it: not supported by the engine: the forge does not read pull requests", "guildhall slice delivered"}},
 	} {
 		for _, b := range backends {
 			t.Run(tc.name+"/"+b.name, func(t *testing.T) {
@@ -42,9 +42,6 @@ func TestAttemptFailedNamesTheOutcome(t *testing.T) {
 					if !strings.Contains(text, s) {
 						t.Errorf("attempt-failed = %q; want %q", text, s)
 					}
-				}
-				if tc.outcome.Kind == adapter.OutcomeNothingToDo && strings.Contains(text, "slice delivered") {
-					t.Errorf("a nothing-to-do outcome is pointed at slice delivered: %q", text)
 				}
 				if got := e.task(t).State; got != store.TaskOpen {
 					t.Errorf("task state = %s, want open", got)
@@ -113,11 +110,10 @@ func TestOutcomeBySliceOnlyForAnEarlierSlice(t *testing.T) {
 		build := workflow.SliceStep("build", 2)
 		want(t, e.mergeSlice(t, 1), interp.Next{Wait: interp.WaitAttempt, Step: build, Attempt: 1})
 		said := checkBefore(t, e, build, 1)
-		want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: build, Attempt: 1}), interp.Next{Wait: interp.WaitDirector, Step: build, Attempt: 1})
+		// Slice 1 merged, so the evidence holds and the Guildmaster is asked (close_decision_test.go).
+		id := interp.CloseDecision(build, 1)
+		want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: build, Attempt: 1}), interp.Next{Wait: interp.WaitDecision, Step: build, Decision: id})
 		said.agrees(t, e, build, 1)
-		if text := e.messages(t)["app.t7.attempt-failed."+build+"-1"]; !strings.Contains(text, "It reports: already delivered by slice 1.") {
-			t.Errorf("attempt-failed = %q", text)
-		}
 	})
 	t.Run("one-PR task", func(t *testing.T) {
 		script := toBuildOf(t, 1)

@@ -383,7 +383,8 @@ type SliceItem struct {
 	Title string
 	// State is SliceMerged, SliceAlreadyDelivered, SliceCurrent or SlicePending.
 	State string
-	// DeliveredBy, for a delivered slice, is what delivered its work: "slice <j>" or a pull request's URL.
+	// DeliveredBy, for a delivered slice, is what delivered its work: "slice <j>", a pull request's URL, or
+	// NoChangeNeeded.
 	DeliveredBy string
 	// PullRequest is the slice's merged pull request, or else the last one its records hold; nil before publish.
 	PullRequest *forge.PullRequest
@@ -404,7 +405,8 @@ func checkedReader(documentDir string) func(store.DocumentRef) ([]byte, error) {
 }
 
 // TaskDeliveredBy is what delivered a one-PR task closed as already delivered (docs/tasks.md#a-slice-already-delivered):
-// the merged pull request's URL its delivery record, delivered-1-delivery, names, read from documentDir with its
+// the merged pull request's URL its delivery record, delivered-1-delivery, names, or NoChangeNeeded for a no-change
+// record, read from documentDir with its
 // digest checked. ok is false when docs hold no such record. Only a one-PR task's caller should ask: a multi-PR task's
 // slice 1 has the same record name, and TaskSlices reports it as a slice.
 func TaskDeliveredBy(docs []store.DocumentRef, documentDir string) (by string, ok bool, err error) {

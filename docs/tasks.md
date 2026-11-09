@@ -294,8 +294,24 @@ Nothing merged, so no `merged` message is sent and the close counts toward no `h
 `director status` shows the slice with `state` `delivered` and `delivered_by`, and `task cancel` names it as closed.
 A one-PR task is slice 1 of 1, so the same route closes it: when another merged pull request of the task's repository already shipped its change, its build reports `Already delivered by <pr url>` and the Director runs `slice delivered --slice 1 --by-pr <url>`, with the same check, record (`delivered-1-delivery`), `slice-delivered` message and release; the task is `done`, not `cancelled`, and `director status` gives it `delivered_by`, the pull request's URL ([why](decisions/one-pr-task-delivered.md)).
 `--by-slice` is refused for a one-PR task, which has no earlier slice; on a forge that cannot read pull requests, cancel remains its only way out.
-A research, plan or build Artisan also reports the case in its result's structured [`outcome`](adapters.md#result-file), `already-delivered` with `by_pr` or `by_slice`, or `nothing-to-do` with a reason, and the `attempt-failed` message names it, so the Director need not read the summary; the Director still checks the evidence and closes the slice or task with `slice delivered`, or retries it.
-Cancel is for abandoned work, not for work that merged elsewhere.
+A slice, or one-PR task, that turns out to need no change at all closes the same way with `slice delivered --no-change --reason <why>`: the record has `kind` `nothing-to-do` and names no slice or pull request, the message says it needed no change, and `director status` shows `delivered_by` `no change needed`.
+A research, plan or build Artisan also reports either case itself, in its result's structured [`outcome`](adapters.md#result-file), and Guildhall asks the Guildmaster, as the next section says.
+Cancel is for abandoned work, not for work that merged elsewhere or needs no change.
+
+### An attempt that reports it is already delivered
+
+A research, plan or build attempt that finds its change already shipped, or no change needed, reports `failed` with an [`outcome`](adapters.md#result-file): `already-delivered` with `by_pr`, or `by_slice` inside a multi-PR task's slice range, or `nothing-to-do` with a `reason`.
+Guildhall checks the evidence first: the pull request must be the task's repository's and merged, as `slice delivered --by-pr` checks, and the slice an earlier one with a merge record; `nothing-to-do` needs none.
+When it holds, the engine records the proposed delivery record, `close-<step>-<n>-proposal`, and opens decision `close-<step>-<n>`, kind `close`, bound to it, with the options `close` and `retry`, instead of sending `attempt-failed`.
+Its question starts "Close <task> as delivered by #<n>?", "… by slice <j>?" or "Close <task>: no change needed?", naming the slice for a multi-PR task, then gives the evidence and the attempt's summary or reason; the Director is sent a `decision` message, and the task waits for the Guildmaster's answer.
+When the evidence does not hold, or the forge cannot read pull requests, the attempt fails to the Director as before, and `attempt-failed` says why no decision was opened.
+The decision is the Guildmaster's to answer; the Director presents it and continues the task with `task start --decision close-<step>-<n>` once answered.
+- `close` feeds the same `slice-delivered` event `slice delivered` feeds, so the close is the one described above: the record (whose `decision` names the close decision), the `slice-delivered` message, saying the Guildmaster closed it, the retirement and the release; the next slice starts, or the task is `done`.
+- `retry` starts the step's next attempt as `step retry` does, with the reported outcome and the answer's note in its retry context.
+
+Nothing closes without that answer or the Director's own `slice delivered`.
+While the decision is open, `step retry` of the attempt voids it, and `slice delivered` closes the slice and voids it as any open decision; a page loaded on another proposal cannot answer it.
+Before the slice range starts, the task counts as one pull request, so only `by_pr` is accepted there and `close` closes the whole task.
 A merged slice's steps never run again; its records are read only to show the slices (`director status`, the Clerk and the pull request body, which lists each merged slice and its pull request) and to find merge heads.
 `director status` gives such a task a `slices` object, `{current, total, items: [{index, title, state, pull_request, delivered_by}]}`, `state` being `merged`, `delivered`, `current` or `pending`; Clerk's `/guild` shows `slice k of n` beside where it stands, `/task` and `/inspect` show the current slice and list every slice with its title, state and pull request, and the Artisan's Herdr workspace is labelled `└ <task> · slice k/n · <step> #<n>`.
 GitHub stacked pull requests are not used: each slice starts after the one before merged ([why, and when stacking may be reconsidered](decisions/stacked-prs-not-yet.md)).

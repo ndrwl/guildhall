@@ -41,16 +41,49 @@ func deliveredID(k int) string { return DecisionID(deliveredStep(k), 1, false) }
 // DeliveryRecord is the name of slice k's delivery record, delivered--s<k>-1-delivery.
 func DeliveryRecord(k int) string { return deliveredID(k) + "-" + deliveryPart }
 
-// deliveryDoc is a slice's delivery record: which slice it closes, what delivered its work and why.
+// deliveryDoc is a slice's delivery record: which slice it closes, what delivered its work, or that it needed no
+// change, and why.
 type deliveryDoc struct {
 	Schema string `json:"schema"`
 	Slice  int    `json:"slice"`
+	// Kind is DeliveryNoChange for a slice, or one-PR task, closed because it needs no change, with neither BySlice
+	// nor ByPullRequest set; empty for one an earlier slice or a merged pull request already delivered.
+	Kind string `json:"kind,omitempty"`
 	// BySlice is the earlier slice of the task whose merge delivered the work, or 0.
 	BySlice int `json:"by_slice,omitempty"`
 	// ByPullRequest is the merged pull request that delivered it, or nil.
 	ByPullRequest *deliveredPullRequest `json:"by_pull_request,omitempty"`
 	Reason        string                `json:"reason"`
-	At            time.Time             `json:"at"`
+	// Decision is the Guildmaster's close decision whose close answer recorded it, or empty for the Director's
+	// `slice delivered`.
+	Decision string    `json:"decision,omitempty"`
+	At       time.Time `json:"at"`
+}
+
+// DeliveryNoChange is the delivery record's kind for a slice, or one-PR task, closed because it needs no change.
+const DeliveryNoChange = "nothing-to-do"
+
+// NoChangeNeeded is what a no-change delivery record says delivered its work (deliveryDoc.by), as status's
+// delivered_by and the close texts say it.
+const NoChangeNeeded = "no change needed"
+
+// noChange reports whether the record closes its slice as needing no change.
+func (d deliveryDoc) noChange() bool { return d.Kind == DeliveryNoChange }
+
+// closedAs is how the close texts say what closed the slice: "already delivered by <by>" or "no change needed".
+func (d deliveryDoc) closedAs() string {
+	if d.noChange() {
+		return NoChangeNeeded
+	}
+	return "already delivered by " + d.by()
+}
+
+// closedBy is who closed it: the Guildmaster in the decision named, or the Director.
+func (d deliveryDoc) closedBy() string {
+	if d.Decision != "" {
+		return "The Guildmaster closed"
+	}
+	return "The Director closed"
 }
 
 // deliveredPullRequest is the merged pull request a delivery names, as the forge reported it.
@@ -60,8 +93,11 @@ type deliveredPullRequest struct {
 	MergeCommit string `json:"merge_commit"`
 }
 
-// by says what delivered the slice's work: "slice <j>" or the pull request's URL.
+// by says what delivered the slice's work: "slice <j>", the pull request's URL, or NoChangeNeeded.
 func (d deliveryDoc) by() string {
+	if d.noChange() {
+		return NoChangeNeeded
+	}
 	if d.ByPullRequest != nil {
 		return d.ByPullRequest.URL
 	}
@@ -87,11 +123,12 @@ func (h *history) sliceDelivery(k int) int {
 	return -1
 }
 
-// sliceDelivered validates the Director's SliceDelivered event and records the slice's delivery. It is refused, with
-// nothing written, unless ev.Slice is the task's current slice with no merge record, none of its attempts runs, a
-// reason is given and exactly one piece of evidence: an earlier slice with a merge record, or a pull request of the
-// task's repository that the forge, read through PullRequestReader, reports merged. A one-PR task is slice 1 of 1, so
-// only a pull request can have delivered it. A slice that already has a delivery record is a replay, which records
+// sliceDelivered validates the SliceDelivered event, the Director's or the one a close decision's close answer feeds
+// (closeOrRetry), and records the slice's delivery. It is refused, with nothing written, unless ev.Slice is the task's
+// current slice with no merge record, none of its attempts runs, a reason is given and either ev.NoChange with no
+// evidence or exactly one piece of evidence: an earlier slice with a merge record, or a pull request of the task's
+// repository that the forge, read through PullRequestReader, reports merged. A one-PR task is slice 1 of 1, so only
+// a pull request can have delivered it. A slice that already has a delivery record is a replay, which records
 // nothing and lets the advance go on.
 func (r *run) sliceDelivered(ev Event) error {
 	k := ev.Slice
@@ -106,23 +143,28 @@ func (r *run) sliceDelivered(ev Event) error {
 		return fmt.Errorf("interp: %w: slice %d has a merge record, so it closes as merged", ErrEvent, k)
 	case strings.TrimSpace(ev.Reason) == "":
 		return fmt.Errorf("interp: %w: a slice delivery needs a reason", ErrEvent)
+	case ev.NoChange && (ev.BySlice > 0 || ev.PullRequest != ""):
+		return fmt.Errorf("interp: %w: a no-change close names no earlier slice or pull request", ErrEvent)
 	case !r.slice.multi() && ev.BySlice > 0:
 		return fmt.Errorf("interp: %w: %s/%s delivers one pull request; name the PR that shipped it with --by-pr", ErrEvent, r.task.Repository, r.task.ID)
-	case (ev.BySlice > 0) == (ev.PullRequest != ""):
+	case !ev.NoChange && (ev.BySlice > 0) == (ev.PullRequest != ""):
 		return fmt.Errorf("interp: %w: a slice delivery names one earlier slice or one pull request", ErrEvent)
 	}
 	if a := r.runningAttempt(); a != nil {
 		return fmt.Errorf("interp: %w: attempt %d of step %s is running", ErrEvent, a.Number, a.Step)
 	}
-	doc := deliveryDoc{Schema: deliverySchema, Slice: k, BySlice: ev.BySlice, Reason: ev.Reason, At: r.now().UTC()}
-	if ev.BySlice > 0 {
+	doc := deliveryDoc{Schema: deliverySchema, Slice: k, BySlice: ev.BySlice, Reason: ev.Reason, Decision: ev.Decision, At: r.now().UTC()}
+	switch {
+	case ev.NoChange:
+		doc.Kind = DeliveryNoChange
+	case ev.BySlice > 0:
 		if ev.BySlice >= k {
 			return fmt.Errorf("interp: %w: slice %d is not earlier than slice %d", ErrEvent, ev.BySlice, k)
 		}
 		if r.sliceMerge(r.base.Slices.To, ev.BySlice) < 0 {
 			return fmt.Errorf("interp: %w: slice %d has no merge record, so it delivered nothing", ErrEvent, ev.BySlice)
 		}
-	} else {
+	default:
 		pr, err := r.mergedPullRequest(ev.PullRequest)
 		if err != nil {
 			return err
@@ -229,9 +271,9 @@ func (r *run) closeDelivered() (done bool, next Next, err error) {
 		return false, Next{}, nil
 	}
 	s := r.closingStep()
-	text := fmt.Sprintf("Task done: slice %d, the last, already delivered by %s", k, doc.by())
+	text := fmt.Sprintf("Task done: slice %d, the last, %s", k, doc.closedAs())
 	if !r.slice.multi() {
-		text = "Task done: already delivered by " + doc.by()
+		text = "Task done: " + doc.closedAs()
 	}
 	if err := r.closeTask(text); err != nil {
 		return false, Next{}, err
@@ -245,9 +287,9 @@ func (r *run) closeDelivered() (done bool, next Next, err error) {
 // write is keyed on id, so a repeat sends and records nothing new. The task stays open; closing it after the last
 // slice is the caller's.
 func (r *run) closeSliceDelivered(k int, id string, repo config.Repository, doc *deliveryDoc) error {
-	reason := fmt.Sprintf("Slice %d already delivered by %s: %s", k, doc.by(), doc.Reason)
+	reason := fmt.Sprintf("Slice %d %s: %s", k, doc.closedAs(), doc.Reason)
 	if !r.slice.multi() {
-		reason = fmt.Sprintf("Already delivered by %s: %s", doc.by(), doc.Reason)
+		reason = fmt.Sprintf("%s: %s", upper(doc.closedAs()), doc.Reason)
 	}
 	for i := range r.decisions {
 		d := &r.decisions[i]
@@ -263,9 +305,17 @@ func (r *run) closeSliceDelivered(k int, id string, repo config.Repository, doc 
 	if k >= r.slice.total {
 		next = "it was the last, so the task is done."
 	}
-	text := fmt.Sprintf("The Director closed %s as already delivered by %s, with nothing merged for it: %s. %s", r.slice.of(k), doc.by(), strings.TrimRight(doc.Reason, ". "), upper(next))
+	// The text names the record's kind: "already delivered by <by>" or "no change needed".
+	how := "as " + doc.closedAs()
+	if doc.noChange() {
+		how = "as needing no change"
+	}
+	if doc.Decision != "" {
+		how += " in decision " + doc.Decision
+	}
+	text := fmt.Sprintf("%s %s %s, with nothing merged for it: %s. %s", doc.closedBy(), r.slice.of(k), how, strings.TrimRight(doc.Reason, ". "), upper(next))
 	if !r.slice.multi() {
-		text = fmt.Sprintf("The Director closed the task as already delivered by %s, with nothing merged for it: %s. The task is done.", doc.by(), strings.TrimRight(doc.Reason, ". "))
+		text = fmt.Sprintf("%s the task %s, with nothing merged for it: %s. The task is done.", doc.closedBy(), how, strings.TrimRight(doc.Reason, ". "))
 	}
 	if err := r.notify("slice-delivered."+id, store.MessageSliceDelivered, text); err != nil {
 		return err
