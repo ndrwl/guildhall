@@ -18,6 +18,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/interp/interptest"
 	"github.com/ndrwl/guildhall/internal/launch"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/testenv"
 	"github.com/ndrwl/guildhall/internal/workflow"
 )
 
@@ -313,12 +314,48 @@ func TestProcessLaunchFailsWhenTheLauncherExitsFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = s.Close()
-	if _, err := p.Launch(context.Background(), spec); err == nil {
+	_, launchErr := p.Launch(context.Background(), spec)
+	if launchErr == nil {
 		t.Fatal("Launch succeeded for an attempt the store does not record")
+	}
+	if !strings.Contains(launchErr.Error(), "exited before owning") || strings.Count(launchErr.Error(), launch.LogFile) != 1 {
+		t.Errorf("Launch = %v, want the launcher exited before owning, naming %s once", launchErr, launch.LogFile)
 	}
 	log, err := os.ReadFile(filepath.Join(filepath.Dir(spec.ResultFile), launch.LogFile))
 	if err != nil || len(log) == 0 {
 		t.Errorf("launcher log = %q, %v; want the refusal", log, err)
+	}
+}
+
+// A launcher that owns, finishes and exits before Launch reads its identity is still the attempt's owner: Launch
+// succeeds, the result is there and Stop has nothing left to do. The hook holds Launch until the launcher is an
+// exited, unreaped child, as a descheduled caller on a loaded runner would see it (d236).
+func TestProcessLaunchIdentifiesALauncherThatAlreadyFinished(t *testing.T) {
+	for _, tc := range []struct {
+		o    interptest.Outcome
+		want adapter.Status
+	}{{interptest.Succeeds, adapter.StatusSucceeded}, {interptest.Fails, adapter.StatusFailed}} {
+		t.Run(string(tc.o), func(t *testing.T) {
+			launch.AfterLauncherStart(t, func(pid int) {
+				testenv.WaitFor(t, "the launcher to finish its attempt and exit", func() bool {
+					_, err := artisan.Lookup(pid)
+					return err != nil
+				})
+			})
+			p := newProcess(t)
+			spec := prepared(t, p, fixtureSpec(t, instructions[tc.o]))
+			h, err := p.Launch(context.Background(), spec)
+			if err != nil {
+				t.Fatalf("Launch = %v", err)
+			}
+			r, err := adapter.ReadResult(spec.ResultFile, spec.Identity)
+			if err != nil || r.Status != tc.want {
+				t.Errorf("result = %+v, %v; want status %s", r, err, tc.want)
+			}
+			if err := p.Stop(h); err != nil {
+				t.Errorf("Stop after finishing = %v, want nil", err)
+			}
+		})
 	}
 }
 

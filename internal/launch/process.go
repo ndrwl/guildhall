@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -201,7 +202,12 @@ func (p *Process) launchFiles(ctx context.Context, k artisan.AttemptKey, slices 
 	if err != nil {
 		return interp.Handle{}, fmt.Errorf("launch: start %s: %w", k, err)
 	}
-	id, identityErr := artisan.Lookup(cmd.Process.Pid)
+	if afterLauncherStart != nil {
+		afterLauncherStart(cmd.Process.Pid)
+	}
+	// The launcher may already have owned, finished and exited. It is read as a child, live or exited, which is
+	// safe only because nothing reaps it until the cmd.Wait below starts: keep this lookup before it.
+	id, identityErr := artisan.LookupChild(cmd.Process.Pid)
 	c := &child{at: at, identity: id, exited: make(chan struct{})}
 	go func() { _ = cmd.Wait(); close(c.exited) }()
 	h := interp.Handle{Identity: at.Identity(), Ref: fmt.Sprintf("%s pid %d", k, cmd.Process.Pid)}
@@ -209,7 +215,12 @@ func (p *Process) launchFiles(ctx context.Context, k artisan.AttemptKey, slices 
 		if !errors.Is(err, errReleased) {
 			_ = p.stop(c, true)
 		}
-		return interp.Handle{}, fmt.Errorf("launch: %s: %w; see %s", k, err, filepath.Join(at.Dir(), LogFile))
+		// Every failure names the log once; owned's "exited before owning" already does.
+		logPath := filepath.Join(at.Dir(), LogFile)
+		if strings.Contains(err.Error(), logPath) {
+			return interp.Handle{}, fmt.Errorf("launch: %s: %w", k, err)
+		}
+		return interp.Handle{}, fmt.Errorf("launch: %s: %w; see %s", k, err, logPath)
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -219,6 +230,9 @@ func (p *Process) launchFiles(ctx context.Context, k artisan.AttemptKey, slices 
 	p.started[h] = c
 	return h, nil
 }
+
+// afterLauncherStart, set only by tests, runs after a hidden launcher starts and before Launch reads its identity.
+var afterLauncherStart func(pid int)
 
 // errReleased is owned's error for a launcher that finished its attempt before recording its endpoint: the
 // attempt failed at setup and there is nothing to stop, and the launcher's advance waits for the caller's lock.

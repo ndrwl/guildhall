@@ -94,8 +94,9 @@ func Present(b Bridge, out io.Writer) error {
 	}
 	// The launcher is recorded at once, so a launch waiting for it to own the attempt sees it exit first, and a
 	// later start can prove the claim's only launcher gone (PaneLauncherFile). A failure only leaves it
-	// unrecorded, which no recovery reads as gone.
-	if id, err := artisan.Lookup(cmd.Process.Pid); err != nil {
+	// unrecorded, which no recovery reads as gone. A launcher that already finished is read as a child, live or
+	// exited, which is safe only because nothing reaps it until the cmd.Wait below starts: keep this lookup before it.
+	if id, err := artisan.LookupChild(cmd.Process.Pid); err != nil {
 		_, _ = fmt.Fprintf(out, "guildhall: warning: launcher not recorded: %v\n", err)
 	} else if err := recordPaneLauncher(b.Attempt.Dir(), id); err != nil {
 		_, _ = fmt.Fprintf(out, "guildhall: warning: launcher not recorded: %v\n", err)

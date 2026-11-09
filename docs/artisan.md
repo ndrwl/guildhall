@@ -563,6 +563,7 @@ Any other claim is still refused: a launch without the task lock, an unparseable
 The pane's bridge writes `pane-launcher.json` in the attempt directory as soon as it starts its launcher: that launcher's process identity, created exclusively and never rewritten (`launch.PaneLauncherFile`).
 A bound claim's command is typed once, so that is the only launcher the claim can ever have.
 `StartTimeout` (30 seconds) bounds only a pane launch's setup, up to typing; the launch then waits for ownership up to `lock_wait` plus 10 seconds from its caller's context, and fails at once, "the launcher exited before owning the attempt; see launcher.log", when the recorded launcher is gone with no ownership recorded.
+A launcher that owned and finished its attempt before the launch read its identity, pane or hidden, is not reported as "exited before owning": the launch reads its own unreaped child's identity, live or exited (`artisan.LookupChild`), before anything reaps it.
 A failed launch's error names the attempt's real classification, read with a fresh context.
 
 `artisan status` gives an attempt with no ownership record and a bound claim the reason `pane claim held, no owner`, saying whether its launcher was proven gone, never recorded or is still live; its state stays `absent`.

@@ -3,6 +3,7 @@ package launch
 import (
 	"os"
 	"os/exec"
+	"testing"
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/artisan"
@@ -64,3 +65,10 @@ func (u *unnamedBeforeStart) Start(cmd *exec.Cmd) (artisan.Identity, error) {
 
 // MainIfDetacher plays the detaching session runtime of TestDetachedLauncherLeavesTheSessionUnit.
 var MainIfDetacher = mainIfDetacher
+
+// AfterLauncherStart makes Process.Launch call f with each hidden launcher's pid after starting it and before
+// reading its identity, until t ends.
+func AfterLauncherStart(t testing.TB, f func(pid int)) {
+	afterLauncherStart = f
+	t.Cleanup(func() { afterLauncherStart = nil })
+}

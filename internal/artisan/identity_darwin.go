@@ -25,6 +25,10 @@ func lookupGroup(pid int) (Identity, int, error) {
 	return id, pgid, err
 }
 
+// LookupChild returns the identity of pid, live or exited, for a child the caller started and has not yet reaped.
+// Only such a pid is safe: an unreaped child's pid cannot be reused. Never use it for an arbitrary pid; use Lookup.
+func LookupChild(pid int) (Identity, error) { return lookupExited(pid) }
+
 // lookupExited returns the identity of pid, live or exited and unreaped.
 func lookupExited(pid int) (Identity, error) {
 	id, _, _, err := readProcess(pid)
