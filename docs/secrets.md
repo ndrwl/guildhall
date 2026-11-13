@@ -40,6 +40,29 @@ guildhall secrets check [--json] [--copy <dir>]
 `secrets check` reports this machine's key, with its public key, and its secrets file, with the file's sha256, whether it decrypts with the key and the names it holds, never a value, and changes nothing.
 With `--copy`, a key or file inside that copy is refused.
 Without `--json` it prints one line each and exits 1 when the file exists but does not decrypt; with `--json` it prints the report as one JSON document and exits 0, so the Steward, which runs `secrets check --json --copy <copy_dir>` over SSH, reads why.
+The report's `installs` is `true` from a `guildhall` that has [`secrets install`](#secrets-install); an older one leaves it out, and the Steward refuses to push to that machine.
+
+## secrets install
+
+```sh
+guildhall secrets install --expect <sha256> --copy <dir>
+```
+
+`secrets install` is how a [Steward push](#secrets-plan-and-apply) replaces the secrets file; it is not for daily hand use.
+The Steward first puts the new ciphertext beside the file as `secrets.sops.yaml.new-<sha256>`, then runs it over SSH. It:
+
+1. refuses a key or file inside the copy `--copy` names, as `secrets check` does;
+2. refuses when `secrets.sops.yaml.new-<expect>` is missing or its sha256 is not `--expect`;
+3. refuses when the machine has no key or the new file does not decrypt with it, by the same check `secrets check` runs;
+4. copies the current secrets file, if there is one, to `secrets.sops.yaml.prev`, replacing any earlier one; a first push keeps none;
+5. renames the new file over `secrets.sops.yaml` in one rename, so the file's name always holds the old or the new ciphertext;
+6. removes every other `secrets.sops.yaml.new-*` file, such as one a cut-short push left.
+
+On a refusal the secrets file is untouched and the new file is removed.
+It always prints one JSON document, naming the files, the digests, the names the new file holds and, on a refusal, the `step` that refused (`paths`, `digest`, `decrypt`, `previous` or `rename`) and the `problem`, never a value, and exits 0 when it installed the file and 1 when it refused.
+
+To go back to the file a push replaced, run on the machine `mv ~/.config/guildhall/secrets.sops.yaml.prev ~/.config/guildhall/secrets.sops.yaml`; the next push from the private config replaces it again.
+There is no remote restore command.
 
 ## At start
 
@@ -106,16 +129,22 @@ The plan reads each machine's file at the private config's `HEAD` and runs the f
 It writes `plan.json`, a `guildhall.secrets-plan/1` document, and each changing machine's ciphertext under `files/<machine>/`, and prints each machine's status, `change`, `unchanged` or `refused`, its names, its file's digest now and after, and the commands, with the plan digest and the apply command.
 The plan holds names and digests, never a value.
 A machine is refused when it is a Windows machine (R1.27), has no Director copy, no `age_recipient`, no committed file or one not encrypted to exactly its key and the recovery key, or cannot be checked, or when its key's public key is not its `age_recipient`, or its secrets file is not at `~/.config/guildhall/secrets.sops.yaml`.
+A machine that would change is also refused when its `guildhall` predates [`secrets install`](#secrets-install): upgrade it there first.
 
 Every secrets plan needs the Guildmaster's approval of its exact digest: `steward approval request` opens the decision `secrets-<first 12 hex digits>` on the reserved task `steward/secrets`, which only the Guildmaster answers, outside any session, and inside one `--approve` stands only on their answer `approve` ([approval in a Steward session](steward.md#approval-in-a-steward-session)).
 
 Apply holds `.rollout.lock`, plans again and refuses, writing nothing, unless the digest is the same and the staged ciphertext intact, then, on each machine that changes:
 
-1. copies the ciphertext over `~/.config/guildhall/secrets.sops.yaml` with `scp`;
-2. reads it back and compares its sha256 with the plan;
-3. runs `secrets check --json` there, which must find the file decrypting with the machine's own key to the planned names.
+1. copies the ciphertext beside the secrets file, to `~/.config/guildhall/secrets.sops.yaml.new-<sha256>`, with `scp`;
+2. reads that file back and compares its sha256 with the plan;
+3. runs [`secrets install --expect <sha256> --copy <copy_dir>`](#secrets-install) there, which renames it over the secrets file only once it decrypts with the machine's own key, keeping the file it replaces as `secrets.sops.yaml.prev`;
+4. runs `secrets check --json` there, which must find the installed file with the pushed digest, decrypting to the planned names.
 
-The receipt `receipt-<UTC time>.json` in the plan directory records each machine's status, `applied`, `unchanged`, `failed`, `verify_failed` or `check_failed`, its names, its digests and every command with what `secrets check` printed, never a value.
+Until step 3 renames it, the machine's secrets file is untouched, so a cut-short copy, a read-back mismatch or a file that does not decrypt there leaves it as it was.
+
+The receipt `receipt-<UTC time>.json` in the plan directory records each machine's status, `applied`, `unchanged`, `failed`, `verify_failed`, `install_failed` or `check_failed`, its names, its digests and every command with what `secrets install` and `secrets check` printed, never a value.
+`install_failed` means `secrets install` refused, its report, in the step's error, naming the step that refused; the secrets file is unchanged.
+A plan written before `secrets install` existed is stale, since its commands are in its digest: apply refuses it, and a new plan is needed.
 A failure on one machine does not stop the others, and apply exits 1 unless every machine is applied or unchanged.
 The machine's sessions decrypt the new file at their next start.
 

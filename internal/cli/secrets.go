@@ -25,8 +25,11 @@ func (a *App) secretsCmd(args []string) int {
 	if len(args) > 0 && args[0] == "check" {
 		return a.secretsCheckCmd(args[1:])
 	}
+	if len(args) > 0 && args[0] == "install" {
+		return a.secretsInstallCmd(args[1:])
+	}
 	if len(args) != 1 || args[0] != "init" {
-		return a.usageError("secrets: the commands are init, which takes no arguments, and check [--json] [--copy <dir>]")
+		return a.usageError("secrets: the commands are init, which takes no arguments, check [--json] [--copy <dir>], and install --expect <sha256> --copy <dir>")
 	}
 	p, err := secrets.DefaultPaths()
 	if err != nil {
@@ -93,6 +96,40 @@ func (a *App) secretsCheckCmd(args []string) int {
 		_, _ = fmt.Fprintf(a.Stdout, "problem: %s\n", r.Problem)
 	}
 	if r.FileExists && !r.Decrypts {
+		return 1
+	}
+	return 0
+}
+
+// secretsInstallCmd runs `guildhall secrets install --expect <sha256> --copy <dir>` (docs/secrets.md#secrets-install):
+// the Steward runs it over ssh after it puts a machine's new ciphertext beside the secrets file, and it swaps that file
+// in only when its sha256 is expect and it decrypts with this machine's key, keeping the old file as .prev. It always
+// prints its report as one JSON document, names and digests only, and exits 0 when it installed the file and 1 when
+// it refused.
+func (a *App) secretsInstallCmd(args []string) int {
+	fl := flag.NewFlagSet("secrets install", flag.ContinueOnError)
+	fl.SetOutput(io.Discard)
+	expect := fl.String("expect", "", "")
+	copyDir := fl.String("copy", "", "")
+	if err := fl.Parse(args); err != nil {
+		return a.usageError("secrets install: " + err.Error())
+	}
+	switch {
+	case fl.NArg() > 0:
+		return a.usageError(fmt.Sprintf("secrets install: unexpected argument %q", fl.Arg(0)))
+	case !secrets.ValidSHA256(*expect):
+		return a.usageError("secrets install: --expect must be the lowercase hex sha256 of the file to install")
+	case *copyDir == "":
+		return a.usageError("secrets install: --copy names a Director copy the key and the secrets file must be outside")
+	}
+	p, err := secrets.DefaultPaths()
+	if err != nil {
+		return a.fail(fmt.Errorf("secrets install: %w", err))
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), secretsTimeout)
+	defer cancel()
+	r := secrets.Install(ctx, p, *copyDir, *expect, nil)
+	if code := a.printJSON(r); code != 0 || !r.Installed {
 		return 1
 	}
 	return 0

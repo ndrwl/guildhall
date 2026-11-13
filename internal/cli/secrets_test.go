@@ -58,6 +58,28 @@ func TestSecretsInit(t *testing.T) {
 	}
 }
 
+// TestSecretsInstallUsage: secrets install takes exactly --expect <sha256> and --copy <dir>; anything else is a usage
+// error, and a refusal prints its JSON report and exits 1.
+func TestSecretsInstallUsage(t *testing.T) {
+	fakeSecrets(t)
+	sum := strings.Repeat("c", 64)
+	for _, args := range [][]string{
+		{"secrets", "install", "--expect", sum},
+		{"secrets", "install", "--copy", "/tmp/copy"},
+		{"secrets", "install", "--expect", "not-hex", "--copy", "/tmp/copy"},
+		{"secrets", "install", "--expect", sum, "--copy", "/tmp/copy", "extra"},
+	} {
+		app, _, _ := newTestApp(nil, nil)
+		if code := app.Run(args); code != 2 {
+			t.Errorf("%q: exit %d, want 2", args, code)
+		}
+	}
+	app, stdout, _ := newTestApp(nil, nil)
+	if code := app.Run([]string{"secrets", "install", "--expect", sum, "--copy", t.TempDir()}); code != 1 || !strings.Contains(stdout.String(), `"installed":false,"step":"digest"`) {
+		t.Fatalf("nothing dropped: exit %d, want 1 with the report:\n%s", code, stdout)
+	}
+}
+
 // TestDirectorStartDecryptsSecrets: the start preflight injects nothing without a key or secrets file, names how
 // many names a file holds without any value, and refuses a file that fails to decrypt, or a key inside the copy,
 // naming no value.

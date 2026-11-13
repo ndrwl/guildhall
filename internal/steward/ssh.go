@@ -64,6 +64,10 @@ var allowedCommands = []struct {
 	// secrets check --json reports whether the machine's secrets file decrypts with its key and which names it holds,
 	// never a value, changing nothing (docs/decisions/steward-secrets-push.md).
 	{args: []string{"secrets", "check", "--json", "--copy", argDir}},
+	// secrets install swaps in the ciphertext a secrets push dropped beside the machine's secrets file, only when its
+	// sha256 is the expected one and it decrypts with the machine's key, keeping the old file as .prev
+	// (docs/decisions/steward-secrets-install.md).
+	{args: []string{"secrets", "install", "--expect", argHex, "--copy", argDir}},
 	// The provisioning commands of an approved setup plan (docs/steward.md#provisioning): setup doctor --json reads
 	// a step file's gaps, and with --fix --only closes only the fixable gaps the plan names, from a built-in or a
 	// plan-bound step file whose digest it checks; store init makes the new copy's store; git clone clones a
@@ -165,6 +169,13 @@ func EnrolCommand(guildhall, label, copyDir string) []string {
 // its Director copies, which the key and file must be outside: `<guildhall> secrets check --json --copy <copyDir>`.
 func SecretsCheckCommand(guildhall, copyDir string) []string {
 	return []string{guildhall, "secrets", "check", "--json", "--copy", copyDir}
+}
+
+// SecretsInstallCommand is the remote command that installs the ciphertext with sha256 sum a secrets push dropped
+// beside the machine's secrets file, once it decrypts there: `<guildhall> secrets install --expect <sum> --copy
+// <copyDir>`.
+func SecretsInstallCommand(guildhall, sum, copyDir string) []string {
+	return []string{guildhall, "secrets", "install", "--expect", sum, "--copy", copyDir}
 }
 
 // DoctorCommand is `<guildhall> setup doctor --json --steps <steps> --digest <hex> --setup-dir <dir>` with a

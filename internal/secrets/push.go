@@ -160,12 +160,15 @@ type Report struct {
 	Decrypts   bool     `json:"decrypts"`
 	Names      []string `json:"names"`
 	Problem    string   `json:"problem,omitempty"`
+	// Installs is always true from a guildhall that has secrets install, so the Steward refuses to push to a machine
+	// whose older guildhall leaves it false.
+	Installs bool `json:"installs"`
 }
 
 // Check reports on p: the key's public key, read with age-keygen -y, the file's sha256 and, with both present, whether
 // the file decrypts with the key and its names, by Load. It never fails: what it cannot read is its Problem.
 func Check(ctx context.Context, p Paths, run Runner) Report {
-	r := Report{Key: p.Key, File: p.File, Names: []string{}}
+	r := Report{Key: p.Key, File: p.File, Names: []string{}, Installs: true}
 	var problems []string
 	if _, err := os.Stat(p.Key); err == nil {
 		r.KeyExists = true

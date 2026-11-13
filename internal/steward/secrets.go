@@ -31,6 +31,10 @@ const (
 // decrypt it to the planned names with the machine's own key.
 const StatusCheckFailed = "check_failed"
 
+// StatusInstallFailed is a machine whose new ciphertext was put beside its secrets file and read back but which
+// secrets install refused to swap in, so its secrets file is unchanged; the step's output names what refused.
+const StatusInstallFailed = "install_failed"
+
 // SopsConfigFile is the sops configuration generated from the roster at the root of the private config: one creation
 // rule per machine with an age_recipient, encrypting its secrets file to its key and the recovery key.
 const SopsConfigFile = ".sops.yaml"
@@ -67,8 +71,8 @@ func (r *Roster) recipients(m Machine) []string {
 
 // Secrets sets and pushes the machines' secrets from the private config checkout (docs/secrets.md#the-steward-pushes-them):
 // each value is encrypted at once to its machine's key and the recovery key and committed as ciphertext, and a plan
-// approved by its digest copies a machine's ciphertext to it with scp, reads it back and has the machine check it
-// decrypts. No value is ever written in clear, put on a command line, or recorded in a plan or a receipt.
+// approved by its digest copies a machine's ciphertext beside its secrets file with scp, reads it back, has the
+// machine install it only once it decrypts there, and checks it. No value is ever written in clear, put on a command line, or recorded in a plan or a receipt.
 type Secrets struct {
 	Roster       *Roster
 	rosterDigest string
@@ -240,7 +244,8 @@ type MachineSecrets struct {
 	Machine   string `json:"machine"`
 	SSHAlias  string `json:"ssh_alias"`
 	Recipient string `json:"recipient,omitempty"`
-	// Source is the committed ciphertext, below the private config; Target its place on the machine.
+	// Source is the committed ciphertext, below the private config; Target its place on the machine, where secrets
+	// install renames it from newTarget.
 	Source  string   `json:"source"`
 	Target  string   `json:"target"`
 	Status  string   `json:"status"`
@@ -249,20 +254,26 @@ type MachineSecrets struct {
 	// BeforeSHA256 is the machine's file now, empty when it has none; AfterSHA256 the committed ciphertext's.
 	BeforeSHA256 string `json:"before_sha256,omitempty"`
 	AfterSHA256  string `json:"after_sha256,omitempty"`
-	// Commands are the scp put and read-back and, last, the ssh command that runs secrets check.
+	// Commands are the scp put of the ciphertext beside the machine's file and its read-back, then the ssh commands
+	// that run secrets install and, last, secrets check.
 	Commands [][]string `json:"commands,omitempty"`
 
 	ciphertext []byte
 	check      []string
+	install    []string
 }
 
 func (p MachineSecrets) stage(stageDir string) string {
 	return filepath.Join(stageDir, "files", p.Machine)
 }
 
+// newTarget is where the push drops the ciphertext on the machine, beside Target, so the rename that installs it
+// stays on one filesystem and the live file is untouched until it decrypts there.
+func (p MachineSecrets) newTarget() string { return secrets.NewFile(p.Target, p.AfterSHA256) }
+
 func (p MachineSecrets) transfers(input, verify string) []transfer {
-	target := Remote{p.SSHAlias, p.Target}
-	return []transfer{{local: input, remote: target, put: true}, {local: verify, remote: target}}
+	dropped := Remote{p.SSHAlias, p.newTarget()}
+	return []transfer{{local: input, remote: dropped, put: true}, {local: verify, remote: dropped}}
 }
 
 // Plan reads each named machine's committed ciphertext at the checkout's HEAD and runs secrets check there, changing
@@ -364,12 +375,19 @@ func (s *Secrets) planMachine(ctx context.Context, ms *MachineSecrets, m Machine
 		ms.Status = StatusUnchanged
 		return
 	}
+	if !report.Installs {
+		// An older guildhall's report has no installs field: it cannot run secrets install, so apply would fail there
+		// after the put. Refuse before anything is copied.
+		refuse("the machine's guildhall predates secrets install; upgrade guildhall on the machine")
+		return
+	}
 	ms.Status = StatusChange
+	ms.install = SecretsInstallCommand(m.Guildhall(), ms.AfterSHA256, m.Directors[0].CopyDir)
 	stage := ms.stage(stageDir)
 	for _, x := range ms.transfers(filepath.Join(stage, secrets.File), filepath.Join(stage, "verify.sops.yaml")) {
 		ms.Commands = append(ms.Commands, x.command())
 	}
-	ms.Commands = append(ms.Commands, sshCommand(ms.SSHAlias, ms.check))
+	ms.Commands = append(ms.Commands, sshCommand(ms.SSHAlias, ms.install), sshCommand(ms.SSHAlias, ms.check))
 }
 
 // check runs secrets check on the machine and reads its report.
@@ -467,9 +485,10 @@ type MachineSecretsReceipt struct {
 
 // Apply carries out the dry-run secrets plan in stageDir, which every push needs approved: approve must be its
 // digest. Holding .rollout.lock, it plans again and refuses unless the result is identical and the staged ciphertext
-// intact; then, on each machine that changes, it copies the ciphertext over the machine's secrets file, reads it back
-// and compares its digest, and runs secrets check, which must find it decrypting with the machine's own key to the
-// planned names. A machine that fails does not stop the others; the receipt, written to stageDir, records each.
+// intact; then, on each machine that changes, it copies the ciphertext beside the machine's secrets file, reads it
+// back and compares its digest, runs secrets install, which swaps it in only once it decrypts with the machine's own
+// key, keeping the old file as .prev, and runs secrets check, which must find the installed file decrypting to the
+// planned names. Until install renames it, the machine's secrets file is untouched. A machine that fails does not stop the others; the receipt, written to stageDir, records each.
 func (s *Secrets) Apply(ctx context.Context, stageDir, approve string, machines ...string) (*SecretsReceipt, error) {
 	saved, err := ReadSecretsPlan(stageDir)
 	if err != nil {
@@ -575,6 +594,25 @@ func (s *Secrets) applyMachine(ctx context.Context, ms MachineSecrets, stageDir 
 	if mr.VerifiedSHA256 != ms.AfterSHA256 {
 		return fail(StatusVerifyFailed, errors.New("the secrets file read back does not match the pushed ciphertext"))
 	}
+	// Install's report holds names and digests only, never a value; a refusal's report is in the error, as the runner
+	// reports a command that exits non-zero.
+	install := Step{Command: sshCommand(ms.SSHAlias, ms.install)}
+	out, err := s.Runner.Run(ctx, ms.SSHAlias, ms.install)
+	install.Output = strings.TrimSpace(string(out))
+	if err == nil {
+		var r secrets.InstallReport
+		if jerr := json.Unmarshal(out, &r); jerr != nil {
+			err = fmt.Errorf("secrets install printed no report: %w", jerr)
+		} else if !r.Installed {
+			err = fmt.Errorf("secrets install refused at %s: %s", r.Step, r.Problem)
+		}
+	}
+	if err != nil {
+		install.Error = err.Error()
+		mr.Steps = append(mr.Steps, install)
+		return fail(StatusInstallFailed, fmt.Errorf("secrets install: %w", err))
+	}
+	mr.Steps = append(mr.Steps, install)
 	step := Step{Command: sshCommand(ms.SSHAlias, ms.check)}
 	report, out, err := s.check(ctx, &ms)
 	if err != nil {
