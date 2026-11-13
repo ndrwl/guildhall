@@ -482,9 +482,9 @@ func pageRound(s *store.Store, p web.RoundPost, boxes map[int]string) (string, e
 // Accept recommendation marks it accepted, Answer with my words marks it answered when it has words and Change
 // unmarks it. Only drafts that differ from the saved ones are written, under a mutation id naming the drafts saved
 // before, so the same words saved again replay. Answer with my words on an empty box saves the rest and refuses.
-// rendered is the highest draft number of the round the page's form rendered, for a grill round: a page older than
-// the round's newest draft writes nothing and is refused, unless it retries the same post. A plan approval's
-// controls pass nil and are not checked.
+// rendered is the highest draft number of the round the page's form rendered, for a grill round or a plan
+// approval's drafts: a page older than the round's newest draft writes nothing and is refused, unless it retries the
+// same post. nil skips the check.
 //
 // On a plan approval, a question with a changed pick in p.Picks (only an open card has one to post) is marked picked
 // with that letter, unless p's button is on that question, which was pressed after the pick and so wins: each
@@ -494,7 +494,7 @@ func savePageDrafts(s *store.Store, p web.RoundPost, round int, ns []int, boxes 
 	if err != nil {
 		return nil, err
 	}
-	// version is the highest draft number of this round, which a grill round's form posts as p.Drafts.
+	// version is the highest draft number of this round, which the form posts as p.Drafts.
 	old := map[int]store.Draft{}
 	version := 0
 	for _, e := range saved {
