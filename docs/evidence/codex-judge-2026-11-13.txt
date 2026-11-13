@@ -1,0 +1,234 @@
+d179 live run: `guildhall quality judge` on a real codex-cli
+============================================================
+
+Date: 2026-11-13
+Host: Linux (WSL2 6.18.58.1), zsh
+Codex: codex-cli 0.163.0, logged in using ChatGPT, no MCP servers configured
+Spec: tasks/guildhall/d179/plan-1/spec.md, route Q1 (a), confirmed by the
+Guildmaster (d179 q1, s52)
+
+Paths are redacted: <home> is the machine user's home directory and <state>
+is <home>/guildhall-director/copy/state, the live Guildhall store.
+
+Every item below is real output. Items 1-3 and 5-7 were captured by the
+Director during the live run and copied into the build's inputs
+(tasks/guildhall/d179/context-4.md, and the linked document
+guildhall/d238/quality-judge-1-judgement). Item 4 is the build's own probe.
+
+
+1. The run judged
+-----------------
+
+Task: guildhall/d238, self-review 1, judged head
+d104e6056edb18fa9f0d945676b9d04e6604d2b1
+Judge attempt: quality-judge-1, profile judge-codex (listed first in
+quality_judge_profiles for the run), adapter codex
+Judge record: separate_family false, "the builder's family is unknown"
+Run window: 2026-11-13T12:15:05Z to 2026-11-13T12:16:16Z
+
+
+2. codex-cli version and path
+-----------------------------
+
+From the judge attempt's launcher.log, the wrapper's first line:
+
+  guildhall: codex-artisan: codex-cli 0.163.0 at <home>/.nvm/versions/node/v24.22.0/bin/codex
+
+
+3. The read-only command line
+-----------------------------
+
+Deviation from the spec: the spec had a `codex` argv shim on the Director's
+PATH record the command line. The shim did not reach the judge, because the
+judge launches from the session pane's environment, not the Director's
+(incident codex-shim-path-not-inherited). The Director instead read
+/proc/<pid>/cmdline of the running codex processes, so the argv below is the
+real one, captured live, not rebuilt from ExecArgs.
+
+pid 381382 is the node launcher (`node <home>/.nvm/versions/node/v24.22.0/bin/codex`
+followed by the same arguments). pid 381396 is the native binary it started,
+<home>/.nvm/versions/node/v24.22.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex,
+with these arguments, one per line:
+
+  exec
+  --json
+  --ephemeral
+  --skip-git-repo-check
+  --sandbox
+  read-only
+  -C
+  <state>/guildhall/d238/quality-judge-1/work
+  --disable
+  apps
+  -c
+  web_search="disabled"
+  -c
+  mcp_servers={}
+  -c
+  sandbox_workspace_write.network_access=false
+  -m
+  gpt-6.1-terra
+  -c
+  model_reasoning_effort=high
+  --output-schema
+  <state>/guildhall/d238/quality-judge-1/codex-output-schema.json
+  <prompt, one argument, lines below>
+
+The prompt argument, line by line:
+
+  You are a Guildhall Artisan working on task d238, attempt quality-judge-1, in the current directory.
+  Read the prompt file below and follow it; the inputs and skills directories it names are beside it.
+
+  Prompt file: <state>/guildhall/d238/quality-judge-1/prompt/prompt.md
+
+  You run in a read-only sandbox: you cannot create, change or delete any file, so do not try.
+  Where the prompt asks you to write `judgement.json` or a result file, do not write them: return them in your final message, and Guildhall writes them for you.
+  Your final message is one JSON object and nothing else, with exactly these fields:
+  - "status": "succeeded" when the prompt's work is done, "failed" when it is not;
+  - "summary": one or more sentences saying what was done, or why it failed;
+  - "answer": the content of judgement.json, the JSON object the prompt describes, when status is "succeeded"; null when it is "failed".
+
+So the judge ran with `--sandbox read-only`, apps disabled, web search
+disabled, no MCP servers and network off, as docs/adapters.md says.
+
+
+4. Tool list (build probe)
+--------------------------
+
+The live judge prompt is fixed, so the judge itself cannot report its tools.
+The build ran one probe, with the wrapper's exact flags and switches and the
+judge's model and effort, in an empty scratch directory outside the
+repository, at 2026-11-13T12:17Z:
+
+  codex mcp list
+  -> No MCP servers configured yet. Try `codex mcp add my-tool -- my-command`.
+
+  codex exec --json --ephemeral --skip-git-repo-check --sandbox read-only -C <scratch> \
+    --disable apps -c web_search="disabled" -c 'mcp_servers={}' \
+    -c sandbox_workspace_write.network_access=false \
+    -m gpt-6.1-terra -c model_reasoning_effort=high \
+    'List every tool (function) you have available in this session, by its exact name, one per line, including namespaced ones. Do not call any tool. Then say whether any of them is an app (mcp__codex_apps__*), a web search tool (web__run or similar) or an MCP tool.' \
+    < /dev/null
+
+The stream held thread.started, turn.started, one agent_message item and
+turn.completed (input_tokens 14604, output_tokens 311); no tool was called
+and the scratch directory stayed empty. The agent_message, verbatim:
+
+  🟢 The following tool names are visible to me in this session:
+
+  functions.wait
+  functions.request_user_input
+  functions.request_user_input_async
+  functions.exec
+  clock.sleep
+  collaboration.followup_task
+  collaboration.interrupt_agent
+  collaboration.list_agents
+  collaboration.send_message
+  collaboration.spawn_agent
+  collaboration.wait_agent
+  apply_patch
+  create_goal
+  exec_command
+  get_goal
+  list_mcp_resource_templates
+  list_mcp_resources
+  read_mcp_resource
+  update_goal
+  view_image
+  write_stdin
+  clock__curr_time
+  image_gen__imagegen
+
+  No visible tool is an app (`mcp__codex_apps__*`) or a web search tool. The three `list_mcp_*` and `read_mcp_resource` functions are MCP resource tools; no visible tool has an `mcp__` name.
+
+  Some deferred tools may be available through `functions.exec`, but their names are not visible without calling a tool.
+
+Compared with d108 run r4 (docs/evidence/codex-hooks-2026-11-03.txt, H2),
+which had no switches: the ~90 mcp__codex_apps__* tools, web__run and
+request_plugin_install are gone.
+
+No apps, web or MCP tools: there is no mcp__codex_apps__* tool, no web__run
+and no mcp__<server>__* tool. list_mcp_resource_templates,
+list_mcp_resources and read_mcp_resource are Codex's built-in readers of MCP
+server resources; d108 r4 listed them too, and with no MCP servers
+configured and `mcp_servers={}` passed, they have no server to read from.
+
+
+5. The judge's work/ directory and the wrapper's files
+------------------------------------------------------
+
+Listing of the judge's work/ directory after the run:
+
+  <state>/guildhall/d238/quality-judge-1/work:
+  total 12
+  drwxr-xr-x 2 <user> <user> 4096 Nov 13 12:15 .
+  drwxr-xr-x 4 <user> <user> 4096 Nov 13 12:15 ..
+  -rw------- 1 <user> <user> 3670 Nov 13 12:15 judgement.json
+
+work/ holds only judgement.json, which the wrapper wrote outside the
+sandbox from the model's answer. The wrapper's other files sit beside the
+result file in the attempt directory, outside the workdir:
+codex-output-schema.json (passed as --output-schema in item 3) and
+launcher.log (item 6).
+
+
+6. Repository checkout before and after
+---------------------------------------
+
+The live repository checkout, read by the Director:
+
+  before 2026-11-13T12:15:05Z
+  HEAD 4bc15c00f514adb4d3d0251a62996b195fd42249
+  status:
+  after 2026-11-13T12:16:16Z
+  HEAD 4bc15c00f514adb4d3d0251a62996b195fd42249
+  status:
+
+HEAD is the same and `git status --porcelain` is empty both times: the
+repository is unchanged.
+
+The model's own tool calls, from launcher.log, were all reads: `cat` of the
+prompt and its inputs, `ls -la` of the prompt directory and `rg` over the
+inputs. One `cat` of three input files exited 1; the model listed the
+prompt directory and ran the same `cat` again, which is not followed by an
+exit line.
+
+
+7. Outcome and judgement
+------------------------
+
+Judge attempt outcome:
+
+  {
+    "schema": "guildhall.attempt-outcome/1",
+    "state": "finished",
+    "detail": "result accepted"
+  }
+
+launcher.log ends with the wake the Director received,
+{"attempt":1,"document":"quality-judge-1-judgement"}, and the attempt
+summary with attempt_outcome "succeeded" and outputs [judgement.json].
+
+Excerpt of the recorded document guildhall/d238/quality-judge-1-judgement
+(schema guildhall.judgement/1):
+
+  "merge_as_is": "no"
+  A1 pass true, B1 pass false, C1 pass true, D1 score 3, D4 pass true,
+  D5 pass false, F1 pass true, G1 pass false, G2 pass true
+  D5: "docs/contracts/atomicfile.md:10 puts the RenameWithin description and
+  the default-operation description on one line"
+
+The judgement's content is the judge's opinion of d238, not evidence for
+d179; it is quoted only to show the answer reached the store whole.
+
+
+VERDICT: PASS
+-------------
+
+The judge ran live on codex-cli 0.163.0 with the read-only command line in
+item 3, its tool set had no apps, web or MCP tools, its workdir holds only
+the judgement.json the wrapper wrote, the repository was unchanged, and the
+judgement was recorded. The one deviation is how the command line was
+captured (/proc instead of the argv shim, item 3); the argv is still the real
+one.
