@@ -175,6 +175,35 @@ func TestHallmarkBaselineTestResultsBehind(t *testing.T) {
 	}
 }
 
+// TestHallmarkBaselineTestResultsBehindIdWith44 is TestHallmarkBaselineTestResultsBehind with older's id containing
+// "44", so the section always holds a bare "44" and the passed-over check fails on every run if it is not anchored.
+func TestHallmarkBaselineTestResultsBehindIdWith44(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			h := newBaselineEnv(t, b, hallmarkExp(1, map[string]string{}, report("# Hallmark\n")))
+			// older's full id is printed in the section's Run 40 line, so the section contains "44" on every run.
+			older := h.commitContaining(t, "older", "44")
+			bare := h.commit(t, "bare")
+			h.commit(t, "current")
+			h.forge.SetTestRun(h.remote, older, ciRun(40, "success", nil))
+			h.forge.SetTestRun(h.remote, bare, forgetest.RunFixture{ID: 44, Conclusion: "success", Artifacts: []forgetest.ArtifactFixture{{Name: "coverage"}}})
+			want(t, h.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "hallmark", Attempt: 1})
+			_, text := h.baseline(t)
+			s := section(t, text)
+			if !strings.Contains(s, "44") {
+				t.Fatalf("the section does not contain older's id %s", older)
+			}
+			containsInOrder(t, s, "Run 40 (https://forge.invalid/runs/40) at `"+older+"`, 2 first-parent commits behind the current head; conclusion: success.\n", "### Packages (3)")
+			if strings.Contains(s, "Run 44 ") || strings.Contains(s, "/runs/44)") || strings.Contains(s, bare) {
+				t.Error("the section names the run with no test-timings artifact")
+			}
+			if got := h.forge.TestResultsCalls(); got != 3 {
+				t.Fatalf("TestResults calls = %d, want three: the head, the bare run and the older one", got)
+			}
+		})
+	}
+}
+
 // TestHallmarkBaselineTestResultsUnavailable: each part with no results is one reason line, and the attempt still
 // launches: an expired or over-cap leg beside readable ones, a run whose every artifact expired (still named), a run at
 // the current head with no test-timings-* artifact, no completed run within the walk, a reader error, and a forge
