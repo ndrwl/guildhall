@@ -123,6 +123,23 @@ func (h *baselineEnv) commit(t *testing.T, name string) string {
 	return h.git(t, "", "rev-parse", "HEAD")
 }
 
+// commitContaining is commit for a commit whose id contains sub: it amends the message with a counter until the id
+// matches, then lands it on the remote's default branch and returns it.
+func (h *baselineEnv) commitContaining(t *testing.T, name, sub string) string {
+	t.Helper()
+	h.git(t, "", "commit", "-q", "--allow-empty", "-m", name)
+	for i := 1; ; i++ {
+		if c := h.git(t, "", "rev-parse", "HEAD"); strings.Contains(c, sub) {
+			h.git(t, "", "push", "-q", "origin", "HEAD")
+			return c
+		}
+		if i >= 200 {
+			t.Fatalf("no commit id containing %q after 200 tries", sub)
+		}
+		h.git(t, "", "commit", "-q", "--amend", "--allow-empty", "-m", fmt.Sprintf("%s %d", name, i))
+	}
+}
+
 // putDoc records document name of task with data at p.
 func (h *baselineEnv) putDoc(t *testing.T, task, name, p string, data []byte) {
 	t.Helper()
