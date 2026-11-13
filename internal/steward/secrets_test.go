@@ -85,17 +85,27 @@ func TestSopsConfig(t *testing.T) {
 	}
 }
 
-// TestSecretsCheckAllowed: secrets check --json is one of the fixed remote commands; other secrets verbs, and check
-// without --json or a copy, are still refused.
+// TestSecretsCheckAllowed: secrets check --json and secrets install --expect <sha256> are fixed remote commands, both
+// with a copy; other secrets verbs, check without --json or a copy, and install without a copy, with an --expect that
+// is not a sha256 or with more arguments are still refused.
 func TestSecretsCheckAllowed(t *testing.T) {
-	if err := steward.CheckCommand(steward.SecretsCheckCommand(steward.DefaultGuildhall, "/home/guild/directors/tools")); err != nil {
+	const copyDir, sum = "/home/guild/directors/tools", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	if err := steward.CheckCommand(steward.SecretsCheckCommand(steward.DefaultGuildhall, copyDir)); err != nil {
+		t.Fatal(err)
+	}
+	if err := steward.CheckCommand(steward.SecretsInstallCommand(steward.DefaultGuildhall, sum, copyDir)); err != nil {
 		t.Fatal(err)
 	}
 	for _, argv := range [][]string{
-		{"guildhall", "secrets", "check", "--copy", "/home/guild/directors/tools"},
-		{"guildhall", "secrets", "init", "--copy", "/home/guild/directors/tools"},
-		{"guildhall", "secrets", "set", "--json", "--copy", "/home/guild/directors/tools"},
+		{"guildhall", "secrets", "check", "--copy", copyDir},
+		{"guildhall", "secrets", "init", "--copy", copyDir},
+		{"guildhall", "secrets", "set", "--json", "--copy", copyDir},
 		{"guildhall", "secrets", "check", "--json"},
+		{"guildhall", "secrets", "install", "--expect", sum},
+		{"guildhall", "secrets", "install", "--expect", "ABCDEF", "--copy", copyDir},
+		{"guildhall", "secrets", "install", "--expect", strings.ToUpper(sum), "--copy", copyDir},
+		{"guildhall", "secrets", "install", "--expect", sum, "--copy", copyDir, "--json"},
+		{"guildhall", "secrets", "install", "--copy", copyDir, "--expect", sum},
 	} {
 		if err := steward.CheckCommand(argv); !errors.Is(err, steward.ErrNotAllowed) {
 			t.Errorf("CheckCommand(%q) = %v, want ErrNotAllowed", argv, err)

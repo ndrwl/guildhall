@@ -6,9 +6,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -69,12 +72,21 @@ const pushSops = `case "$1" in
 *) exit 64 ;;
 esac`
 
+// pushSopsRefuseNew, put before pushSops, makes a file a push dropped beside the secrets file fail to decrypt, as one
+// encrypted to another key does, while PUSH_SOPS_REFUSE_NEW is set.
+const pushSopsRefuseNew = `if [ -n "$PUSH_SOPS_REFUSE_NEW" ] && [ "$1" = --decrypt ]; then
+  case "$4" in *.new-*) echo 'Failed to get the data key required to decrypt the SOPS file.' >&2; exit 128 ;; esac
+fi
+`
+
 // pushSetup is a Steward copy whose private config is a clone of a bare remote, with the recovery key in this
 // machine's secrets directory, and one Director machine reached through a Fleet whose secrets check runs this
 // binary's App over the machine's own secrets directory, holding the file the Fleet was given.
 type pushSetup struct {
 	steward, private, remote, cfg, machineDir string
 	fleet                                     *stewardtest.Fleet
+	// copier, when set, is the Copier in the Fleet's place.
+	copier steward.Copier
 }
 
 func newPushSetup(t *testing.T) *pushSetup {
@@ -84,7 +96,7 @@ func newPushSetup(t *testing.T) *pushSetup {
 	t.Setenv("GIT_CONFIG_GLOBAL", global)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	bin := t.TempDir()
-	for name, body := range map[string]string{"sops": pushSops, "age-keygen": `[ "$1" = -y ] && sed -n 's/^# public key: //p' "$2"`} {
+	for name, body := range map[string]string{"sops": pushSopsRefuseNew + pushSops, "age-keygen": `[ "$1" = -y ] && sed -n 's/^# public key: //p' "$2"`} {
 		writeFile(t, filepath.Join(bin, name), "#!/bin/sh\n"+body+"\n")
 		if err := os.Chmod(filepath.Join(bin, name), 0o755); err != nil {
 			t.Fatal(err)
@@ -124,16 +136,36 @@ func newPushSetup(t *testing.T) *pushSetup {
 		if argv[1] != "secrets" {
 			return nil, false, nil
 		}
-		// The machine's secrets file is what the Fleet holds at its place in the account's home.
+		// The machine's secrets file is what the Fleet holds at its place in the account's home, and so is a file a
+		// push dropped beside it for secrets install; what install leaves there goes back to the Fleet.
 		file := filepath.Join(ps.machineDir, secrets.File)
-		if data, ok := ps.fleet.Read(steward.Remote{Alias: "guild-ws", Path: steward.RemoteSecretsFile}); ok {
+		live := steward.Remote{Alias: "guild-ws", Path: steward.RemoteSecretsFile}
+		if data, ok := ps.fleet.Read(live); ok {
 			writeFile(t, file, string(data))
+		}
+		install := argv[2] == "install"
+		if install {
+			sum := argv[4]
+			if data, ok := ps.fleet.Read(steward.Remote{Alias: "guild-ws", Path: secrets.NewFile(steward.RemoteSecretsFile, sum)}); ok {
+				writeFile(t, secrets.NewFile(file, sum), string(data))
+			}
 		}
 		t.Setenv(secrets.DirEnv, ps.machineDir)
 		defer t.Setenv(secrets.DirEnv, stewardSecrets)
 		app, stdout, stderr := newTestApp(nil, nil)
-		if code := app.Run(argv[1:]); code != 0 {
-			return nil, true, &exec.ExitError{Stderr: stderr.Bytes()}
+		code := app.Run(argv[1:])
+		if install {
+			if data, err := os.ReadFile(file); err == nil {
+				ps.fleet.Write(live, data)
+			}
+		}
+		if code != 0 {
+			// As ssh reports a command that exits non-zero: its standard error, or else its standard output.
+			msg := stderr.Bytes()
+			if len(msg) == 0 {
+				msg = stdout.Bytes()
+			}
+			return nil, true, fmt.Errorf("ssh: exit status %d: %s", code, bytes.TrimSpace(msg))
 		}
 		return stdout.Bytes(), true, nil
 	})
@@ -158,6 +190,9 @@ func (ps *pushSetup) runIn(t *testing.T, inSession bool, stdin string, args ...s
 		}
 	}
 	app.Copier, app.Runner = ps.fleet, ps.fleet
+	if ps.copier != nil {
+		app.Copier = ps.copier
+	}
 	app.LookPath = exec.LookPath
 	app.Output = func(ctx context.Context, path string, args ...string) ([]byte, error) {
 		return exec.CommandContext(ctx, path, args...).Output()
@@ -274,14 +309,176 @@ func TestStewardSecretsPush(t *testing.T) {
 	if data, err := os.ReadFile(receipts[0]); err != nil || json.Unmarshal(data, &receipt) != nil {
 		t.Fatalf("receipt: %v", err)
 	}
-	if m := receipt.Machines[0]; m.Status != steward.StatusApplied || m.VerifiedSHA256 != m.AfterSHA256 || len(m.Steps) != 3 || !strings.Contains(m.Steps[2].Output, `"decrypts":true`) {
+	// Four steps: the put beside the file, its read-back, secrets install and secrets check.
+	m := receipt.Machines[0]
+	if m.Status != steward.StatusApplied || m.VerifiedSHA256 != m.AfterSHA256 || len(m.Steps) != 4 ||
+		!strings.Contains(strings.Join(m.Steps[0].Command, " "), "guild-ws:.config/guildhall/secrets.sops.yaml.new-"+m.AfterSHA256) ||
+		!strings.Contains(m.Steps[2].Output, `"installed":true`) || !strings.Contains(m.Steps[3].Output, `"decrypts":true`) {
 		t.Fatalf("receipt %+v", m)
+	}
+	// A first push keeps no previous file and leaves no dropped one.
+	if left, _ := filepath.Glob(filepath.Join(ps.machineDir, secrets.File+".*")); len(left) != 0 {
+		t.Fatalf("the machine holds %q beside its secrets file", left)
 	}
 	noValueIn(t, planDir)
 
 	again := filepath.Join(ps.steward, "rollouts", "secrets-2")
 	if code, out := ps.run(t, "", "steward", "secrets", "plan", "--config", ps.cfg, "--machine", "workstation", "--plan", again); code != 0 || !strings.Contains(out, ": unchanged") {
 		t.Fatalf("second plan: exit %d, want unchanged:\n%s", code, out)
+	}
+}
+
+// pushed sets name on the workstation, then plans and applies its push outside a session, and returns the plan.
+func (ps *pushSetup) pushed(t *testing.T, name, value, planDir string) (*steward.SecretsPlan, int, string) {
+	t.Helper()
+	if code, out := ps.run(t, value, "steward", "secrets", "set", "--config", ps.cfg, "workstation", name); code != 0 {
+		t.Fatalf("set %s: exit %d:\n%s", name, code, out)
+	}
+	if code, out := ps.run(t, "", "steward", "secrets", "plan", "--config", ps.cfg, "--machine", "workstation", "--plan", planDir); code != 0 {
+		t.Fatalf("plan: exit %d:\n%s", code, out)
+	}
+	plan, err := steward.ReadSecretsPlan(planDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, out := ps.run(t, "", "steward", "secrets", "apply", "--config", ps.cfg, "--machine", "workstation", "--plan", planDir, "--approve", plan.Digest)
+	return plan, code, out
+}
+
+// receiptOf is the one receipt in planDir.
+func receiptOf(t *testing.T, planDir string) steward.SecretsReceipt {
+	t.Helper()
+	receipts, _ := filepath.Glob(filepath.Join(planDir, "receipt-*.json"))
+	if len(receipts) != 1 {
+		t.Fatalf("receipts %q", receipts)
+	}
+	var receipt steward.SecretsReceipt
+	if data, err := os.ReadFile(receipts[0]); err != nil || json.Unmarshal(data, &receipt) != nil {
+		t.Fatalf("receipt: %v", err)
+	}
+	return receipt
+}
+
+// halfPut is a Copier whose Put writes half the file to the machine and fails, as a cut-short scp does.
+type halfPut struct{ *stewardtest.Fleet }
+
+func (h halfPut) Put(_ context.Context, src string, dst steward.Remote) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	h.Write(dst, data[:len(data)/2])
+	return errors.New("scp: connection lost")
+}
+
+// TestStewardSecretsPushCutShortKeepsTheMachineFile: a put cut short halfway leaves the machine's secrets file
+// byte-identical to what it held, and the receipt names the failed put.
+func TestStewardSecretsPushCutShortKeepsTheMachineFile(t *testing.T) {
+	ps := newPushSetup(t)
+	if _, code, out := ps.pushed(t, "API_KEY", pushedSecret, filepath.Join(ps.steward, "rollouts", "first")); code != 0 {
+		t.Fatalf("first push: exit %d:\n%s", code, out)
+	}
+	live := steward.Remote{Alias: "guild-ws", Path: steward.RemoteSecretsFile}
+	before, _ := ps.fleet.Read(live)
+	ps.copier = halfPut{ps.fleet}
+	planDir := filepath.Join(ps.steward, "rollouts", "cut")
+	plan, code, out := ps.pushed(t, "DB_PASS", pushedPassword, planDir)
+	if code != 1 || !strings.Contains(out, "workstation: failed") {
+		t.Fatalf("cut-short push: exit %d, want 1 naming the failure:\n%s", code, out)
+	}
+	if after, _ := ps.fleet.Read(live); !bytes.Equal(after, before) {
+		t.Fatalf("the machine's secrets file changed:\n%s\nwas\n%s", after, before)
+	}
+	if dropped, ok := ps.fleet.Read(steward.Remote{Alias: "guild-ws", Path: secrets.NewFile(steward.RemoteSecretsFile, plan.Pushes[0].AfterSHA256)}); !ok || len(dropped) == 0 {
+		t.Fatal("the cut-short put did not land beside the secrets file")
+	}
+	m := receiptOf(t, planDir).Machines[0]
+	if m.Status != steward.StatusFailed || len(m.Steps) != 1 || !strings.Contains(m.Steps[0].Error, "connection lost") {
+		t.Fatalf("receipt %+v", m)
+	}
+	noValueIn(t, planDir)
+}
+
+// TestStewardSecretsPushThatDoesNotDecryptKeepsTheMachineFile: a pushed file the machine's key cannot decrypt is
+// refused by secrets install before it is renamed, so the machine's secrets file is byte-identical, the dropped file
+// is gone, and the receipt names the install step.
+func TestStewardSecretsPushThatDoesNotDecryptKeepsTheMachineFile(t *testing.T) {
+	ps := newPushSetup(t)
+	if _, code, out := ps.pushed(t, "API_KEY", pushedSecret, filepath.Join(ps.steward, "rollouts", "first")); code != 0 {
+		t.Fatalf("first push: exit %d:\n%s", code, out)
+	}
+	file := filepath.Join(ps.machineDir, secrets.File)
+	before, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PUSH_SOPS_REFUSE_NEW", "1")
+	planDir := filepath.Join(ps.steward, "rollouts", "undecryptable")
+	_, code, out := ps.pushed(t, "DB_PASS", pushedPassword, planDir)
+	if code != 1 || !strings.Contains(out, "workstation: "+steward.StatusInstallFailed) {
+		t.Fatalf("undecryptable push: exit %d, want 1 naming install_failed:\n%s", code, out)
+	}
+	if after, _ := os.ReadFile(file); !bytes.Equal(after, before) {
+		t.Fatalf("the machine's secrets file changed:\n%s\nwas\n%s", after, before)
+	}
+	if after, _ := ps.fleet.Read(steward.Remote{Alias: "guild-ws", Path: steward.RemoteSecretsFile}); !bytes.Equal(after, before) {
+		t.Fatal("the machine's secrets file, as the Fleet holds it, changed")
+	}
+	// The first push kept no .prev, and the refused install writes none and removes the file it refused.
+	if left, _ := filepath.Glob(filepath.Join(ps.machineDir, secrets.File+".*")); len(left) != 0 {
+		t.Fatalf("beside the secrets file: %q, want nothing", left)
+	}
+	m := receiptOf(t, planDir).Machines[0]
+	if m.Status != steward.StatusInstallFailed || len(m.Steps) != 3 || !slices.Contains(m.Steps[2].Command, "install") ||
+		!strings.Contains(m.Steps[2].Error, `"step":"decrypt"`) || !strings.Contains(m.Error, "does not decrypt") {
+		t.Fatalf("receipt %+v", m)
+	}
+	noValueIn(t, planDir)
+}
+
+// TestStewardSecretsPushKeepsThePrevious: a second push installs the new ciphertext and keeps the one it replaced as
+// .prev, with no dropped file left.
+func TestStewardSecretsPushKeepsThePrevious(t *testing.T) {
+	ps := newPushSetup(t)
+	if _, code, out := ps.pushed(t, "API_KEY", pushedSecret, filepath.Join(ps.steward, "rollouts", "first")); code != 0 {
+		t.Fatalf("first push: exit %d:\n%s", code, out)
+	}
+	file := filepath.Join(ps.machineDir, secrets.File)
+	first, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	planDir := filepath.Join(ps.steward, "rollouts", "second")
+	if _, code, out := ps.pushed(t, "DB_PASS", pushedPassword, planDir); code != 0 || !strings.Contains(out, "workstation: applied (API_KEY, DB_PASS)") {
+		t.Fatalf("second push: exit %d:\n%s", code, out)
+	}
+	if prev, _ := os.ReadFile(file + secrets.PrevSuffix); !bytes.Equal(prev, first) {
+		t.Fatalf(".prev holds\n%s\nnot the first push's\n%s", prev, first)
+	}
+	if committed := collectGit(t, ps.private, "show", "HEAD:secrets/workstation.sops.yaml"); func() string { b, _ := os.ReadFile(file); return strings.TrimSpace(string(b)) }() != committed {
+		t.Fatal("the machine's secrets file is not the committed one")
+	}
+	if left, _ := filepath.Glob(filepath.Join(ps.machineDir, secrets.File+secrets.NewInfix+"*")); len(left) != 0 {
+		t.Fatalf("dropped files left: %q", left)
+	}
+}
+
+// TestStewardSecretsPlanRefusesAnOlderGuildhall: a machine whose secrets check report has no installs field, as a
+// guildhall that predates secrets install prints, is refused at plan time.
+func TestStewardSecretsPlanRefusesAnOlderGuildhall(t *testing.T) {
+	ps := newPushSetup(t)
+	if code, out := ps.run(t, pushedSecret, "steward", "secrets", "set", "--config", ps.cfg, "workstation", "API_KEY"); code != 0 {
+		t.Fatalf("set: exit %d:\n%s", code, out)
+	}
+	ps.fleet.Handle("guild-ws", func([]string) ([]byte, bool, error) {
+		r := secrets.Report{Key: "/home/guild/.config/guildhall/age.key", KeyExists: true, Recipient: pushMachinePub, File: "/home/guild/" + steward.RemoteSecretsFile, Names: []string{}}
+		data, err := json.Marshal(r)
+		// Drop the field an older guildhall does not print.
+		return bytes.Replace(data, []byte(`,"installs":false`), nil, 1), true, err
+	})
+	planDir := filepath.Join(ps.steward, "rollouts", "older")
+	if code, out := ps.run(t, "", "steward", "secrets", "plan", "--config", ps.cfg, "--machine", "workstation", "--plan", planDir); code != 1 || !strings.Contains(out, "upgrade guildhall on the machine") {
+		t.Fatalf("an older guildhall: exit %d, want 1:\n%s", code, out)
 	}
 }
 

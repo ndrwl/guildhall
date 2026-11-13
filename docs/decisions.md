@@ -314,6 +314,7 @@ Regenerate it with `go test ./internal/doccheck -run TestDecisionIndex -update`,
 - [Retiring a machine rotates every value it could read, tracked in a record open until each is rotated](decisions/steward-machine-retire.md)
 - [The Steward reads each enrolled Director's status to report a stuck, unhealthy or out-of-date Director](decisions/steward-reads-director-status.md)
 - [Steward rollouts copy files with scp and run no remote command](decisions/steward-rollouts-copy-with-scp.md)
+- [A secrets push drops the ciphertext beside the machine's file, and an allow-listed secrets install swaps it in only once it decrypts there](decisions/steward-secrets-install.md)
 - [The Steward pushes each machine's secrets ciphertext by an approved plan, and adds a read-only secrets check](decisions/steward-secrets-push.md)
 - [A Steward changes a machine only through the steps of a setup plan the Guildmaster approved](decisions/steward-setup-plans.md)
 

@@ -4,7 +4,7 @@ date: 2026-11-04
 topic: steward
 tasks: d130
 amends: steward-fixed-remote-commands.md, secrets-sops-age.md
-amended-by: steward-machine-retire.md
+amended-by: steward-machine-retire.md, steward-secrets-install.md
 ---
 
 # The Steward pushes each machine's secrets ciphertext by an approved plan, and adds a read-only secrets check

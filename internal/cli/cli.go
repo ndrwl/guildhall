@@ -65,6 +65,8 @@ Commands:
   secrets init   create this machine's age key outside every copy, owner-only, and print its public key
   secrets check [--json] [--copy <dir>]
                  report whether this machine's secrets file decrypts with its key and which names it holds
+  secrets install --expect <sha256> --copy <dir>
+                 swap in the secrets file a Steward push dropped beside it, once it decrypts, keeping .prev
   store init <path>
                  create and initialize an empty store file
   store doctor <path>
