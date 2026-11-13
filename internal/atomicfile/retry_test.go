@@ -35,7 +35,7 @@ func TestRetry(t *testing.T) {
 					return tc.fails[calls-1]
 				}
 				return nil
-			}, isRace)
+			}, isRace, defaultBounds)
 			if !errors.Is(err, tc.want) || (tc.want == nil && err != nil) || calls != tc.calls {
 				t.Fatalf("retry = %v after %d calls, want %v after %d", err, calls, tc.want, tc.calls)
 			}
@@ -46,7 +46,7 @@ func TestRetry(t *testing.T) {
 func TestRetryIsBounded(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		start, calls := time.Now(), 0
-		err := retry(func() error { calls++; return errRace }, isRace)
+		err := retry(func() error { calls++; return errRace }, isRace, defaultBounds)
 		elapsed := time.Since(start)
 		if !errors.Is(err, errRace) || elapsed < patience || elapsed > patience+time.Second {
 			t.Fatalf("retry of a lasting race = %v after %v, want the race after about %v", err, elapsed, patience)

@@ -34,7 +34,7 @@ Anything else, including any missing piece, an entry that is not a directory or 
 3. copies `from` into a new directory under `releases/.incoming/`, mode 0755 and synced, hashing as it copies, and refuses a sha256 other than the expected one;
 4. only then runs the verified copy through `probe`, `guildhall version --json`, and refuses a report of `dev`, of another version, of `modified: true`, or with no `release_contract` (below 1, a binary that predates release installs);
 5. writes `SHA256` and `release.json` beside it;
-6. under the home lock checks step 2 again and renames the directory to `releases/<version>` in one step with [`atomicfile.Rename`](atomicfile.md), which retries a transient Windows error within its bound, as when the probe's image handle briefly outlives it, then checks it.
+6. under the home lock checks step 2 again and renames the directory to `releases/<version>` in one step with [`atomicfile.RenameWithin`](atomicfile.md), which retries a transient Windows error for up to 10 s, then checks it. The bound is longer than `atomicfile`'s 250 ms default because a scanner such as Defender, or the probe's image as it is torn down, can briefly hold a file under the directory just after the binary was written and run; it is reached only when the rename is already failing.
 
 Every refusal leaves `releases/` unchanged and removes the `.incoming` copy.
 An unverified `.incoming` binary is never run; the probe runs only after its sha256 matched.
@@ -75,7 +75,7 @@ Install's rename, `Register`, pin changes, task creation and pruning hold it, so
 
 **Pruning** ([pruning](../releases.md#pruning)). `Keep` is 3, fixed, not a setting.
 `PlanPrune(releases, held)` takes the releases as `List` orders them and the holds by version, and keeps the first `Keep` and every older one with a hold, listing its holds as `Held`; each other is `Remove`, with a `Reason` saying it is older than the newest three and held by nothing, prefixed with its damage for a damaged one.
-`RemoveLocked(version)`, for a caller holding the home lock, renames the release directory to a new `.prune-<version>-*` directory under `.incoming/`, so it leaves `releases/` in one step and is never seen half removed, then removes that; the rename uses [`atomicfile.Rename`](atomicfile.md), which retries a transient Windows error within its bound, so a release a live process is running still fails after that bound.
+`RemoveLocked(version)`, for a caller holding the home lock, renames the release directory to a new `.prune-<version>-*` directory under `.incoming/`, so it leaves `releases/` in one step and is never seen half removed, then removes that; the rename uses [`atomicfile.RenameWithin`](atomicfile.md), which retries a transient Windows error for up to 10 s, as the install rename does, so a release a live process is running still fails after that bound.
 `PruneIncomingLocked(now)` removes each `.incoming/` entry last changed more than `IncomingStaleAfter`, 24 hours, before `now`, and any `.prune-*` a failed removal left, returning their names; a fresh install's or rollout's copy stays.
 The callers in [the CLI](cli.md#release) gather the holds from every inventoried copy and refuse when one cannot be read.
 

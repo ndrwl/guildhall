@@ -7,7 +7,8 @@
 // content, never a torn one. An open or rename that fails for a transient
 // platform reason while another process renames or reads the same name is
 // retried every 10 ms for up to 250 ms, and only an error that outlasts that,
-// or any other error, is returned. On Windows the transient errors are
+// or any other error, is returned. RenameWithin takes a longer bound from its
+// caller. On Windows the transient errors are
 // ERROR_SHARING_VIOLATION and ERROR_ACCESS_DENIED; on other platforms a
 // rename never races an open, so none is. A missing file is never retried:
 // fs.ErrNotExist is an answer, not a race.
@@ -24,7 +25,8 @@ import (
 	"time"
 )
 
-// Bounds of the retry.
+// Default bounds of the retry; interval is also where RenameWithin's polling
+// starts.
 const (
 	patience = 250 * time.Millisecond
 	interval = 10 * time.Millisecond
@@ -43,7 +45,7 @@ func Write(path string, data []byte) error {
 		_ = os.Remove(tmp.Name())
 		return err
 	}
-	if err := retry(func() error { return os.Rename(tmp.Name(), path) }, transient); err != nil {
+	if err := retry(func() error { return os.Rename(tmp.Name(), path) }, transient, defaultBounds); err != nil {
 		_ = os.Remove(tmp.Name())
 		return err
 	}
@@ -56,7 +58,7 @@ func Open(path string) (*os.File, error) {
 	err := retry(func() (err error) {
 		f, err = os.Open(path)
 		return err
-	}, transient)
+	}, transient, defaultBounds)
 	return f, err
 }
 
@@ -75,25 +77,52 @@ func Read(path string) ([]byte, error) {
 // transient failure within the same bounds as Write. A missing oldpath is
 // returned at once. It takes no lock.
 func Rename(oldpath, newpath string) error {
-	return renameWith(os.Rename, transient, oldpath, newpath)
+	return renameWith(os.Rename, transient, oldpath, newpath, defaultBounds)
 }
 
-// renameWith is Rename with its rename and its transient test supplied.
-func renameWith(op func(string, string) error, isTransient func(error) bool, oldpath, newpath string) error {
+// RenameWithin is Rename with a bound the caller supplies: a transient failure
+// is retried until patience has elapsed, polling every 10 ms at first and
+// backing off, doubling, to every 100 ms. A missing oldpath is returned at
+// once. It is for a rename that may meet a handle held for longer than the
+// default bound, such as a directory whose files a scanner is reading.
+func RenameWithin(oldpath, newpath string, patience time.Duration) error {
+	return renameWith(os.Rename, transient, oldpath, newpath, within(patience))
+}
+
+// bounds is how long retry keeps trying and how often it polls: from
+// interval, doubling up to maxInterval.
+type bounds struct{ patience, maxInterval time.Duration }
+
+// backoffCap is the longest wait between RenameWithin's tries.
+const backoffCap = 100 * time.Millisecond
+
+// defaultBounds are the bounds of Write, Open, Read and Rename: every 10 ms for
+// up to 250 ms.
+var defaultBounds = bounds{patience: patience, maxInterval: interval}
+
+// within is the bounds of RenameWithin with patience p.
+func within(p time.Duration) bounds { return bounds{patience: p, maxInterval: backoffCap} }
+
+// renameWith is Rename with its rename, its transient test and its bounds
+// supplied.
+func renameWith(op func(string, string) error, isTransient func(error) bool, oldpath, newpath string, b bounds) error {
 	return retry(func() error { return op(oldpath, newpath) }, func(err error) bool {
 		return !errors.Is(err, fs.ErrNotExist) && isTransient(err)
-	})
+	}, b)
 }
 
 // retry runs op until it succeeds, fails for a reason isTransient refuses, or
-// patience has elapsed since the first call.
-func retry(op func() error, isTransient func(error) bool) error {
-	deadline := time.Now().Add(patience)
+// b.patience has elapsed since the first call. It waits interval after the
+// first failure, doubling the wait each time up to b.maxInterval.
+func retry(op func() error, isTransient func(error) bool, b bounds) error {
+	deadline := time.Now().Add(b.patience)
+	wait := interval
 	for {
 		err := op()
 		if err == nil || !isTransient(err) || time.Now().After(deadline) {
 			return err
 		}
-		time.Sleep(interval)
+		time.Sleep(wait)
+		wait = min(2*wait, max(b.maxInterval, interval))
 	}
 }
