@@ -32,6 +32,7 @@ They widen Claude Code's own settings and never narrow them; deny rules elsewher
 Only the claude adapter grants; the fake refuses a non-empty grant, and the `director start` preflight shows each profile's grant by source and refuses one it cannot honour.
 
 A task grant is a store record that adds rules to one task's attempts of one step, or of all its claude steps, until its next attempt has an outcome or until the task is done.
+A grant on a step covers that step in every slice of a multi-PR task, `<step>--s<k>`: until attempt, it binds the first attempt of the step or any of its slices bound after approval and expires when that attempt has an outcome; until done, it binds every attempt of every slice. A grant names the step, never a slice id.
 It takes effect only once its typed decision, `grant-<id>`, is answered `approve`; its state is derived, never written, as [parking](park-attempt.md)'s clearing is.
 The engine writes it into the attempt's immutable binding, and the wrapper reads it back from the store read-only at every run, checking the binding's digest, and fails the attempt before Claude starts if it cannot.
 A task grant never allows `guildhall`, `gh`, `glab`, bare `git` or `git push`, directly, by wildcard or behind a wrapper such as `env`.
@@ -63,3 +64,4 @@ The live permission tests have not been run against a real session.
 - 2026-10-29, D93 (0093-shipped-default-grants.md): after d3's builder was denied the git it needed to rebase, `builder`, `planner`, `reviewer` and `researcher` claude profiles that set no list got a shipped default, and a repository could add rules for its own tasks; the suggested Go grant became `go test` and `go vet`.
   An explicit list still replaces the default, so a copy can tighten. d50 added `guildhall review check` to the reviewer's default. [Shipped role profiles](role-profiles-outside-the-digest.md) later added `git ls-files` and a `rebaser` grant.
 - 2026-10-30, task-grants.md (d12): a task grant, approved through a typed decision, adds a fourth source for one task's attempts and expires on its own; `all` needs `until = done`, at most one grant per task and step is open at a time, rebaser and conflict-resolution attempts never take one, and `director status` lists active grants.
+- 2026-11-13, d243: a grant on a step now covers that step in every slice, `<step>--s<k>`; before, it matched the step id exactly, so slice attempts after the first never took it (d222 `build--s3`, d161 `build--s3-2`). `grant create` still refuses a slice id, now naming its step.

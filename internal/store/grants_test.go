@@ -281,3 +281,76 @@ func TestTaskGrantStates(t *testing.T) {
 		t.Errorf("every grant = %d, %v", len(all), err)
 	}
 }
+
+// TestTaskGrantCoversSlices: a grant on a step covers that step in every slice, step--s<k> for k ≥ 2, and nothing
+// else; a grant on every step covers slice steps too.
+func TestTaskGrantCoversSlices(t *testing.T) {
+	for _, tc := range []struct {
+		grant, step string
+		want        bool
+	}{
+		{"build", "build", true},
+		{"build", "build--s2", true},
+		{"build", "build--s10", true},
+		{"build", "review", false},
+		{"build", "review--s2", false},
+		{"build", "buildx", false},
+		{"build", "build--s1", false},
+		{"build", "build--s02", false},
+		{"build", "build--sx", false},
+		{GrantAllSteps, "build--s2", true},
+		// Accepted edge case: an unsliced workflow may define both x and x--s2, and a grant on x covers both.
+		{"x", "x--s2", true},
+	} {
+		if got := (TaskGrant{Step: tc.grant}).Covers(tc.step); got != tc.want {
+			t.Errorf("grant on %s covers %s = %v, want %v", tc.grant, tc.step, got, tc.want)
+		}
+	}
+}
+
+// TestTaskGrantBindsASliceStep: an approved grant on build binds an attempt of build--s2 under its qualified id,
+// still refuses review--s2, and a one-attempt grant bound to build--s2 attempt 1 expires once that attempt has an
+// outcome, not because build attempt 1 has one.
+func TestTaskGrantBindsASliceStep(t *testing.T) {
+	s, _ := newStore(t)
+	mustCreate(t, s, "task-t-1", sampleTask("app", "t-1"))
+	do := func(m string, f func(string) (Receipt, error)) {
+		t.Helper()
+		if _, err := f(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	do("grant", func(m string) (Receipt, error) {
+		return s.CreateTaskGrant(m, buildGrant("t-1", "Bash(go:*)"), grantSteps)
+	})
+	do("answer", func(m string) (Receipt, error) { return s.AnswerDecision(m, "app", "t-1", "grant-g1", "approve") })
+	do("start-build", func(m string) (Receipt, error) { return s.StartAttempt(m, "app", "t-1", "build") })
+	do("finish-build", func(m string) (Receipt, error) { return s.FinishAttempt(m, "app", "t-1", "build", 1, AttemptSucceeded) })
+	if _, err := s.BindTaskGrant("bind-review", "app", "t-1", "g1", "review--s2", 1); !errors.Is(err, ErrInvalid) {
+		t.Errorf("bind to review--s2: err = %v", err)
+	}
+	do("bind", func(m string) (Receipt, error) { return s.BindTaskGrant(m, "app", "t-1", "g1", "build--s2", 1) })
+	do("start", func(m string) (Receipt, error) { return s.StartAttempt(m, "app", "t-1", "build--s2") })
+	if st := grantStatus(t, s, "t-1", "g1"); st.State != GrantActive || !slices.Equal(st.Bound, []GrantUse{{"build--s2", 1}}) {
+		t.Errorf("bound to build--s2 and running: %+v", st)
+	}
+	do("finish", func(m string) (Receipt, error) {
+		return s.FinishAttempt(m, "app", "t-1", "build--s2", 1, AttemptFailed)
+	})
+	if st := grantStatus(t, s, "t-1", "g1"); st.State != GrantExpired {
+		t.Errorf("bound slice attempt finished: %s", st.State)
+	}
+}
+
+// TestCreateTaskGrantRefusesASliceStep: a grant names the step, not one of its slices, and the refusal says so.
+func TestCreateTaskGrantRefusesASliceStep(t *testing.T) {
+	s, _ := newStore(t)
+	mustCreate(t, s, "task-t-1", sampleTask("app", "t-1"))
+	g := buildGrant("t-1", "Bash(go:*)")
+	g.Step = "build--s3"
+	_, err := s.CreateTaskGrant("grant", g, grantSteps)
+	const msg = `step "build--s3" is slice 3 of step "build"; a grant on "build" covers every slice of it`
+	if !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), msg) {
+		t.Errorf("err = %v", err)
+	}
+}

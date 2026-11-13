@@ -268,6 +268,7 @@ The session's **effective grant** is, in order and with a repeated rule kept onc
 The Artisan runs under the copy's `state/`, where [copy discovery](running.md#copies) finds no copy, so the `guildhall ci log` command validate records names the copy with `--copy` when the advance runs from one ([CI logs](ci-logs.md)); the command, like the grant, assumes `guildhall` resolves on the Artisan's `PATH`.
 
 A task grant is temporary and for one task: the Guildmaster approves extra rules for one step of one task, or all its claude steps, for its next attempt or until the task is done, through `guildhall task grant create` and the decision it opens.
+A grant on a step covers that step in every slice, so a grant on `build` reaches `build--s2`, `build--s3` and so on.
 The engine records it in the attempt's binding, `<step>-<n>.inputs.json`, when the binding is first written, and the wrapper reads it back at every run from the copy's `director.store`, opened read-only, checking the binding file against the SHA-256 the store holds.
 So a resume keeps it, a revoke drops it at the next wrapper run, never inside a running session, and a store or binding that cannot be read or verified fails the attempt before Claude starts.
 A task grant never allows `guildhall`, `gh`, `glab`, `git` without a subcommand or `git push`, nor a wildcard command such as `g*` that could complete to one, nor one of them after a wrapper such as `env` or `sudo`; this is a speed bump, not a boundary, since a granted shell or interpreter can run anything.

@@ -160,6 +160,74 @@ func TestTaskGrantUntilDoneBindsEveryAttempt(t *testing.T) {
 	})
 }
 
+// grantState derives grant g1 of t7's state from the records, as the store does.
+func grantState(t *testing.T, e *env) store.GrantState {
+	t.Helper()
+	g := taskGrants(t, e, "t7")[0]
+	attempts, err := e.h.Records.Attempts("app", "t7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds, err := e.h.Records.Decisions("app", "t7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var d *store.Decision
+	if i := slices.IndexFunc(ds, func(d store.Decision) bool { return d.ID == g.Decision }); i >= 0 {
+		d = &ds[i]
+	}
+	return g.State(d, e.task(t), attempts)
+}
+
+// TestTaskGrantReachesSliceSteps: a grant on build covers build in every slice. Until done, it binds build-1 and
+// build--s2-1; until attempt, approved after build-1 was bound, it binds build--s2-1 only and expires when that
+// attempt ends.
+func TestTaskGrantReachesSliceSteps(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name+"/until done", func(t *testing.T) {
+			e, _, _ := newSliceEnv(t, b, true, toBuildOf(t, 2)...)
+			e.grant(t, "t7", "g1", "build", store.GrantUntilDone, "approve", "Bash(chrome-devtools-axi:*)")
+			e.toAccepted(t)
+			e.toMergeDecision(t, 1)
+			want(t, e.mergeSlice(t, 1), interp.Next{Wait: interp.WaitAttempt, Step: "build--s2", Attempt: 1})
+			for _, step := range []string{"build", "build--s2"} {
+				if got := e.boundGrant(t, step, 1); got == nil || got.ID != "g1" || !slices.Equal(got.Rules, []string{"Bash(chrome-devtools-axi:*)"}) {
+					t.Errorf("%s-1 grant = %+v", step, got)
+				}
+			}
+			if got := e.boundGrant(t, "review", 1); got != nil {
+				t.Errorf("review-1 took the build grant: %+v", got)
+			}
+			if gs := taskGrants(t, e, "t7"); !slices.Equal(gs[0].Bound, []store.GrantUse{{Step: "build", Attempt: 1}, {Step: "build--s2", Attempt: 1}}) {
+				t.Errorf("bound = %+v", gs[0].Bound)
+			}
+		})
+		t.Run(b.name+"/until attempt", func(t *testing.T) {
+			e, _, _ := newSliceEnv(t, b, true, sliceScript(t, threeSlices, 1, 2)...)
+			e.toAccepted(t)
+			e.grant(t, "t7", "g1", "build", store.GrantUntilAttempt, "approve", "Bash(go:*)")
+			e.toMergeDecision(t, 1)
+			e.mergeSlice(t, 1)
+			if got := e.boundGrant(t, "build", 1); got != nil {
+				t.Errorf("build-1, bound before approval, took the grant: %+v", got)
+			}
+			if got := e.boundGrant(t, "build--s2", 1); got == nil || got.ID != "g1" {
+				t.Errorf("build--s2-1 grant = %+v", got)
+			}
+			if gs := taskGrants(t, e, "t7"); !slices.Equal(gs[0].Bound, []store.GrantUse{{Step: "build--s2", Attempt: 1}}) {
+				t.Errorf("bound = %+v", gs[0].Bound)
+			}
+			if got := grantState(t, e); got != store.GrantActive {
+				t.Errorf("while build--s2-1 runs the grant is %s", got)
+			}
+			e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "build--s2", Attempt: 1})
+			if got := grantState(t, e); got != store.GrantExpired {
+				t.Errorf("after build--s2-1 ended the grant is %s", got)
+			}
+		})
+	}
+}
+
 // capRefused refuses every start at the daily cap, after the binding is recorded.
 type capRefused struct{ interp.Records }
 

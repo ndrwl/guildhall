@@ -575,6 +575,7 @@ guildhall task grant list   --store <path> [--repo <id>] [--task <id>]
 `--copy <dir>`, or the copy found from the current directory, stands in for `--store` and `--config`.
 
 - `create` records grant `g<n>`, numbered from 1 per task, for one step of the task's bound workflow, with its [grill mode](#grill-mode) applied, whose profile runs the `claude` adapter, or `all` of them, an unattended grill among them, and in the same transaction opens decision `grant-g<n>` of kind `grant` with the options `approve` and `reject`, whose question quotes the step, rules, reason and expiry. It prints the receipt, record `task-grant/g<n>`, mutation `task-grant:<repo>:<task>:g<n>`. `--until` is `attempt`, the default, which lasts for the first attempt of the step bound after approval until it has an outcome, or `done`, which lasts until the task is merged or closed; `--step all` needs `--until done`.
+  A grant on a step covers that step in every slice, `<step>--s<k>`: `attempt` binds the first attempt of the step or any of its slices bound after approval, so one approved during slice 3 goes to the next `build--s3` attempt, and `done` binds every attempt of every slice. `--step` names the step, never a slice id; `--step build--s3` is refused, naming `build`.
 - `revoke` records the revoke once, mutation `task-grant-revoke:<repo>:<task>:<id>`, on a pending or an active grant. A pending grant's decision stays open, but approving it no longer activates anything.
 - `list` prints every grant, one task's, one repository's or the store's, with its derived `state` and, once approved, `approved_at`; it opens the store read-only.
 
@@ -584,6 +585,6 @@ At most one grant per task and step is pending or active, `all` overlapping ever
 The workflow the repository's config gives now must be the task's bound revision, or `create` cannot check the step and refuses.
 
 A grant's state is derived, never written: `pending` until its decision is answered, `rejected` when the answer is not `approve`, `revoked` once revoked, `expired` once its task is closed or its one bound attempt has an outcome, and otherwise `active`.
-The engine records an active grant in the binding of each attempt it applies to, `<step>-<n>.inputs.json`, as `grant`, and the Claude wrapper gives its rules from there, so a revoke reaches the next wrapper run, never a running session; stop the attempt to cut it short.
+The engine records an active grant in the binding of each attempt it applies to, `<step>-<n>.inputs.json` (a slice attempt's step being its slice id, such as `build--s2`), as `grant`, and the Claude wrapper gives its rules from there, so a revoke reaches the next wrapper run, never a running session; stop the attempt to cut it short.
 Rebaser and conflict-resolution attempts never take a task grant.
 `director status` lists the active grants in its [`grants`](director.md#status) section, and an open grant decision is in `needs_me` like every decision.
