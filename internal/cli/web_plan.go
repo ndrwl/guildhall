@@ -83,7 +83,7 @@ func pagePlanPress(s *store.Store, p web.RoundPost, boxes map[int]string) error 
 	if p.Question > 0 && !slices.Contains(ns, p.Question) {
 		return web.Refuse(http.StatusBadRequest, fmt.Sprintf("#%s has no open question Q%d", p.Tag, p.Question))
 	}
-	_, err := savePageDrafts(s, p, web.PlanRound, ns, boxes, nil)
+	_, err := savePageDrafts(s, p, web.PlanRound, ns, boxes, &p.Drafts)
 	return err
 }
 
@@ -91,7 +91,8 @@ func pagePlanPress(s *store.Store, p web.RoundPost, boxes map[int]string) error 
 // (web.PlanAnswersText): x's boxes and changed picks, each pick its question's answer, are saved as the decision's
 // drafts first, while it is still open, and the answered
 // questions read from them, so an answer replayed reads the same drafts. With no question answered the answer is
-// unchanged. An answer over the limit is refused and the drafts are kept.
+// unchanged. An answer from a page older than a plan draft saved since (x.Drafts) is refused, writing nothing and
+// leaving the decision open. An answer over the limit is refused and the drafts are kept.
 func webPlanAnswer(s *store.Store, x web.Answer, answer string) (string, error) {
 	if len(x.Plan) == 0 {
 		return answer, nil
@@ -102,8 +103,8 @@ func webPlanAnswer(s *store.Store, x web.Answer, answer string) (string, error) 
 		if err != nil {
 			return "", err
 		}
-		p := web.RoundPost{Repository: x.Repository, TaskID: x.TaskID, Tag: x.Decision, Act: web.RoundSave, Login: x.Login, Picks: x.Picks}
-		if _, err := savePageDrafts(s, p, web.PlanRound, ns, boxes, nil); err != nil {
+		p := web.RoundPost{Repository: x.Repository, TaskID: x.TaskID, Tag: x.Decision, Drafts: x.Drafts, Act: web.RoundSave, Login: x.Login, Picks: x.Picks}
+		if _, err := savePageDrafts(s, p, web.PlanRound, ns, boxes, &p.Drafts); err != nil {
 			return "", err
 		}
 	}

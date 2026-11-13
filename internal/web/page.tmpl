@@ -60,7 +60,7 @@ that shows questions or answers draws them through these two, so a change here c
 <div class="opts">{{if .Rec}}<button class="opt pos rec" type="submit" name="act" value="accept-{{.N}}"><b>Accept recommendation</b><span>{{.Rec}}</span></button>{{end}}<button class="opt" type="submit" name="act" value="words-{{.N}}"><b>Answer with my words</b><span>the words above are the answer</span></button></div>{{end}}{{end}}</section>
 {{- end}}
 {{- if .Cut}}<p class="cut">(cut; read the document)</p>{{end}}
-{{- if .Form}}<div class="opts"><button class="opt" type="submit" name="act" value="save"><b>Save, answer later</b><span>saves every box; nothing is answered</span></button></div>{{end}}</div>{{end}}{{end}}
+{{- if .Form}}<input type="hidden" name="drafts" value="{{.Drafts}}"><div class="opts"><button class="opt" type="submit" name="act" value="save"><b>Save, answer later</b><span>saves every box; nothing is answered</span></button></div>{{end}}</div>{{end}}{{end}}
 
 {{define "answers"}}{{if .Tiles}}<p class="pick">Answer</p>
 <div class="opts">{{range .Tiles}}{{if $.Form}}<button class="opt{{if .Tone}} {{.Tone}}{{end}}{{if .Rec}} rec{{end}}" type="submit" name="option" value="{{.Option}}">{{else}}<button class="opt{{if .Tone}} {{.Tone}}{{end}}{{if .Rec}} rec{{end}}" type="button" disabled>{{end}}<b>{{.Word}}{{if .Rec}} <i class="badge">Recommended</i>{{end}}</b>{{if .Text}}<span>{{.Text}}</span>{{end}}{{if .Picked}}<span class="pkd">{{.Picked}}</span>{{end}}</button>{{end}}</div>{{end}}

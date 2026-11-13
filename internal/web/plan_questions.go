@@ -113,14 +113,15 @@ func (s *Server) planQuestions(t Task, decision string) []PlanQuestion {
 // each card's box, its mark, folded to one line once answered, or the line saying when unmarked words were saved;
 // the heading's count of answered questions; and on Approved and Changes requested the tile line naming which
 // questions take the recommendation, with the line CSS shows instead while a pick is changed (PlanPickedNote). A
-// question picked on its card folds as answered too. boxes, when not nil, are the words a refused press kept, shown in place of the
-// saved drafts.
+// question picked on its card folds as answered too. The highest of the drafts' numbers is what the form posts as
+// drafts. boxes, when not nil, are the words a refused press kept, shown in place of the saved drafts.
 func (s *Server) planDrafts(t Task, v *askView, boxes map[int]string) {
 	q := v.Questions
 	drafts := map[int]Draft{}
 	for _, d := range t.Drafts {
 		if d.Tag == v.ID && d.Round == PlanRound {
 			drafts[d.Question] = d
+			q.Drafts = max(q.Drafts, d.Number)
 		}
 	}
 	q.Controls = true

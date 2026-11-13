@@ -28,10 +28,13 @@ type questionsView struct {
 	// several asks.
 	Ask string
 	// Controls says the cards are a plan approval's, answered one at a time inside it with a grill round's controls
-	// (planDrafts), Answered of them so far; Form says the request may press them.
+	// (planDrafts), Answered of them so far; Form says the request may press them. Drafts is the highest draft
+	// entry number among the approval's plan drafts, 0 with none, which its form posts so that a press or answer from
+	// a page older than a draft saved since is refused.
 	Controls bool
 	Form     bool
 	Answered int
+	Drafts   int
 }
 
 // cardView is one question's card: its number and title, then its body and its option rows when it read cleanly

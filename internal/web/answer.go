@@ -34,6 +34,9 @@ type Answer struct {
 	// Picks are the changed picks of Plan's questions the form sent (planPicks): each is saved as its question's
 	// answer, written once in the list, not as a "Qn (x)" line.
 	Picks map[int]string
+	// Drafts, with Plan, is the highest number of the decision's plan drafts the form rendered (0 for none, and
+	// for a form that posts no drafts): an answer from a page older than a draft saved since is refused.
+	Drafts int
 }
 
 // Answerer records what the Guildmaster gives on a task page. It never advances a task.
@@ -63,8 +66,9 @@ type Answer struct {
 // newer than p.Drafts, the highest draft number its form rendered, unless the press replays the same post; Send round
 // with a question unanswered saves the boxes and then refuses, naming them; a retry of a round already sent replays
 // and returns nil. With p.Plan, p is a press of a plan approval's question controls instead: p.Tag is the decision,
-// bound to p.Subject, and the boxes and mark are saved as its drafts, refusing unless the decision is still open;
-// p.Drafts is not read, and there is no Send round, since the approval's answer sends them.
+// bound to p.Subject, and the boxes and mark are saved as its drafts, refusing unless the decision is still open and
+// refusing, writing nothing, when the decision has a plan draft newer than p.Drafts, as for a round; there is no Send
+// round, since the approval's answer sends them.
 //
 // Summary records the Guildmaster's answer to the grill summary p names, Confirm or Request changes with their
 // words, on the task's conversation with a grill-answered message to the Director in one transaction, and wakes it.
@@ -73,7 +77,9 @@ type Answer struct {
 // for Request changes with no words; a second press of the button that answered it replays and returns nil.
 //
 // With a.Plan, Answer first saves a.Boxes as the decision's drafts, then writes its answered questions after the
-// answer as PlanAnswersText; an answer that would then be over the limit is refused and the drafts are kept.
+// answer as PlanAnswersText; an answer that would then be over the limit is refused and the drafts are kept. The
+// answer carries a.Drafts, the highest plan draft number its form rendered: when the decision has a plan draft newer
+// than that, the answer is refused, writing nothing and leaving the decision open, unless it retries the same post.
 //
 // A refusal is a *Refusal, with the reason the page shows; a store held by a writer is ErrBusy; anything else is
 // shown as a failure with no detail.
@@ -333,8 +339,14 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, repo, id string)
 		return
 	}
 	st.Picks = picks
+	// drafts is the highest plan draft number a plan approval's form rendered, read only for a plan post.
+	drafts, dok := formDrafts(r.PostForm)
 	if act := r.PostForm.Get("act"); act != "" {
-		s.planPress(w, r, a, act, boxes, picks, who, again)
+		if !dok {
+			again(http.StatusBadRequest, draftsUnread)
+			return
+		}
+		s.planPress(w, r, a, act, drafts, boxes, picks, who, again)
 		return
 	}
 	if a.Decision != "" && !words && (planOption(a.Option) || confirm != "") {
@@ -346,7 +358,11 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, repo, id string)
 			return
 		}
 		if plan := s.planQuestions(t, a.Decision); plan != nil {
-			a.Plan, a.Boxes, a.Picks = plan, boxes, planPicks(plan, picks)
+			if !dok {
+				again(http.StatusBadRequest, draftsUnread)
+				return
+			}
+			a.Plan, a.Boxes, a.Picks, a.Drafts = plan, boxes, planPicks(plan, picks), drafts
 			picks = nil
 		}
 	}
@@ -516,11 +532,7 @@ func (s *Server) round(w http.ResponseWriter, r *http.Request, repo, id string) 
 	}
 	act, q, ok := roundAct(r.PostForm.Get("act"), MaxRoundQuestions)
 	n, err := strconv.Atoi(r.PostForm.Get("round"))
-	drafts, derr := 0, error(nil)
-	if _, posted := r.PostForm["drafts"]; posted {
-		// A form from an older build posts no drafts, which is 0.
-		drafts, derr = strconv.Atoi(r.PostForm.Get("drafts"))
-	}
+	drafts, dok := formDrafts(r.PostForm)
 	switch {
 	case p.Tag == "":
 		again(http.StatusBadRequest, "the round names no attempt")
@@ -531,8 +543,8 @@ func (s *Server) round(w http.ResponseWriter, r *http.Request, repo, id string) 
 	case !ok:
 		again(http.StatusBadRequest, "the form names no button of the round")
 		return
-	case derr != nil || drafts < 0:
-		again(http.StatusBadRequest, "the form's drafts number does not read")
+	case !dok:
+		again(http.StatusBadRequest, draftsUnread)
 		return
 	}
 	p.Round, p.Drafts, p.Act, p.Question, p.Login = n, drafts, act, q, who.Login
@@ -549,6 +561,23 @@ func (s *Server) round(w http.ResponseWriter, r *http.Request, repo, id string) 
 		target += "#" + url.PathEscape(p.Tag)
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+// draftsUnread is the refusal of a form whose drafts number does not read.
+const draftsUnread = "the form's drafts number does not read"
+
+// formDrafts reads the drafts field of a grill round's or a plan approval's form, the highest draft number it
+// rendered: missing is 0, as a form from an older build posts none, and a value that is not a number, or is
+// negative, does not read (false).
+func formDrafts(form url.Values) (int, bool) {
+	if _, posted := form["drafts"]; !posted {
+		return 0, true
+	}
+	n, err := strconv.Atoi(form.Get("drafts"))
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	return n, true
 }
 
 // roundAct reads a round button's value: save, send, accept-all or accept-send, or accept-<n>, words-<n> or
@@ -586,7 +615,7 @@ func formBoxes(r *http.Request, most int) map[int]string {
 // boxes, the changed picks and the mark to save as the decision's drafts, read against the spec the page shows, and
 // redirects to the question, or to the ask; a refusal shows the page again with its reason on the ask and every
 // box's words and pick kept.
-func (s *Server) planPress(w http.ResponseWriter, r *http.Request, a Answer, act string, boxes, picks map[int]string, who identity, again func(int, string)) {
+func (s *Server) planPress(w http.ResponseWriter, r *http.Request, a Answer, act string, drafts int, boxes, picks map[int]string, who identity, again func(int, string)) {
 	act, q, ok := roundAct(act, maxPlanBoxes)
 	switch {
 	case a.Decision == "":
@@ -605,7 +634,7 @@ func (s *Server) planPress(w http.ResponseWriter, r *http.Request, a Answer, act
 		again(http.StatusConflict, "changed since you loaded the page: #"+a.Decision+" has no open questions to answer here; reload it")
 		return
 	}
-	p := RoundPost{Repository: a.Repository, TaskID: a.TaskID, Tag: a.Decision, Round: PlanRound, Act: act, Question: q, Boxes: boxes,
+	p := RoundPost{Repository: a.Repository, TaskID: a.TaskID, Tag: a.Decision, Round: PlanRound, Drafts: drafts, Act: act, Question: q, Boxes: boxes,
 		Login: who.Login, Subject: a.Subject, Plan: plan, Picks: planPicks(plan, picks)}
 	if s.failed(s.o.Answerer.Round(p), "plan questions "+a.Repository+"/"+a.TaskID+" #"+a.Decision, again) {
 		return

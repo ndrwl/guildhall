@@ -160,6 +160,63 @@ func TestPlanQuestionsAnswer(t *testing.T) {
 	}
 }
 
+// TestPlanQuestionsDraftsNumber: a plan approval's form carries the highest number of its plan drafts, which a press
+// and Approved pass to the Answerer, a missing field as 0; other asks' forms, and another login's page, carry none;
+// a drafts number that does not read is refused with 400 before the Answerer, while words only never reads it.
+func TestPlanQuestionsDraftsNumber(t *testing.T) {
+	at := time.Date(2026, 11, 4, 14, 50, 0, 0, time.UTC)
+	f := &fakeAnswerer{}
+	h := plansServer(t, f, []web.Draft{
+		{Tag: planAsk, Round: web.PlanRound, Question: 1, Number: 7, Text: "Maybe both?", At: at},
+		{Tag: "grill-1", Round: 1, Question: 1, Number: 9, Text: "Another round's.", At: at},
+	})
+	page := request(h, http.MethodGet, "/guildhall/d122", gmAddr, nil, nil).Body.String()
+	if ask := askOf(t, page, planAsk); strings.Count(ask, `name="drafts"`) != 1 || !strings.Contains(ask, `<input type="hidden" name="drafts" value="7">`) {
+		t.Errorf("the approval's form does not carry drafts 7:\n%s", ask)
+	}
+	if ask := askOf(t, page, "review--s2-x2"); strings.Contains(ask, `name="drafts"`) {
+		t.Errorf("another ask's form carries drafts:\n%s", ask)
+	}
+	if other := askOf(t, request(h, http.MethodGet, "/guildhall/d122", otherAddr, nil, nil).Body.String(), planAsk); strings.Contains(other, `name="drafts"`) {
+		t.Errorf("another login's approval carries drafts:\n%s", other)
+	}
+
+	press := form(planAsk, "sha256:abc", "", "")
+	press.Set("act", "save")
+	press.Set("drafts", "7")
+	if w := request(h, http.MethodPost, "/guildhall/d122/answer", gmAddr, press, nil); w.Code != http.StatusSeeOther || len(f.rounds) != 1 || f.rounds[0].Drafts != 7 {
+		t.Fatalf("press: %d %+v", w.Code, f.rounds)
+	}
+	approved := form(planAsk, "sha256:abc", "approved", "")
+	approved.Set("drafts", "7")
+	if w := request(h, http.MethodPost, "/guildhall/d122/answer", gmAddr, approved, nil); w.Code != http.StatusSeeOther || len(f.answers) != 1 || f.answers[0].Drafts != 7 {
+		t.Fatalf("approved: %d %+v", w.Code, f.answers)
+	}
+	approved.Del("drafts")
+	if w := request(h, http.MethodPost, "/guildhall/d122/answer", gmAddr, approved, nil); w.Code != http.StatusSeeOther || len(f.answers) != 2 || f.answers[1].Drafts != 0 {
+		t.Fatalf("approved with no drafts field: %d %+v", w.Code, f.answers)
+	}
+
+	for _, bad := range []string{"x", "-1", ""} {
+		press.Set("drafts", bad)
+		approved.Set("drafts", bad)
+		for name, v := range map[string]url.Values{"press": press, "approved": approved} {
+			if w := request(h, http.MethodPost, "/guildhall/d122/answer", gmAddr, v, nil); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "drafts number does not read") {
+				t.Errorf("%s with drafts %q: %d", name, bad, w.Code)
+			}
+		}
+	}
+	if len(f.rounds) != 1 || len(f.answers) != 2 {
+		t.Errorf("a malformed drafts number reached the Answerer: %+v %+v", f.rounds, f.answers)
+	}
+	words := form(planAsk, "sha256:abc", "", "Later.")
+	words.Set("send", "words")
+	words.Set("drafts", "x")
+	if w := request(h, http.MethodPost, "/guildhall/d122/answer", gmAddr, words, nil); w.Code != http.StatusSeeOther || len(f.sent) != 1 {
+		t.Errorf("words only with a malformed drafts number: %d", w.Code)
+	}
+}
+
 // twoPlanSpec is a plan spec with two lettered open questions, each recommending (a).
 const twoPlanSpec = "# The spec\n\n## Summary\n\n- **Goal:** one web page per task.\n\n## Open questions\n\n" +
 	"**Q1. Which address**\nThe page needs an address.\nOptions: (a) the tailnet one; (b) localhost only.\nRecommended: (a). Phones.\n\n" +

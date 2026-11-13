@@ -273,6 +273,9 @@ A question with no answer takes the spec's recommendation, and the tiles say whi
 Words saved in a box but not marked are not an answer.
 With no question answered the answer is the approval alone, which takes every recommendation, as before.
 An answer that would go over the 64 KiB limit with its list is refused, and your drafts are kept.
+The controls, **Approved**, **Changes requested** and Confirm are refused, as a round's buttons are, when the open questions' answers were saved from another tab or window since you loaded the page.
+Then nothing is saved and the approval is not answered: reload, and the words saved from the other tab are there; pressing the same button again after a dropped connection is not refused.
+A tab left open across an upgrade of Guildhall is refused in the same way once the approval has any saved draft, and must be reloaded.
 Only the Guildmaster's login's page shows the controls; a read-only page shows the cards alone.
 
 ## The new-reply bar
