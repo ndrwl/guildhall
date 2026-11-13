@@ -56,6 +56,12 @@ const (
 	metadataFile = "release.json"
 )
 
+// dirRenamePatience bounds the install and prune renames of a release directory. On Windows a scanner such as
+// Defender, or the teardown of the probe's image, can hold a file under a directory whose binary was just written
+// and run for longer than atomicfile's default 250 ms, denying the rename (d238). It is reached only when the
+// rename is already failing.
+const dirRenamePatience = 10 * time.Second
+
 // metadataSchema and metadataVersion identify release.json.
 const (
 	metadataSchema  = "guildhall.release"
@@ -429,7 +435,7 @@ func (h Home) install(ctx context.Context, version, from, label, sum string, pro
 	if res, done, err := h.installed(version, sum); done || err != nil {
 		return res, err
 	}
-	if err := atomicfile.Rename(tmp, h.ReleaseDir(version)); err != nil {
+	if err := atomicfile.RenameWithin(tmp, h.ReleaseDir(version), dirRenamePatience); err != nil {
 		return InstallResult{}, err
 	}
 	r, err := h.Check(version)

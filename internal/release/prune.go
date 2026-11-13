@@ -87,7 +87,7 @@ func (h Home) RemoveLocked(version string) error {
 		return err
 	}
 	gone := filepath.Join(tmp, version)
-	if err := atomicfile.Rename(h.ReleaseDir(version), gone); err != nil {
+	if err := atomicfile.RenameWithin(h.ReleaseDir(version), gone, dirRenamePatience); err != nil {
 		_ = os.Remove(tmp)
 		return err
 	}

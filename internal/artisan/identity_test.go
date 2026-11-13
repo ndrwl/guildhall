@@ -70,7 +70,7 @@ func TestIdentityContract(t *testing.T) {
 }
 
 // LookupChild reads the caller's own unreaped child, live or exited, with the identity Lookup gave it alive; once
-// reaped it is gone.
+// reaped it is eventually gone.
 func TestLookupChildReadsAnExitedUnreapedChild(t *testing.T) {
 	dir := t.TempDir()
 	release := filepath.Join(dir, "release")
@@ -105,7 +105,10 @@ func TestLookupChildReadsAnExitedUnreapedChild(t *testing.T) {
 	}
 	_ = cmd.Wait()
 	reaped = true
-	if got, err := artisan.LookupChild(pid); err == nil && got == alive {
-		t.Errorf("LookupChild of a reaped child = %v, want an error", got)
-	}
+	// On Windows the process object, with its creation time, outlives the reap while another process, such as a
+	// scanner, still holds a handle to it (d239), so wait for it to go; WaitFor still fails one that never does.
+	testenv.WaitFor(t, "the reaped child to be gone", func() bool {
+		got, err := artisan.LookupChild(pid)
+		return err != nil || got != alive
+	})
 }
