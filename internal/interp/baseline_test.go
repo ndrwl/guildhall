@@ -133,7 +133,7 @@ func (h *baselineEnv) commitContaining(t *testing.T, name, sub string) string {
 			h.git(t, "", "push", "-q", "origin", "HEAD")
 			return c
 		}
-		if i > 200 {
+		if i >= 200 {
 			t.Fatalf("no commit id containing %q after 200 tries", sub)
 		}
 		h.git(t, "", "commit", "-q", "--amend", "--allow-empty", "-m", fmt.Sprintf("%s %d", name, i))
