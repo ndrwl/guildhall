@@ -189,8 +189,15 @@ func CheckTaskGrantRule(rule string) error {
 	return nil
 }
 
-// Covers reports whether the grant applies to attempts of step.
-func (g TaskGrant) Covers(step string) bool { return g.Step == GrantAllSteps || g.Step == step }
+// Covers reports whether the grant applies to attempts of step. A grant on a step covers that step in every slice:
+// step itself and its slice ids step--s<k>, k ≥ 2 (workflow.SliceStep).
+func (g TaskGrant) Covers(step string) bool {
+	if g.Step == GrantAllSteps || g.Step == step {
+		return true
+	}
+	base, k := workflow.ParseSliceStep(step)
+	return k >= 2 && base == g.Step
+}
 
 // State derives the grant's state from its decision, nil when it cannot be found, its task and the task's attempts:
 // revoked once revoked, pending until its decision is answered, rejected when the answer is not approve, expired
@@ -276,6 +283,9 @@ func (s *Store) CreateTaskGrant(mutationID string, g TaskGrant, steps []string) 
 	case g.Step == GrantAllSteps && len(steps) == 0:
 		return Receipt{}, invalid("task %s/%s has no step whose profile runs the claude adapter", g.Repository, g.TaskID)
 	case g.Step != GrantAllSteps && !slices.Contains(steps, g.Step):
+		if base, k := workflow.ParseSliceStep(g.Step); k >= 2 && slices.Contains(steps, base) {
+			return Receipt{}, invalid("step %q is slice %d of step %q; a grant on %q covers every slice of it", g.Step, k, base, base)
+		}
 		return Receipt{}, invalid("step %q is not a step of the task's workflow whose profile runs the claude adapter; those are %q", g.Step, steps)
 	}
 	g.Decision = GrantDecision(g.ID)
