@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/atomicfile"
+	"github.com/ndrwl/guildhall/internal/filelock"
 )
 
 // HomeEnv names the Guildhall home when set; it wins over every other way of finding it.
@@ -605,12 +606,10 @@ func (h Home) RegisterLocked(dir string) error {
 // ErrLocked is returned by Lock when another process held the home lock for the whole wait.
 var ErrLocked = errors.New("the Guildhall home is locked by another process")
 
-// lockPoll is how often Lock tries again while another process holds the lock.
-const lockPoll = 20 * time.Millisecond
-
-// Lock takes the home lock, an exclusive lock on the home's lock file held by this process until unlock, creating
-// the home and the file when missing; it waits up to wait for another holder, then returns ErrLocked. The lock is
-// released when the process ends, however it ends. It is not reentrant: a second Lock in the same process waits.
+// Lock takes the home lock, an exclusive filelock on the home's lock file held by this process until unlock, creating
+// the home and the file when missing; it always makes one attempt, retries every 10 ms for up to wait while another
+// holder has it, then returns ErrLocked. The lock is released when the process ends, however it ends. It is not
+// reentrant: a second Lock in the same process waits.
 func (h Home) Lock(wait time.Duration) (unlock func() error, err error) {
 	if err := os.MkdirAll(h.Dir, 0o755); err != nil {
 		return nil, err
@@ -619,20 +618,14 @@ func (h Home) Lock(wait time.Duration) (unlock func() error, err error) {
 	if err != nil {
 		return nil, err
 	}
-	deadline := time.Now().Add(wait)
-	for {
-		ok, err := tryLock(f)
-		if err != nil {
-			_ = f.Close()
-			return nil, fmt.Errorf("home lock %s: %w", h.LockFile(), err)
-		}
-		if ok {
-			return func() error { return errors.Join(unlockFile(f), f.Close()) }, nil
-		}
-		if !time.Now().Before(deadline) {
-			_ = f.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
+	defer cancel()
+	if err := filelock.Lock(ctx, f, 0); err != nil {
+		_ = f.Close()
+		if errors.Is(err, context.DeadlineExceeded) {
 			return nil, fmt.Errorf("%w: %s, waited %s", ErrLocked, h.LockFile(), wait)
 		}
-		time.Sleep(lockPoll)
+		return nil, fmt.Errorf("home lock %s: %w", h.LockFile(), err)
 	}
+	return func() error { return errors.Join(filelock.Unlock(f, 0), f.Close()) }, nil
 }
