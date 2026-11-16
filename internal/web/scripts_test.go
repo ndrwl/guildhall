@@ -3,6 +3,7 @@ package web
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"html/template"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -59,18 +60,26 @@ func TestWithoutOwnScripts(t *testing.T) {
 var scriptElement = regexp.MustCompile(`(?is)<script([^>]*)>(.*?)</script>`)
 
 // checkOwnScripts fails t unless every <script> element of w's page has no attributes, holds exactly an own
-// script's bytes and has its sha256 listed in w's CSP, and the page carries each own script once.
+// script's bytes and has its sha256 listed in w's CSP, and the page carries each script of its set once, in order:
+// listScripts on the task list (the page with the listparts template), and scripts on the task and reader pages.
 func checkOwnScripts(t *testing.T, name string, w *httptest.ResponseRecorder) {
 	t.Helper()
 	if len(ownScripts) == 0 {
 		t.Fatal("no own scripts are embedded")
 	}
 	body, csp := w.Body.String(), w.Header().Get("Content-Security-Policy")
-	found := scriptElement.FindAllStringSubmatch(body, -1)
-	if n := strings.Count(strings.ToLower(body), "<script"); n != len(found) || n != len(ownScripts) {
-		t.Errorf("%s: %d <script, %d whole elements, %d own scripts", name, n, len(found), len(ownScripts))
+	want := scripts
+	if strings.Contains(body, `<template id="listparts">`) {
+		want = listScripts
 	}
-	for _, m := range found {
+	found := scriptElement.FindAllStringSubmatch(body, -1)
+	if n := strings.Count(strings.ToLower(body), "<script"); n != len(found) || n != len(want) {
+		t.Errorf("%s: %d <script, %d whole elements, %d scripts in its set", name, n, len(found), len(want))
+	}
+	for i, m := range found {
+		if i < len(want) && m[2] != string(want[i]) {
+			t.Errorf("%s: script %d is not its set's", name, i)
+		}
 		if m[1] != "" {
 			t.Errorf("%s: a script carries attributes %q", name, m[1])
 		}
@@ -106,6 +115,71 @@ func TestOwnScriptsPinned(t *testing.T) {
 	frame := get(t, s, "/guildhall/d122/doc/designer-4-design-2/frame")
 	if frame.Code != http.StatusOK || frame.Header().Get("Content-Security-Policy") != FrameCSP {
 		t.Errorf("the frame (status %d) is not served under FrameCSP", frame.Code)
+	}
+}
+
+// TestScriptSets: list.js is inlined on the task list only and poll.js on the task and reader pages only, every
+// other own script on all three, and the one CSP lists every own script's hash, so each page's set is allowed.
+func TestScriptSets(t *testing.T) {
+	names := func(set []template.JS) string {
+		var out []string
+		for _, b := range set {
+			for _, s := range ownScripts {
+				if s.Body == b {
+					out = append(out, s.Name)
+				}
+			}
+		}
+		return strings.Join(out, " ")
+	}
+	if got := names(listScripts); got != "js.js list.js" {
+		t.Errorf("the task list inlines %q, want js.js list.js", got)
+	}
+	if got := names(scripts); got != "js.js poll.js" {
+		t.Errorf("the task and reader pages inline %q, want js.js poll.js", got)
+	}
+	for _, s := range ownScripts {
+		if !strings.Contains(CSP, s.Hash) {
+			t.Errorf("the CSP does not list %s", s.Name)
+		}
+	}
+	s, _, _, _ := fixtureServer(t)
+	l, _ := listServer(TaskList{Tasks: []Listed{{Repository: "app", ID: "d1", Title: "T", Group: GroupYou}}})
+	list := get(t, l, "/").Body.String()
+	task := get(t, s, "/guildhall/d122").Body.String()
+	reader := get(t, s, "/guildhall/d122/doc/plan-1-spec").Body.String()
+	if !strings.Contains(list, "// list.js:") || strings.Contains(list, "// poll.js:") {
+		t.Error("the task list does not carry list.js alone of the two")
+	}
+	for name, body := range map[string]string{"task": task, "reader": reader} {
+		if strings.Contains(body, "// list.js:") || strings.Contains(body, `id="listparts"`) {
+			t.Errorf("the %s page carries list.js or its template", name)
+		}
+	}
+}
+
+// TestListScriptWaitsForTheList: list.js is inlined in the head, before the list it works on, so it must wait for
+// DOMContentLoaded while the document is loading; without that it finds no list, returns, and nothing on the page
+// refreshes, as the browser check of slice 3 found.
+func TestListScriptWaitsForTheList(t *testing.T) {
+	l, _ := listServer(TaskList{Tasks: []Listed{{Repository: "app", ID: "d1", Title: "T", Group: GroupYou}}})
+	list := get(t, l, "/").Body.String()
+	at, main := strings.Index(list, "// list.js:"), strings.Index(list, "<main")
+	if at < 0 || main < 0 {
+		t.Fatalf("the task list has no list.js or no main")
+	}
+	if at > main {
+		return // inlined after the list: it finds it without waiting
+	}
+	var body string
+	for _, s := range ownScripts {
+		if s.Name == "list.js" {
+			body = string(s.Body)
+		}
+	}
+	guard := "if (document.readyState === 'loading') {\n    document.addEventListener('DOMContentLoaded', start)\n    return\n  }"
+	if !strings.Contains(body, "(function start() {\n  "+guard+"\n  var main = document.querySelector('main.tri')") {
+		t.Errorf("list.js runs in the head before the list is parsed and does not wait for DOMContentLoaded first")
 	}
 }
 
@@ -163,14 +237,18 @@ func TestCSPAllowsOnlyOwnScripts(t *testing.T) {
 }
 
 // forbiddenInScripts are the calls and properties an own script may not use: none parses HTML from a string,
-// evaluates a string as code, makes a request, loads a module or submits a form. poll.js alone may make one request,
-// pollFetch, to its page's since route.
+// evaluates a string as code, makes a request, loads a module or submits a form. poll.js and list.js alone may each
+// make one request, pollFetch to its page's since route and listFetch to the task list's feed.
 var forbiddenInScripts = []string{"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function",
 	"Function(", "fetch(", "XMLHttpRequest", "WebSocket", "EventSource", "sendBeacon", "import(", ".submit(", "requestSubmit",
 	"location.reload", "location.href", "location.assign", "location.replace"}
 
-// pollFetch is the one request an own script makes: poll.js's GET of the since route its bar's data-since names.
-const pollFetch = "window.fetch(since + '?after=' + encodeURIComponent(last), {credentials: 'same-origin', cache: 'no-store', redirect: 'error'})"
+// pollFetch is poll.js's one request, a GET of the since route its bar's data-since names, and listFetch list.js's
+// one, a GET of the task list's feed; no other own script makes any (docs/decisions/list-page-scripts.md).
+const (
+	pollFetch = "window.fetch(since + '?after=' + encodeURIComponent(last), {credentials: 'same-origin', cache: 'no-store', redirect: 'error'})"
+	listFetch = "window.fetch('/list.json', {credentials: 'same-origin', cache: 'no-store', redirect: 'error'})"
+)
 
 var (
 	stringTimer   = regexp.MustCompile(`set(Timeout|Interval)\s*\(\s*['"` + "`" + `]`)
@@ -197,6 +275,12 @@ func TestOwnScriptCodeRules(t *testing.T) {
 				t.Errorf("%s makes a request other than its one GET of data-since", name)
 			}
 			src = strings.Replace(src, pollFetch, "", 1)
+		}
+		if name == "scripts/list.js" {
+			if strings.Count(src, "fetch(") != 1 || strings.Count(src, listFetch) != 1 {
+				t.Errorf("%s makes a request other than its one GET of /list.json", name)
+			}
+			src = strings.Replace(src, listFetch, "", 1)
 		}
 		for _, bad := range forbiddenInScripts {
 			if strings.Contains(src, bad) {

@@ -4,6 +4,7 @@ date: 2026-11-04
 topic: director
 tasks: d175, d145
 amends: task-page.md
+amended-by: list-page-scripts.md
 ---
 
 # Pages may run Guildhall's own scripts, embedded in the binary and pinned by hash in the CSP

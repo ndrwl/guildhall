@@ -58,11 +58,19 @@ The band says how many tasks wait for you, then "25 open · 16 in the merge queu
 Each row is one line, 44 px tall: the task, linked to its page (`repo/id`, the repository part faint, when the copy serves more than one repository); its title, cut off with an ellipsis; its priority, left out at p3; its step and attempt, such as "build · attempt 2"; its slice, such as "2/4", for a task of several slices; its pull request, linked, with its CI mark (✓ passed, ● running, ✗ failed); and how long it has stood so: the oldest open ask's opening for a task waiting for you, the closing for a finished one, and otherwise the last change recorded on the task.
 On a phone (760 px or narrower) a row takes three lines, the task, pull request and time, then the whole title, then the priority, step and slice, and nothing scrolls sideways.
 
-Every time on the list reads relative to when the page was read: "now" under a minute, then "6 min ago", "2 h ago", "3 days ago", and past 30 days the date, "4 Oct". Hover over one, or press it long on a phone, for the exact time in the server's zone, such as "Thu 5 Nov 2026, 14:52:10 GMT". The task, reader and round pages keep their clock times.
+Every time on the list reads relative to when the page was read: "now" under a minute, then "6 min ago", "2 hr ago", "3 days ago", and past 30 days the date, "4 Oct". Hover over one, or press it long on a phone, for the exact time in the server's zone, such as "Thu 5 Nov 2026, 14:52:10 GMT". While the page is open the times keep counting up, every 30 s, in the same words. The task, reader and round pages keep their clock times.
 
 The filter box matches a task's id or title; the priority and repository chips, with their counts, narrow it, and a chip in effect turns it off again. On a desktop the sticky column header sorts by Task, Pri, Stage · step, PR or In state, and the sort in effect reverses on a second press; on a phone, sort chips take its place. The default is priority, then oldest in state. All of it lives in the URL, `/?q=&p=&repo=&sort=&dir=`, and the server applies it, so a link or a reload gives the same view with scripts off.
 The list's only form is that filter, a GET: answer on each task's page.
 `/list.json` gives the same list as data, read-only: every row and group in the default order, unfiltered, and the stats, each time as an RFC 3339 instant with its exact time.
+
+The list refreshes by itself. Every 20 seconds while its tab is open in front, and at once when you come back to it, it reads `/list.json` and changes the band, the strip and the rows in place: a row that changed, moved to another group or is new is tinted blue for about 2 seconds (not when your system asks for reduced motion), and a group you folded stays folded.
+The filter box, the chips and the sort then work in the page without loading it again, and the address keeps up with them, so a reload or a shared link gives the same view.
+If a refresh fails, such as while the store is busy, the rows stay as they were, the band says "Not refreshed since 3 min ago", and the page tries again a minute later.
+On a phone the strip starts folded to its one line.
+The footer says "Read from the store now · refreshes by itself every 20 s", with the exact read time on hover.
+With scripts turned off the list is the server's view of its address, as of when it loaded; reload for newer.
+The [list-page scripts decision](decisions/list-page-scripts.md) records why this script may read the feed.
 Every task page's crumb starts with **All tasks**, a link back to the list.
 
 ## The task page

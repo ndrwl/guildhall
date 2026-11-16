@@ -53,8 +53,8 @@ type feedBanner struct {
 	Since *feedTime `json:"since,omitempty"`
 }
 
-// feedRow is one task's row, its cells as the page writes them, with the task's own repository, priority and
-// attempt for sorting.
+// feedRow is one task's row, its cells as the page writes them, with the task's own repository, priority, next
+// step (SortStep, which Step may not show) and attempt for sorting.
 type feedRow struct {
 	Repository string    `json:"repository"`
 	ID         string    `json:"id"`
@@ -65,6 +65,7 @@ type feedRow struct {
 	Pri        string    `json:"pri,omitempty"`
 	Step       string    `json:"step,omitempty"`
 	Rest       string    `json:"rest,omitempty"`
+	SortStep   string    `json:"sort_step,omitempty"`
 	Attempt    int       `json:"attempt,omitempty"`
 	Held       bool      `json:"held,omitempty"`
 	Slice      string    `json:"slice,omitempty"`
@@ -177,7 +178,7 @@ func feedRows(rows []listRow) []feedRow {
 	out := []feedRow{}
 	for _, r := range rows {
 		f := feedRow{Repository: r.Repository, ID: r.ID, Name: r.Repo + r.ID, Href: r.Href, Title: r.Title, Priority: r.Priority, Pri: r.Pri,
-			Step: r.Step, Rest: r.Rest, Attempt: r.Attempt, Held: r.Held, Slice: r.Slice, Since: newFeedTime(r.Time), Ask: r.Ask, You: r.You,
+			Step: r.Step, Rest: r.Rest, SortStep: r.StepKey, Attempt: r.Attempt, Held: r.Held, Slice: r.Slice, Since: newFeedTime(r.Time), Ask: r.Ask, You: r.You,
 			Position: r.Position, Front: r.Front}
 		if r.PR != nil {
 			f.PR = &feedPR{Number: r.PR.Number, Href: r.PRHref, CI: r.CI.Class, CIWord: r.CI.Word}

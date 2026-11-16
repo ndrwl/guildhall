@@ -363,6 +363,12 @@ tiles' line says the picks go with them */
 .hm{font:700 10.5px/1 system-ui,sans-serif;text-transform:uppercase;letter-spacing:.06em;color:var(--you);border:1px solid var(--youline);background:var(--youbg);padding:3px 6px;border-radius:5px;margin-right:6px}
 .hold{margin:0;padding:9px 16px;font-size:13.5px;border-top:1px solid var(--line);background:var(--runbg);border-left:4px solid var(--run);overflow-wrap:anywhere}
 .hold b{font-weight:650}
+/* list.js: a row the last refresh changed is tinted blue for about 2 s, and a failed refresh says so in the band */
+.tri [hidden],.lag[hidden]{display:none}
+.r{transition:background-color .8s ease-out}
+.r.tint{background:var(--runbg);transition:none}
+.lag{margin:-8px 0 14px;font-size:13.5px;font-weight:600;color:#ffd166}
+@media (prefers-reduced-motion:reduce){.r,.r.tint{transition:none}}
 /* the stats strip: Work, Spend and Machine as text; on a phone a <details> folded to one line */
 .strip{margin:0 0 16px;border:1px solid var(--line);border-radius:10px;background:var(--card)}
 .strip>summary{display:none}
