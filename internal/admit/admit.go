@@ -17,9 +17,6 @@ import (
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
-// ManagedFile is the managed settings file a Steward rollout publishes beside a Director copy's config.toml.
-const ManagedFile = "managed.toml"
-
 // StoreFile is a Director copy's store, beside its config.toml.
 const StoreFile = "director.store"
 
@@ -75,13 +72,13 @@ func mode(v store.ManagedView, present bool) (m, steward, refusal string) {
 	case enrolled && present:
 		return ModeManaged, v.Enrolment.Steward, ""
 	case enrolled:
-		return ModeRefused, v.Enrolment.Steward, fmt.Sprintf("this copy is enrolled with steward %q but %s is missing: the managed settings are missing; restore the %s the Steward published", v.Enrolment.Steward, ManagedFile, ManagedFile)
+		return ModeRefused, v.Enrolment.Steward, fmt.Sprintf("this copy is enrolled with steward %q but %s is missing: the managed settings are missing; restore the %s the Steward published", v.Enrolment.Steward, config.ManagedFile, config.ManagedFile)
 	case !present:
 		return ModeStandalone, "", ""
 	case v.Enrolment == nil:
-		return ModeRefused, "", fmt.Sprintf("%s is present but this copy is not enrolled: run guildhall director enrol --steward <label>, or remove %s", ManagedFile, ManagedFile)
+		return ModeRefused, "", fmt.Sprintf("%s is present but this copy is not enrolled: run guildhall director enrol --steward <label>, or remove %s", config.ManagedFile, config.ManagedFile)
 	default:
-		return ModeRefused, "", fmt.Sprintf("this copy left managed mode (keeping %s) but a %s is present: a stale or unexpected managed file; remove it, or run guildhall director enrol --steward <label>", v.Enrolment.Revision, ManagedFile)
+		return ModeRefused, "", fmt.Sprintf("this copy left managed mode (keeping %s) but a %s is present: a stale or unexpected managed file; remove it, or run guildhall director enrol --steward <label>", v.Enrolment.Revision, config.ManagedFile)
 	}
 }
 
@@ -112,7 +109,7 @@ func Managed(dir string) (bool, error) {
 // ReadManaged reads the managed.toml in the copy directory dir: nil when it does not exist, and empty, not nil,
 // when it exists but is empty; any other read error is returned.
 func ReadManaged(dir string) ([]byte, error) {
-	b, err := os.ReadFile(filepath.Join(dir, ManagedFile))
+	b, err := os.ReadFile(filepath.Join(dir, config.ManagedFile))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
@@ -239,7 +236,7 @@ func Judge(f Files, v store.ManagedView) Admission {
 	a.inlineErr = err
 	if err == nil && inline {
 		a.inline = true
-		refuse("%s has an inline [managed] section, which a Director copy refuses in every mode: move those settings to %s in the checksum-bearing format (examples/managed.toml)", f.CfgPath, ManagedFile)
+		refuse("%s has an inline [managed] section, which a Director copy refuses in every mode: move those settings to %s in the checksum-bearing format (examples/managed.toml)", f.CfgPath, config.ManagedFile)
 	}
 	var refusal string
 	a.Mode, a.Steward, refusal = mode(v, f.Managed != nil)
@@ -249,7 +246,7 @@ func Judge(f Files, v store.ManagedView) Admission {
 		if auth := v.Authorization(a.ManagedDigest); auth != nil {
 			a.Authorized, a.Authorization = true, auth
 		} else {
-			refuse("%s %s is not authorized: this copy's store records no reload or Guildmaster approval of that digest, so its settings are not applied", ManagedFile, a.ManagedDigest)
+			refuse("%s %s is not authorized: this copy's store records no reload or Guildmaster approval of that digest, so its settings are not applied", config.ManagedFile, a.ManagedDigest)
 		}
 	}
 	if pin := PinRefusal(f.Dir(), v.ReleasePin); pin != "" {

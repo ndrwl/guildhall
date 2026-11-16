@@ -11,7 +11,6 @@ import (
 // The shared configuration-admission boundary (docs/director-modes.md#mode) lives in internal/admit, so the Artisan
 // adapters launch attempts through it too; these names keep the CLI's callers short.
 const (
-	managedFile       = admit.ManagedFile
 	directorStoreFile = admit.StoreFile
 	modeStandalone    = admit.ModeStandalone
 	modeManaged       = admit.ModeManaged

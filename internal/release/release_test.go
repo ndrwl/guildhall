@@ -102,6 +102,23 @@ func TestValidVersion(t *testing.T) {
 	}
 }
 
+// TestNormalizeSHA256 pins that a sum in uppercase or mixed case is still accepted and lowercased, though
+// digest.ParseHex, which it parses through, refuses uppercase, and that a refusal keeps its wording.
+func TestNormalizeSHA256(t *testing.T) {
+	lower := strings.Repeat("0123456789abcdef", 4)
+	for _, in := range []string{lower, strings.ToUpper(lower), strings.Repeat("0123456789ABCdef", 4)} {
+		if got, err := NormalizeSHA256(in); err != nil || got != lower {
+			t.Errorf("NormalizeSHA256(%q) = %q, %v; want %q", in, got, err, lower)
+		}
+	}
+	for _, in := range []string{"", lower[:63], lower + "0", "sha256:" + lower, strings.Repeat("g", 64), " " + lower[1:]} {
+		_, err := NormalizeSHA256(in)
+		if want := fmt.Sprintf("sha256 %q is not 64 hex digits", in); err == nil || err.Error() != want {
+			t.Errorf("NormalizeSHA256(%q) error = %v, want %q", in, err, want)
+		}
+	}
+}
+
 // binary writes a stand-in release binary and returns its path and sha256.
 func binary(t *testing.T, content string) (string, string) {
 	t.Helper()

@@ -41,7 +41,7 @@ func writeManaged(t *testing.T, dir string, settings map[string]config.ManagedSe
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(dir, managedFile), string(b))
+	writeFile(t, filepath.Join(dir, config.ManagedFile), string(b))
 	return string(digest.Of(b))
 }
 
@@ -92,7 +92,7 @@ func TestModeTable(t *testing.T) {
 		{"enrolled, no managed.toml", func(t *testing.T, dir string) {
 			writeManaged(t, dir, pinned)
 			enrolManaged(t, dir)
-			if err := os.Remove(filepath.Join(dir, managedFile)); err != nil {
+			if err := os.Remove(filepath.Join(dir, config.ManagedFile)); err != nil {
 				t.Fatal(err)
 			}
 		}, modeRefused, `enrolled with steward "hq" but managed.toml is missing: the managed settings are missing`},
@@ -189,7 +189,7 @@ func TestUnauthorizedDigestRefusesRecordingOnce(t *testing.T) {
 	if cfgAfter, _ := os.ReadFile(filepath.Join(dir, "config.toml")); string(cfgAfter) != string(cfgBefore) {
 		t.Fatal("a refused leave changed config.toml")
 	}
-	if _, err := os.Stat(filepath.Join(dir, managedFile)); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, config.ManagedFile)); err != nil {
 		t.Fatalf("a refused leave moved managed.toml: %v", err)
 	}
 	got := copyMode(t, dir)
@@ -273,7 +273,7 @@ func TestEnrolAndLeave(t *testing.T) {
 	if got, _ := os.ReadFile(cfgPath); string(got) != want {
 		t.Fatalf("config.toml after leave:\n%s\nwant:\n%s", got, want)
 	}
-	if _, err := os.Stat(filepath.Join(dir, managedFile)); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(dir, config.ManagedFile)); !os.IsNotExist(err) {
 		t.Fatalf("managed.toml is still there: %v", err)
 	}
 	if b, err := os.ReadFile(filepath.Join(dir, rev)); err != nil || string(digest.Of(b)) != d {

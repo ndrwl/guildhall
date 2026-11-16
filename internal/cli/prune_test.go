@@ -1068,7 +1068,7 @@ func TestPruneIgnoresAnUnauthorizedManagedRevision(t *testing.T) {
 		t.Errorf("authorized prune_after 0 not applied: %q, stderr %q", out, stderr)
 	}
 	// A hand edit of an inline [managed] is no more applied than an unauthorized managed.toml.
-	if err := os.Remove(filepath.Join(f.copy, managedFile)); err != nil {
+	if err := os.Remove(filepath.Join(f.copy, config.ManagedFile)); err != nil {
 		t.Fatal(err)
 	}
 	recordEvent(t, f.copy, store.Enrolment{Event: store.Left, Digest: d, Revision: store.RevisionName(digest.Digest(d))})

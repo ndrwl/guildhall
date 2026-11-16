@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/release"
 	"github.com/ndrwl/guildhall/internal/store"
 )
@@ -94,7 +95,7 @@ func (a *App) releaseUse(args []string) int {
 	if err != nil {
 		return a.fail(fmt.Errorf("release use: %w", err))
 	}
-	if why := managedRefusal(dir, fmt.Sprintf("its release is a managed key, release and release_sha256 in %s, which the Steward changes by rollout and guildhall config reload --copy applies", managedFile)); why != "" {
+	if why := managedRefusal(dir, fmt.Sprintf("its release is a managed key, release and release_sha256 in %s, which the Steward changes by rollout and guildhall config reload --copy applies", config.ManagedFile)); why != "" {
 		return a.fail(errors.New("release use: " + why))
 	}
 	h, err := a.releaseHome()
@@ -233,7 +234,7 @@ func copyExecutable(src, dst string) (string, error) {
 	if err := errors.Join(cerr, out.Sync(), out.Close()); err != nil {
 		return "", err
 	}
-	return fileSHA256(dst)
+	return release.FileSHA256(dst)
 }
 
 // installLauncher probes the launcher program src and installs it as the home's bin/guildhall.
@@ -256,7 +257,7 @@ func (a *App) releaseInstallLauncher(from string) int {
 	if err != nil {
 		return a.fail(fmt.Errorf("release install --launcher: %w", err))
 	}
-	oldSum, _ := fileSHA256(h.Launcher())
+	oldSum, _ := release.FileSHA256(h.Launcher())
 	sum, err := a.installLauncher(h, src)
 	if err != nil {
 		return a.fail(fmt.Errorf("release install --launcher: %w", err))
@@ -314,7 +315,7 @@ func (a *App) releaseAdopt(args []string) int {
 	var lines []string
 	// pinned is set when this run gave the copy its first pin, a pin change, which prune follows.
 	pinned := false
-	launcherSum, _ := fileSHA256(h.Launcher())
+	launcherSum, _ := release.FileSHA256(h.Launcher())
 	adopted := launcherSum != "" && bin.SHA256 == launcherSum
 	// The release this copy adopts: the guildhall on PATH before the machine adopted, else, on a machine whose
 	// PATH already runs the launcher, this running release.

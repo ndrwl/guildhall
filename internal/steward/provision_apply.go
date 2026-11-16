@@ -13,12 +13,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/setup"
 )
 
 // managedFile is the plan's managed.toml.
 func (p *SetupPlan) managedFile() PlannedFile {
-	return p.plannedFile(setupManagedDir + "/managed.toml")
+	return p.plannedFile(setupManagedDir + "/" + config.ManagedFile)
 }
 
 func (p *SetupPlan) plannedFile(name string) PlannedFile {

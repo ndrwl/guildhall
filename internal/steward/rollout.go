@@ -14,6 +14,7 @@ import (
 
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
+	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/strictjson"
 )
 
@@ -109,7 +110,7 @@ func LoadRollout(privateDir string, t Copier, run Runner) (*Rollout, error) {
 	if err != nil {
 		return nil, err
 	}
-	managedData, err := os.ReadFile(filepath.Join(privateDir, "managed.toml"))
+	managedData, err := os.ReadFile(filepath.Join(privateDir, config.ManagedFile))
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +239,7 @@ func (r *Rollout) Plan(ctx context.Context, machines []string, stageDir string) 
 			return nil, fmt.Errorf("machine %q has no Director copies", label)
 		}
 		for j, d := range m.Directors {
-			c := CopyPlan{Machine: m.Label, Director: d.Name, SSHAlias: m.SSHAlias, Target: d.CopyDir + "/managed.toml",
+			c := CopyPlan{Machine: m.Label, Director: d.Name, SSHAlias: m.SSHAlias, Target: d.CopyDir + "/" + config.ManagedFile,
 				reload: ReloadCommand(m.Guildhall(), d.CopyDir)}
 			r.planCopy(ctx, &c, d, filepath.Join(fetchDir, fmt.Sprintf("%d-%d.toml", i, j)), stageDir)
 			p.Copies = append(p.Copies, c)
@@ -269,7 +270,8 @@ func (r *Rollout) planCopy(ctx context.Context, c *CopyPlan, d Director, fetched
 		c.Status, c.Problem = StatusRefused, err.Error()
 		return
 	}
-	c.before, c.BeforeSHA256 = before, digest.Of(before).Hex()
+	beforeDigest := digest.Of(before)
+	c.before, c.BeforeSHA256 = before, beforeDigest.Hex()
 	cfg, err := config.ParseCombined(local, before)
 	if err == nil {
 		err = checkTarget(cfg, Target{Machine: c.Machine, Director: d})
@@ -296,10 +298,11 @@ func (r *Rollout) planCopy(ctx context.Context, c *CopyPlan, d Director, fetched
 		return
 	}
 	c.Status = StatusChange
-	c.Revision = c.Target + ".rev-" + c.BeforeSHA256[:16]
+	// The remote path joins with "/", whatever the Steward's own OS.
+	c.Revision = d.CopyDir + "/" + store.RevisionName(beforeDigest)
 	c.Diff = lineDiff(string(before), string(after))
 	stage := c.stage(stageDir)
-	for _, x := range c.transfers(filepath.Join(stage, "previous.toml"), filepath.Join(stage, "managed.toml"), filepath.Join(stage, "verify.toml")) {
+	for _, x := range c.transfers(filepath.Join(stage, "previous.toml"), filepath.Join(stage, config.ManagedFile), filepath.Join(stage, "verify.toml")) {
 		c.Commands = append(c.Commands, x.command())
 	}
 	c.Commands = append(c.Commands, sshCommand(c.SSHAlias, c.reload))
@@ -331,7 +334,7 @@ func WritePlan(p *Plan) error {
 		if err := os.WriteFile(filepath.Join(stage, "previous.toml"), c.before, 0o600); err != nil {
 			return err
 		}
-		if err := os.WriteFile(filepath.Join(stage, "managed.toml"), c.after, 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(stage, config.ManagedFile), c.after, 0o600); err != nil {
 			return err
 		}
 	}
@@ -446,7 +449,7 @@ func (r *Rollout) Apply(ctx context.Context, stageDir, approve string, machines 
 		}
 		stage := c.stage(p.StageDir)
 		previous, err1 := os.ReadFile(filepath.Join(stage, "previous.toml"))
-		next, err2 := os.ReadFile(filepath.Join(stage, "managed.toml"))
+		next, err2 := os.ReadFile(filepath.Join(stage, config.ManagedFile))
 		if err1 != nil || err2 != nil || !bytes.Equal(previous, c.before) || !bytes.Equal(next, c.after) {
 			return nil, fmt.Errorf("%w: staged files for %s/%s changed", ErrPlanStale, c.Machine, c.Director)
 		}
@@ -494,14 +497,14 @@ func (r *Rollout) applyCopy(ctx context.Context, c CopyPlan, stageDir string) Co
 		return cr
 	}
 	defer func() { _ = os.RemoveAll(inputs) }()
-	for name, data := range map[string][]byte{"previous.toml": c.before, "managed.toml": c.after} {
+	for name, data := range map[string][]byte{"previous.toml": c.before, config.ManagedFile: c.after} {
 		if err := os.WriteFile(filepath.Join(inputs, name), data, 0o600); err != nil {
 			cr.Status, cr.Error = StatusFailed, err.Error()
 			return cr
 		}
 	}
 	stage := c.stage(stageDir)
-	for _, x := range c.transfers(filepath.Join(inputs, "previous.toml"), filepath.Join(inputs, "managed.toml"), filepath.Join(stage, "verify.toml")) {
+	for _, x := range c.transfers(filepath.Join(inputs, "previous.toml"), filepath.Join(inputs, config.ManagedFile), filepath.Join(stage, "verify.toml")) {
 		step := Step{Command: x.command()}
 		err := x.run(ctx, r.Transport)
 		if err != nil {

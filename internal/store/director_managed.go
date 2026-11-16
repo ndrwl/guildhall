@@ -9,6 +9,7 @@ import (
 
 	bolt "go.etcd.io/bbolt"
 
+	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
 )
 
@@ -38,11 +39,12 @@ const (
 )
 
 // revisionNamePattern is the name a left event gives the managed.toml it kept: managed.toml.rev-<first 16 hex
-// digits of its sha256>, as a rollout keeps a revision.
+// digits of its sha256>, as a rollout keeps a revision. It spells config.ManagedFile out, and a test ties the two.
 var revisionNamePattern = regexp.MustCompile(`^managed\.toml\.rev-[0-9a-f]{16}$`)
 
-// RevisionName is the name managed.toml with digest d is kept under when the copy leaves managed mode.
-func RevisionName(d digest.Digest) string { return "managed.toml.rev-" + d.Hex()[:16] }
+// RevisionName is the name managed.toml with digest d is kept under when the copy leaves managed mode, and the
+// name a Steward rollout keeps the replaced managed.toml under.
+func RevisionName(d digest.Digest) string { return config.ManagedFile + ".rev-" + d.Hex()[:16] }
 
 // Enrolment is one enrolment event. Events are ordered by sequence and never changed; the newest decides the
 // copy's mode (docs/director-modes.md#mode).

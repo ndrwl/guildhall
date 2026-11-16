@@ -111,7 +111,7 @@ func TestConfigReloadRefusals(t *testing.T) {
 		{"managed.toml missing", func(t *testing.T, dir string) {
 			writeManaged(t, dir, pinned)
 			enrolOnly(t, dir)
-			if err := os.Remove(filepath.Join(dir, managedFile)); err != nil {
+			if err := os.Remove(filepath.Join(dir, config.ManagedFile)); err != nil {
 				t.Fatal(err)
 			}
 		}, "the managed settings are missing"},
@@ -130,7 +130,7 @@ func TestConfigReloadRefusals(t *testing.T) {
 		{"corrupt managed.toml", func(t *testing.T, dir string) {
 			writeManaged(t, dir, pinned)
 			enrolOnly(t, dir)
-			appendFile(t, filepath.Join(dir, managedFile), "# edited in transit\n")
+			appendFile(t, filepath.Join(dir, config.ManagedFile), "# edited in transit\n")
 		}, "does not load with"},
 		{"local value for a managed key", func(t *testing.T, dir string) {
 			writeManaged(t, dir, pinned)

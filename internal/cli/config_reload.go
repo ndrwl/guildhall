@@ -60,7 +60,7 @@ func (a *App) configReload(args []string) int {
 	}
 	cfg, err := f.Load()
 	if err != nil {
-		return fail("%s %s does not load with %s, so it is not authorized: %w", managedFile, adm.ManagedDigest, cfgPath, err)
+		return fail("%s %s does not load with %s, so it is not authorized: %w", config.ManagedFile, adm.ManagedDigest, cfgPath, err)
 	}
 	if cfg.Mode != config.ModeDirector {
 		return fail("%s is a %s config, not a director's", cfgPath, cfg.Mode)
@@ -79,7 +79,7 @@ func (a *App) configReload(args []string) int {
 		return fail("%w", err)
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s %s authorized by reload (event %d", managedFile, got.Digest, got.Sequence)
+	fmt.Fprintf(&b, "%s %s authorized by reload (event %d", config.ManagedFile, got.Digest, got.Sequence)
 	if got.Previous != "" {
 		fmt.Fprintf(&b, ", previous %s", got.Previous)
 	}
@@ -91,7 +91,7 @@ func (a *App) configReload(args []string) int {
 	// refusal here leaves the pin as it was; the revision stays authorized, so a reload once the release can be
 	// verified pins it.
 	if err := a.applyManagedRelease(dir, storePath, cfg); err != nil {
-		return fail("%s %s is authorized, but its release is not pinned, and the copy keeps its pin: %w; fix that and run guildhall config reload --copy %s again", managedFile, got.Digest, err, dir)
+		return fail("%s %s is authorized, but its release is not pinned, and the copy keeps its pin: %w; fix that and run guildhall config reload --copy %s again", config.ManagedFile, got.Digest, err, dir)
 	}
 	return 0
 }
