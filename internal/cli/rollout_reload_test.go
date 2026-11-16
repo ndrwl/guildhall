@@ -6,16 +6,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/ndrwl/guildhall/internal/config"
+	"github.com/ndrwl/guildhall/internal/release"
 	"github.com/ndrwl/guildhall/internal/steward"
+	"github.com/ndrwl/guildhall/internal/store"
 )
 
 // diskFleet is a fleet whose machine files live under root, at their remote paths, and whose remote commands are
 // this binary's own commands run on the copy found there, so a rollout's config reload reaches a real Director copy.
-type diskFleet struct{ root string }
+// With home set, the remote guildhall uses it as its Guildhall home and reports report from any binary it probes.
+type diskFleet struct{ root, home, report string }
 
 func (f diskFleet) local(path string) string { return filepath.Join(f.root, filepath.FromSlash(path)) }
 
@@ -43,6 +47,14 @@ func (f diskFleet) Run(ctx context.Context, alias string, argv []string) ([]byte
 		return nil, fmt.Errorf("no %s on this fleet", argv[0])
 	}
 	args := append(append([]string{}, argv[1:len(argv)-1]...), f.local(argv[len(argv)-1]))
+	if f.home != "" {
+		var ran []string
+		app, stdout, stderr := releaseTestApp(f.home, f.report, &ran)
+		if code := app.Run(args); code != 0 {
+			return nil, fmt.Errorf("exit status %d: %s", code, strings.TrimSpace(stderr.String()))
+		}
+		return []byte(stdout.String()), nil
+	}
 	app, stdout, stderr := newTestApp(nil, nil)
 	if code := app.Run(args); code != 0 {
 		return nil, fmt.Errorf("exit status %d: %s", code, strings.TrimSpace(stderr.String()))
@@ -117,6 +129,117 @@ func TestRolloutReloadAuthorizesTheEnrolledCopy(t *testing.T) {
 	}
 	if code, stderr := newTaskInRepo(t, copyDir, "cli"); code != 0 {
 		t.Fatalf("task new after the rollout: exit %d, %s", code, stderr)
+	}
+}
+
+// TestRolloutReRunPinsAfterAMissingRelease (H41): a rollout naming a release whose binary is not yet in the copy's
+// releases/.incoming/ is reload_failed and incomplete; once the binary is placed there, a re-run finds managed.toml
+// unchanged but runs config reload again, which pins the release, and only then reports the copy done. A further
+// re-run reloads again, recording no new event and leaving the pin alone.
+func TestRolloutReRunPinsAfterAMissingRelease(t *testing.T) {
+	t.Setenv(directorModeEnv, "")
+	fleet := diskFleet{root: t.TempDir(), home: filepath.Join(t.TempDir(), "home"),
+		report: `{"version":"v1.1.0","modified":false,"store_schema":1,"release_contract":2}`}
+	copyDir := fleet.local("/home/guild/tools")
+	if err := os.MkdirAll(copyDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(copyDir, "config.toml"), cliCopy)
+	first, err := config.EncodeManaged(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(copyDir, managedFile), string(first))
+	app, _, stderr := newTestApp(nil, nil)
+	if code := app.Run([]string{"store", "init", filepath.Join(copyDir, directorStoreFile)}); code != 0 {
+		t.Fatalf("store init: exit %d, %s", code, stderr)
+	}
+	enrolOnly(t, copyDir)
+
+	from, sum := releaseFile(t, "release v1.1.0")
+	cfg, private := writeStewardConfig(t, "schema_version = 1\n[managed.release]\nvalue = \"v1.1.0\"\n[managed.release_sha256]\nvalue = \""+sum+"\"\n")
+	run := func(approve bool) (int, steward.Receipt) {
+		t.Helper()
+		app, stdout, stderr := newTestApp(privateWorkTree(private))
+		app.Copier, app.Runner = fleet, fleet
+		plan := filepath.Join(t.TempDir(), "plan")
+		args := []string{"steward", "rollout", "--config", cfg, "--machine", "workstation", "--plan", plan}
+		if code := app.Run(append(args, "--dry-run")); code != 0 {
+			t.Fatalf("dry run: exit %d, %s", code, stderr)
+		}
+		args = append(args, "--apply")
+		if approve {
+			saved, err := steward.ReadPlan(plan)
+			if err != nil {
+				t.Fatal(err)
+			}
+			args = append(args, "--approve", saved.Digest)
+		}
+		code := app.Run(args)
+		t.Logf("apply: exit %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+		files, err := filepath.Glob(filepath.Join(plan, "receipt-*.json"))
+		if err != nil || len(files) != 1 {
+			t.Fatalf("receipts %q, %v", files, err)
+		}
+		var receipt steward.Receipt
+		if err := json.Unmarshal([]byte(readText(t, files[0])), &receipt); err != nil {
+			t.Fatal(err)
+		}
+		return code, receipt
+	}
+
+	code, receipt := run(true)
+	if c := receipt.Copies[0]; code == 0 || c.Status != steward.StatusReloadFailed || !strings.Contains(c.Error, "the rollout left no copy of it") {
+		t.Fatalf("first apply: exit %d, copy %+v, want reload_failed for the missing release", code, c)
+	}
+	if pin, err := release.ReadPin(copyDir); err == nil {
+		t.Fatalf("the copy pins %q before its release is in place", pin)
+	}
+
+	h := release.Home{Dir: fleet.home, GOOS: runtime.GOOS}
+	incoming := managedIncoming(h, "v1.1.0")
+	if err := os.MkdirAll(filepath.Dir(incoming), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, incoming, readText(t, from))
+
+	code, receipt = run(false)
+	c := receipt.Copies[0]
+	if code != 0 || c.Status != steward.StatusUnchanged || c.Error != "" || len(c.Steps) != 1 ||
+		strings.Join(c.Steps[0].Command, " ") != "ssh -o BatchMode=yes -- guild-ws guildhall config reload --copy /home/guild/tools" ||
+		!strings.Contains(c.Steps[0].Output, "pins v1.1.0") {
+		t.Fatalf("re-run: exit %d, copy %+v, want unchanged with one reload that pins v1.1.0", code, c)
+	}
+	if pin, err := release.ReadPin(copyDir); err != nil || pin != "v1.1.0" {
+		t.Fatalf("release.pin after the re-run = %q, %v", pin, err)
+	}
+	mode := copyMode(t, copyDir)
+	want := "sha256:" + c.AfterSHA256
+	if !mode.Authorized || mode.ManagedDigest != want || mode.LastRevision == nil {
+		t.Fatalf("mode after the re-run = %+v, want %s authorized", mode, want)
+	}
+	pins := func() []store.ReleasePin {
+		t.Helper()
+		pins, err := withStore(filepath.Join(copyDir, directorStoreFile), true, func(s *store.Store) ([]store.ReleasePin, error) { return s.ReleasePins() })
+		if err != nil {
+			t.Fatal(err)
+		}
+		return pins
+	}
+	before := pins()
+
+	code, receipt = run(false)
+	if c := receipt.Copies[0]; code != 0 || c.Status != steward.StatusUnchanged || len(c.Steps) != 1 || !strings.Contains(c.Steps[0].Output, "already pins v1.1.0") {
+		t.Fatalf("third run: exit %d, copy %+v", code, c)
+	}
+	if after := copyMode(t, copyDir); after.LastRevision == nil || after.LastRevision.Sequence != mode.LastRevision.Sequence {
+		t.Errorf("the third run recorded a managed revision: %+v, was %+v", after.LastRevision, mode.LastRevision)
+	}
+	if after := pins(); len(after) != len(before) {
+		t.Errorf("the third run recorded a pin: %+v, was %+v", after, before)
+	}
+	if pin, err := release.ReadPin(copyDir); err != nil || pin != "v1.1.0" {
+		t.Fatalf("release.pin after the third run = %q, %v", pin, err)
 	}
 }
 

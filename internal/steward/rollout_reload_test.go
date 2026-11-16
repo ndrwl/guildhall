@@ -59,11 +59,91 @@ func TestRolloutReloadsEachWrittenCopy(t *testing.T) {
 		}
 	}
 	fresh := dryRun(t, r, p.Machines...)
-	if _, err := r.Apply(context.Background(), fresh.StageDir, "", fresh.Machines...); err != nil {
+	again, err := r.Apply(context.Background(), fresh.StageDir, "", fresh.Machines...)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if got := s.ran("guild-laptop"); len(got) != 1 {
-		t.Errorf("an unchanged apply ran %q, want no new reload", got)
+	for alias, want := range wantRun {
+		if got := s.ran(alias); !slices.EqualFunc(got, append(slices.Clone(want), want...), slices.Equal) {
+			t.Errorf("an unchanged apply on %s ran %q in all, want one new reload per copy", alias, got)
+		}
+	}
+	for i, c := range again.Copies {
+		if c.Status != StatusUnchanged || len(c.Steps) != 1 || !slices.Equal(c.Steps[0].Command, fresh.Copies[i].Commands[0]) {
+			t.Fatalf("unchanged receipt copy %+v", c)
+		}
+		if c.Machine == "workstation" && c.Steps[0].Output != authorized {
+			t.Errorf("%s unchanged reload output %q, want %q", c.Director, c.Steps[0].Output, authorized)
+		}
+	}
+}
+
+// TestRolloutReRunReloadsAnUnchangedCopy (H41) covers a re-run after reload_failed: the copy's managed file is
+// current, so it is unchanged, but its reload runs again; while that reload still fails the copy stays
+// reload_failed and the apply is incomplete, and once it succeeds the copy is unchanged and the apply complete.
+func TestRolloutReRunReloadsAnUnchangedCopy(t *testing.T) {
+	s, r := fleet(t)
+	const pin = "guildhall: release v1.4.0 is not installed and the rollout left no copy of it to install"
+	s.answer("guild-laptop", "", pin)
+	p := dryRun(t, r, "laptop")
+	if _, err := r.Apply(context.Background(), p.StageDir, p.Digest, p.Machines...); !errors.Is(err, ErrIncomplete) {
+		t.Fatalf("first Apply: %v, want ErrIncomplete", err)
+	}
+
+	again := dryRun(t, r, "laptop")
+	c := again.Copies[0]
+	want := sshCommand("guild-laptop", ReloadCommand(DefaultGuildhall, "C:/Users/guild/directors/games"))
+	if c.Status != StatusUnchanged || len(c.Commands) != 1 || !slices.Equal(c.Commands[0], want) || c.Revision != "" || c.Diff != "" {
+		t.Fatalf("re-run plan copy %+v, want unchanged with only the reload %q", c, want)
+	}
+	if again.NeedsApproval() {
+		t.Error("an unchanged re-run needs approval")
+	}
+	receipt, err := r.Apply(context.Background(), again.StageDir, "", again.Machines...)
+	if !errors.Is(err, ErrIncomplete) {
+		t.Fatalf("re-run Apply: %v, want ErrIncomplete while the reload still fails", err)
+	}
+	games := receipt.Copies[0]
+	if games.Status != StatusReloadFailed || len(games.Steps) != 1 || !strings.Contains(games.Steps[0].Error, pin) ||
+		!strings.Contains(games.Error, "managed.toml is already current, but config reload failed: ") || !strings.Contains(games.Error, pin) {
+		t.Fatalf("re-run receipt %+v", games)
+	}
+	if strings.Contains(games.Error, "not authorized") {
+		t.Errorf("re-run error %q claims the copy is not authorized", games.Error)
+	}
+
+	const pinned = "copy C:/Users/guild/directors/games pins v1.4.0"
+	s.answer("guild-laptop", pinned+"\n", "")
+	last := dryRun(t, r, "laptop")
+	receipt, err = r.Apply(context.Background(), last.StageDir, "", last.Machines...)
+	if err != nil {
+		t.Fatalf("Apply once the reload succeeds: %v", err)
+	}
+	if games := receipt.Copies[0]; games.Status != StatusUnchanged || games.Error != "" || len(games.Steps) != 1 || games.Steps[0].Output != pinned {
+		t.Fatalf("receipt once the reload succeeds %+v", games)
+	}
+	if got := s.ran("guild-laptop"); len(got) != 3 {
+		t.Errorf("laptop ran %q, want three reloads", got)
+	}
+}
+
+// TestPlanDigestCoversAnUnchangedCopysReload pins that an unchanged copy's planned reload is in the plan digest.
+func TestPlanDigestCoversAnUnchangedCopysReload(t *testing.T) {
+	_, r := fleet(t)
+	p := dryRun(t, r, "laptop")
+	if _, err := r.Apply(context.Background(), p.StageDir, p.Digest, p.Machines...); err != nil {
+		t.Fatal(err)
+	}
+	q := dryRun(t, r, "laptop")
+	if q.Copies[0].Status != StatusUnchanged || len(q.Copies[0].Commands) != 1 {
+		t.Fatalf("re-run plan copy %+v", q.Copies[0])
+	}
+	tampered := *q
+	tampered.Copies = slices.Clone(q.Copies)
+	c := &tampered.Copies[0]
+	c.Commands = [][]string{sshCommand(c.SSHAlias, ReloadCommand("C:/Users/guild/bin/guildhall.exe", "C:/Users/guild/directors/games"))}
+	if tampered.digest() == q.Digest {
+		t.Fatal("the plan digest does not cover an unchanged copy's reload command")
 	}
 }
 
