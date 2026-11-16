@@ -25,8 +25,12 @@ func TestLockPathAtLocksAtTheOffset(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond) // timing:allow a refused taker is expected to wait out this bound.
-	_, err = artisan.LockPathAt(ctx, path, 1<<30)
+	second, err := artisan.LockPathAt(ctx, path, 1<<30)
 	cancel()
+	if err == nil {
+		_ = second.Close()
+		t.Fatal("second LockPathAt took a held lock")
+	}
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("second LockPathAt = %v, want the deadline", err)
 	}

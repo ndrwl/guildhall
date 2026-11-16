@@ -45,6 +45,7 @@
 3 github.com/ndrwl/guildhall/internal/doccheck
 3 github.com/ndrwl/guildhall/internal/endpoint
 3 github.com/ndrwl/guildhall/internal/endpoint/endpointtest
+3 github.com/ndrwl/guildhall/internal/filelock
 3 github.com/ndrwl/guildhall/internal/forge/forgetest
 3 github.com/ndrwl/guildhall/internal/git/gittest
 3 github.com/ndrwl/guildhall/internal/interp

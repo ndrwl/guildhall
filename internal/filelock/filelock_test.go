@@ -161,6 +161,7 @@ func TestWaitBlocksUntilTheHolderCloses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = holder.Close() }) // a no-op once the test has closed it; frees the waiter if the test fails early
 	waiter := open(t, path)
 	done := make(chan error, 1)
 	go func() { done <- filelock.Wait(waiter, highOffset) }()
