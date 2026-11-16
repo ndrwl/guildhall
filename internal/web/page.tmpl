@@ -227,11 +227,15 @@ appears; the script fills only the tag, the time and Reload's link, with textCon
 
 {{define "time"}}<time datetime="{{.ISO}}" title="{{.Title}}">{{.Text}}</time>{{end}}
 
-{{define "row"}}<li class="r{{if .You}} you{{end}}{{if .Front}} front{{end}}"><span class="idc">{{if .Position}}<span class="qp">{{.Position}}</span>{{end}}<a class="tid" href="{{.Href}}">{{if .Repo}}<span class="rp">{{.Repo}}</span>{{end}}{{.ID}}</a></span><span class="rt" title="{{.Title}}">{{.Title}}</span>{{if .Pri}}<span class="pri {{.Pri}}">{{.Pri}}</span>{{else}}<span></span>{{end}}<span class="stp">{{if .Held}}<span class="hm">held</span>{{end}}{{if .Step}}<b>{{.Step}}</b>{{end}}{{.Rest}}</span><span class="sx">{{if .Slice}}<span class="lb">slice </span>{{.Slice}}{{end}}</span><span class="prc">{{with .PR}}{{if $.PRHref}}<a href="{{$.PRHref}}">#{{.Number}}</a>{{else}}#{{.Number}}{{end}}{{if $.CI.Mark}}<i class="ci {{$.CI.Class}}" title="{{$.CI.Word}}">{{$.CI.Mark}}</i>{{end}}{{end}}</span>{{with .Time}}{{template "time" .}}{{else}}<span></span>{{end}}{{if .Ask}}<span class="ak">{{.Ask}}</span>{{end}}</li>{{end}}
+{{define "row"}}<li class="r{{if .You}} you{{end}}{{if .Front}} front{{end}}" data-sort-repo="{{.Repository}}" data-sort-id="{{.ID}}" data-sort-pri="{{.Priority}}" data-sort-step="{{.StepKey}}" data-sort-att="{{.Attempt}}" data-sort-pr="{{with .PR}}{{.Number}}{{end}}" data-sort-time="{{with .Time}}{{.ISO}}{{end}}"><span class="idc">{{if .Position}}<span class="qp">{{.Position}}</span>{{end}}<a class="tid" href="{{.Href}}">{{if .Repo}}<span class="rp">{{.Repo}}</span>{{end}}{{.ID}}</a></span><span class="rt" title="{{.Title}}">{{.Title}}</span>{{if .Pri}}<span class="pri {{.Pri}}">{{.Pri}}</span>{{else}}<span></span>{{end}}<span class="stp">{{if .Held}}<span class="hm">held</span>{{end}}{{if .Step}}<b>{{.Step}}</b>{{end}}{{.Rest}}</span><span class="sx">{{if .Slice}}<span class="lb">slice </span>{{.Slice}}{{end}}</span><span class="prc">{{with .PR}}{{if $.PRHref}}<a href="{{$.PRHref}}">#{{.Number}}</a>{{else}}#{{.Number}}{{end}}{{if $.CI.Mark}}<i class="ci {{$.CI.Class}}" title="{{$.CI.Word}}">{{$.CI.Mark}}</i>{{end}}{{end}}</span>{{with .Time}}{{template "time" .}}{{else}}<span></span>{{end}}{{if .Ask}}<span class="ak">{{.Ask}}</span>{{end}}</li>{{end}}
 
-{{define "chip"}}<a class="cp{{if .On}} on{{end}}" href="{{.Href}}">{{.Label}}{{if .Count}}<i>{{.Count}}</i>{{end}}</a>{{end}}
+{{define "chip"}}<a class="cp{{if .On}} on{{end}}" href="{{.Href}}"{{if eq .Key "p"}} data-p="{{.Value}}"{{else}} data-repo="{{.Value}}"{{end}}>{{.Label}}{{if .Count}}<i>{{.Count}}</i>{{end}}</a>{{end}}
 
-{{define "sorthead"}}<a class="{{if .On}}on{{if .Desc}} desc{{end}}{{end}}" href="{{.Href}}">{{.Head}}</a>{{end}}
+{{define "sorthead"}}<a class="{{if .On}}on{{if .Desc}} desc{{end}}{{end}}" href="{{.Href}}" data-sort="{{.Key}}">{{.Head}}</a>{{end}}
+
+{{/* listparts: the blank row, stage group, Needs you section and banner list.js clones to draw the feed's data with
+createElement and textContent; inert until cloned, and never shown with scripts off. */}}
+{{define "listparts"}}<template id="listparts"><li class="r"><span class="idc"><span class="qp"></span><a class="tid"><span class="rp"></span></a></span><span class="rt"></span><span class="pri"></span><span class="stp"><span class="hm">held</span><b></b></span><span class="sx"><span class="lb">slice </span></span><span class="prc"><a></a><i class="ci"></i></span><time></time><span class="ak"></span></li><details class="sg" open><summary><h2><span class="n"></span></h2><span class="sgm"></span></summary><ul class="rows"></ul></details><section class="sg you" id="g-you"><div class="sgh"><h2>Needs you <span class="n you"></span></h2><span class="sgm">oldest ask first</span></div><ul class="rows"></ul></section><p class="hold"><b></b></p></template>{{end}}
 
 {{define "group"}}<details class="{{.Class}}" id="{{.ID}}"{{if ne .ID "g-done"}} open{{end}}><summary><h2>{{.Title}} <span class="n">{{len .Rows}}</span></h2><span class="sgm">{{.Status}}</span></summary>
 {{range .Banners}}<p class="hold"><b>{{.Front}}</b> {{.Wait}}{{with .Since}} since {{template "time" .}}{{end}}.</p>
@@ -246,6 +250,7 @@ appears; the script fills only the tag, the time and Reload's link, with textCon
 <div class="crumb"><b>All tasks</b></div>
 <h1>All tasks</h1>
 <p class="ws{{if .You}} you{{end}}"><b>{{.Count}}</b><span class="m">{{.Meta}} · updated {{template "time" .ReadAt}}</span></p>
+<p class="lag" id="lag" hidden>Not refreshed since {{template "time" .ReadAt}}</p>
 </header>
 <main class="tl tri">
 {{template "strip" .Strip}}
@@ -258,12 +263,12 @@ appears; the script fills only the tag, the time and Reload's link, with textCon
 {{- if .Query.Repo}}<input type="hidden" name="repo" value="{{.Query.Repo}}">{{end}}
 {{- if .Query.Sort}}<input type="hidden" name="sort" value="{{.Query.Sort}}">{{end}}
 {{- if .Query.Desc}}<input type="hidden" name="dir" value="desc">{{end}}
-<div class="fc"><span class="fl">Priority</span>{{range .Priorities}}{{template "chip" .}}{{end}}</div>
+<div class="fc" id="fp"><span class="fl">Priority</span>{{range .Priorities}}{{template "chip" .}}{{end}}</div>
 {{- if .Repos}}
-<div class="fc"><span class="fl">Repository</span>{{range .Repos}}{{template "chip" .}}{{end}}</div>
+<div class="fc" id="fr"><span class="fl">Repository</span>{{range .Repos}}{{template "chip" .}}{{end}}</div>
 {{- end}}
 </form>
-<div class="fc sortp"><span class="fl">Sort</span>{{range .Sorts}}<a class="cp{{if .On}} on{{end}}" href="{{.Href}}">{{.Chip}}{{if .On}}{{if .Desc}} ▴{{else}} ▾{{end}}{{end}}</a>{{end}}</div>
+<div class="fc sortp"><span class="fl">Sort</span>{{range .Sorts}}<a class="cp{{if .On}} on{{end}}" href="{{.Href}}" data-sort="{{.Key}}" data-label="{{.Chip}}">{{.Chip}}{{if .On}}{{if .Desc}} ▴{{else}} ▾{{end}}{{end}}</a>{{end}}</div>
 <div class="rh">{{template "sorthead" index .Sorts 0}}<span>Title</span>{{template "sorthead" index .Sorts 1}}{{template "sorthead" index .Sorts 2}}<span>Slice</span>{{template "sorthead" index .Sorts 3}}{{template "sorthead" index .Sorts 4}}</div>
 {{end}}
 {{- range .Groups}}{{template "group" .}}{{end}}
@@ -271,8 +276,9 @@ appears; the script fills only the tag, the time and Reload's link, with textCon
 {{- if .NoneMatches}}<p class="empty">No task matches the filter. <a href="{{.Clear}}">Show every task</a></p>
 {{else if not (or .Needs .Groups .Finished)}}<p class="empty">No task is open, and none finished in the last 24 hours.</p>
 {{end}}
-<p class="asof">Read from the store {{template "time" .ReadAt}} · reload for newer</p>
+<p class="asof">Read from the store {{template "time" .ReadAt}} · refreshes by itself every 20 s</p>
 </main>
+{{template "listparts"}}
 </body></html>
 {{end}}
 

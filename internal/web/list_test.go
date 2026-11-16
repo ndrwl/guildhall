@@ -93,6 +93,19 @@ func checkGolden(t *testing.T, name, body string) {
 	}
 }
 
+// listParts is the task list's inert <template> of blank parts, which list.js clones.
+var listParts = regexp.MustCompile(`<template id="listparts">[\s\S]*?</template>`)
+
+// shownPage is the task list's body after </head> without its listparts template: what the page shows.
+func shownPage(t *testing.T, body string) string {
+	t.Helper()
+	_, page, _ := strings.Cut(body, "</head>")
+	if n := len(listParts.FindAllString(page, -1)); n != 1 {
+		t.Errorf("the task list holds %d listparts templates, want 1", n)
+	}
+	return listParts.ReplaceAllString(page, "")
+}
+
 // inOrder reports the first of marks that body holds out of order or not at all.
 func inOrder(t *testing.T, body string, marks ...string) {
 	t.Helper()
@@ -129,20 +142,20 @@ func TestTaskList(t *testing.T) {
 		`<p class="ws you"><b>3 tasks wait for you</b><span class="m">12 open · 3 in the merge queue · updated <time datetime="2026-11-05T14:52:10Z" title="Thu 5 Nov 2026, 14:52:10 UTC">now</time></span></p>`,
 		`<section class="sg you" id="g-you"><div class="sgh"><h2>Needs you <span class="n you">3</span></h2><span class="sgm">oldest ask first</span></div>`,
 		// a Needs you row: the repository part faint, p3 left out, step and attempt, slice, PR with its CI mark, the ask
-		`<li class="r you"><span class="idc"><a class="tid" href="/firstmate/f31"><span class="rp">firstmate/</span>f31</a></span><span class="rt" title="Captain view keeps its scroll position across refreshes">Captain view keeps its scroll position across refreshes</span><span></span><span class="stp"><b>build</b> · attempt 3</span><span class="sx"><span class="lb">slice </span>1/2</span><span class="prc"><a href="https://github.com/ndrwl/firstmate/pull/90">#90</a><i class="ci bad" title="CI failed">✗</i></span><time datetime="2026-11-04T12:40:00Z" title="Wed 4 Nov 2026, 12:40:00 UTC">1 day ago</time><span class="ak">A grant for an attempt.</span></li>`,
+		`<li class="r you" data-sort-repo="firstmate" data-sort-id="f31" data-sort-pri="3" data-sort-step="build" data-sort-att="3" data-sort-pr="90" data-sort-time="2026-11-04T12:40:00Z"><span class="idc"><a class="tid" href="/firstmate/f31"><span class="rp">firstmate/</span>f31</a></span><span class="rt" title="Captain view keeps its scroll position across refreshes">Captain view keeps its scroll position across refreshes</span><span></span><span class="stp"><b>build</b> · attempt 3</span><span class="sx"><span class="lb">slice </span>1/2</span><span class="prc"><a href="https://github.com/ndrwl/firstmate/pull/90">#90</a><i class="ci bad" title="CI failed">✗</i></span><time datetime="2026-11-04T12:40:00Z" title="Wed 4 Nov 2026, 12:40:00 UTC">1 day ago</time><span class="ak">A grant for an attempt.</span></li>`,
 		`<span class="pri p1">p1</span><span class="stp"><b>plan approval</b> · attempt 1</span>`,
 		`<form class="fb" action="/" method="get" role="search"><input class="fq" type="search" name="q" value="" placeholder="Filter by id or title" aria-label="Filter by id or title">`,
-		`<div class="fc"><span class="fl">Priority</span><a class="cp on" href="/">All</a><a class="cp" href="/?p=p1">p1<i>3</i></a><a class="cp" href="/?p=p2">p2<i>5</i></a><a class="cp" href="/?p=p3">p3<i>4</i></a></div>`,
-		`<div class="fc"><span class="fl">Repository</span><a class="cp on" href="/">All<i>12</i></a><a class="cp" href="/?repo=guildhall">guildhall<i>10</i></a><a class="cp" href="/?repo=firstmate">firstmate<i>2</i></a></div>`,
-		`<div class="rh"><a class="" href="/?sort=task">Task</a><span>Title</span><a class="on" href="/?dir=desc&amp;sort=pri">Pri</a><a class="" href="/?sort=stage">Stage · step</a><span>Slice</span><a class="" href="/?sort=pr">PR</a><a class="" href="/?sort=time">In state</a></div>`,
-		`<div class="fc sortp"><span class="fl">Sort</span><a class="cp" href="/?sort=task">Id</a><a class="cp on" href="/?dir=desc&amp;sort=pri">Priority ▾</a>`,
+		`<div class="fc" id="fp"><span class="fl">Priority</span><a class="cp on" href="/" data-p="">All</a><a class="cp" href="/?p=p1" data-p="p1">p1<i>3</i></a><a class="cp" href="/?p=p2" data-p="p2">p2<i>5</i></a><a class="cp" href="/?p=p3" data-p="p3">p3<i>4</i></a></div>`,
+		`<div class="fc" id="fr"><span class="fl">Repository</span><a class="cp on" href="/" data-repo="">All<i>12</i></a><a class="cp" href="/?repo=guildhall" data-repo="guildhall">guildhall<i>10</i></a><a class="cp" href="/?repo=firstmate" data-repo="firstmate">firstmate<i>2</i></a></div>`,
+		`<div class="rh"><a class="" href="/?sort=task" data-sort="task">Task</a><span>Title</span><a class="on" href="/?dir=desc&amp;sort=pri" data-sort="pri">Pri</a><a class="" href="/?sort=stage" data-sort="stage">Stage · step</a><span>Slice</span><a class="" href="/?sort=pr" data-sort="pr">PR</a><a class="" href="/?sort=time" data-sort="time">In state</a></div>`,
+		`<div class="fc sortp"><span class="fl">Sort</span><a class="cp" href="/?sort=task" data-sort="task" data-label="Id">Id</a><a class="cp on" href="/?dir=desc&amp;sort=pri" data-sort="pri" data-label="Priority">Priority ▾</a>`,
 		`<details class="sg mv" id="g-plan" open><summary><h2>Grill and plan <span class="n">1</span></h2><span class="sgm">1 grill</span></summary>`,
 		`<details class="sg mv" id="g-build" open><summary><h2>Build and review <span class="n">2</span></h2><span class="sgm">1 build, 1 review</span></summary>`,
 		`<details class="sg mv" id="g-ci" open><summary><h2>CI <span class="n">1</span></h2><span class="sgm">checks running on 1 PR</span></summary>`,
 		`<span class="stp"><b>CI</b> · checks running</span>`,
 		`<details class="sg mv" id="g-merge-queue" open><summary><h2>Merge queue <span class="n">3</span></h2><span class="sgm">queue order · 1 held</span></summary>`,
 		`<p class="hold"><b>Front: guildhall/d208, PR #371.</b> Waiting on CI since <time datetime="2026-11-05T14:46:00Z" title="Thu 5 Nov 2026, 14:46:00 UTC">6 min ago</time>.</p>`,
-		`<li class="r front"><span class="idc"><span class="qp">1</span><a class="tid" href="/guildhall/d208">`,
+		`<li class="r front" data-sort-repo="guildhall" data-sort-id="d208"`, `><span class="idc"><span class="qp">1</span><a class="tid" href="/guildhall/d208">`,
 		`<span class="stp"><b>front</b> · waiting on CI</span>`,
 		`<span class="stp">waiting · checks passed</span>`,
 		`<span class="stp"><span class="hm">held</span>the Director holds its merge</span>`,
@@ -151,7 +164,9 @@ func TestTaskList(t *testing.T) {
 		`<span class="stp">Paused.</span>`, `title="Thu 1 Oct 2026, 13:50:00 UTC">1 Oct</time>`,
 		`<details class="sg fin" id="g-done"><summary><h2>Recently finished <span class="n">2</span></h2><span class="sgm">last 24 hours · 1 merged, 1 cancelled</span></summary>`,
 		`<span class="stp"><b>merged</b></span>`, `<span class="stp"><b>cancelled</b> · superseded by f29</span>`,
-		`<p class="asof">Read from the store <time datetime="2026-11-05T14:52:10Z" title="Thu 5 Nov 2026, 14:52:10 UTC">now</time> · reload for newer</p>`,
+		`<p class="asof">Read from the store <time datetime="2026-11-05T14:52:10Z" title="Thu 5 Nov 2026, 14:52:10 UTC">now</time> · refreshes by itself every 20 s</p>`,
+		`<p class="lag" id="lag" hidden>Not refreshed since <time datetime="2026-11-05T14:52:10Z" title="Thu 5 Nov 2026, 14:52:10 UTC">now</time></p>`,
+		`<template id="listparts"><li class="r">`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("task list lacks %s", want)
@@ -177,7 +192,8 @@ func TestTaskList(t *testing.T) {
 	inOrder(t, body, `id="g-you"`, `/firstmate/f31"`, `/guildhall/d219"`, `/guildhall/d222"`, `<form class="fb"`, `class="rh"`,
 		`id="g-plan"`, `/guildhall/d225"`, `id="g-build"`, `/guildhall/d215"`, `/firstmate/f29"`, `id="g-ci"`, `/guildhall/d211"`,
 		`id="g-merge-queue"`, `<p class="hold">`, `class="tid" href="/guildhall/d208"`, `/guildhall/d204"`, `/guildhall/d201"`,
-		`id="g-held"`, `/guildhall/d217"`, `/guildhall/d203"`, `id="g-done"`, `/guildhall/d223"`, `/firstmate/f26"`, `class="asof"`)
+		`id="g-held"`, `/guildhall/d217"`, `/guildhall/d203"`, `id="g-done"`, `/guildhall/d223"`, `/firstmate/f26"`, `class="asof"`,
+		`<template id="listparts">`)
 	checkGolden(t, "list.golden.html", body)
 
 	// HEAD reads it too
@@ -206,13 +222,13 @@ func TestTaskListOneRepository(t *testing.T) {
 		`<summary>1 running · 0 to merge · 0 merged · $1.50 today</summary>`, `<li>none in the merge queue</li>`, `<b>load unavailable</b> · 2 cores`,
 		`<p class="ws"><b>Nothing waits for you</b><span class="m">3 open · updated <time`,
 		`<a class="tid" href="/app/a1">a1</a>`, `<span class="stp">Waiting (mystery).</span>`, `<span class="pri p0">p0</span>`,
-		`>3 days ago</time>`, `>2 h ago</time>`, `>1 min ago</time>`,
+		`>3 days ago</time>`, `>2 hr ago</time>`, `>1 min ago</time>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("task list lacks %s", want)
 		}
 	}
-	_, page, _ := strings.Cut(body, "</head>")
+	page := shownPage(t, body)
 	for _, bad := range []string{`id="g-you"`, `id="g-done"`, `class="rp"`, "Repository</span>", `id="g-merge-queue"`, "in the merge queue ·"} {
 		if strings.Contains(page, bad) {
 			t.Errorf("task list holds %s", bad)
@@ -234,8 +250,9 @@ func TestTaskListEmpty(t *testing.T) {
 			t.Errorf("empty list lacks %s", want)
 		}
 	}
+	page := shownPage(t, body)
 	for _, bad := range []string{`class="sg`, "<form", `class="rh"`} {
-		if strings.Contains(body, bad) {
+		if strings.Contains(page, bad) {
 			t.Errorf("empty list holds %s", bad)
 		}
 	}
@@ -318,19 +335,19 @@ func TestTaskListFilterSort(t *testing.T) {
 	// a chip in effect is on and toggles off, keeping the rest of the view; a sort in effect reverses
 	body = get(t, s, "/?p=p1&repo=guildhall&sort=time").Body.String()
 	for _, want := range []string{
-		`<a class="cp on" href="/?repo=guildhall&amp;sort=time">p1<i>5</i></a>`,
-		`<a class="cp on" href="/?p=p1&amp;sort=time">guildhall<i>12</i></a>`,
-		`<a class="on" href="/?dir=desc&amp;p=p1&amp;repo=guildhall&amp;sort=time">In state</a>`,
+		`<a class="cp on" href="/?repo=guildhall&amp;sort=time" data-p="p1">p1<i>5</i></a>`,
+		`<a class="cp on" href="/?p=p1&amp;sort=time" data-repo="guildhall">guildhall<i>12</i></a>`,
+		`<a class="on" href="/?dir=desc&amp;p=p1&amp;repo=guildhall&amp;sort=time" data-sort="time">In state</a>`,
 		`<input type="hidden" name="p" value="p1"><input type="hidden" name="repo" value="guildhall"><input type="hidden" name="sort" value="time">`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("p1 guildhall by time: lacks %s", want)
 		}
 	}
-	if want := `<a class="on desc" href="/?sort=time">In state</a>`; !strings.Contains(get(t, s, "/?sort=time&dir=desc").Body.String(), want) {
+	if want := `<a class="on desc" href="/?sort=time" data-sort="time">In state</a>`; !strings.Contains(get(t, s, "/?sort=time&dir=desc").Body.String(), want) {
 		t.Errorf("reversed sort lacks %s", want)
 	}
-	if want := `<a class="on desc" href="/">Pri</a>`; !strings.Contains(get(t, s, "/?dir=desc").Body.String(), want) {
+	if want := `<a class="on desc" href="/" data-sort="pri">Pri</a>`; !strings.Contains(get(t, s, "/?dir=desc").Body.String(), want) {
 		t.Errorf("reversed default lacks %s", want)
 	}
 }
@@ -354,14 +371,14 @@ func TestReadListQuery(t *testing.T) {
 // TestTaskListTimes: every time on / is a <time> with a datetime and an exact-time title, and its text is relative.
 func TestTaskListTimes(t *testing.T) {
 	s, _ := listServer(fixtureList())
-	body := get(t, s, "/").Body.String()
+	body := shownPage(t, get(t, s, "/").Body.String())
 	all := regexp.MustCompile(`<time[ >]`).FindAllStringIndex(body, -1)
-	full := regexp.MustCompile(`<time datetime="\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ" title="[A-Z][a-z]{2} \d{1,2} [A-Z][a-z]{2} \d{4}, \d\d:\d\d:\d\d UTC">(now|\d+ min ago|\d+ h ago|1 day ago|\d+ days ago|\d{1,2} [A-Z][a-z]{2})</time>`).FindAllStringIndex(body, -1)
-	// the band and the footer, 12 open rows, the front's banner and 2 finished rows
-	if len(all) != 2+12+1+2 || len(full) != len(all) {
+	full := regexp.MustCompile(`<time datetime="\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ" title="[A-Z][a-z]{2} \d{1,2} [A-Z][a-z]{2} \d{4}, \d\d:\d\d:\d\d UTC">(now|\d+ min ago|\d+ hr ago|1 day ago|\d+ days ago|\d{1,2} [A-Z][a-z]{2})</time>`).FindAllStringIndex(body, -1)
+	// the band, the not-refreshed notice and the footer, 12 open rows, the front's banner and 2 finished rows
+	if len(all) != 3+12+1+2 || len(full) != len(all) {
 		t.Errorf("%d <time> elements, %d of them with datetime, title and relative text", len(all), len(full))
 	}
-	if regexp.MustCompile(`\b\d\d:\d\d\b`).MatchString(regexp.MustCompile(`<time[^>]*>|<style>[\s\S]*?</style>`).ReplaceAllString(body, "")) {
+	if regexp.MustCompile(`\b\d\d:\d\d\b`).MatchString(regexp.MustCompile(`<time[^>]*>|data-sort-time="[^"]*"`).ReplaceAllString(body, "")) {
 		t.Error("the task list shows a clock time outside a <time> title")
 	}
 }
@@ -376,7 +393,7 @@ func TestRelTime(t *testing.T) {
 	}{
 		{0, "now"}, {59 * time.Second, "now"}, {-5 * time.Minute, "now"},
 		{time.Minute, "1 min ago"}, {6*time.Minute + 59*time.Second, "6 min ago"}, {59 * time.Minute, "59 min ago"},
-		{time.Hour, "1 h ago"}, {2*time.Hour + 59*time.Minute, "2 h ago"}, {23 * time.Hour, "23 h ago"}, {24*time.Hour - time.Second, "23 h ago"},
+		{time.Hour, "1 hr ago"}, {2*time.Hour + 59*time.Minute, "2 hr ago"}, {23 * time.Hour, "23 hr ago"}, {24*time.Hour - time.Second, "23 hr ago"},
 		{24 * time.Hour, "1 day ago"}, {47 * time.Hour, "1 day ago"}, {48 * time.Hour, "2 days ago"},
 		{30 * 24 * time.Hour, "30 days ago"}, {31*24*time.Hour - time.Second, "30 days ago"}, {31 * 24 * time.Hour, "5 Oct"},
 		{400 * 24 * time.Hour, "1 Oct 2025"},

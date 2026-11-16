@@ -117,8 +117,11 @@ type listView struct {
 	NoneMatches bool
 }
 
-// chip is one filter chip: its label, its count, the list's URL with it toggled, and whether it is in effect.
+// chip is one filter chip: its label, its count, the list's URL with it toggled, and whether it is in effect; Key
+// ("p" or "repo") and Value are the query value it toggles, "" for All, which list.js reads from data-p or data-repo.
 type chip struct {
+	Key   string
+	Value string
 	Label string
 	Count int
 	Href  string
@@ -126,10 +129,10 @@ type chip struct {
 }
 
 // sortLink is one sort of the column header and the phone's sort chips: its labels, its URL (reversing the sort in
-// effect), whether it is the sort in effect and whether that is reversed.
+// effect), whether it is the sort in effect and whether that is reversed; Key is its listSorts key, for list.js.
 type sortLink struct {
-	Head, Chip, Href string
-	On, Desc         bool
+	Key, Head, Chip, Href string
+	On, Desc              bool
 }
 
 // listGroup is one group of the list: its anchor, class, heading, status line and rows, and for the merge queue
@@ -158,16 +161,18 @@ type listRow struct {
 	// Step is the bold part of the stage and step cell and Rest what follows it, such as "build" and " · attempt 2";
 	// Held marks a merge-queue entry the Director holds.
 	Step, Rest string
-	Held       bool
-	Slice      string
-	PR         *PullRequest
-	PRHref     string
-	CI         ciMark
-	Time       *timeView
-	Ask        string
-	You        bool
-	Position   int
-	Front      bool
+	// StepKey is the task's own next step, which the stage sort orders by, whatever Step shows.
+	StepKey  string
+	Held     bool
+	Slice    string
+	PR       *PullRequest
+	PRHref   string
+	CI       ciMark
+	Time     *timeView
+	Ask      string
+	You      bool
+	Position int
+	Front    bool
 }
 
 // ciMark is a pull request's CI mark: ✓ passed, ● running, ✗ failed; its zero value shows none.
@@ -188,7 +193,7 @@ func ciMarkOf(ci string) ciMark {
 }
 
 func (s *Server) listView(l TaskList, st Stats, q listQuery) listView {
-	v := listView{Style: style, Scripts: scripts, ReadAt: s.timeAt(l.ReadAt, l.ReadAt), Query: q, Strip: newStripView(st)}
+	v := listView{Style: style, Scripts: listScripts, ReadAt: s.timeAt(l.ReadAt, l.ReadAt), Query: q, Strip: newStripView(st)}
 	multi := false
 	for _, t := range l.Tasks {
 		multi = multi || t.Repository != l.Tasks[0].Repository
@@ -280,7 +285,7 @@ func (s *Server) listView(l TaskList, st Stats, q listQuery) listView {
 	if v.Open > 0 {
 		all := q
 		all.P = ""
-		v.Priorities = append(v.Priorities, chip{Label: "All", Href: all.href(), On: q.P == ""})
+		v.Priorities = append(v.Priorities, chip{Key: "p", Label: "All", Href: all.href(), On: q.P == ""})
 		for p := 0; p <= 5; p++ {
 			label := "p" + strconv.Itoa(p)
 			if priCount[p] == 0 && q.P != label {
@@ -291,20 +296,20 @@ func (s *Server) listView(l TaskList, st Stats, q listQuery) listView {
 			if q.P == label {
 				c.P = ""
 			}
-			v.Priorities = append(v.Priorities, chip{Label: label, Count: priCount[p], Href: c.href(), On: q.P == label})
+			v.Priorities = append(v.Priorities, chip{Key: "p", Value: label, Label: label, Count: priCount[p], Href: c.href(), On: q.P == label})
 		}
 	}
 	if multi && v.Open > 0 {
 		all := q
 		all.Repo = ""
-		v.Repos = append(v.Repos, chip{Label: "All", Count: v.Open, Href: all.href(), On: q.Repo == ""})
+		v.Repos = append(v.Repos, chip{Key: "repo", Label: "All", Count: v.Open, Href: all.href(), On: q.Repo == ""})
 		for _, r := range repos {
 			c := q
 			c.Repo = r
 			if q.Repo == r {
 				c.Repo = ""
 			}
-			v.Repos = append(v.Repos, chip{Label: r, Count: repoCount[r], Href: c.href(), On: q.Repo == r})
+			v.Repos = append(v.Repos, chip{Key: "repo", Value: r, Label: r, Count: repoCount[r], Href: c.href(), On: q.Repo == r})
 		}
 	}
 	for _, k := range listSorts {
@@ -314,7 +319,7 @@ func (s *Server) listView(l TaskList, st Stats, q listQuery) listView {
 		if !c.Desc && k.Key == "pri" {
 			c.Sort = ""
 		}
-		v.Sorts = append(v.Sorts, sortLink{Head: k.Head, Chip: k.Chip, Href: c.href(), On: on, Desc: on && q.Desc})
+		v.Sorts = append(v.Sorts, sortLink{Key: k.Key, Head: k.Head, Chip: k.Chip, Href: c.href(), On: on, Desc: on && q.Desc})
 	}
 	return v
 }
@@ -376,7 +381,7 @@ func sortListed(ts []Listed, q listQuery) {
 
 func (s *Server) listRow(t Listed, l TaskList, multi bool) listRow {
 	r := listRow{ID: t.ID, Href: taskHref(t.Repository, t.ID), Title: t.Title, PR: t.PR, CI: ciMarkOf(t.CI), Ask: t.Ask, You: t.Group == GroupYou,
-		Repository: t.Repository, Priority: t.Priority, Attempt: t.Attempt}
+		Repository: t.Repository, Priority: t.Priority, Attempt: t.Attempt, StepKey: t.Step}
 	if multi {
 		r.Repo = t.Repository + "/"
 	}

@@ -27,8 +27,8 @@ var ownScripts = loadScripts(assets)
 
 // CSP is the Content-Security-Policy every page is served with: baseCSP, plus a script-src listing only the own
 // scripts' hashes, so no other script runs, including any inside Artisan-written content, and connect-src 'self',
-// so the one own script allowed a request, poll.js, can ask its page's own since route and nothing else can be
-// reached. Its script-src never lists 'unsafe-inline', 'unsafe-eval', 'unsafe-hashes', 'strict-dynamic', 'self' or
+// so the own scripts allowed a request, poll.js and list.js, can ask their page's since route or /list.json and
+// nothing else can be reached. Its script-src never lists 'unsafe-inline', 'unsafe-eval', 'unsafe-hashes', 'strict-dynamic', 'self' or
 // a host, and with no own scripts it is baseCSP exactly.
 var CSP = policy(ownScripts)
 
@@ -57,7 +57,7 @@ func loadScripts(fsys fs.FS) []ownScript {
 }
 
 // connectSrc is the one request source own scripts may use: the page's own origin, which serves poll.js's since
-// route (docs/decisions/own-scripts.md).
+// route and list.js's /list.json (docs/decisions/own-scripts.md, docs/decisions/list-page-scripts.md).
 const connectSrc = "connect-src 'self'"
 
 // policy is baseCSP with a script-src of scripts' hashes and connectSrc, or baseCSP itself when there are none.
@@ -72,11 +72,27 @@ func policy(scripts []ownScript) string {
 	return baseCSP + "; script-src " + strings.Join(hashes, " ") + "; " + connectSrc
 }
 
-// scripts are the own scripts' bodies, which the task list, task and reader pages inline.
-var scripts = func() []template.JS {
-	out := make([]template.JS, len(ownScripts))
-	for i, s := range ownScripts {
-		out[i] = s.Body
+// listOnly are the own scripts only the task list inlines, and pageOnly those only the task and reader pages
+// inline; every other own script is inlined by all three. The one CSP lists every own script's hash, so each page's
+// set is a subset of what it allows.
+var (
+	listOnly = map[string]bool{"list.js": true}
+	pageOnly = map[string]bool{"poll.js": true}
+)
+
+// scriptSet is the bodies of the own scripts skip does not name, in file-name order.
+func scriptSet(skip map[string]bool) []template.JS {
+	var out []template.JS
+	for _, s := range ownScripts {
+		if !skip[s.Name] {
+			out = append(out, s.Body)
+		}
 	}
 	return out
-}()
+}
+
+// scripts are the own scripts the task and reader pages inline, and listScripts those the task list inlines.
+var (
+	scripts     = scriptSet(listOnly)
+	listScripts = scriptSet(pageOnly)
+)

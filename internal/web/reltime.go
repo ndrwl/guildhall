@@ -15,8 +15,10 @@ type timeView struct {
 const exactTimeLayout = "Mon 2 Jan 2006, 15:04:05 MST"
 
 // relTime is t relative to now as the task list says it: "now" under a minute, and for a time in the future, which
-// a clock skew can give; then "6 min ago", "2 h ago", "1 day ago" or "3 days ago" up to 30 days, and past that the
-// date in loc, "4 Oct", with its year when it is not now's.
+// a clock skew can give; then "6 min ago", "2 hr ago", "1 day ago" or "3 days ago" up to 30 days, and past that the
+// date in loc, "4 Oct", with its year when it is not now's. These are the words list.js writes in the browser with
+// Intl.RelativeTimeFormat("en-GB", {style: "short"}), and its dates are read from the exact time's title, so the
+// text agrees as the page sits open.
 func relTime(t, now time.Time, loc *time.Location) string {
 	d := now.Sub(t)
 	switch {
@@ -25,7 +27,7 @@ func relTime(t, now time.Time, loc *time.Location) string {
 	case d < time.Hour:
 		return strconv.Itoa(int(d/time.Minute)) + " min ago"
 	case d < 24*time.Hour:
-		return strconv.Itoa(int(d/time.Hour)) + " h ago"
+		return strconv.Itoa(int(d/time.Hour)) + " hr ago"
 	}
 	if days := int(d / (24 * time.Hour)); days == 1 {
 		return "1 day ago"
