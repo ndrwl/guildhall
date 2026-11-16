@@ -73,4 +73,4 @@ The deterministic delayed-open reproduction is a local Linux diagnostic; native 
 ## Slow lock-file open
 
 Since d233, `artisan.LockPathAt`'s deadline bounds contention only: a context already done fails before the file is opened or created, opening the file does not count against the deadline, and one nonblocking acquisition is always made once the file is open, so a slow open no longer refuses a free lock (the Steward's 100ms `lockWait` had turned this into a false `busy`).
-`TestLockPathAtSlowOpenStillTakesAFreeLock` and `TestTakePrivateLockSlowOpenIsNotBusy` stall the open on Linux with a read lease (`testenv.StallOpens`) to reproduce the Windows flake in `TestProvisionResume` and `TestProvisionNeverCopiesOverUnreadable`.
+`filelock`'s `TestLockPathSlowOpenStillTakesAFreeLock` (`artisan`'s `TestLockPathAtSlowOpenStillTakesAFreeLock` until d245 moved it) and `TestTakePrivateLockSlowOpenIsNotBusy` stall the open on Linux with a read lease (`testenv.StallOpens`) to reproduce the Windows flake in `TestProvisionResume` and `TestProvisionNeverCopiesOverUnreadable`.

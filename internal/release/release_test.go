@@ -403,3 +403,28 @@ func TestLock(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Lock(0) makes exactly one attempt: it takes a free home lock, and refuses a held one with ErrLocked at once.
+func TestLockZeroWaitTriesOnce(t *testing.T) {
+	h := newHome(t)
+	unlock, err := h.Lock(0)
+	if err != nil {
+		t.Fatalf("Lock(0) on a free home lock = %v, want the lock", err)
+	}
+	_, err = h.Lock(0)
+	if !errors.Is(err, ErrLocked) {
+		t.Errorf("Lock(0) on a held home lock = %v, want ErrLocked", err)
+	} else if want := fmt.Sprintf("%s: %s, waited 0s", ErrLocked, h.LockFile()); err.Error() != want {
+		t.Errorf("Lock(0) on a held home lock = %q, want %q", err, want)
+	}
+	if err := unlock(); err != nil {
+		t.Fatal(err)
+	}
+	unlock, err = h.Lock(0)
+	if err != nil {
+		t.Fatalf("Lock(0) after unlock = %v", err)
+	}
+	if err := unlock(); err != nil {
+		t.Fatal(err)
+	}
+}

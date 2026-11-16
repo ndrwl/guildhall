@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/atomicfile"
+	"github.com/ndrwl/guildhall/internal/filelock"
 	"github.com/ndrwl/guildhall/internal/strictjson"
 )
 
@@ -411,7 +412,7 @@ func (l *Launcher) locked(fn func() error) error {
 	}
 	// Closing the file releases the lock.
 	defer func() { _ = f.Close() }()
-	if err := lockFile(f, 0, false); err != nil {
+	if err := filelock.Wait(f, 0); err != nil {
 		return err
 	}
 	return fn()
