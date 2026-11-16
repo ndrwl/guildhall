@@ -259,13 +259,15 @@ For each copy that changes, it then runs the four planned commands:
 3. read `managed.toml` back and compare its sha256 with the plan;
 4. once it matches, run `guildhall config reload --copy <copy_dir>` on the copy over SSH, which records the new digest as authorized in the copy's own store ([how the Steward acts](director-modes.md#how-the-steward-acts)).
 
-Every apply that writes a copy runs the reload, whether or not the plan needed approval, so a routine rollout is never an unauthorized revision on the Director.
+Every apply runs the reload on each copy it wrote or found unchanged, whether or not the plan needed approval, so a routine rollout is never an unauthorized revision on the Director.
 A failure on one copy does not stop the others.
 The receipt `receipt-<UTC time>.json` in the plan directory records each copy's status (`applied`, `unchanged`, `failed`, `verify_failed` or `reload_failed`), its before and after digests, its read-back digest when verification reaches digest comparison, the revision file and every attempted command with its error, and, for the reload, what it printed.
 Read-back follows successful uploads only; failed transfers are recorded as failed and may leave partial remote files without a read-back digest.
-A `reload_failed` copy has the new managed file, published and verified, but its reload failed, for example because the machine's `guildhall` predates `config reload` and says it does not know the command; the copy is not undone, and its Director refuses the new revision until a reload authorizes it, which the Guildmaster can run by hand on that machine.
+A `reload_failed` copy has the new managed file, published and verified, or already had it, but its reload failed, for example because the machine's `guildhall` predates `config reload` and says it does not know the command; the copy is not undone, and its Director refuses the new revision until a reload authorizes it, which the Guildmaster can run by hand on that machine.
+A reload can also fail after it authorizes the revision, when the [release](releases.md#the-pin) the revision names is neither installed nor in `releases/.incoming/`: the revision is then authorized but the managed release is not pinned, and re-running the rollout after placing the binary there recovers it.
 Apply exits 1 unless every copy is applied or unchanged; a plan that is no longer current needs a new dry run.
-Applying an unchanged plan performs no remote writes and runs no remote command, but still writes a local receipt.
+An unchanged copy gets no remote writes, but its reload runs, so its authorization and pin are confirmed and the receipt records the reload step and what it printed; applying an unchanged plan still writes a local receipt.
+So a copy whose `guildhall` predates `config reload`, or that cannot be reached, is `reload_failed` (or `failed`) on every re-run, even when its `managed.toml` is current; that is its true state.
 
 ### Publication and writer containment
 
@@ -588,8 +590,8 @@ To do it by hand instead:
 2. On the Director's machine, copy [`examples/managed.toml`](../examples/managed.toml) beside the copy's `config.toml`, as its first `managed.toml`.
 3. There, run `guildhall director enrol --steward <label>` on the Guildmaster's word.
    Enrolment never authorizes that first digest, so the copy refuses every command that needs its settings until it is authorized.
-4. Authorize it: run a rollout to the machine, whose apply runs `config reload` on each copy it writes, or run `guildhall config reload --copy <dir>` there by hand.
-   A rollout that leaves the copy unchanged writes nothing and runs no reload, so the hand reload is the way when the Steward's settings already match.
+4. Authorize it: run a rollout to the machine, whose apply runs `config reload` on each copy it writes or finds unchanged, or run `guildhall config reload --copy <dir>` there by hand.
+   A rollout that leaves the copy unchanged writes nothing but still runs its reload, so it authorizes the copy even when the Steward's settings already match.
 5. Check with `guildhall director mode` on the copy, or `guildhall steward status` here: it shows `managed`, the Steward's label and the digest, authorized.
 
 A `managed.toml` changed on the machine by anything but a rollout and its reload, such as a hand edit, is not applied: the copy records it `observed-untrusted` and raises an approve/reject decision for the Guildmaster in its own `needs_me` ([observed-untrusted alerts](director-modes.md#observed-untrusted-alerts)), and `steward status` shows the digest as untrusted.

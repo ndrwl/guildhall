@@ -38,8 +38,8 @@ const (
 	StatusApplied      = "applied"
 	StatusFailed       = "failed"
 	StatusVerifyFailed = "verify_failed"
-	// StatusReloadFailed is a copy whose new managed file was published and verified but whose config reload
-	// failed, so the Director has not authorized it; the copy is not undone.
+	// StatusReloadFailed is a copy whose managed file was published and verified, or found already current, but
+	// whose config reload failed, so the copy may be unauthorized or its managed release unpinned; it is not undone.
 	StatusReloadFailed = "reload_failed"
 )
 
@@ -92,14 +92,14 @@ type Rollout struct {
 	privateDir    string
 	// Transport reaches the enrolled machines.
 	Transport Copier
-	// Runner runs config reload on each copy an apply writes.
+	// Runner runs config reload on each copy an apply writes or finds unchanged.
 	Runner Runner
 	// Now stamps receipts.
 	Now func() time.Time
 }
 
 // LoadRollout reads roster.toml and managed.toml from the private config directory; t copies the files and run
-// runs config reload on each copy an apply writes.
+// runs config reload on each copy an apply writes or finds unchanged.
 func LoadRollout(privateDir string, t Copier, run Runner) (*Rollout, error) {
 	rosterData, err := os.ReadFile(filepath.Join(privateDir, "roster.toml"))
 	if err != nil {
@@ -151,7 +151,8 @@ type CopyPlan struct {
 	Revision string   `json:"revision,omitempty"`
 	Changes  []Change `json:"changes,omitempty"`
 	Diff     string   `json:"diff,omitempty"`
-	// Commands are the planned scp commands and, last, the ssh command that runs config reload on the copy.
+	// Commands are the planned scp commands and, last, the ssh command that runs config reload on the copy;
+	// an unchanged copy's only command is that reload.
 	Commands [][]string `json:"commands,omitempty"`
 
 	before, after []byte
@@ -288,7 +289,10 @@ func (r *Rollout) planCopy(ctx context.Context, c *CopyPlan, d Director, fetched
 	}
 	c.after, c.AfterSHA256, c.Changes = after, digest.Of(after).Hex(), changes
 	if bytes.Equal(before, after) {
+		// An unchanged copy gets no remote writes, but its reload runs again, so a copy an earlier rollout left
+		// unauthorized or unpinned is not reported done.
 		c.Status = StatusUnchanged
+		c.Commands = [][]string{sshCommand(c.SSHAlias, c.reload)}
 		return
 	}
 	c.Status = StatusChange
@@ -392,7 +396,9 @@ type Step struct {
 // and refuses a plan needing approval unless approve is that plan's digest.
 // Each changed copy keeps its previous managed file as a revision, then gets the new managed file;
 // only after both puts succeed is it read back and verified, and only a verified copy has config reload run on it,
-// which authorizes the new managed file in the copy's own store. A failed reload does not undo the copy.
+// which authorizes the new managed file in the copy's own store and pins the release it names. An unchanged copy
+// gets no transfers, but config reload runs on it too, so its receipt confirms its authorization and pin.
+// A failed reload does not undo the copy.
 // The local config is never written; validated managed inputs replace preview source paths in transport commands.
 // A copy that fails does not stop the others; the receipt, written to stageDir, records every outcome.
 //
@@ -474,7 +480,12 @@ func (r *Rollout) applyCopy(ctx context.Context, c CopyPlan, stageDir string) Co
 		Machine: c.Machine, Director: c.Director, Target: c.Target, Status: c.Status,
 		BeforeSHA256: c.BeforeSHA256, AfterSHA256: c.AfterSHA256, Revision: c.Revision,
 	}
-	if c.Status != StatusChange {
+	switch c.Status {
+	case StatusUnchanged:
+		r.reload(ctx, c, &cr, "managed.toml is already current, but config reload failed: ")
+		return cr
+	case StatusChange:
+	default:
 		return cr
 	}
 	inputs, err := os.MkdirTemp(stageDir, ".apply-")
@@ -512,8 +523,16 @@ func (r *Rollout) applyCopy(ctx context.Context, c CopyPlan, stageDir string) Co
 		cr.Status, cr.Error = StatusVerifyFailed, "the copy read back does not match the rolled-out config"
 		return cr
 	}
+	cr.Status = StatusApplied
+	r.reload(ctx, c, &cr, "the new managed file is published and verified, but config reload failed: ")
+	return cr
+}
+
+// reload runs config reload on the copy and records it as cr's last step, with its output; when the reload fails,
+// cr becomes reload_failed with failed and then the remote diagnostic as its error, and is otherwise left as it is.
+func (r *Rollout) reload(ctx context.Context, c CopyPlan, cr *CopyReceipt, failed string) {
 	step := Step{Command: sshCommand(c.SSHAlias, c.reload)}
-	err = errors.New("no remote command runner")
+	err := errors.New("no remote command runner")
 	var out []byte
 	if r.Runner != nil {
 		out, err = r.Runner.Run(ctx, c.SSHAlias, c.reload)
@@ -521,11 +540,9 @@ func (r *Rollout) applyCopy(ctx context.Context, c CopyPlan, stageDir string) Co
 	if err != nil {
 		step.Error = err.Error()
 		cr.Steps = append(cr.Steps, step)
-		cr.Status, cr.Error = StatusReloadFailed, "the new managed file is published and verified, but config reload failed, so the Director has not authorized it: "+err.Error()
-		return cr
+		cr.Status, cr.Error = StatusReloadFailed, failed+err.Error()
+		return
 	}
 	step.Output = strings.TrimSpace(string(out))
 	cr.Steps = append(cr.Steps, step)
-	cr.Status = StatusApplied
-	return cr
 }
