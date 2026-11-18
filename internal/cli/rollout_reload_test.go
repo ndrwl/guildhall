@@ -77,7 +77,7 @@ func TestRolloutReloadAuthorizesTheEnrolledCopy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(copyDir, managedFile), string(first))
+	writeFile(t, filepath.Join(copyDir, config.ManagedFile), string(first))
 	app, _, stderr := newTestApp(nil, nil)
 	if code := app.Run([]string{"store", "init", filepath.Join(copyDir, directorStoreFile)}); code != 0 {
 		t.Fatalf("store init: exit %d, %s", code, stderr)
@@ -149,7 +149,7 @@ func TestRolloutReRunPinsAfterAMissingRelease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(copyDir, managedFile), string(first))
+	writeFile(t, filepath.Join(copyDir, config.ManagedFile), string(first))
 	app, _, stderr := newTestApp(nil, nil)
 	if code := app.Run([]string{"store", "init", filepath.Join(copyDir, directorStoreFile)}); code != 0 {
 		t.Fatalf("store init: exit %d, %s", code, stderr)

@@ -76,7 +76,7 @@ func manageCopy(t *testing.T, dir string) {
 		}
 	}
 	writeFile(t, cfgPath, string(local))
-	writeFile(t, filepath.Join(dir, managedFile), string(managed))
+	writeFile(t, filepath.Join(dir, config.ManagedFile), string(managed))
 	enrolManaged(t, dir)
 }
 
@@ -85,7 +85,7 @@ func manageCopy(t *testing.T, dir string) {
 // `config reload` would: the copy is then admitted as managed.
 func enrolManaged(t *testing.T, dir string) {
 	t.Helper()
-	managed, err := os.ReadFile(filepath.Join(dir, managedFile))
+	managed, err := os.ReadFile(filepath.Join(dir, config.ManagedFile))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -363,9 +363,9 @@ func (s *Setup) PlanTakeover(ctx context.Context, in TakeoverInput) (*SetupPlan,
 	if _, err := config.ParseCombined(local, managed); err != nil {
 		return nil, fmt.Errorf("%w: the first managed.toml does not load with config.toml: %v", ErrCopyMismatch, err)
 	}
-	managedName := setupManagedDir + "/managed.toml"
+	managedName := setupManagedDir + "/" + config.ManagedFile
 	p.files[managedName] = managed
-	p.Files = []PlannedFile{{Name: managedName, Target: in.CopyDir + "/managed.toml", SHA256: digest.Of(managed).Hex()}}
+	p.Files = []PlannedFile{{Name: managedName, Target: in.CopyDir + "/" + config.ManagedFile, SHA256: digest.Of(managed).Hex()}}
 
 	p.Roster = entry
 	after, err := proposeRoster(rosterData, roster, entry)
@@ -385,7 +385,7 @@ func (s *Setup) PlanTakeover(ctx context.Context, in TakeoverInput) (*SetupPlan,
 		{ID: StepPause, Kind: StepKindRemote, Argv: PauseCommand(guildhall, in.CopyDir), Expect: "a running session is paused, so it starts no new work; a session already paused, stopped or absent is left as it is"},
 		{ID: StepDrain, Kind: StepKindRemote, Argv: StatusCommand(guildhall, in.CopyDir), Expect: "no attempt is running; while one is, the apply waits and is run again later"},
 		{ID: StepBackup, Kind: StepKindRemote, Argv: backup, Expect: backupExpect},
-		{ID: StepManaged, Kind: StepKindCopy, Argv: scpCommand(filepath.Join(planDir, filepath.FromSlash(managedName)), Remote{entry.SSHAlias, in.CopyDir + "/managed.toml"}.String()),
+		{ID: StepManaged, Kind: StepKindCopy, Argv: scpCommand(filepath.Join(planDir, filepath.FromSlash(managedName)), Remote{entry.SSHAlias, in.CopyDir + "/" + config.ManagedFile}.String()),
 			Expect: "managed.toml, with no managed key, is published beside config.toml and read back with digest " + string(digest.Of(managed))},
 		{ID: StepEnrol, Kind: StepKindRemote, Argv: EnrolCommand(guildhall, s.Steward, in.CopyDir), Expect: "the copy is enrolled with Steward " + s.Steward},
 		{ID: StepReload, Kind: StepKindRemote, Argv: ReloadCommand(guildhall, in.CopyDir), Expect: "director mode reports the copy managed, with its managed.toml authorized"},

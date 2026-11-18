@@ -2,11 +2,13 @@ package store
 
 import (
 	"errors"
+	"regexp"
 	"strings"
 	"testing"
 
 	bolt "go.etcd.io/bbolt"
 
+	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
 )
 
@@ -14,6 +16,22 @@ var (
 	managedA = string(digest.Of([]byte("managed a")))
 	managedB = string(digest.Of([]byte("managed b")))
 )
+
+// TestRevisionNameUsesManagedFile ties RevisionName and revisionNamePattern, which spells the name out, to
+// config.ManagedFile, so renaming the managed file cannot leave either behind.
+func TestRevisionNameUsesManagedFile(t *testing.T) {
+	d := digest.Digest(managedA)
+	name := RevisionName(d)
+	if want := config.ManagedFile + ".rev-" + d.Hex()[:16]; name != want {
+		t.Errorf("RevisionName = %q, want %q", name, want)
+	}
+	if !revisionNamePattern.MatchString(name) {
+		t.Errorf("revisionNamePattern %q refuses RevisionName's %q", revisionNamePattern, name)
+	}
+	if !strings.HasPrefix(revisionNamePattern.String(), "^"+regexp.QuoteMeta(config.ManagedFile)+`\.rev-`) {
+		t.Errorf("revisionNamePattern %q does not start with config.ManagedFile %q", revisionNamePattern, config.ManagedFile)
+	}
+}
 
 func enrol(steward, d string) Enrolment {
 	return Enrolment{Event: Enrolled, Steward: steward, Digest: d}

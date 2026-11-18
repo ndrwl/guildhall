@@ -2,12 +2,9 @@ package cli
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -39,21 +36,7 @@ func (a *App) imageSHA256() (string, error) {
 			return "", err
 		}
 	}
-	return fileSHA256(path)
-}
-
-// fileSHA256 is the lowercase hex sha256 of the file at path.
-func fileSHA256(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = f.Close() }()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	return release.FileSHA256(path)
 }
 
 // pathBinary is the guildhall binary on PATH: its absolute path and sha256, either "" when it could not be found
@@ -72,7 +55,7 @@ func (a *App) lookPathBinary() (pathBinary, error) {
 	if path, err = filepath.Abs(path); err != nil {
 		return pathBinary{}, err
 	}
-	sum, err := fileSHA256(path)
+	sum, err := release.FileSHA256(path)
 	return pathBinary{Path: path, SHA256: sum}, err
 }
 

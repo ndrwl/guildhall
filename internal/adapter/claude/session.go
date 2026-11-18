@@ -51,7 +51,7 @@ func Settings(copyDir string) []byte {
 		"Bash(guildhall fake-director:*)",
 		"Bash(guildhall artisan start:*)",
 	}
-	for _, name := range []string{"config.toml", "managed.toml"} {
+	for _, name := range []string{"config.toml", config.ManagedFile} {
 		deny = append(deny, "Edit("+absoluteRule(filepath.Join(copyDir, name))+")")
 	}
 	type permissions struct {

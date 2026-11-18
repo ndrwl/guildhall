@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/release"
 	"github.com/ndrwl/guildhall/internal/session"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/testenv"
@@ -36,7 +37,7 @@ func putOnPath(t *testing.T, content []byte) (string, string) {
 	if err := os.Rename(tmp, path); err != nil {
 		t.Fatal(err)
 	}
-	sum, err := fileSHA256(path)
+	sum, err := release.FileSHA256(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +94,7 @@ func testBinarySHA256(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sum, err := fileSHA256(exe)
+	sum, err := release.FileSHA256(exe)
 	if err != nil {
 		t.Fatal(err)
 	}

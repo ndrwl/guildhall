@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/release"
 	"github.com/ndrwl/guildhall/internal/store"
 	"github.com/ndrwl/guildhall/internal/workflow"
@@ -100,7 +101,7 @@ func TestReleaseRollback(t *testing.T) {
 	}
 
 	// A managed copy rolls back by rollout.
-	writeFile(t, filepath.Join(f.copy, managedFile), "")
+	writeFile(t, filepath.Join(f.copy, config.ManagedFile), "")
 	if code := f.run("release", "rollback", "--copy", f.copy); code != 1 || !strings.Contains(f.stderr.String(), "is managed") || !strings.Contains(f.stderr.String(), "rollout") {
 		t.Fatalf("rollback of a managed copy = %d, %q", code, f.stderr)
 	}

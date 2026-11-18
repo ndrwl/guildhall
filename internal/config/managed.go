@@ -13,6 +13,11 @@ import (
 	"github.com/ndrwl/guildhall/internal/digest"
 )
 
+// ManagedFile is the name of the managed settings file a Steward rollout publishes beside a Director copy's
+// config.toml. Every path or name built from that file uses it; config owns it because admit, store and
+// steward all import config.
+const ManagedFile = "managed.toml"
+
 type managedFile struct {
 	SchemaVersion int                       `toml:"schema_version"`
 	Managed       map[string]ManagedSetting `toml:"managed"`
@@ -94,7 +99,7 @@ func LoadUnadmitted(filename string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	managed, err := os.ReadFile(filepath.Join(filepath.Dir(filename), "managed.toml"))
+	managed, err := os.ReadFile(filepath.Join(filepath.Dir(filename), ManagedFile))
 	if errors.Is(err, os.ErrNotExist) {
 		return Parse(local)
 	}

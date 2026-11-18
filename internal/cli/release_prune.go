@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/ndrwl/guildhall/internal/admit"
+	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/release"
 	"github.com/ndrwl/guildhall/internal/store"
 )
@@ -253,7 +254,7 @@ func (a *App) releaseRollback(args []string) int {
 	if err != nil {
 		return fail(err)
 	}
-	if why := managedRefusal(dir, fmt.Sprintf("its release is a managed key, so the Steward rolls back by rollout of the previous %s revision, then guildhall config reload --copy and guildhall director reload --copy", managedFile)); why != "" {
+	if why := managedRefusal(dir, fmt.Sprintf("its release is a managed key, so the Steward rolls back by rollout of the previous %s revision, then guildhall config reload --copy and guildhall director reload --copy", config.ManagedFile)); why != "" {
 		return fail(errors.New(why))
 	}
 	h, err := a.releaseHome()

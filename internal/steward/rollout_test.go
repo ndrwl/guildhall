@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/config"
+	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/strictjson"
 )
 
@@ -75,6 +76,29 @@ func dryRun(t *testing.T, r *Rollout, machines ...string) *Plan {
 	}
 	return p
 }
+
+// TestRolloutRevisionName pins each changed copy's Revision as the exact remote path it has always had: the copy
+// directory, "/" whatever the OS, then managed.toml.rev- and the first 16 hex digits of the replaced file's sha256.
+func TestRolloutRevisionName(t *testing.T) {
+	s, r := fleet(t)
+	p := dryRun(t, r, "workstation", "laptop")
+	if len(p.Copies) != 3 {
+		t.Fatalf("plan has %d copies, want 3", len(p.Copies))
+	}
+	for i, path := range []string{toolsPath, docsPath, gamesPath} {
+		c := p.Copies[i]
+		alias := "guild-ws"
+		if path == gamesPath {
+			alias = "guild-laptop"
+		}
+		before := s.get(alias, managedPath(path))
+		want := strings.TrimSuffix(path, "config.toml") + "managed.toml.rev-" + digest.Of([]byte(before)).Hex()[:16]
+		if c.Status != StatusChange || c.Revision != want {
+			t.Errorf("copy %d: status %s, Revision %q; want %s, %q", i, c.Status, c.Revision, StatusChange, want)
+		}
+	}
+}
+
 func TestRolloutPreservesConcurrentLocalEditAndRevisions(t *testing.T) {
 	s, r := fleet(t)
 	original := s.get("guild-ws", managedPath(toolsPath))

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ndrwl/guildhall/internal/release"
 	"github.com/ndrwl/guildhall/internal/session"
 	"github.com/ndrwl/guildhall/internal/store"
 )
@@ -68,7 +69,7 @@ func TestDirectorStatusComparesTheSupervisorBinary(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin)
-	onPath, err := fileSHA256(path)
+	onPath, err := release.FileSHA256(path)
 	if err != nil {
 		t.Fatal(err)
 	}

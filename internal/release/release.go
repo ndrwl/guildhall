@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/atomicfile"
+	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/filelock"
 )
 
@@ -179,15 +180,14 @@ func ValidVersion(version string) error {
 	return nil
 }
 
-// sha256Hex matches a sha256 written as 64 hex digits.
-var sha256Hex = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
-
-// NormalizeSHA256 is sum in lowercase, refusing anything that is not 64 hex digits.
+// NormalizeSHA256 is sum in lowercase, refusing anything that is not 64 hex digits. It parses through
+// digest.ParseHex after lowercasing, so a typed --sha256 or a published release_sha256 in uppercase still works.
 func NormalizeSHA256(sum string) (string, error) {
-	if !sha256Hex.MatchString(sum) {
+	d, err := digest.ParseHex(strings.ToLower(sum))
+	if err != nil {
 		return "", fmt.Errorf("sha256 %q is not 64 hex digits", sum)
 	}
-	return strings.ToLower(sum), nil
+	return d.Hex(), nil
 }
 
 // Report is what a binary says of itself in `guildhall version --json`, the fields install checks and records.

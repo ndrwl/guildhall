@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/digest"
 	"github.com/ndrwl/guildhall/internal/release"
 	"github.com/ndrwl/guildhall/internal/store"
@@ -53,7 +54,7 @@ func TestManaged(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			if tc.file != nil {
-				if err := os.WriteFile(filepath.Join(dir, ManagedFile), tc.file, 0o644); err != nil {
+				if err := os.WriteFile(filepath.Join(dir, config.ManagedFile), tc.file, 0o644); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -104,7 +105,7 @@ func TestManaged(t *testing.T) {
 func TestManagedReadError(t *testing.T) {
 	t.Run("managed.toml cannot be read", func(t *testing.T) {
 		dir := t.TempDir()
-		if err := os.Mkdir(filepath.Join(dir, ManagedFile), 0o755); err != nil {
+		if err := os.Mkdir(filepath.Join(dir, config.ManagedFile), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		got, err := Managed(dir)
@@ -127,7 +128,7 @@ func TestManagedReadError(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			if tc.file != nil {
-				if err := os.WriteFile(filepath.Join(dir, ManagedFile), tc.file, 0o644); err != nil {
+				if err := os.WriteFile(filepath.Join(dir, config.ManagedFile), tc.file, 0o644); err != nil {
 					t.Fatal(err)
 				}
 			}

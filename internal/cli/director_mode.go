@@ -142,7 +142,7 @@ func (a *App) directorEnrol(args []string) int {
 	case inline:
 		return a.fail(fmt.Errorf("%s: %s", name, adm.Refusal))
 	case f.Managed == nil:
-		return a.fail(fmt.Errorf("%s: enrolment needs a valid %s beside %s, in the checksum-bearing format (examples/managed.toml)", name, managedFile, cfgPath))
+		return a.fail(fmt.Errorf("%s: enrolment needs a valid %s beside %s, in the checksum-bearing format (examples/managed.toml)", name, config.ManagedFile, cfgPath))
 	}
 	cfg, err := f.Load()
 	if err != nil {
@@ -160,7 +160,7 @@ func (a *App) directorEnrol(args []string) int {
 		return a.fail(fmt.Errorf("%s: %w", name, err))
 	}
 	_, err = fmt.Fprintf(a.Stdout, "enrolled with steward %s (event %d); %s %s is not authorized by enrolment, so commands that need effective settings refuse until it is authorized\n",
-		got.Steward, got.Sequence, managedFile, got.Digest)
+		got.Steward, got.Sequence, config.ManagedFile, got.Digest)
 	if err != nil {
 		return 1
 	}
@@ -235,14 +235,14 @@ func (a *App) directorLeave(args []string) int {
 			return fail(fmt.Errorf("the left event is recorded; run leave again to finish: %w", err))
 		}
 	}
-	if err := os.Rename(filepath.Join(dir, managedFile), filepath.Join(dir, left.Revision)); err != nil {
+	if err := os.Rename(filepath.Join(dir, config.ManagedFile), filepath.Join(dir, left.Revision)); err != nil {
 		return fail(fmt.Errorf("the left event is recorded; run leave again to finish: %w", err))
 	}
 	return a.printLeft(left)
 }
 
 func (a *App) printLeft(e store.Enrolment) int {
-	if _, err := fmt.Fprintf(a.Stdout, "left managed mode (event %d); %s kept as %s; the copy is standalone\n", e.Sequence, managedFile, e.Revision); err != nil {
+	if _, err := fmt.Fprintf(a.Stdout, "left managed mode (event %d); %s kept as %s; the copy is standalone\n", e.Sequence, config.ManagedFile, e.Revision); err != nil {
 		return 1
 	}
 	return 0

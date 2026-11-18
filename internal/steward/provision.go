@@ -469,10 +469,10 @@ func (s *Setup) PlanProvision(ctx context.Context, req *ProvisionRequest, planDi
 		}
 	}
 
-	p.files[setupConfigFile], p.files[setupManagedDir+"/managed.toml"] = cfg, managed
+	p.files[setupConfigFile], p.files[setupManagedDir+"/"+config.ManagedFile] = cfg, managed
 	p.Files = append(p.Files,
 		PlannedFile{Name: setupConfigFile, Target: req.CopyDir + "/config.toml", SHA256: digest.Of(cfg).Hex()},
-		PlannedFile{Name: setupManagedDir + "/managed.toml", Target: req.CopyDir + "/managed.toml", SHA256: digest.Of(managed).Hex()})
+		PlannedFile{Name: setupManagedDir + "/" + config.ManagedFile, Target: req.CopyDir + "/" + config.ManagedFile, SHA256: digest.Of(managed).Hex()})
 	put := func(id, name, what string) SetupStep {
 		target := Remote{m.SSHAlias, req.CopyDir + "/" + filepath.Base(name)}
 		return SetupStep{ID: id, Kind: StepKindCopy, Argv: scpCommand(filepath.Join(planDir, filepath.FromSlash(name)), target.String()),
@@ -480,7 +480,7 @@ func (s *Setup) PlanProvision(ctx context.Context, req *ProvisionRequest, planDi
 	}
 	p.Steps = append(p.Steps,
 		put(StepConfig, setupConfigFile, "the generated config.toml, which loads with the first managed.toml,"),
-		put(StepManaged, setupManagedDir+"/managed.toml", "managed.toml, with no managed key,"),
+		put(StepManaged, setupManagedDir+"/"+config.ManagedFile, "managed.toml, with no managed key,"),
 		SetupStep{ID: StepStore, Kind: StepKindRemote, Argv: StoreInitCommand(g, req.CopyDir), Expect: "the copy's new " + admit.StoreFile + " is made; store init refuses one that exists"})
 	for _, repo := range req.Repositories {
 		p.Steps = append(p.Steps, SetupStep{ID: stepClonePrefix + repo.ID, Kind: StepKindRemote, Argv: CloneCommand(repo.Remote, repo.Path),
