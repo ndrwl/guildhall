@@ -103,7 +103,7 @@ func (a *App) stewardCollector(cfg *config.Config) (*steward.Collector, error) {
 		}
 		runner = steward.SSH{Path: ssh, Timeout: sshTimeout}
 	}
-	return &steward.Collector{Roster: roster, Private: git.WorkTree{Program: git.Program{Path: gitPath, Timeout: scpTimeout}, Dir: private},
+	return &steward.Collector{Roster: roster, Private: git.WorkTree{Program: git.Program{Path: gitPath, Timeout: scpTimeout, BatchSSH: true}, Dir: private},
 		Transport: copier, Runner: runner, Now: a.now}, nil
 }
 
@@ -291,10 +291,15 @@ type scheduledCollect struct {
 	stderr    io.Writer
 	// busyRounds counts the rounds in a row that found the lock busy; any other round resets it.
 	busyRounds int
+	// failedRounds counts the rounds in a row that failed other than busy; a busy or clean round resets it.
+	failedRounds int
 }
 
 // lockBusyRounds is how many busy rounds in a row send the Steward's inbox a lock-busy message.
 const lockBusyRounds = 3
+
+// collectFailedRounds is how many failed rounds in a row send the Steward's inbox a collect-failed message.
+const collectFailedRounds = 3
 
 // stewardCollection is the session's scheduled collection, writing what it did to log, the copy's supervisor.log;
 // nil when collect_every is unset, the default.
@@ -312,14 +317,18 @@ func (a *App) stewardCollection(cfg *config.Config, storePath string, log io.Wri
 
 // run is one scheduled round. A busy lock skips it, and the third busy round in a row sends the Steward's inbox one
 // lock-busy message naming the lock's owner, tagged with the director sender, and wakes the session; a reload, which
-// starts the count again, sends no second one for the same owner. A round that opened triage decisions sends the
-// Steward's inbox one triage-opened message per kind, tagged with the director sender, and wakes the session through
-// the usual wake; a round with nothing new sends nothing and wakes nothing.
+// starts the count again, sends no second one for the same owner. A round that fails otherwise, for example because
+// the private config's push is refused, is warned about in supervisor.log, and the third failed round in a row sends
+// the Steward's inbox one collect-failed message naming the error, tagged with the director sender, and wakes the
+// session; its id is a digest of the error's first line, so a reload sends no second one for the same failure. A busy
+// or clean round resets the failed count, and a clean round's per-copy errors do not count. A round that opened
+// triage decisions sends the Steward's inbox one triage-opened message per kind, tagged with the director sender, and
+// wakes the session through the usual wake; a round with nothing new sends nothing and wakes nothing.
 func (sc *scheduledCollect) run() {
 	c, err := sc.a.stewardCollector(sc.cfg)
 	if err != nil {
-		sc.busyRounds = 0
 		sc.warn("%v", err)
+		sc.failed(err)
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), collectTimeout)
@@ -341,6 +350,7 @@ func (sc *scheduledCollect) run() {
 		}
 	}
 	if busy {
+		sc.failedRounds = 0
 		sc.busyRounds++
 		var be *steward.BusyError
 		if sc.busyRounds == lockBusyRounds && errors.As(err, &be) {
@@ -349,20 +359,26 @@ func (sc *scheduledCollect) run() {
 		return
 	}
 	sc.busyRounds = 0
-	if round == nil {
-		return
-	}
-	for _, cc := range round.Copies {
-		if cc.Error != "" {
-			sc.warn("%s/%s: %s", cc.Machine, cc.Director, cc.Error)
-		}
-		for _, it := range cc.Items {
-			if it.Problem != "" {
-				sc.warn("%s/%s: %s %s: %s", cc.Machine, cc.Director, it.Kind, it.ID, it.Problem)
+	// A failed round still names its copies' errors and items' problems, since Collect returns the copies it reached
+	// with the error.
+	if round != nil {
+		for _, cc := range round.Copies {
+			if cc.Error != "" {
+				sc.warn("%s/%s: %s", cc.Machine, cc.Director, cc.Error)
+			}
+			for _, it := range cc.Items {
+				if it.Problem != "" {
+					sc.warn("%s/%s: %s %s: %s", cc.Machine, cc.Director, it.Kind, it.ID, it.Problem)
+				}
 			}
 		}
 	}
-	if len(round.Opened) == 0 {
+	if err != nil {
+		sc.failed(err)
+		return
+	}
+	sc.failedRounds = 0
+	if round == nil || len(round.Opened) == 0 {
 		return
 	}
 	for _, kind := range []store.QueueKind{store.QueueIncident, store.QueueLesson} {
@@ -376,6 +392,16 @@ func (sc *scheduledCollect) run() {
 			continue
 		}
 		sc.notify(triageMessage(kind, ids), "triage-opened")
+	}
+}
+
+// failed counts a failed, not busy, round, which err ended, and on the collectFailedRounds-th in a row sends the
+// Steward's inbox a collect-failed message; later failed rounds in the same run send nothing.
+func (sc *scheduledCollect) failed(err error) {
+	sc.busyRounds = 0
+	sc.failedRounds++
+	if sc.failedRounds == collectFailedRounds {
+		sc.notify(collectFailedMessage(err), "collect-failed")
 	}
 }
 
@@ -401,6 +427,19 @@ func (sc *scheduledCollect) notify(m store.Message, label string) {
 	if _, err := sc.a.wake(sc.storePath, m.ID, store.SenderGuildhall); err != nil {
 		sc.warn("wake for %s: %v", m.ID, err)
 	}
+}
+
+// collectFailedMessage is the Steward inbox message reporting that scheduled rounds keep failing with err. Its id is
+// a digest of err's first line, so each failure is reported once, across reloads too; the same failure coming back
+// after a fix is not reported again.
+func collectFailedMessage(err error) store.Message {
+	firstLine, _, _ := strings.Cut(err.Error(), "\n")
+	firstLine = strings.TrimSpace(firstLine)
+	text := fmt.Sprintf("Scheduled collection failed %d rounds in a row: %v. Copies' items stay pending and no triage "+
+		"opens until it succeeds; tell the Guildmaster, and do not change the private config's remote yourself.", collectFailedRounds, err)
+	return store.Message{ID: "collect-failed." + digest.Of([]byte(firstLine)).Hex()[:16],
+		Recipient: store.RecipientSteward, Repository: stewardRepository, TaskID: stewardRolloutsTask, Type: store.MessageCollectFailed,
+		Text: truncateUTF8(text, store.MaxMessageTextBytes), Sender: store.SenderDirector}
 }
 
 // lockBusyMessage is the Steward inbox message reporting that scheduled rounds keep finding the lock held. Its id

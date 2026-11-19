@@ -193,7 +193,7 @@ func (a *App) loadSetup(cfgPath string) (*steward.Setup, error) {
 		}
 		runner = steward.SSH{Path: ssh, Timeout: sshTimeout, LongTimeout: sshLongTimeout}
 	}
-	return &steward.Setup{Private: git.WorkTree{Program: git.Program{Path: gitPath, Timeout: scpTimeout}, Dir: private},
+	return &steward.Setup{Private: git.WorkTree{Program: git.Program{Path: gitPath, Timeout: scpTimeout, BatchSSH: true}, Dir: private},
 		Transport: copier, Runner: runner, Steward: cfg.Steward.Name, Now: a.now, Self: a.selfBinary}, nil
 }
 

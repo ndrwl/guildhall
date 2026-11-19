@@ -51,6 +51,25 @@ type Program struct {
 	// Timeout bounds each git run; zero means DefaultTimeout. A run past it is ended and is an error naming git
 	// and the timeout.
 	Timeout time.Duration
+	// BatchSSH, set for the Steward's git, runs ssh in batch mode, so a key passphrase or an unknown host key fails
+	// the command rather than prompting on the terminal; see commandEnv.
+	BatchSSH bool
+}
+
+// batchSSHCommand is the GIT_SSH_COMMAND a Program with BatchSSH runs git with.
+const batchSSHCommand = "ssh -o BatchMode=yes"
+
+// commandEnv is the environment git runs with: environ with GIT_TERMINAL_PROMPT=0 and extra appended, and, when
+// batchSSH is set, GIT_SSH_COMMAND=ssh -o BatchMode=yes too, unless environ already has a GIT_SSH_COMMAND or GIT_SSH
+// entry, even an empty one, which then stands as git would choose it. It overrides a core.sshCommand git config.
+func commandEnv(environ []string, batchSSH bool, extra ...string) []string {
+	env := append(environ[:len(environ):len(environ)], "GIT_TERMINAL_PROMPT=0")
+	if batchSSH && !slices.ContainsFunc(environ, func(kv string) bool {
+		return strings.HasPrefix(kv, "GIT_SSH_COMMAND=") || strings.HasPrefix(kv, "GIT_SSH=")
+	}) {
+		env = append(env, "GIT_SSH_COMMAND="+batchSSHCommand)
+	}
+	return append(env, extra...)
 }
 
 // DefaultTimeout is how long one git run may take when Program.Timeout is zero.
@@ -191,7 +210,7 @@ func (p Program) git(ctx context.Context, dir string, args ...string) ([]byte, e
 		args = append([]string{"-C", dir}, args...)
 	}
 	cmd := exec.CommandContext(runCtx, path, args...)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = commandEnv(os.Environ(), p.BatchSSH)
 	cmd.WaitDelay = 5 * time.Second
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

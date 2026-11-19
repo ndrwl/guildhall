@@ -627,6 +627,10 @@ const (
 	// MessageLockBusy is a Steward's scheduled collection's report, to the Steward's own inbox, that three rounds in
 	// a row found the private config's .rollout.lock held, naming its owner (docs/steward.md#scheduled-collection).
 	MessageLockBusy = "lock-busy"
+	// MessageCollectFailed is a Steward's scheduled collection's report, to the Steward's own inbox, that three rounds
+	// in a row failed, for example because the private config's push was refused, naming the error
+	// (docs/steward.md#scheduled-collection).
+	MessageCollectFailed = "collect-failed"
 )
 
 // MessageTypes is the registry of message types DirectorUnread and the wake line count by name, each with its
@@ -647,7 +651,7 @@ var MessageTypes = map[string]string{
 	MessageQuestion: "local and director", MessageNote: "local",
 	MessageJudgeFailed: "quality", MessageJudgement: "quality", MessageJudgementRefused: "quality",
 	MessageHerdrLeftOpen: "supervisor", MessagePruneKept: "supervisor", MessageHoldReleased: "supervisor",
-	MessageTriageOpened: "supervisor", MessageLockBusy: "supervisor",
+	MessageTriageOpened: "supervisor", MessageLockBusy: "supervisor", MessageCollectFailed: "supervisor",
 	MessageDependencyCancelled: "cancel",
 	MessageDecisionAnswered:    "page",
 	MessageGrillAnswered:       "page",
