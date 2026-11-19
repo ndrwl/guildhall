@@ -491,9 +491,12 @@ func TestRetireProgram(t *testing.T) {
 	}
 	retire := func(t *testing.T, ret git.Retirement) []string {
 		t.Helper()
-		kept, err := (git.Program{}).Retire(ctx, ret)
+		kept, discarded, err := (git.Program{}).Retire(ctx, ret)
 		if err != nil {
 			t.Fatalf("Retire = %v", err)
+		}
+		if !ret.DiscardUntracked && len(discarded) > 0 {
+			t.Errorf("Retire without DiscardUntracked discarded %q", discarded)
 		}
 		return kept
 	}
@@ -547,6 +550,45 @@ func TestRetireProgram(t *testing.T) {
 			t.Errorf("kept worktree removed: %v", err)
 		}
 	})
+	t.Run("discards untracked files when they are all that would be lost", func(t *testing.T) {
+		ret, _ := merged(t)
+		writeFile(t, filepath.Join(ret.Dir, "ci", "job.log"), "log\n")
+		writeFile(t, filepath.Join(ret.Dir, "notes.txt"), "mine\n")
+		if kept := retire(t, ret); !slices.Equal(kept, []string{"untracked ci/job.log", "untracked notes.txt"}) {
+			t.Fatalf("without DiscardUntracked kept %q, want both untracked files named", kept)
+		}
+		ret.DiscardUntracked = true
+		kept, discarded, err := (git.Program{}).Retire(ctx, ret)
+		if err != nil || len(kept) > 0 || !slices.Equal(discarded, []string{"ci/job.log", "notes.txt"}) {
+			t.Fatalf("Retire = %q, %q, %v; want removed with both files discarded", kept, discarded, err)
+		}
+		if _, err := os.Stat(ret.Dir); !errors.Is(err, os.ErrNotExist) || branch(t, ret) {
+			t.Errorf("worktree there: %v, branch there %v; want both removed", err, branch(t, ret))
+		}
+	})
+	t.Run("keeps untracked files beside a changed tracked file even when discarding", func(t *testing.T) {
+		ret, _ := merged(t)
+		ret.DiscardUntracked = true
+		writeFile(t, filepath.Join(ret.Dir, "c.txt"), "edited\n")
+		writeFile(t, filepath.Join(ret.Dir, "job.log"), "log\n")
+		kept, discarded, err := (git.Program{}).Retire(ctx, ret)
+		if err != nil || !slices.Equal(kept, []string{"changed c.txt", "untracked job.log"}) || len(discarded) > 0 {
+			t.Fatalf("Retire = %q, %q, %v; want kept naming both files and nothing discarded", kept, discarded, err)
+		}
+		if _, err := os.Stat(filepath.Join(ret.Dir, "job.log")); err != nil {
+			t.Errorf("a kept worktree lost its untracked file: %v", err)
+		}
+	})
+	t.Run("keeps untracked files on an unmerged branch even when discarding", func(t *testing.T) {
+		ret, r := merged(t)
+		ret.DiscardUntracked = true
+		r.commit("unmerged", map[string]string{"e.txt": "e\n"})
+		writeFile(t, filepath.Join(ret.Dir, "job.log"), "log\n")
+		kept, discarded, err := (git.Program{}).Retire(ctx, ret)
+		if err != nil || len(kept) < 2 || kept[len(kept)-1] != "untracked job.log" || len(discarded) > 0 {
+			t.Fatalf("Retire = %q, %q, %v; want kept with the unmerged commit and the file", kept, discarded, err)
+		}
+	})
 	t.Run("an interrupted retirement deletes the branch", func(t *testing.T) {
 		ret, _ := merged(t)
 		(repo{t, ret.Repository, global}).run("worktree", "remove", ret.Dir)
@@ -590,7 +632,7 @@ func TestRetireProgram(t *testing.T) {
 		ret := unmergedWorkspace(t)
 		ret.Head = forgeHead(t, ret)
 		ret.Remote = filepath.Join(t.TempDir(), "gone.git")
-		if _, err := (git.Program{}).Retire(ctx, ret); err == nil || !strings.Contains(err.Error(), " fetch ") {
+		if _, _, err := (git.Program{}).Retire(ctx, ret); err == nil || !strings.Contains(err.Error(), " fetch ") {
 			t.Fatalf("Retire with an unreachable remote = %v, want the fetch's error", err)
 		}
 		if _, err := os.Stat(ret.Dir); err != nil || !branch(t, ret) {
@@ -600,7 +642,7 @@ func TestRetireProgram(t *testing.T) {
 	t.Run("a head the repository lacks is an error", func(t *testing.T) {
 		ret, _ := merged(t)
 		ret.Head = strings.Repeat("0", 40)
-		if _, err := (git.Program{}).Retire(ctx, ret); err == nil {
+		if _, _, err := (git.Program{}).Retire(ctx, ret); err == nil {
 			t.Fatal("Retire at an unknown head succeeded")
 		}
 		if _, err := os.Stat(ret.Dir); err != nil {

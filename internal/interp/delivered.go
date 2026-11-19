@@ -381,7 +381,7 @@ func (r *run) retireDelivered(id string, repo config.Repository, k int) error {
 		}
 		base = b
 	}
-	kept, err := r.e.Workspaces.Retire(r.ctx, git.Retirement{Workspace: w, Head: base, Outputs: r.outputs()})
+	kept, _, err := r.e.Workspaces.Retire(r.ctx, git.Retirement{Workspace: w, Head: base, Outputs: r.outputs()})
 	if err != nil {
 		if r.ctx.Err() != nil {
 			return r.ctx.Err()

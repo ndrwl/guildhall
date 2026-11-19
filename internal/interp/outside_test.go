@@ -27,12 +27,12 @@ type retireRecorder struct {
 	heads []string
 }
 
-func (r *retireRecorder) Retire(_ context.Context, rt git.Retirement) ([]string, error) {
+func (r *retireRecorder) Retire(_ context.Context, rt git.Retirement) ([]string, []string, error) {
 	r.heads = append(r.heads, rt.Head)
 	if !r.known[rt.Head] {
-		return []string{"commit " + rt.Head + " is not in the repository"}, nil
+		return []string{"commit " + rt.Head + " is not in the repository"}, nil, nil
 	}
-	return nil, nil
+	return nil, nil, nil
 }
 
 // wantMergedOutside checks the records of task t7 closed by the outside-merge rule for pull request 1 merged at
