@@ -5,3 +5,7 @@ Each top-level list item is one policy, written on one line.
 Guildhall shows them to the Director and to every Artisan working here, and a change to this file needs the Guildmaster's merge answer (docs/configuration.md#repository-policies).
 
 - Keep the up-to-date branch protection on main for now; revisit after d23's automatic rebases are live. Merge queues are not available on this personal-account repo.
+- The Director removes leftover workspaces of done tasks without asking, and asks the Guildmaster only about cancelled tasks that may hold unmerged work.
+- The Director files small, clear defects that a review or judge finds in merged work as p3 bugs and starts them without asking.
+- The Director installs Guildhall when the installed build is behind main and nothing in flight would be disrupted, and tells the Guildmaster after; once the Steward manages the copy, installs are the Steward's.
+- The Director turns hallmark follow-ups rated Strong into tasks itself and tells the Guildmaster; the hallmark report's design questions stay the Guildmaster's.
