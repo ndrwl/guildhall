@@ -665,6 +665,7 @@ The document has these sections:
   - `overrides`: `true` when the task has a [task override](tasks.md#task-overrides) in effect, absent otherwise; `task show` lists them.
   - `delivered_by`: for a done one-PR task the Director closed as [already delivered](tasks.md#a-slice-already-delivered), the URL of the merged pull request that shipped its change, absent otherwise; a multi-PR task's delivered slices show it in `slices`.
   - `director_accepted`: for an open task whose plan the Director [accepted itself](decisions-cli.md#decide-accept), the latest such acceptance, `{decision, text, reason}`, `text` being "accepted by the Director" and `reason` the Director's; absent otherwise.
+    An acceptance taken back by a [send-back](decisions/director-plan-acceptance.md), once a later round of its step exists, is no longer reported.
 - `merge_queues`: each repository's [merge queue](interpreter.md#the-merge-queue), `[{repository, entries}]` in repository order, with the entries front first and then in queue order.
   Each entry has its `task`, `priority`, `ready_at` (the commit time of the receipt that first authorized its merge), `pr` (the pull request URL), `held` (a [`task hold-merge`](tasks.md#holding-a-merge)), `front`, and `waiting_on`: `rebase` while the front's head is being rebased or resolved, `ci` while the front waits for the checks of its rebased head, `decision` while a new merge decision for it is open, and `queue` for a task behind the front.
   `task list --json` gives each queued task the same entry as `merge_queue`.

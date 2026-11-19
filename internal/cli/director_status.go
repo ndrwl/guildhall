@@ -338,8 +338,9 @@ type statusTask struct {
 	// merged pull request's URL that shipped its change, or "no change needed" for one closed as needing none (docs/tasks.md#a-slice-already-delivered); omitted for any other task.
 	DeliveredBy string `json:"delivered_by,omitempty"`
 	// DirectorAccepted, for an open task, is the plan acceptance the Director last recorded itself with decide accept
-	// --director, telling the Guildmaster rather than asking them (docs/decisions/director-plan-acceptance.md), so
-	// that a Director after a handoff can still name it under What I did; omitted when it has none.
+	// --director, telling the Guildmaster rather than asking them (docs/decisions/director-plan-acceptance.md), while it
+	// is still its step's latest round, so that a Director after a handoff can still name it under What I did; omitted
+	// when it has none.
 	DirectorAccepted *statusDirectorAccepted `json:"director_accepted,omitempty"`
 }
 
@@ -351,8 +352,9 @@ type statusDirectorAccepted struct {
 	Reason   string `json:"reason"`
 }
 
-// readDirectorAccepted is each open task's latest plan acceptance answered with store.AnsweredViaDirector, keyed by
-// <repo>/<task>; the latest is the one whose answer receipt is newest.
+// readDirectorAccepted is each open task's latest plan acceptance answered with store.AnsweredViaDirector while it is
+// still its step's latest round, keyed by <repo>/<task>: one whose step and slice has a later decision round, not an
+// exit, is dropped, and among the rest the latest is the one whose answer receipt is newest.
 func readDirectorAccepted(s *store.Store, v store.DirectorView) (map[string]*statusDirectorAccepted, error) {
 	answered := map[string]uint64{}
 	for _, r := range v.Receipts {
@@ -369,9 +371,31 @@ func readDirectorAccepted(s *store.Store, v store.DirectorView) (map[string]*sta
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return nil, err
 		}
+		// latest is the highest decision round, exits aside, of each step and slice: a send-back that opens a later
+		// round takes back the Director's acceptance of an earlier one (docs/decisions/director-plan-acceptance.md).
+		type stepSlice struct {
+			step  string
+			slice int
+		}
+		latest := map[stepSlice]int{}
+		round := func(id string) (stepSlice, int, bool) {
+			p, ok := interp.RecordPlace(id)
+			if !ok || p.Exit || p.Part != "" {
+				return stepSlice{}, 0, false
+			}
+			return stepSlice{p.Step, p.Slice}, p.Round, true
+		}
+		for _, d := range ds {
+			if at, n, ok := round(d.ID); ok && n > latest[at] {
+				latest[at] = n
+			}
+		}
 		key, newest := t.Repository+"/"+t.ID, uint64(0)
 		for _, d := range ds {
 			if !d.Answered || d.AnsweredVia != store.AnsweredViaDirector {
+				continue
+			}
+			if at, n, ok := round(d.ID); ok && n < latest[at] {
 				continue
 			}
 			if seq := answered[key+"/decision/"+d.ID]; out[key] == nil || seq > newest {

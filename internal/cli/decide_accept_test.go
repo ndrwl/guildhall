@@ -36,6 +36,16 @@ func acceptCopy(t *testing.T, spec string, lines, files int) runDirector {
 // acceptCopyRounds is acceptCopy whose scenario answers plan attempts 1 to rounds.
 func acceptCopyRounds(t *testing.T, spec string, lines, files, rounds int) runDirector {
 	t.Helper()
+	specs := make([]string, rounds)
+	for i := range specs {
+		specs[i] = spec
+	}
+	return acceptCopySpecs(t, specs, lines, files)
+}
+
+// acceptCopySpecs is acceptCopy whose scenario answers plan attempt n with specs[n-1].
+func acceptCopySpecs(t *testing.T, specs []string, lines, files int) runDirector {
+	t.Helper()
 	d, _, _ := newDogfoodCopy(t, forgetest.NewFake())
 	// The unattended grill's prompt names its skill, so the release skills are installed.
 	d.installSkills = skills.Install
@@ -57,8 +67,8 @@ func acceptCopyRounds(t *testing.T, spec string, lines, files, rounds int) runDi
 		{Step: "grill", Attempt: 1, Respond: respond("notes.md", "# Grill notes\n\n## Questions\n\nNone.\n")},
 		{Step: "research", Attempt: 1, Respond: respond("notes.md", "# Research notes\n\nNone.\n")},
 	}}
-	for n := 1; n <= rounds; n++ {
-		scenario.Launches = append(scenario.Launches, fake.ScenarioLaunch{Step: "plan", Attempt: n, Respond: respond("spec.md", spec)})
+	for i, spec := range specs {
+		scenario.Launches = append(scenario.Launches, fake.ScenarioLaunch{Step: "plan", Attempt: i + 1, Respond: respond("spec.md", spec)})
 	}
 	path := filepath.Join(t.TempDir(), "scenario.json")
 	data, err := json.Marshal(scenario)
@@ -150,6 +160,57 @@ func TestDecideAcceptDirector(t *testing.T) {
 	d.waitResult(t, "plan", 1)
 	if code, out, stderr := d.run(t, append([]string{"task", "start"}, d.flags("--decision", "accept-1", "t1")...)...); code != 0 || strings.TrimSpace(out) != `{"wait":"attempt","step":"build","attempt":1}` {
 		t.Errorf("task start after the Director's acceptance: exit %d, %q, stderr %s; want build", code, out, stderr)
+	}
+}
+
+// directorAccepted is director status's director_accepted for d's task t1, nil when it has none, and the feed.
+func (d runDirector) directorAccepted(t *testing.T) (*statusDirectorAccepted, directorStatus) {
+	t.Helper()
+	code, feed, stderr := d.run(t, "director", "status", "--json", "--store", d.store, "--state", d.state, "--config", d.config)
+	var status directorStatus
+	if code != 0 || json.Unmarshal([]byte(feed), &status) != nil {
+		t.Fatalf("director status: exit %d, stderr %s", code, stderr)
+	}
+	i := slices.IndexFunc(status.Tasks, func(st statusTask) bool { return st.Repository == "app" && st.ID == "t1" })
+	if i < 0 {
+		t.Fatalf("director status tasks = %+v, want t1", status.Tasks)
+	}
+	return status.Tasks[i].DirectorAccepted, status
+}
+
+// TestDecideAcceptDirectorSentBack: once the Guildmaster sends back a plan the Director accepted and plan's next
+// attempt, with a changed spec, opens accept-2, director status no longer reports accept-1 as accepted by the
+// Director; the Director's acceptance of accept-2 is then reported.
+func TestDecideAcceptDirectorSentBack(t *testing.T) {
+	d := acceptCopySpecs(t, []string{acceptSpec, strings.Replace(acceptSpec, "Sort it.", "Sort it by id, ascending.", 1)}, 200, 8)
+	if code, _, stderr := d.accept(t, "accept-1", "Small."); code != 0 {
+		t.Fatalf("decide accept accept-1: exit %d, %s", code, stderr)
+	}
+	if got, _ := d.directorAccepted(t); got == nil || got.Decision != "accept-1" {
+		t.Fatalf("director_accepted = %+v, want accept-1", got)
+	}
+	d.waitResult(t, "plan", 1)
+	if code, out, stderr := d.run(t, append([]string{"step", "send-back"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "1", "--feedback", "Say the order.")...)...); code != 0 || !strings.Contains(out, `"step":"plan","attempt":2`) {
+		t.Fatalf("send-back: exit %d, %q, stderr %s", code, out, stderr)
+	}
+	d.waitResult(t, "plan", 2)
+	const want = `{"wait":"decision","step":"accept","decision":"accept-2"}`
+	if code, out, stderr := d.run(t, append([]string{"step", "done"}, d.flags("--task", "t1", "--step", "plan", "--attempt", "2", "--result", d.result("plan", 2))...)...); code != 0 || strings.TrimSpace(out) != want {
+		t.Fatalf("plan 2 done: exit %d, %q, stderr %s; want %s", code, out, stderr, want)
+	}
+	got, status := d.directorAccepted(t)
+	if got != nil {
+		t.Errorf("director_accepted = %+v after the send-back, want none", got)
+	}
+	if !slices.ContainsFunc(status.NeedsMe, func(n needsMeItem) bool { return n.Decision == "accept-2" }) {
+		t.Errorf("needs_me = %+v, want accept-2 in it", status.NeedsMe)
+	}
+	const reason = "Still one slice, 120 lines in 4 files."
+	if code, _, stderr := d.accept(t, "accept-2", reason); code != 0 {
+		t.Fatalf("decide accept accept-2: exit %d, %s", code, stderr)
+	}
+	if got, _ := d.directorAccepted(t); got == nil || *got != (statusDirectorAccepted{Decision: "accept-2", Text: "accepted by the Director", Reason: reason}) {
+		t.Errorf("director_accepted = %+v, want accept-2 with its reason", got)
 	}
 }
 
