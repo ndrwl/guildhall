@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ndrwl/guildhall/internal/git"
 )
@@ -213,4 +214,60 @@ func TestSquashAndAdoptProgram(t *testing.T) {
 	if log, err := p.Log(ctx, r.dir, rb.MergeBase, main, "b.txt"); err != nil || len(log) != 0 {
 		t.Fatalf("log of an untouched file = %q, %v", log, err)
 	}
+}
+
+// TestAdoptRefreshesStaleIndex moves a worktree whose index holds stale stat data for an unchanged file the move
+// rewrites, as merges and touched files leave it: the move succeeds, while a real local change is still refused.
+func TestAdoptRefreshesStaleIndex(t *testing.T) {
+	ctx := context.Background()
+	p := git.Program{}
+	setup := func(t *testing.T) (w git.Workspace, wt repo, from, to, want string) {
+		r, _, task := rebaseRepo(t, func(r repo) { r.commit("main", map[string]string{"c.txt": "c\n"}) })
+		r.run("checkout", "-q", "-b", "next", task)
+		want = lines(10, map[int]string{2: "task two", 7: "next seven"})
+		to = r.commit("next", map[string]string{"a.txt": want})
+		r.run("checkout", "-q", "trunk")
+		work := filepath.Join(t.TempDir(), "work")
+		r.run("worktree", "add", "-q", work, "guildhall/t-1")
+		return git.Workspace{Repository: r.dir, Remote: r.dir, Branch: "guildhall/t-1", Dir: work}, repo{t, work, r.global}, task, to, want
+	}
+	t.Run("stale stat moves cleanly", func(t *testing.T) {
+		w, wt, from, to, want := setup(t)
+		old := time.Now().Add(-48 * time.Hour)
+		if err := os.Chtimes(filepath.Join(w.Dir, "a.txt"), old, old); err != nil {
+			t.Fatal(err)
+		}
+		if stale := wt.run("diff-files", "--name-only"); stale != "a.txt" {
+			t.Fatalf("diff-files = %q, want the stale a.txt", stale)
+		}
+		if err := p.Adopt(ctx, w, from, to); err != nil {
+			t.Fatalf("Adopt with a stale index = %v", err)
+		}
+		if at := wt.run("rev-parse", "HEAD"); at != to {
+			t.Fatalf("HEAD = %s, want %s", at, to)
+		}
+		if data, _ := os.ReadFile(filepath.Join(w.Dir, "a.txt")); string(data) != want {
+			t.Fatalf("a.txt = %q", data)
+		}
+	})
+	t.Run("real change still refused", func(t *testing.T) {
+		w, wt, from, to, _ := setup(t)
+		path := filepath.Join(w.Dir, "a.txt")
+		if err := os.WriteFile(path, []byte("local change\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		later := time.Now().Add(time.Hour)
+		if err := os.Chtimes(path, later, later); err != nil {
+			t.Fatal(err)
+		}
+		if err := p.Adopt(ctx, w, from, to); err == nil || !strings.Contains(err.Error(), "not uptodate") {
+			t.Fatalf("Adopt over a local change = %v, want not uptodate", err)
+		}
+		if at := wt.run("rev-parse", "HEAD"); at != from {
+			t.Fatalf("HEAD = %s, want %s", at, from)
+		}
+		if data, _ := os.ReadFile(path); string(data) != "local change\n" {
+			t.Fatalf("a.txt = %q, want the local change", data)
+		}
+	})
 }

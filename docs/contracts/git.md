@@ -85,6 +85,7 @@ None runs `git rebase`, and only `Adopt` touches a worktree.
 - `Program.PatchID(ctx, repository, a, b)` is `git patch-id --stable` of the change from `a` to `b`, empty for no change.
 - `Program.Adopt(ctx, w, from, to)` moves the worktree `w.Dir`, on `w.Branch` at `from`, to `to` with `git reset --keep`, which keeps local and untracked files and refuses rather than overwrite one, so no stage output is lost (as [`Retire`](#retire) requires).
   A worktree already at `to` is left as it is; one at neither commit, or on another branch, is refused unchanged.
+  Before moving it runs `git update-index -q --refresh`, so a file whose cached stat is stale but whose content is unchanged is not a local change; a real tracked change is still refused, and any other refresh failure is an error.
 
 `Rebase`, `Squash`, `Diff` and `PatchID` write only objects and move no branch, so repeating them is safe.
 Both commits must be full object ids the repository holds; an invalid id, a git failure, a `merge-tree` exit other than 0 or 1 and an ended context are errors.
