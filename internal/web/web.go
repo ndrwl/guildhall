@@ -50,6 +50,20 @@ type Stats struct {
 	MergedToday int
 	Spend       Spend
 	Machine     Vitals
+	// Days are the strip's charts: the last ChartDays UTC days, oldest first, the last of them Day; empty when the
+	// Source gives none, and then the charts are left out.
+	Days []DayTotal
+}
+
+// ChartDays is how many UTC days the strip's charts cover.
+const ChartDays = 14
+
+// DayTotal is one UTC day's totals for the strip's charts: the merge records recorded on it, one per pull request
+// merged as MergedToday counts them, and what the attempts started on it reported they spent, as Spend sums them.
+type DayTotal struct {
+	Day    time.Time
+	Merges int
+	Spend  Spend
 }
 
 // TaskRef names a task.

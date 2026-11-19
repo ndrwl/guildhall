@@ -1,5 +1,6 @@
 // list.js: the task list's live refresh (docs/web.md#the-task-list), inlined on / only. It GETs /list.json at once and
-// then every 20 s while the tab is visible, and redraws the band, the stats strip and the rows in place from the
+// then every 20 s while the tab is visible, and redraws the band, the stats strip (handing the charts' days to
+// charts.js through the charts section's data-days) and the rows in place from the
 // page's listparts template with createElement and textContent, moving rows between groups and tinting a
 // changed one blue for about 2 s (not under prefers-reduced-motion). It keeps each group's fold, the filter and the
 // sort through every refresh, filters and sorts the rows in the browser over their data-sort-* attributes, and keeps
@@ -338,6 +339,12 @@
     m[0].replaceChildren(el('b', '', t.load), txt(' · ' + t.cores))
     m[1].textContent = t.memory
     m[2].textContent = t.disk
+    // the charts' days, which charts.js watches and redraws from
+    var charts = document.getElementById('charts')
+    if (charts && Array.isArray(t.days) && t.days.length) {
+      var days = JSON.stringify(t.days)
+      if (charts.getAttribute('data-days') !== days) { charts.setAttribute('data-days', days) }
+    }
   }
 
   function cmpStr(x, y) {

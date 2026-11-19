@@ -93,7 +93,9 @@ func (q listQuery) matches(t Listed) bool {
 // listView is the task list's model, every value formatted for the templates.
 type listView struct {
 	Style template.CSS
-	// Scripts are the own scripts the page inlines.
+	// VendorStyle is the vendored stylesheets, uPlot's, for the strip's charts.
+	VendorStyle template.CSS
+	// Scripts are the vendored and own scripts the page inlines.
 	Scripts []template.JS
 	// Count is the band's first line, such as "3 tasks wait for you", amber when You; Meta its second, such as
 	// "25 open · 16 in the merge queue", which the read time follows.
@@ -193,7 +195,7 @@ func ciMarkOf(ci string) ciMark {
 }
 
 func (s *Server) listView(l TaskList, st Stats, q listQuery) listView {
-	v := listView{Style: style, Scripts: listScripts, ReadAt: s.timeAt(l.ReadAt, l.ReadAt), Query: q, Strip: newStripView(st)}
+	v := listView{Style: style, VendorStyle: vendor.Style, Scripts: listScripts, ReadAt: s.timeAt(l.ReadAt, l.ReadAt), Query: q, Strip: newStripView(st)}
 	multi := false
 	for _, t := range l.Tasks {
 		multi = multi || t.Repository != l.Tasks[0].Repository

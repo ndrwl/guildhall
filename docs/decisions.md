@@ -284,7 +284,7 @@ Regenerate it with `go test ./internal/doccheck -run TestDecisionIndex -update`,
 - [The grill is the Director's live interview of the Guildmaster, recorded as the stage's notes](decisions/grill-live-interview.md)
 - [The Director addresses the user as "Guildmaster" in chat replies, and nowhere else](decisions/guildmaster-address.md)
 - [Lanterns is a visuals-only plugin in every Claude Director workspace, with the S2 smithy and Calm on by default](decisions/lanterns-visuals.md)
-- [The task list's own script may request its same-origin JSON feed, and list-only scripts are inlined on the list alone](decisions/list-page-scripts.md)
+- [The task list's own script may request its same-origin JSON feed, list-only scripts are inlined on the list alone, and pinned third-party files may be vendored](decisions/list-page-scripts.md)
 - [Pages may run Guildhall's own scripts, embedded in the binary and pinned by hash in the CSP](decisions/own-scripts.md)
 - [The status feed and startup list every running attempt as information, without a new probe or `needs_me` kind](decisions/running-attempts-in-status.md)
 - [The Guildmaster's task pages are served by the Director's session supervisor, on the tailnet only, from Clerk's readers](decisions/task-page.md)

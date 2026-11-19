@@ -19,7 +19,7 @@ import (
 // data: URLs, and frames only its own srcdoc ones, such as a design mock-up's desktop and phone frames.
 const FrameCSP = "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; frame-src 'self' about:"
 
-//go:embed page.tmpl style.css scripts/*.js
+//go:embed page.tmpl style.css scripts/*.js vendor/*/*
 var assets embed.FS
 
 var pages = template.Must(template.New("page.tmpl").Funcs(funcs).ParseFS(assets, "page.tmpl"))

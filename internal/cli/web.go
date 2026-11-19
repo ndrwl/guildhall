@@ -92,7 +92,7 @@ func (a *App) webHandler(c clerkPaths, w *config.Web, log io.Writer) *web.Server
 	if a.WebIdentity != nil {
 		id = a.WebIdentity
 	}
-	o := web.Options{Source: webSource{a: a, c: c}, Documents: filepath.Join(c.state, "documents"),
+	o := web.Options{Source: webSource{a: a, c: c, days: newDayCache()}, Documents: filepath.Join(c.state, "documents"),
 		Log: func(line string) { _, _ = fmt.Fprintln(log, line) }, Identity: id, Answerer: webAnswerer{a: a, c: c}}
 	if w != nil {
 		o.Guildmaster, o.Host = w.Guildmaster, w.Address

@@ -1,0 +1,16 @@
+{
+  "schema": "guildhall.vendor-manifest/1",
+  "name": "uPlot",
+  "version": "1.6.32",
+  "license": "MIT",
+  "license_file": "LICENSE",
+  "homepage": "https://github.com/leeoniya/uPlot",
+  "source": "https://registry.npmjs.org/uplot/-/uplot-1.6.32.tgz",
+  "source_sha1": "c800a63b432bad692d6d746f44f0882aa73a49ae",
+  "source_integrity": "sha512-KIMVnG68zvu5XXUbC4LQEPnhwOxBuLyW1AHtpm6IKTXImkbLgkMy+jabjLgSLMasNuGGzQm/ep3tOkyTxpiQIw==",
+  "files": [
+    {"path": "uPlot.iife.min.js", "upstream": "package/dist/uPlot.iife.min.js", "use": "script", "sha256": "19c8d4c6ad88929a79f4ae49d6f7161566dfd0ba3d15cc495e974f787eb78f1f"},
+    {"path": "uPlot.min.css", "upstream": "package/dist/uPlot.min.css", "use": "style", "sha256": "df630c6a8d6f8eeaff264b50f73ce5b114f646ffd9a0bb74f049b0a00135fa04"},
+    {"path": "LICENSE", "upstream": "package/LICENSE", "use": "license", "sha256": "8f989229699b4fe2f1a0432d0e9edc338a8a911e250e2d1b01ecd770a5f5b1bd"}
+  ]
+}

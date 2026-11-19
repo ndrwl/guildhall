@@ -75,9 +75,16 @@ func listServer(l TaskList) (*Server, *fakeSource) {
 	return New(Options{Source: src, Location: time.UTC, Host: testHost}), src
 }
 
-// checkGolden compares body with testdata/name, which -update rewrites.
+// checkGolden compares body with testdata/name, which -update rewrites. The vendored files are pinned by their
+// manifests (TestVendorManifests), so the goldens hold a placeholder naming each in place of its bytes.
 func checkGolden(t *testing.T, name, body string) {
 	t.Helper()
+	for _, s := range vendor.Scripts {
+		body = strings.ReplaceAll(body, string(s.Body), "/* vendored "+s.Name+" */")
+	}
+	if vendor.Style != "" {
+		body = strings.ReplaceAll(body, string(vendor.Style), "/* vendored styles */")
+	}
 	golden := filepath.Join("testdata", name)
 	if *update {
 		if err := os.WriteFile(golden, []byte(body), 0o644); err != nil {
