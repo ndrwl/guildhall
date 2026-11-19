@@ -486,6 +486,9 @@ func (s *Server) askView(t Task, a Ask) askView {
 	recommend := a.Kind == "approval" && v.Questions != nil && v.Questions.Lettered && slices.Contains(a.Options, "approved")
 	v.Recommend = recommend
 	v.Tiles = answerTiles(a.Kind, a.Options, recommend)
+	if a.GrantOption != "" {
+		grantTile(v.Tiles, a.GrantOption, a.Grant)
+	}
 	// The Director's one recommendation marks its tile when current; a stale one marks none and says so.
 	if r := a.Recommendation; r != nil && r.Stale {
 		v.StaleRecommendation = fmt.Sprintf(staleRecommendation, OptionWord(r.Option))

@@ -152,18 +152,63 @@ func (a *App) taskGrant(args []string) int {
 // createTaskGrant records g on its task, whose bound workflow is resolved from dir under cfg and repository r.
 // A pending or active grant of the task with the same step, rules, reason and until is a retry, recorded
 // again under its own id so the store returns its original receipt; any other grant takes the task's next id.
+// The same grant proposed by a Director question is refused instead, naming it: the Guildmaster's answer choosing
+// its option approves it, so it needs no create.
 func createTaskGrant(s *store.Store, dir string, cfg *config.Config, r config.Repository, g store.TaskGrant) (store.Receipt, error) {
 	t, err := s.Task(g.Repository, g.TaskID)
 	if err != nil {
 		return store.Receipt{}, err
 	}
+	steps, err := grantSteps(s, dir, cfg, r, t)
+	if err != nil {
+		return store.Receipt{}, err
+	}
+	existing, err := s.TaskGrantStatuses(g.Repository, g.TaskID)
+	if err != nil {
+		return store.Receipt{}, err
+	}
+	for _, e := range existing {
+		if (e.State == store.GrantPending || e.State == store.GrantActive) && sameGrant(e.TaskGrant, g) {
+			if e.ApprovingOption != "" {
+				return store.Receipt{}, fmt.Errorf("%w: grant %s of %s/%s is %s, proposed by question %s's option %q; the Guildmaster's answer choosing it approves the grant, so it needs no create",
+					store.ErrExists, e.ID, g.Repository, g.TaskID, e.State, e.Decision, e.ApprovingOption)
+			}
+			g.ID = e.ID
+		}
+	}
+	if g.ID == "" {
+		g.ID = nextGrantID(existing)
+	}
+	return s.CreateTaskGrant(mutationID("task-grant", g.Repository, g.TaskID, g.ID), g, steps)
+}
+
+// sameGrant reports whether grants a and b grant the same: step, rules in order, reason and until.
+func sameGrant(a, b store.TaskGrant) bool {
+	return a.Step == b.Step && slices.Equal(a.Rules, b.Rules) && a.Reason == b.Reason && a.Until == b.Until
+}
+
+// nextGrantID is the id after the highest of a task's grants existing, g1 for none.
+func nextGrantID(existing []store.TaskGrantStatus) string {
+	next := 0
+	for _, e := range existing {
+		if n, err := strconv.Atoi(strings.TrimPrefix(e.ID, "g")); err == nil && n > next {
+			next = n
+		}
+	}
+	return store.TaskGrantID(next + 1)
+}
+
+// grantSteps are the steps of task t a grant may name, the store's steps argument: the Artisan steps of its bound
+// workflow, resolved from dir under cfg and repository r, whose profile runs an adapter that takes granted tools.
+// task grant create and decide open with a grant share it.
+func grantSteps(s *store.Store, dir string, cfg *config.Config, r config.Repository, t store.Task) ([]string, error) {
 	def, err := boundWorkflow(dir, cfg, r, t.Workflow)
 	if err != nil {
-		return store.Receipt{}, fmt.Errorf("task %s/%s: %w; its steps cannot be checked", t.Repository, t.ID, err)
+		return nil, fmt.Errorf("task %s/%s: %w; its steps cannot be checked", t.Repository, t.ID, err)
 	}
 	// An unattended grill runs as an Artisan, so it is granted like any other Artisan step.
 	if def, err = withGrillMode(s, t.Repository, t.ID, def); err != nil {
-		return store.Receipt{}, err
+		return nil, err
 	}
 	var steps []string
 	for _, step := range def.Steps {
@@ -174,23 +219,7 @@ func createTaskGrant(s *store.Store, dir string, cfg *config.Config, r config.Re
 			steps = append(steps, step.ID)
 		}
 	}
-	existing, err := s.TaskGrantStatuses(g.Repository, g.TaskID)
-	if err != nil {
-		return store.Receipt{}, err
-	}
-	next := 0
-	for _, e := range existing {
-		if (e.State == store.GrantPending || e.State == store.GrantActive) && e.Step == g.Step && slices.Equal(e.Rules, g.Rules) && e.Reason == g.Reason && e.Until == g.Until {
-			g.ID = e.ID
-		}
-		if n, err := strconv.Atoi(strings.TrimPrefix(e.ID, "g")); err == nil && n > next {
-			next = n
-		}
-	}
-	if g.ID == "" {
-		g.ID = store.TaskGrantID(next + 1)
-	}
-	return s.CreateTaskGrant(mutationID("task-grant", g.Repository, g.TaskID, g.ID), g, steps)
+	return steps, nil
 }
 
 func (a *App) taskGrantUsage(msg string) int {

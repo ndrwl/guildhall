@@ -193,6 +193,21 @@ func markRecommended(tiles []tileView, option string) {
 	sortTiles(tiles)
 }
 
+// grantTile says on the tile of option, the option of a Director question that proposes a task grant, that
+// choosing it also approves grant, such as g2.
+func grantTile(tiles []tileView, option, grant string) {
+	for i := range tiles {
+		if tiles[i].Option != option {
+			continue
+		}
+		words := "also approves grant " + grant
+		if tiles[i].Text != "" {
+			words = tiles[i].Text + "; " + words
+		}
+		tiles[i].Text = words
+	}
+}
+
 // sortTiles puts the recommended tile first, the rest in their order.
 func sortTiles(out []tileView) {
 	slices.SortStableFunc(out, func(a, b tileView) int {

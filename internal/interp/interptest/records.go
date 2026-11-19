@@ -1052,6 +1052,32 @@ func (r *Records) CreateTaskGrant(mutationID string, g store.TaskGrant, _ []stri
 	})
 }
 
+// OpenQuestionGranting opens question d and records grant g, the grant its option g.ApprovingOption proposes, with
+// d as its decision, as store.OpenQuestionGranting does, without its checks of the rules, steps and overlapping
+// grants and with neither the saying nor the recommendation.
+func (r *Records) OpenQuestionGranting(mutationID string, d store.Decision, g store.TaskGrant, _ []string, _ *store.Saying, _ *store.Recommendation) (store.Receipt, error) {
+	g.Decision = d.ID
+	d.Question = store.QuestionWithGrant(d.Question, g)
+	return r.mutate(mutationID, "open-decision", struct {
+		Decision store.Decision
+		Grant    store.TaskGrant
+	}{d, g}, func(rc *store.Receipt) error {
+		rc.Repository, rc.TaskID, rc.Record = d.Repository, d.TaskID, "decision/"+d.ID
+		if _, ok := r.tasks[[2]string{g.Repository, g.TaskID}]; !ok {
+			return fmt.Errorf("task %s/%s: %w", g.Repository, g.TaskID, store.ErrNotFound)
+		}
+		if slices.ContainsFunc(r.grants, func(o store.TaskGrant) bool {
+			return o.Repository == g.Repository && o.TaskID == g.TaskID && o.ID == g.ID
+		}) {
+			return fmt.Errorf("%w: grant %s", store.ErrExists, g.ID)
+		}
+		r.grants = append(r.grants, g)
+		r.decisions = append(r.decisions, d)
+		slices.SortFunc(r.decisions, func(x, y store.Decision) int { return cmp.Compare(x.ID, y.ID) })
+		return nil
+	})
+}
+
 // TaskGrants implements interp.Records.
 func (r *Records) TaskGrants(repository, taskID string) ([]store.TaskGrant, error) {
 	r.mu.Lock()

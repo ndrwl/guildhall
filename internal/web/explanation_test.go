@@ -152,6 +152,31 @@ func TestOneRecommendation(t *testing.T) {
 	}
 }
 
+// TestGrantOptionTile: the tile of a question's option that proposes a task grant says choosing it also approves
+// the grant, even when it is the recommended tile; the other option's tile does not, nor any tile of a question
+// proposing no grant.
+func TestGrantOptionTile(t *testing.T) {
+	const words = "also approves grant g2"
+	s := answeringTalkServer()
+	task := recommended("")
+	if v := s.taskView(task, gmState); slices.ContainsFunc(v.Asks[0].Tiles, func(t tileView) bool { return strings.Contains(t.Text, words) }) {
+		t.Errorf("a question with no grant says it approves one: %+v", v.Asks[0].Tiles)
+	}
+	task.Asks[0].GrantOption, task.Asks[0].Grant = "stop", "g2"
+	v := s.taskView(task, gmState)
+	texts := map[string]string{}
+	for _, tile := range v.Asks[0].Tiles {
+		texts[tile.Option] = tile.Text
+	}
+	if !strings.Contains(texts["stop"], words) || strings.Contains(texts["back-off"], words) || !v.Asks[0].Tiles[0].Rec || v.Asks[0].Tiles[0].Option != "stop" {
+		t.Errorf("tiles = %+v; want stop first, recommended, saying %q", v.Asks[0].Tiles, words)
+	}
+	page := get(t, New(Options{Source: &fakeSource{tasks: map[string]Task{"guildhall/d145": task}}, Location: time.UTC, Host: testHost}), "/guildhall/d145")
+	if card := askCard(t, page.Body.String(), "q1"); !strings.Contains(card, words) {
+		t.Errorf("the page's q1 card does not say %q:\n%s", words, card)
+	}
+}
+
 // TestHeadline: the readable headline takes the question's first line's place, and that line leads the rest of the
 // question, so the raw text is still on the page, folded; an ask with no headline keeps its first line.
 func TestHeadline(t *testing.T) {

@@ -26,9 +26,10 @@ const decideUsage = `usage:
   guildhall decide answer --store <path> --repo <id> --task <id> --decision <id> --answer-file <path|->
   guildhall decide defer --store <path> --repo <id> --task <id> --decision <id> --until-merged <repo>/<task>... --reason <text>
   guildhall decide undefer --store <path> --repo <id> --task <id> --decision <id>
-  guildhall decide open --store <path> --repo <id> --task <id> (--question <text> | --question-file <path|->) [--option <text>]... [--recommend <option>]
+  guildhall decide open --store <path> --repo <id> --task <id> (--question <text> | --question-file <path|->) [--option <text>]... [--recommend <option>] [--config <director.toml> --grant-option <option> --grant-step <id|all> --grant-tool <rule>... [--grant-until attempt|done] --grant-reason <text>]
   guildhall decide explain <repo>/<task> <decision> --store <path> --subject-digest <digest> (--text <md> | --file <path|->) [--recommend <option>]
---copy <dir>, or the copy found from the current directory, may stand in for --store: the copy's director.store`
+--copy <dir>, or the copy found from the current directory, may stand in for --store: the copy's director.store,
+and for decide open with a grant for --config too: the copy's config.toml`
 
 // decide runs a decide subcommand against an existing store and prints its result as one JSON document
 // (docs/decisions-cli.md). list prints the open decisions, the per-machine inbox (R1.20), by repository,
