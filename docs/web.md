@@ -44,6 +44,8 @@ Open `http://<address>/`, such as `http://andrew-lap-wsl.tail5da40a.ts.net:4388/
   - **Spend**: today's cost in US dollars, marked "estimated" when it is, its attempts and its tokens, labelled with the day, such as "5 Nov, UTC". "Today" is the UTC day, as for the spend limit.
   - **Machine**: the load and the core count, the memory used and the free disk of the volume holding the copy's state. A value the OS cannot give without cgo, such as the load on Windows, reads "unavailable".
 
+  - **Last 14 days**: two charts of the last 14 UTC days, today last, merges per day as bars (one per merge record, as in Work) and spend per day as a line (what the attempts started on each day reported, as in Spend). Hover over or tap a day for its numbers, such as "5 Nov · 4 merges · $38"; with no day under the pointer the line under the charts gives today's. A day whose attempts reported no cost reads "spend unknown" and leaves a gap in the line. There is no zoom or pan, and with scripts off the charts are left out. A past day's totals are kept while the server runs once every attempt started on it has finished; today, and a day with an attempt still running, are worked out on every read.
+
   On a phone it folds to one line, "3/4 running · 16 to merge · 4 merged · $38.20 today", which the server renders open.
 - **Needs you**, pinned on top in amber and always open: a task with an open or deferred ask, or a grill the Director runs with you in its session, oldest ask first. Each row has a second line naming the ask, such as "Approval of the plan.". The filter never hides it.
 - The filter bar and the column header, then one group per pipeline stage, each folding on its own, open at first, with a count and a short status line:
@@ -70,7 +72,7 @@ If a refresh fails, such as while the store is busy, the rows stay as they were,
 On a phone the strip starts folded to its one line.
 The footer says "Read from the store now · refreshes by itself every 20 s", with the exact read time on hover.
 With scripts turned off the list is the server's view of its address, as of when it loaded; reload for newer.
-The [list-page scripts decision](decisions/list-page-scripts.md) records why this script may read the feed.
+The [list-page scripts decision](decisions/list-page-scripts.md) records why this script may read the feed, and why the charts may use uPlot, the one third-party file Guildhall vendors ([THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)).
 Every task page's crumb starts with **All tasks**, a link back to the list.
 
 ## The task page

@@ -15,6 +15,7 @@ Every other error means the document is malformed; each caller adds its own sent
 `messaging.Decode`, which the package was extracted from, and the attempt control endpoint used it first.
 The prompt manifest, workflow and review outcome, result-file, steward rollout plan and `guildhall render` request readers moved over next, each keeping its schema name, size limit and error sentinel, with its refusal tests as the pin; their key walkers and schema checks are deleted.
 The result file keeps its separate `schema` name and integer `version` fields, so strictjson checks only its shape.
+The web package's vendored-file manifests (`internal/web/vendor/<package>/manifest.json`, schema `guildhall.vendor-manifest/1`, at most 64 KiB) are read through it by `loadVendor` when the package loads, with `TestVendorRefusals` as the pin.
 No hand-written strict reader remains; the steward roster and managed settings are TOML and stay outside this package.
 
 The JSON readers outside this package's formats:

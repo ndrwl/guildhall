@@ -60,6 +60,11 @@ func newLiveSource(now func() time.Time) *liveSource {
 	}
 	st := fixtureStats()
 	st.Day = start.UTC().Truncate(24 * time.Hour)
+	// the charts' days end today, as the strip's
+	st.Days = append([]DayTotal(nil), st.Days...)
+	for i := range st.Days {
+		st.Days[i].Day = st.Day.AddDate(0, 0, i-len(st.Days)+1)
+	}
 	return &liveSource{list: l, stats: st, now: now}
 }
 
@@ -91,11 +96,16 @@ func (f *liveSource) Task(string, string) (Task, error) { return Task{}, ErrNotF
 func (f *liveSource) Tail(string, string, int) (Tail, error) { return Tail{}, ErrNotFound }
 
 // change edits d215, a Build row: its attempt goes up, it gains PR #390 with CI running, and its title counts the changes, so its row
-// differs from the one on the page and list.js should redraw and tint it, and keep every other row.
+// differs from the one on the page and list.js should redraw and tint it, and keep every other row. Today's chart day
+// gains a merge, so the merges chart's last bar should grow.
 func (f *liveSource) change() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.changes++
+	if n := len(f.stats.Days); n > 0 {
+		f.stats.Days = append([]DayTotal(nil), f.stats.Days...)
+		f.stats.Days[n-1].Merges++
+	}
 	for i := range f.list.Tasks {
 		if t := &f.list.Tasks[i]; t.ID == "d215" {
 			t.Attempt++
@@ -149,7 +159,11 @@ func fixtureHandler(src *liveSource, host string) http.Handler {
 //   - each step row t01 to t11 reads in the browser what the server wrote (curl the page, or load it with scripts
 //     off): now, now, 1 min ago, 58 min ago, 1 hr ago, 23 hr ago, 1 day ago, 2 days ago, 30 days ago, then dates;
 //   - after /fixture/fail the rows stay and the band says "Not refreshed since …"; /fixture/ok clears it;
-//   - at 390 px the stats strip is closed and nothing scrolls sideways.
+//   - at 390 px the stats strip is closed and nothing scrolls sideways;
+//   - the strip shows two charts of the last 14 days, merges as bars and spend as a line, and hovering over or tapping
+//     a day writes its words under them, such as "<today> · 4 merges · $38", with today's when nothing is hovered;
+//     after /fixture/change today's bar and words read one merge more; the charts do not zoom or pan; at 390 px they
+//     stack and fit once the strip is opened; and with scripts off the charts are absent.
 //
 // With no -list-fixture it checks the fixture itself: its times read now, its links fail, recover and change a row,
 // and the server writes each step row's words as listed above.
@@ -196,6 +210,10 @@ func TestListBrowserFixture(t *testing.T) {
 	}
 	if d215 == nil || d215.Attempt != 3 || !strings.HasSuffix(d215.Title, "(change 1)") || d215.PR == nil || d215.PR.Number != 390 {
 		t.Errorf("d215 after a change = %+v", d215)
+	}
+	days := f.Stats.Text.Days
+	if len(days) != ChartDays || days[ChartDays-1].Day != time.Now().UTC().Format("2006-01-02") || days[ChartDays-1].Merges != 5 {
+		t.Errorf("the charts' days after a change = %+v", days)
 	}
 
 	get(t, h, "/fixture/fail")

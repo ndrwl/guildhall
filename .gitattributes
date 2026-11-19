@@ -16,5 +16,8 @@ skills/** text eol=lf
 # The scenario test's golden prompt is compared byte for byte, so Windows checkouts keep its LF endings.
 internal/cli/testdata/scenario/*.md -text
 
+# Vendored third-party files keep their upstream bytes, which their manifests' sha256 pins and the CSP's hashes name.
+internal/web/vendor/** -text
+
 # The release baseline ships with exact LF bytes because its digest golden pins them.
 baseline/** text eol=lf

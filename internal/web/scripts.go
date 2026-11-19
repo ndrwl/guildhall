@@ -25,12 +25,16 @@ type ownScript struct {
 // ownScripts are the embedded scripts, read once when the package loads, in file-name order.
 var ownScripts = loadScripts(assets)
 
+// pinnedScripts are every script a page may inline: the own scripts, then the vendored ones (vendored.go), each
+// pinned by its hash.
+var pinnedScripts = append(append([]ownScript{}, ownScripts...), vendor.Scripts...)
+
 // CSP is the Content-Security-Policy every page is served with: baseCSP, plus a script-src listing only the own
-// scripts' hashes, so no other script runs, including any inside Artisan-written content, and connect-src 'self',
-// so the own scripts allowed a request, poll.js and list.js, can ask their page's since route or /list.json and
-// nothing else can be reached. Its script-src never lists 'unsafe-inline', 'unsafe-eval', 'unsafe-hashes', 'strict-dynamic', 'self' or
-// a host, and with no own scripts it is baseCSP exactly.
-var CSP = policy(ownScripts)
+// and vendored scripts' hashes, so no other script runs, including any inside Artisan-written content, and
+// connect-src 'self', so the own scripts allowed a request, poll.js and list.js, can ask their page's since route or
+// /list.json and nothing else can be reached. Its script-src never lists 'unsafe-inline', 'unsafe-eval',
+// 'unsafe-hashes', 'strict-dynamic', 'self' or a host, and with no scripts it is baseCSP exactly.
+var CSP = policy(pinnedScripts)
 
 func loadScripts(fsys fs.FS) []ownScript {
 	names, err := fs.Glob(fsys, "scripts/*.js")
@@ -73,10 +77,10 @@ func policy(scripts []ownScript) string {
 }
 
 // listOnly are the own scripts only the task list inlines, and pageOnly those only the task and reader pages
-// inline; every other own script is inlined by all three. The one CSP lists every own script's hash, so each page's
-// set is a subset of what it allows.
+// inline; every other own script is inlined by all three. The vendored scripts are the task list's alone, for its
+// charts. The one CSP lists every pinned script's hash, so each page's set is a subset of what it allows.
 var (
-	listOnly = map[string]bool{"list.js": true}
+	listOnly = map[string]bool{"charts.js": true, "list.js": true}
 	pageOnly = map[string]bool{"poll.js": true}
 )
 
@@ -91,8 +95,18 @@ func scriptSet(skip map[string]bool) []template.JS {
 	return out
 }
 
-// scripts are the own scripts the task and reader pages inline, and listScripts those the task list inlines.
+// scripts are the own scripts the task and reader pages inline, and listScripts those the task list inlines: the
+// vendored scripts first, so uPlot is defined before charts.js runs, then its own scripts.
 var (
 	scripts     = scriptSet(listOnly)
-	listScripts = scriptSet(pageOnly)
+	listScripts = append(vendorBodies(), scriptSet(pageOnly)...)
 )
+
+// vendorBodies are the vendored scripts' bodies, in manifest order.
+func vendorBodies() []template.JS {
+	out := make([]template.JS, 0, len(vendor.Scripts))
+	for _, s := range vendor.Scripts {
+		out = append(out, s.Body)
+	}
+	return out
+}

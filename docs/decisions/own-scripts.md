@@ -25,7 +25,7 @@ Pages may run only **own scripts**: small, hand-written files under `internal/we
 - **Untrusted content never runs script.** `RenderMarkdown`, escaping, `FrameCSP` and the `<iframe sandbox>` stay as they are, and the browser refuses any script whose hash is not listed, so a script that slipped into content still could not run.
 - **Code rules.** No HTML parsing from strings, no string evaluation, no network calls (but `poll.js`'s one, below) or module loads, listeners only through `addEventListener`, and no submitting; a test searches the embedded files for the forbidden calls.
 - **Progressive enhancement.** Every page and every answer works with scripts off, and the server keeps every check it has: Host, token, Origin or `Sec-Fetch-Site`, login and request shape.
-- **No third-party code.** No libraries, CDNs or vendored frameworks, and no external request.
+- **No third-party code.** No libraries, CDNs or vendored frameworks, and no external request. Amended by [list-page scripts](list-page-scripts.md#vendored-files): named, pinned MIT, BSD or Apache-2.0 files may be vendored under `internal/web/vendor/`, uPlot for the task list's charts the first; CDNs and external requests stay out.
 - **A first script ships now.** `js.js` adds the class `js` to `<html>`, so real pages, the goldens and a browser exercise the hash pinning before d174 builds on it; no style uses the class yet.
 
 ### One request, for the new-reply bar (d145)

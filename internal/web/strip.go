@@ -1,6 +1,7 @@
 package web
 
 import (
+	"encoding/json"
 	"math"
 	"strconv"
 )
@@ -30,6 +31,48 @@ type stripView struct {
 	Cores  string `json:"cores"`
 	Memory string `json:"memory"`
 	Disk   string `json:"disk"`
+	// Days are the charts' days, oldest first, and DaysJSON the same as the charts section's data-days, for
+	// charts.js; with no days the page leaves the charts out.
+	Days     []dayView `json:"days"`
+	DaysJSON string    `json:"-"`
+}
+
+// dayView is one day of the strip's charts: its UTC date, its axis label "5 Nov", its merges, its spend in US
+// dollars, null when its attempts reported no cost, and Text, the words hovering over or tapping it shows,
+// "5 Nov · 4 merges · $38".
+type dayView struct {
+	Day    string   `json:"day"`
+	Label  string   `json:"label"`
+	Merges int      `json:"merges"`
+	Cost   *float64 `json:"cost"`
+	Text   string   `json:"text"`
+}
+
+// newDayViews are days as the charts say them; an empty list for none, never null.
+func newDayViews(days []DayTotal) []dayView {
+	out := make([]dayView, 0, len(days))
+	for _, d := range days {
+		v := dayView{Day: d.Day.UTC().Format("2006-01-02"), Label: d.Day.UTC().Format("2 Jan"), Merges: d.Merges}
+		spend := "spend unknown"
+		if d.Spend.Attempts == 0 || d.Spend.CostMeasure != "unknown" && d.Spend.CostMeasure != "" {
+			cost := d.Spend.CostUSD
+			v.Cost, spend = &cost, dayCost(cost)
+		}
+		v.Text = v.Label + " · " + strconv.Itoa(d.Merges) + plural(d.Merges, " merge", " merges") + " · " + spend
+		out = append(out, v)
+	}
+	return out
+}
+
+// dayCost is a day's spend in short: whole dollars from $10, "$38", cents under it, "$4.20", and "$0" for none.
+func dayCost(usd float64) string {
+	switch {
+	case usd <= 0:
+		return "$0"
+	case math.Round(usd) >= 10:
+		return "$" + strconv.FormatFloat(math.Round(usd), 'f', 0, 64)
+	}
+	return "$" + strconv.FormatFloat(usd, 'f', 2, 64)
 }
 
 // frontLink is a merge queue's front task, named and linked to its page.
@@ -92,6 +135,13 @@ func newStripView(st Stats) stripView {
 		v.Disk = byteCount(m.DiskFree) + " of " + byteCount(m.DiskTotal) + " disk free"
 	}
 	v.Summary = running + " running · " + strconv.Itoa(st.MergeQueue) + " to merge · " + strconv.Itoa(st.MergedToday) + " merged · " + cost
+	v.Days = newDayViews(st.Days)
+	if len(v.Days) > 0 {
+		b, err := json.Marshal(v.Days)
+		if err == nil {
+			v.DaysJSON = string(b)
+		}
+	}
 	return v
 }
 

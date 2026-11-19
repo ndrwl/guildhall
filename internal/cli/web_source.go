@@ -28,6 +28,8 @@ var webLockWait = 5 * time.Second
 type webSource struct {
 	a *App
 	c clerkPaths
+	// days caches the stats strip's charts' past days for the server's life; nil caches nothing.
+	days *dayCache
 }
 
 // webFinishedWindow is how long the task list shows a task after it finished: Recently finished covers 24 hours,

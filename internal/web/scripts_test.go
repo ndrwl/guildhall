@@ -13,10 +13,11 @@ import (
 	"testing/fstest"
 )
 
-// withoutOwnScripts is body with exactly the own <script> elements removed, as the pages inline them, so a check
-// that body holds no "<script" still proves untrusted content gained none: any script left is not an own one.
+// withoutOwnScripts is body with exactly the own and vendored <script> elements removed, as the pages inline them,
+// so a check that body holds no "<script" still proves untrusted content gained none: any script left is not a
+// pinned one.
 func withoutOwnScripts(body string) string {
-	for _, s := range ownScripts {
+	for _, s := range pinnedScripts {
 		body = strings.ReplaceAll(body, "<script>"+string(s.Body)+"</script>", "")
 	}
 	return body
@@ -28,7 +29,7 @@ func hashOf(s string) string {
 }
 
 func isOwnScript(body string) bool {
-	for _, s := range ownScripts {
+	for _, s := range pinnedScripts {
 		if string(s.Body) == body {
 			return true
 		}
@@ -124,7 +125,7 @@ func TestScriptSets(t *testing.T) {
 	names := func(set []template.JS) string {
 		var out []string
 		for _, b := range set {
-			for _, s := range ownScripts {
+			for _, s := range pinnedScripts {
 				if s.Body == b {
 					out = append(out, s.Name)
 				}
@@ -132,13 +133,13 @@ func TestScriptSets(t *testing.T) {
 		}
 		return strings.Join(out, " ")
 	}
-	if got := names(listScripts); got != "js.js list.js" {
-		t.Errorf("the task list inlines %q, want js.js list.js", got)
+	if got := names(listScripts); got != "uPlot.iife.min.js charts.js js.js list.js" {
+		t.Errorf("the task list inlines %q, want uPlot.iife.min.js charts.js js.js list.js", got)
 	}
 	if got := names(scripts); got != "js.js poll.js" {
 		t.Errorf("the task and reader pages inline %q, want js.js poll.js", got)
 	}
-	for _, s := range ownScripts {
+	for _, s := range pinnedScripts {
 		if !strings.Contains(CSP, s.Hash) {
 			t.Errorf("the CSP does not list %s", s.Name)
 		}
@@ -152,8 +153,14 @@ func TestScriptSets(t *testing.T) {
 		t.Error("the task list does not carry list.js alone of the two")
 	}
 	for name, body := range map[string]string{"task": task, "reader": reader} {
-		if strings.Contains(body, "// list.js:") || strings.Contains(body, `id="listparts"`) {
-			t.Errorf("the %s page carries list.js or its template", name)
+		if strings.Contains(body, "// list.js:") || strings.Contains(body, `id="listparts"`) || strings.Contains(body, "// charts.js:") ||
+			strings.Contains(body, string(vendor.Style)) {
+			t.Errorf("the %s page carries list.js, charts.js, uPlot's styles or the list's template", name)
+		}
+		for _, v := range vendor.Scripts {
+			if strings.Contains(body, string(v.Body)) {
+				t.Errorf("the %s page carries %s", name, v.Name)
+			}
 		}
 	}
 }
@@ -210,8 +217,8 @@ func TestCSPAllowsOnlyOwnScripts(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("CSP %q has %d script-src directives, want 1", CSP, n)
 	}
-	want := make([]string, len(ownScripts))
-	for i, s := range ownScripts {
+	want := make([]string, len(pinnedScripts))
+	for i, s := range pinnedScripts {
 		want[i] = hashOf(string(s.Body))
 	}
 	if strings.Join(sources, " ") != strings.Join(want, " ") {

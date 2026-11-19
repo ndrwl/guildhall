@@ -223,7 +223,11 @@ appears; the script fills only the tag, the time and Reload's link, with textCon
 <section class="stc" aria-label="Work"><h2>Work</h2><ul><li><b>{{.Running}}</b></li><li>{{.StartQueue}}</li><li>{{.MergeQueue}}{{range $i, $f := .Fronts}}{{if $i}},{{else}} · front{{end}} <a href="{{$f.Href}}">{{$f.Name}}</a>{{end}}</li><li>{{.Merged}}</li></ul></section>
 <section class="stc" aria-label="Spend"><h2>Spend <span class="sd">{{.Day}}</span></h2><ul><li><b>{{.Cost}}</b>{{with .CostNote}} <span class="sd">{{.}}</span>{{end}}</li><li>{{.Attempts}}</li><li>{{.Tokens}}</li></ul></section>
 <section class="stc" aria-label="Machine"><h2>Machine</h2><ul><li><b>{{.Load}}</b> · {{.Cores}}</li><li>{{.Memory}}</li><li>{{.Disk}}</li></ul></section>
-</div></details>{{end}}
+</div>{{if .Days}}{{template "charts" .}}{{end}}</details>{{end}}
+
+{{/* charts: the strip's two 14-day charts, merges per day as bars and spend per day as a line, which charts.js draws
+with the vendored uPlot from data-days and shows; hidden, so with scripts off the charts are left out. */}}
+{{define "charts"}}<section class="stch" id="charts" hidden aria-label="Last 14 days" data-days="{{.DaysJSON}}"><h2>Last 14 days <span class="sd">UTC days</span></h2><div class="chs"><figure><figcaption>Merges per day</figcaption><div class="chp" id="ch-merges"></div></figure><figure><figcaption>Spend per day</figcaption><div class="chp" id="ch-spend"></div></figure></div><p class="chr" aria-live="polite"></p></section>{{end}}
 
 {{define "time"}}<time datetime="{{.ISO}}" title="{{.Title}}">{{.Text}}</time>{{end}}
 
@@ -244,7 +248,7 @@ createElement and textContent; inert until cloned, and never shown with scripts 
 {{end}}</ul></details>
 {{end}}
 
-{{define "list"}}{{template "head" "All tasks"}}<style>{{.Style}}</style>{{range .Scripts}}<script>{{.}}</script>{{end}}</head>
+{{define "list"}}{{template "head" "All tasks"}}<style>{{.Style}}</style>{{with .VendorStyle}}<style>{{.}}</style>{{end}}{{range .Scripts}}<script>{{.}}</script>{{end}}</head>
 <body>
 <header class="band list">
 <div class="crumb"><b>All tasks</b></div>
