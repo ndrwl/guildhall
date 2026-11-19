@@ -526,8 +526,104 @@ func TestTakeoverNewMachine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if vds, ok := roster.Machine("vds"); !ok || vds.SSHAlias != "guild-vds" || len(vds.Directors) != 1 {
+	if vds, ok := roster.Machine("vds"); !ok || vds.SSHAlias != "guild-vds" || len(vds.Directors) != 1 || vds.GuildhallPath != "" {
 		t.Errorf("vds in the committed roster: %+v", vds)
+	}
+	if data, err := os.ReadFile(filepath.Join(planDir, "plan.json")); err != nil || strings.Contains(string(data), "guildhall_path") || strings.Contains(p.RosterDiff, "guildhall_path") {
+		t.Errorf("a plan with no --guildhall-path names one: %v\n%s", err, data)
+	}
+}
+
+// TestTakeoverNewMachineGuildhallPath: a new machine's takeover with a guildhall path runs that program for its probes
+// and every step, writes it to the new [[machine]] table as guildhall_path, and applies from the plan read back.
+func TestTakeoverNewMachineGuildhallPath(t *testing.T) {
+	const program = "/home/u/.local/bin/guildhall"
+	fx := newTakeoverFixture(t, "stopped")
+	fx.ops = newTakeoverCopy(fx.f, "guild-vds", opsDir, strings.Replace(opsConfig, `"workstation"`, `"vds"`, 1), "stopped")
+	fx.f.Handle("guild-vds", fx.ops.handle)
+	planDir := filepath.Join(t.TempDir(), "plan")
+	p, err := fx.setup().PlanTakeover(context.Background(), steward.TakeoverInput{Machine: "vds", Director: "ops", CopyDir: opsDir, SSHAlias: "guild-vds", GuildhallPath: program, PlanDir: planDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Guildhall != program || p.Roster.GuildhallPath != program {
+		t.Errorf("plan program %q, roster entry %+v", p.Guildhall, p.Roster)
+	}
+	for _, st := range p.Steps {
+		if st.Kind == steward.StepKindRemote && st.Argv[0] != program {
+			t.Errorf("step %s runs %q", st.ID, st.Argv)
+		}
+	}
+	ran := fx.f.Ran("guild-vds")
+	if len(ran) == 0 {
+		t.Error("the dry run probed nothing")
+	}
+	for _, argv := range ran {
+		if argv[0] != program {
+			t.Errorf("the dry run ran %q", argv)
+		}
+	}
+	if !strings.Contains(p.RosterDiff, `+guildhall_path = "`+program+`"`) {
+		t.Errorf("roster diff:\n%s", p.RosterDiff)
+	}
+	if err := steward.WriteSetupPlan(p); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := fx.setup().ApplySetup(context.Background(), planDir, p.Digest); err != nil || out.State != steward.OutcomeDone {
+		t.Fatalf("apply = %v, %v", out, err)
+	}
+	for _, argv := range fx.f.Ran("guild-vds") {
+		if argv[0] != program {
+			t.Errorf("the apply ran %q", argv)
+		}
+	}
+	roster, err := steward.ParseRoster([]byte(fx.git(fx.checkout, "show", "HEAD:roster.toml") + "\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vds, ok := roster.Machine("vds"); !ok || vds.GuildhallPath != program || len(vds.Directors) != 1 {
+		t.Errorf("vds in the committed roster: %+v", vds)
+	}
+}
+
+// TestTakeoverGuildhallPathRefused: a guildhall path that is not an absolute path of the new machine's OS form is
+// refused before any ssh call, and a roster machine keeps its own guildhall_path: another is refused, its own is
+// accepted.
+func TestTakeoverGuildhallPathRefused(t *testing.T) {
+	fx := newTakeoverFixture(t, "running")
+	for name, in := range map[string]steward.TakeoverInput{
+		"a relative path":           {GuildhallPath: "bin/guildhall"},
+		"a Windows path on Linux":   {GuildhallPath: "C:/guildhall/guildhall.exe"},
+		"a Linux path on Windows":   {GuildhallPath: "/home/u/guildhall", OS: steward.OSWindows, CopyDir: "C:/Users/u/ops"},
+		"a path with a .. segment":  {GuildhallPath: "/home/u/../u/.local/bin/guildhall"},
+		"a path with a . segment":   {GuildhallPath: "/home/u/./guildhall"},
+		"a path with a backslash":   {GuildhallPath: `C:\guildhall\guildhall.exe`, OS: steward.OSWindows, CopyDir: "C:/Users/u/ops"},
+		"a path with a space in it": {GuildhallPath: "/home/u/my bin/guildhall"},
+	} {
+		in.Machine, in.Director, in.SSHAlias, in.PlanDir = "vds", "ops", "guild-vds", filepath.Join(t.TempDir(), "plan")
+		if in.CopyDir == "" {
+			in.CopyDir = opsDir
+		}
+		fx.f.Calls()
+		_, err := fx.setup().PlanTakeover(context.Background(), in)
+		if err == nil || !strings.Contains(err.Error(), "guildhall path") {
+			t.Errorf("%s: %v, want a guildhall path refusal", name, err)
+		}
+		if calls := fx.f.Calls(); len(calls) != 0 {
+			t.Errorf("%s: reached the machine: %q", name, calls)
+		}
+	}
+
+	in := steward.TakeoverInput{Machine: "laptop", Director: "ops", CopyDir: winCopy, GuildhallPath: "C:/other/guildhall.exe", PlanDir: filepath.Join(t.TempDir(), "plan")}
+	if _, err := fx.setup().PlanTakeover(context.Background(), in); !errors.Is(err, steward.ErrRosterConflict) || !strings.Contains(err.Error(), winGuildhall) {
+		t.Errorf("another guildhall path for a roster machine: %v, want ErrRosterConflict naming %s", err, winGuildhall)
+	}
+	win := newTakeoverCopy(fx.f, winAlias, winCopy, winConfig, "running")
+	fx.f.Handle(winAlias, win.handle)
+	in.GuildhallPath = winGuildhall
+	p, err := fx.setup().PlanTakeover(context.Background(), in)
+	if err != nil || p.Guildhall != winGuildhall || p.Roster.NewMachine || p.Roster.GuildhallPath != "" {
+		t.Errorf("the roster machine's own guildhall path: %+v, %v", p, err)
 	}
 }
 

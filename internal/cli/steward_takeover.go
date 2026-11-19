@@ -42,6 +42,7 @@ func (a *App) stewardTakeoverCmd(args []string) int {
 	copyDir := fs.String("copy", "", "")
 	alias := fs.String("ssh-alias", "", "")
 	machineOS := fs.String("os", "", "")
+	guildhallPath := fs.String("guildhall-path", "", "")
 	planDir := fs.String("plan", "", "")
 	dryRun := fs.Bool("dry-run", false, "")
 	apply := fs.Bool("apply", false, "")
@@ -64,10 +65,12 @@ func (a *App) stewardTakeoverCmd(args []string) int {
 		err = errors.New("--config and --plan are required")
 	case *dryRun && (*machine == "" || *director == "" || *copyDir == ""):
 		err = errors.New("--dry-run needs --machine, --director and --copy")
-	case !*dryRun && (*machine != "" || *director != "" || *copyDir != "" || *alias != "" || *machineOS != ""):
-		err = errors.New("--machine, --director, --copy, --ssh-alias and --os belong to --dry-run; --apply and --abandon read them from the plan")
+	case !*dryRun && (*machine != "" || *director != "" || *copyDir != "" || *alias != "" || *machineOS != "" || *guildhallPath != ""):
+		err = errors.New("--machine, --director, --copy, --ssh-alias, --os and --guildhall-path belong to --dry-run; --apply and --abandon read them from the plan")
 	case *machineOS != "" && (*alias == "" || (*machineOS != string(steward.OSLinux) && *machineOS != string(steward.OSWindows))):
 		err = errors.New("--os, linux or windows, names the operating system of a machine new to the roster, with --ssh-alias")
+	case *guildhallPath != "" && *alias == "":
+		err = errors.New("--guildhall-path names the guildhall program of a machine new to the roster, with --ssh-alias")
 	case !*apply && *approve != "":
 		err = errors.New("--approve applies only with --apply")
 	}
@@ -85,7 +88,7 @@ func (a *App) stewardTakeoverCmd(args []string) int {
 	defer cancel()
 	switch {
 	case *dryRun:
-		p, err := s.PlanTakeover(ctx, steward.TakeoverInput{Machine: *machine, Director: *director, CopyDir: *copyDir, SSHAlias: *alias, OS: steward.OS(*machineOS), PlanDir: *planDir})
+		p, err := s.PlanTakeover(ctx, steward.TakeoverInput{Machine: *machine, Director: *director, CopyDir: *copyDir, SSHAlias: *alias, OS: steward.OS(*machineOS), GuildhallPath: *guildhallPath, PlanDir: *planDir})
 		if err != nil {
 			return a.fail(fmt.Errorf("steward takeover: %w", err))
 		}
