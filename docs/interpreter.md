@@ -815,6 +815,7 @@ Every input wired to an accepted-spec output, such as `build`'s and `review`'s `
 The gate follows the source's output type, not the input port's: in a workflow with no acceptance step, such as the shipped `bug`, `build` and `review` take `plan.spec`, a document, which passes through ungated ([decision](decisions/task-kinds.md)).
 Review outcomes, the rebaser and deliver's merge authorization bind to the digest of the spec the build was given either way.
 Recording the accepted spec checks the same: the approved document must be the one the decision was opened for.
+An approval the Director recorded itself with [`decide accept --director`](decisions-cli.md#decide-accept) is an ordinary `approved` answer bound to the same digest, so the gate takes it unchanged; `Engine.DirectorAcceptance` is the read-only judgement that command makes first, over the same records and rules as the round's decision message (`interp.DirectorAcceptable`), and refuses with `ErrNotPlanAcceptance` any decision that is not the open, current round of a feature's plan acceptance on a repository with the setting on.
 
 ## Replay and recovery
 

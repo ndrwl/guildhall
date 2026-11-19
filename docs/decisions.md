@@ -272,6 +272,7 @@ Regenerate it with `go test ./internal/doccheck -run TestDecisionIndex -update`,
 - [Plain English to the Director is the Guildmaster's primary interface, and the commands stay complete and public](decisions/director-conversation-first.md)
 - [Three triggers tell the Director a handoff is due, and Claude's context is read from the transcript by the core turn-end hook](decisions/director-handoff-triggers.md)
 - [Pause holds new attempts where they are recorded, and stop holds them until every attempt is proven stopped](decisions/director-pause-stop.md)
+- [The Director accepts a small feature's plan and tells the Guildmaster, when the repository opts in](decisions/director-plan-acceptance.md)
 - [A Director keeps small notes as it goes and reloads at the end of a turn, never held by a running Director stage](decisions/director-reload-and-notes.md)
 - [The Director's runtime runs in a containment unit recorded on its session before its program can run](decisions/director-runtime-record.md)
 - [The Director safety checks drive the built binary with stand-in runtimes](decisions/director-safety-checks.md)

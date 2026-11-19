@@ -496,6 +496,7 @@ An override that no longer applies, such as one a managed pin now overrules, is 
 
 A feature task's grill is **live**, the Director interviewing the Guildmaster in chat, or **unattended**, an Artisan running the grill with `guildhall-grill-unattended` and recording each open decision with the answer it proceeds on ([decision](decisions/grill-mode-per-task.md)).
 The grill step runs either way; unattended questions reach the Guildmaster as open questions at plan approval.
+Only an unattended grill, or one a workflow runs by an Artisan, lets a small plan with no open questions be [accepted by the Director](decisions-cli.md#decide-accept) on a repository that opts in; a plan after a live grill always goes to the Guildmaster.
 The Director chooses at `task new` and records a one-line reason; when it is unsure, the grill is live.
 
 ```

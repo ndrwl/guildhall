@@ -1,6 +1,7 @@
 package interp
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -123,6 +124,57 @@ func limit(effective, set, budget int, key, budgetKey string) string {
 		return fmt.Sprintf("%s = %d, the repository's size budget, which caps %s = %d", budgetKey, budget, key, set)
 	}
 	return fmt.Sprintf("%s = %d", key, effective)
+}
+
+// ErrNotPlanAcceptance reports a decision the Director may never accept on the Guildmaster's behalf: one that is not
+// the open, current round of a feature's plan acceptance on a repository whose setting is on, such as a loop exit, a
+// review, a merge, a grant or an answered, void or superseded round.
+var ErrNotPlanAcceptance = errors.New("not an open plan acceptance the Director may judge")
+
+// DirectorAcceptance judges, as the advance that opened it did, whether the Director may accept decision id of an open
+// task (docs/decisions-cli.md#decide-accept). The decision must be the latest round, accept-<k> and not a loop exit,
+// of a guildmaster-approval step whose spec comes from a plan step, still open and bound to that step's current spec
+// digest, on a feature task of a repository whose setting is on; anything else is ErrNotPlanAcceptance. The verdict
+// is DirectorAcceptable's over the spec the decision binds. It reads the task's records and writes nothing, so e
+// needs only Records, Workflow, Config and, for a task with overrides, Overrides.
+func (e *Engine) DirectorAcceptance(ctx context.Context, repository, task, id string) (AcceptVerdict, error) {
+	r, err := e.begin(ctx, Event{Repository: repository, Task: task})
+	if err != nil {
+		return AcceptVerdict{}, err
+	}
+	d := r.decision(id)
+	if d == nil {
+		return AcceptVerdict{}, fmt.Errorf("decision %q of %s/%s: %w", id, repository, task, store.ErrNotFound)
+	}
+	if !d.Open() {
+		return AcceptVerdict{}, fmt.Errorf("decision %s is answered or void: %w", id, ErrNotPlanAcceptance)
+	}
+	i := slices.IndexFunc(r.def.Steps, func(s workflow.Step) bool {
+		latest := r.latestDecision(s.ID)
+		return latest != nil && latest.ID == id
+	})
+	if i < 0 {
+		return AcceptVerdict{}, fmt.Errorf("decision %s is not the latest round of a step: %w", id, ErrNotPlanAcceptance)
+	}
+	s := r.def.Steps[i]
+	if s.Type == "guildmaster-approval" {
+		inputs, err := r.inputs(s)
+		if err != nil {
+			return AcceptVerdict{}, err
+		}
+		subject, err := r.subject(s, inputs)
+		if err != nil {
+			return AcceptVerdict{}, err
+		}
+		if d.Subject == nil || *d.Subject != *subject {
+			return AcceptVerdict{}, fmt.Errorf("decision %s binds a spec other than the current %s, and the next advance asks again: %w", id, subject.Digest, ErrNotPlanAcceptance)
+		}
+	}
+	v, ok := r.directorAcceptance(s, *d)
+	if !ok {
+		return AcceptVerdict{}, fmt.Errorf("decision %s of step %s is not a feature's plan acceptance on a repository with director_accept_lines and director_accept_files set: %w", id, s.ID, ErrNotPlanAcceptance)
+	}
+	return v, nil
 }
 
 // errAcceptBase reports an engine given a task's overrides without the copy's config they were applied to.
