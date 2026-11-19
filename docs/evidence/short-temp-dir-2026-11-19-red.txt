@@ -1,0 +1,19 @@
+$ go test ./internal/testenv/ -run ShortTempDir
+# Red run of internal/testenv/shorttemp_test.go against a ShortTempDir stub that
+# always returned errors.New("not implemented"), on Linux (go1.27.2 linux/amd64).
+--- FAIL: TestShortTempDirUsesRunnerTemp (0.01s)
+    shorttemp_test.go:61: ShortTempDir: not implemented
+--- FAIL: TestShortTempDirSkipsARunnerTempThatDoesNotFit (0.00s)
+    shorttemp_test.go:90: ShortTempDir: not implemented
+--- FAIL: TestShortTempDirUsesTempDirWithoutRunnerTemp (0.00s)
+    shorttemp_test.go:104: ShortTempDir: not implemented
+--- FAIL: TestShortTempDirResolvesALinkedTempDir (0.01s)
+    shorttemp_test.go:125: ShortTempDir: not implemented
+--- FAIL: TestShortTempDirNamesEveryCandidate (0.01s)
+    shorttemp_test.go:144: error "not implemented" does not name "/tmp/TestShortTempDirNamesEveryCandidate3948964930/001/First Last/RUNNER~1"
+    shorttemp_test.go:144: error "not implemented" does not name "/tmp/TestShortTempDirNamesEveryCandidate3948964930/002/First Last/RUNNER~1"
+    shorttemp_test.go:144: error "not implemented" does not name "has a space or a ~"
+    shorttemp_test.go:148: error "not implemented" gives fits' reason 0 times, want 3 (RUNNER_TEMP, TempDir, its resolved form)
+FAIL
+FAIL	github.com/ndrwl/guildhall/internal/testenv	0.044s
+FAIL

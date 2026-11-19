@@ -12,7 +12,13 @@ The skips that use it:
 
 - `internal/herdr` `TestShellCommandRoundTrips`, each shell not on `PATH` (only `ksh`, `pwsh` and `powershell` are requirable);
 - `skills` `TestScriptsAreTwinnedAndParse` and `TestContractTDDCheckTwinsAgree`, `pwsh` (and `sh`, which is not requirable) not on `PATH`;
-- `internal/adapter` `TestOwnedWorkerStopContract` and `TestOwnedWorkerRejectsUnverifiedIdentity`, which need Windows.
+- `internal/adapter` `TestOwnedWorkerStopContract` and `TestOwnedWorkerRejectsUnverifiedIdentity`, which need Windows;
+- `internal/cli` `newCollectSetup`'s tests (`TestStewardCollect`, `TestStewardCollectBusy`, `TestScheduledCollect`, `TestScheduledCollectLockBusy`, `TestScheduledDirectorHealth` and `TestScheduledStewardMessages`), on Windows only, when no temporary directory fits the roster or no symbolic link can be made; elsewhere those skips stay plain.
+
+`ShortTempDir(t, fits)` returns a temporary directory whose forward-slash form `fits` accepts, for a test whose paths must pass a rule the default temporary directory can break, such as the Steward roster's Windows `copy_dir`, which refuses the `~` of `C:/Users/RUNNER~1/...`.
+It tries, in order: a new directory under `RUNNER_TEMP`, when that is set, as on every hosted runner, removed in `t.Cleanup` with a removal error ignored, since a Windows handle can delay removal; `t.TempDir()`; and that directory with its links resolved.
+When none fits, it returns an error naming each candidate and `fits`' reason for it, and the caller decides whether to skip or fail.
+The rule stays with the caller, through `TempT`, the part of `testing.TB` it uses (`Helper`, `TempDir`, `Cleanup`), so the roster's patterns keep one owner and `internal/testenv` imports no package under test.
 
 The [CI workflow's matrix](../../.github/workflows/ci.yml) owns the required capabilities for each runner; the `race (1)`–`race (3)` jobs, which run on Linux outside that matrix, set `GUILDHALL_CI_REQUIRE=pwsh` themselves.
 
@@ -44,6 +50,7 @@ These helper checks passed on their first run; they are not historical red-first
 The repository-wide guard initially failed on the existing timing inventory before those sites were converted or justified.
 
 `testenv_test.go` was written red first against a stub that always skipped: the skip and failure table over a recording `T`, `Required`'s parsing and refusal, and `TestCIRequirementsAreKnown`, which checks the running job's own `GUILDHALL_CI_REQUIRE` on every runner.
+`shorttemp_test.go` was written red first against a `ShortTempDir` that always refused ([red run](../evidence/short-temp-dir-2026-11-19-red.txt)), over a recording `TempT`: with `RUNNER_TEMP` clean and the test's temp directory holding a space and a `~`, it returns a new directory under `RUNNER_TEMP` that `fits` accepts and removes it at cleanup; a `RUNNER_TEMP` that does not fit falls back to the temp directory; without `RUNNER_TEMP` a fitting temp directory is returned as it is, and a linked one that does not fit is resolved; when nothing fits, the error names every candidate.
 `ceiling_test.go`'s `TestCeiling` was written red first against a `Ceiling` returning `d` unchanged ([red run](../evidence/windows-ci-speed-2026-10-22-red.txt)): unset keeps the ceiling, and `true` and any other value scale it; the cap cases were added after a macOS run where `cmd/guildhall`'s scaled minute ceilings outlasted the package timeout.
 `claude_guard_test.go`'s `TestClaudeGuard` was run red against an `InstallClaudeGuard` that installed nothing ([red run](../evidence/claude-guard-2026-10-29-red.txt)): with a recording `claude` earlier on `PATH`, `exec.LookPath` finds the guard, which exits 97 with its message and arguments without reaching the other; a second install keeps the first; a later stub wins.
 `TestCodexGuard` runs the same checks for `codex`; it was added with the guard, which shares the claude guard's code, and was not run red.
