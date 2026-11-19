@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -126,7 +125,8 @@ func (a *App) steward(args []string) int {
 	if err != nil {
 		return a.fail(err)
 	}
-	ctx := context.Background()
+	ctx, stop := a.stewardContext()
+	defer stop()
 	if *dryRun {
 		p, err := r.Plan(ctx, machines, *planDir)
 		if err != nil {

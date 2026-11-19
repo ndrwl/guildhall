@@ -79,7 +79,9 @@ func (a *App) stewardTakeoverCmd(args []string) int {
 	if err != nil {
 		return a.fail(fmt.Errorf("steward takeover: %w", err))
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), setupApplyTimeout)
+	sigCtx, stop := a.stewardContext()
+	defer stop()
+	ctx, cancel := context.WithTimeout(sigCtx, setupApplyTimeout)
 	defer cancel()
 	switch {
 	case *dryRun:

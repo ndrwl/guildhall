@@ -341,6 +341,16 @@ On a Windows machine every path, the program's, the copy's, the setup directory'
 Each `ssh` run is bounded by a two-minute timeout, or fifteen minutes for a command that may take minutes (`setup doctor --fix`, `release adopt`, `release install`, `director start --tab` and `git clone`), and is cancelled as `scp` is, killing its process group on Unix and its process elsewhere.
 A command that exits non-zero, a refusing machine and a timeout are each reported with their diagnostic.
 
+### Interrupting a Steward command
+
+Ctrl-C or `SIGTERM` during `steward rollout`, `takeover`, `provision`, `secrets`, `machine retire` or a manual `steward collect` cancels the command, in every form: dry run or plan, apply, abandon, `set`, `--rotated` and `--status`.
+Each `scp` and `ssh` it is running is stopped as a timeout stops it, its process group killed on Unix and its process elsewhere, and reported as `interrupted: context canceled` rather than as a timeout.
+The rollout or secrets receipt then records the copy or machine as `failed` with that error, and a takeover's or provisioning's step log records the running step `failed` with it; neither format changes.
+`.rollout.lock` is released only after those children are gone, and the command exits 1; `steward secrets set` interrupted at its prompt turns echo back on before it exits.
+A second Ctrl-C while the command is stopping ends it at once, without that cleanup.
+Interrupting stops only the local `scp` or `ssh`: a remote command that had already started, such as `director pause` or `config reload`, may still finish on the machine, and nothing is rolled back.
+The next rollout or secrets apply plans again from what the machines hold, and resuming a takeover or provisioning checks the interrupted step again before it acts.
+
 ## Collection
 
 ```sh

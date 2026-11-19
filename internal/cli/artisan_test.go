@@ -36,6 +36,7 @@ func TestMain(m *testing.M) {
 	claudetest.RunIfStub()
 	codextest.RunIfStub()
 	runStewardSCPStub()
+	runStewardHangStub()
 	switch os.Getenv(roleEnv) {
 	case "guildhall":
 		if len(os.Args) > 1 && os.Args[1] == runtimeTreeCommand {

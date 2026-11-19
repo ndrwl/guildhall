@@ -407,9 +407,11 @@ type Step struct {
 //
 // Apply is the private config directory's single writer: after checking the machine set and before any transport
 // it takes the kernel lock on .rollout.lock there (privateLock) and writes its owner record (LockOwner), and
-// releases it when it returns, whether it succeeded or failed. While a live process holds the lock Apply is refused
-// with an error wrapping a *BusyError, which matches fs.ErrExist and ErrBusy and names the lock's owner. A writer
-// that stops without returning loses the lock with its process, so it never blocks the next one; the file stays.
+// releases it when it returns, whether it succeeded, failed or was interrupted: cancelling ctx stops each scp and ssh
+// run, which return only once their children are gone, so the receipt records the copy failed and interrupted before
+// the lock is released. While a live process holds the lock Apply is refused with an error wrapping a *BusyError,
+// which matches fs.ErrExist and ErrBusy and names the lock's owner. A writer that stops without returning loses the
+// lock with its process, so it never blocks the next one; the file stays.
 func (r *Rollout) Apply(ctx context.Context, stageDir, approve string, machines ...string) (*Receipt, error) {
 	saved, err := ReadPlan(stageDir)
 	if err != nil {

@@ -55,7 +55,9 @@ func (a *App) stewardProvisionCmd(args []string) int {
 	if err != nil {
 		return a.fail(fmt.Errorf("%s: %w", name, err))
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), provisionApplyTimeout)
+	sigCtx, stop := a.stewardContext()
+	defer stop()
+	ctx, cancel := context.WithTimeout(sigCtx, provisionApplyTimeout)
 	defer cancel()
 	if *apply {
 		return a.applySetup(ctx, name, steward.SetupKindProvision, s, *cfgPath, *planDir, *approve)
