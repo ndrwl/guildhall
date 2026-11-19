@@ -400,10 +400,32 @@ func validFile(path string) bool {
 // with alias and returns what the command printed on standard output. It fails, with an error carrying the
 // command's diagnostic, when the machine refuses or cannot be reached or the command exits non-zero, as an older
 // guildhall that does not know the command does; it stops when ctx ends, with an error that wraps ctx.Err().
+// A failure of a command that ran may be an *ExitError carrying what the command printed on standard output.
 // A Runner adds no credentials of its own and runs no shell of its own.
 type Runner interface {
 	Run(ctx context.Context, alias string, argv []string) ([]byte, error)
 }
+
+// ExitError is a Runner's failure of a command that ran: Err why it failed, such as its exit status or the
+// context's error, Stdout all it printed on standard output, and Diagnostic its standard error, or its standard
+// output when it printed nothing on standard error. A caller that reads a report a command prints even when it exits
+// non-zero, as secrets install does on a refusal, finds it in Stdout with errors.As.
+type ExitError struct {
+	Err        error
+	Stdout     []byte
+	Diagnostic string
+}
+
+// Error is `ssh: <err>: <diagnostic>`, or `ssh: <err>` with no diagnostic.
+func (e *ExitError) Error() string {
+	if e.Diagnostic != "" {
+		return fmt.Sprintf("ssh: %v: %s", e.Err, e.Diagnostic)
+	}
+	return fmt.Sprintf("ssh: %v", e.Err)
+}
+
+// Unwrap returns Err, so errors.Is matches context.DeadlineExceeded and the like.
+func (e *ExitError) Unwrap() error { return e.Err }
 
 // SSH is the Runner that runs remote commands with ssh. Like Transport it adds no credentials or trust options,
 // so SSH's own config, agent, keys and host-key checks decide access, and batch mode makes ssh fail rather than prompt.
@@ -464,10 +486,7 @@ func (s SSH) Run(ctx context.Context, alias string, argv []string) ([]byte, erro
 		if msg == "" {
 			msg = strings.TrimSpace(stdout.String())
 		}
-		if msg != "" {
-			return nil, fmt.Errorf("ssh: %w: %s", err, msg)
-		}
-		return nil, fmt.Errorf("ssh: %w", err)
+		return nil, &ExitError{Err: err, Stdout: bytes.Clone(stdout.Bytes()), Diagnostic: msg}
 	}
 	return stdout.Bytes(), nil
 }

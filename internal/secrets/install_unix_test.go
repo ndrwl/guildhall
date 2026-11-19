@@ -143,6 +143,76 @@ func TestInstallRefusals(t *testing.T) {
 	}
 }
 
+// TestInstallRefusedAtPrevious: when the current file cannot be kept as .prev, here because .prev is a directory,
+// install refuses at previous, leaving the live file byte-identical and removing the dropped file.
+func TestInstallRefusedAtPrevious(t *testing.T) {
+	f := newInstallFixture(t, machinePub)
+	write(t, f.p.File, "old ciphertext")
+	if err := os.Mkdir(f.p.File+secrets.PrevSuffix, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	dropped := f.drop(t)
+	r := f.install()
+	if r.Installed || r.Step != secrets.InstallStepPrevious || r.Problem == "" || strings.Contains(r.Problem, testSecret) {
+		t.Fatalf("Install = %+v, want refused at previous", r)
+	}
+	if got, _ := os.ReadFile(f.p.File); string(got) != "old ciphertext" {
+		t.Fatalf("the secrets file changed: %q", got)
+	}
+	if exists(dropped) {
+		t.Fatal("the dropped file was kept")
+	}
+}
+
+// TestInstallRefusedAtPreviousWhenTheFileCannotBeRead: when the current file cannot be read, here because it is a
+// directory, install refuses at previous, leaving it as it was and removing the dropped file.
+func TestInstallRefusedAtPreviousWhenTheFileCannotBeRead(t *testing.T) {
+	f := newInstallFixture(t, machinePub)
+	if err := os.MkdirAll(f.p.File, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	dropped := f.drop(t)
+	r := f.install()
+	if r.Installed || r.Step != secrets.InstallStepPrevious || r.Problem == "" {
+		t.Fatalf("Install = %+v, want refused at previous", r)
+	}
+	if info, err := os.Stat(f.p.File); err != nil || !info.IsDir() {
+		t.Fatalf("the secrets file's path changed: %v", err)
+	}
+	if exists(dropped) || exists(f.p.File+secrets.PrevSuffix) {
+		t.Fatal("the dropped file was kept or a .prev was written")
+	}
+}
+
+// TestInstallRefusedAtRename: when the dropped file is gone by the time it is renamed into place, install refuses at
+// rename, leaving the live file byte-identical. The current file has already been kept as .prev, replacing any
+// earlier .prev.
+func TestInstallRefusedAtRename(t *testing.T) {
+	f := newInstallFixture(t, machinePub)
+	write(t, f.p.File, "old ciphertext")
+	write(t, f.p.File+secrets.PrevSuffix, "older ciphertext")
+	dropped := f.drop(t)
+	// The decrypt check runs sops --decrypt through run, so removing the dropped file after it leaves rename nothing
+	// to move.
+	run := func(ctx context.Context, env []string, path string, args ...string) ([]byte, []byte, error) {
+		stdout, stderr, err := secrets.Exec(ctx, env, path, args...)
+		if slices.Contains(args, "--decrypt") {
+			_ = os.Remove(dropped)
+		}
+		return stdout, stderr, err
+	}
+	r := secrets.Install(context.Background(), f.p, f.copied, f.sum, run)
+	if r.Installed || r.Step != secrets.InstallStepRename || r.Problem == "" || strings.Contains(r.Problem, testSecret) {
+		t.Fatalf("Install = %+v, want refused at rename", r)
+	}
+	if got, _ := os.ReadFile(f.p.File); string(got) != "old ciphertext" {
+		t.Fatalf("the secrets file changed: %q", got)
+	}
+	if prev, _ := os.ReadFile(f.p.File + secrets.PrevSuffix); string(prev) != "old ciphertext" {
+		t.Fatalf(".prev = %q, want a copy of the live file", prev)
+	}
+}
+
 // TestInstallRefusesAnExpectThatIsNotADigest: no path is built from an --expect that is not a sha256.
 func TestInstallRefusesAnExpectThatIsNotADigest(t *testing.T) {
 	f := newInstallFixture(t, machinePub)

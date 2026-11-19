@@ -59,6 +59,7 @@ The Steward first puts the new ciphertext beside the file as `secrets.sops.yaml.
 6. removes every other `secrets.sops.yaml.new-*` file, such as one a cut-short push left.
 
 On a refusal the secrets file is untouched and the new file is removed.
+A `rename` refusal comes after step 4, so it has already replaced `secrets.sops.yaml.prev` with a copy of the current file, losing any earlier `.prev`, while the secrets file itself is untouched.
 It always prints one JSON document, naming the files, the digests, the names the new file holds and, on a refusal, the `step` that refused (`paths`, `digest`, `decrypt`, `previous` or `rename`) and the `problem`, never a value, and exits 0 when it installed the file and 1 when it refused.
 
 To go back to the file a push replaced, run on the machine `mv ~/.config/guildhall/secrets.sops.yaml.prev ~/.config/guildhall/secrets.sops.yaml`; the next push from the private config replaces it again.
@@ -143,7 +144,9 @@ Apply holds `.rollout.lock`, plans again and refuses, writing nothing, unless th
 Until step 3 renames it, the machine's secrets file is untouched, so a cut-short copy, a read-back mismatch or a file that does not decrypt there leaves it as it was.
 
 The receipt `receipt-<UTC time>.json` in the plan directory records each machine's status, `applied`, `unchanged`, `failed`, `verify_failed`, `install_failed` or `check_failed`, its names, its digests and every command with what `secrets install` and `secrets check` printed, never a value.
-`install_failed` means `secrets install` refused, its report, in the step's error, naming the step that refused; the secrets file is unchanged.
+`install_failed` means one of two things.
+Either `secrets install` refused: its report, in the step's output, names the step that refused and the problem, and the secrets file is unchanged.
+Or its outcome could not be read, for example after a timeout, a dropped connection or a missing report, and the secrets file may hold the old or the new ciphertext: plan again, since plan reads the live digest and shows a machine that already has the new file as `unchanged`.
 A plan written before `secrets install` existed is stale, since its commands are in its digest: apply refuses it, and a new plan is needed.
 A failure on one machine does not stop the others, and apply exits 1 unless every machine is applied or unchanged.
 The machine's sessions decrypt the new file at their next start.
