@@ -327,6 +327,43 @@ func TestProcessLaunchFailsWhenTheLauncherExitsFirst(t *testing.T) {
 	}
 }
 
+// checkNamesLog fails t unless err names the attempt key and launch.LogFile exactly once, and the log exists.
+func checkNamesLog(t *testing.T, err error, spec interp.Spec) {
+	t.Helper()
+	key := artisan.AttemptKey{Repository: "app", TaskID: "t7", Step: "build", Attempt: 1}.String()
+	if !strings.Contains(err.Error(), key) || strings.Count(err.Error(), launch.LogFile) != 1 {
+		t.Errorf("Launch = %v, want an error naming %s and %s once", err, key, launch.LogFile)
+	}
+	if _, statErr := os.Stat(filepath.Join(filepath.Dir(spec.ResultFile), launch.LogFile)); statErr != nil {
+		t.Errorf("launcher log: %v", statErr)
+	}
+}
+
+// A presentation that cannot be opened after launcher.log exists fails Launch naming the log once (d256).
+func TestProcessLaunchOpenPresentationFailureNamesTheLog(t *testing.T) {
+	p := newProcess(t)
+	sentinel := errors.New("terminal unavailable")
+	p.OpenPresentation = func(context.Context) (*launch.Presentation, error) { return nil, sentinel }
+	spec := prepared(t, p, fixtureSpec(t, ""))
+	_, err := p.Launch(context.Background(), spec)
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("Launch = %v, want %v", err, sentinel)
+	}
+	checkNamesLog(t, err, spec)
+}
+
+// A launcher that cannot be started fails Launch naming the log once (d256).
+func TestProcessLaunchStartFailureNamesTheLog(t *testing.T) {
+	p := newProcess(t)
+	p.Executable = filepath.Join(t.TempDir(), "missing-guildhall")
+	spec := prepared(t, p, fixtureSpec(t, ""))
+	_, err := p.Launch(context.Background(), spec)
+	if err == nil {
+		t.Fatal("Launch succeeded with a missing executable")
+	}
+	checkNamesLog(t, err, spec)
+}
+
 // A launcher that owns, finishes and exits before Launch reads its identity is still the attempt's owner: Launch
 // succeeds, the result is there and Stop has nothing left to do. The hook holds Launch until the launcher is an
 // exited, unreaped child, as a descheduled caller on a loaded runner would see it (d236).

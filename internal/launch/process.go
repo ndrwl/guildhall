@@ -142,10 +142,12 @@ func (p *Process) launchFiles(ctx context.Context, k artisan.AttemptKey, slices 
 	if err := ctx.Err(); err != nil {
 		return interp.Handle{}, err
 	}
-	log, err := os.OpenFile(filepath.Join(at.Dir(), LogFile), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	logPath := filepath.Join(at.Dir(), LogFile)
+	log, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 	if err != nil {
 		return interp.Handle{}, err
 	}
+	// From here every failure names the log once; owned's "exited before owning" already does.
 	build := func() *exec.Cmd {
 		cmd := exec.Command(p.Executable, "artisan", "start", "--store", at.Store, "--state", p.StateDir,
 			"--repo", k.Repository, "--task", k.TaskID, "--step", k.Step, "--attempt", strconv.Itoa(k.Attempt),
@@ -187,7 +189,7 @@ func (p *Process) launchFiles(ctx context.Context, k artisan.AttemptKey, slices 
 		presentation, err = p.OpenPresentation(ctx)
 		if err != nil {
 			_ = log.Close()
-			return interp.Handle{}, err
+			return interp.Handle{}, fmt.Errorf("launch: %s: open presentation: %w; see %s", k, err, logPath)
 		}
 	}
 	if presentation != nil {
@@ -200,7 +202,7 @@ func (p *Process) launchFiles(ctx context.Context, k artisan.AttemptKey, slices 
 	// The child holds its own handle on the log.
 	_ = log.Close()
 	if err != nil {
-		return interp.Handle{}, fmt.Errorf("launch: start %s: %w", k, err)
+		return interp.Handle{}, fmt.Errorf("launch: start %s: %w; see %s", k, err, logPath)
 	}
 	if afterLauncherStart != nil {
 		afterLauncherStart(cmd.Process.Pid)
@@ -215,8 +217,6 @@ func (p *Process) launchFiles(ctx context.Context, k artisan.AttemptKey, slices 
 		if !errors.Is(err, errReleased) {
 			_ = p.stop(c, true)
 		}
-		// Every failure names the log once; owned's "exited before owning" already does.
-		logPath := filepath.Join(at.Dir(), LogFile)
 		if strings.Contains(err.Error(), logPath) {
 			return interp.Handle{}, fmt.Errorf("launch: %s: %w", k, err)
 		}
