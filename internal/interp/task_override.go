@@ -15,8 +15,11 @@ import (
 type TaskOverrides struct {
 	Repository, TaskID string
 	Config             *config.Config
-	Active             []store.TaskOverride
-	Skipped            []config.Skipped
+	// Base is the copy's config the overrides were applied to, which settings no task may loosen read, such as
+	// the size budget that caps Director acceptance (config.Config.DirectorAccept).
+	Base    *config.Config
+	Active  []store.TaskOverride
+	Skipped []config.Skipped
 }
 
 // ApplyTaskOverrides reads the task's override records and applies those in effect to base
@@ -32,7 +35,7 @@ func ApplyTaskOverrides(records Records, base *config.Config, repository, taskID
 	if err != nil {
 		return TaskOverrides{}, err
 	}
-	return TaskOverrides{Repository: repository, TaskID: taskID, Config: cfg, Active: active, Skipped: skipped}, nil
+	return TaskOverrides{Repository: repository, TaskID: taskID, Config: cfg, Base: base, Active: active, Skipped: skipped}, nil
 }
 
 // EffectiveOverrides applies a task's overrides in effect to base: it returns the task's effective config, the

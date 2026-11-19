@@ -3,7 +3,10 @@
 Write the specification the Guildmaster will accept before anything is built.
 Use the context documents as your evidence.
 When a `design` input is given, it is the design the Guildmaster approved, and the spec follows it.
-Start the spec with a `# ` heading that names the change as a pull request title, followed by a short `## Summary` block (Goal, size, slices, changed since the grill, the number of open questions) and a short `## Goal` section.
+Start the spec with a `# ` heading that names the change as a pull request title, followed by a short `## Summary` block (Goal, size, touches, slices, changed since the grill, the number of open questions) and a short `## Goal` section.
+Write the size as `- **Size:** about <N> non-test lines in <M> files.`, after `<k> slices, ` when there are slices, counting only lines and files that are not tests.
+Write `- **Touches:** none.` unless the change touches secrets, managed settings or trust (who may approve, grant or merge what), and then list the ones it touches, such as `- **Touches:** secrets and trust.`
+Guildhall reads these two items: where the repository allows it, the Director may accept a one-slice plan with no open questions that is small enough and touches none of them, so state them honestly; one in another form keeps the plan with the Guildmaster.
 State what will change, what will not, how it will be tested and how the Guildmaster will know it is done.
 Keep it short enough to read in a few minutes.
 List every question that is still open under `## Open questions`, or write "None": each starts on a line `**Qn. <title>**`, numbered from Q1 with no gaps, and has an `Options: (a) <one answer>; (b) <another>.` line and a `Recommended: (<letter>). <why>` line.

@@ -180,10 +180,14 @@ func SettingScope(key string) (Scope, bool) {
 
 // taskOverrideRefusal reports why key = value cannot override a setting for one task under c, judged on its own:
 // an excluded, unknown, machine-wide or pinned key, or a value its check refuses. It is nil if the override applies.
-// A merge-requires key is judged by mergeRequiresRefusal, before the rest of [repository.merge] is kept out.
+// A merge-requires key is judged by mergeRequiresRefusal, before the rest of [repository.merge] is kept out, and
+// accept.requires_guildmaster by acceptOverrideRefusal.
 func (c *Config) taskOverrideRefusal(key, value string) error {
 	if name, ok := mergeRequiresOverride(key); ok {
 		return mergeRequiresRefusal(name, value)
+	}
+	if key == AcceptRequiresGuildmasterOverride {
+		return acceptOverrideRefusal(value)
 	}
 	for _, e := range excludedRegistry {
 		if slices.Contains(e.keys, key) || slices.ContainsFunc(e.prefixes, func(p string) bool { return strings.HasPrefix(key, p) }) {
@@ -236,7 +240,8 @@ type Skipped struct {
 // each goes into the copy's Local, so precedence is task override, then local, then managed, and a managed key that
 // is not overridable still wins. It never mutates c; the copy shares c's other maps, which callers must not change.
 // Step keys are left to the workflow, and merge-requires keys to MergeRequires.WithTaskOverrides, which reports their
-// skips. An override that does not apply now, because its key is unknown, machine-wide,
+// skips; accept.requires_guildmaster is left out of Local too, since AcceptRequiresGuildmaster reads it from the
+// overrides, but a value it refuses is skipped here. An override that does not apply now, because its key is unknown, machine-wide,
 // excluded or pinned, its value fails its check, or it leaves the config invalid beside the others, is skipped with
 // its reason rather than failing, so a later change to the copy's config cannot wedge a task. The error is for an
 // invalid c.
@@ -252,6 +257,10 @@ func (c *Config) WithTaskOverrides(overrides map[string]string) (*Config, []Skip
 		}
 		if err := c.taskOverrideRefusal(key, overrides[key]); err != nil {
 			skipped = append(skipped, Skipped{Key: key, Value: overrides[key], Reason: err.Error()})
+			continue
+		}
+		if key == AcceptRequiresGuildmasterOverride {
+			// Not a setting: AcceptRequiresGuildmaster reads it from the overrides.
 			continue
 		}
 		apply = append(apply, key)

@@ -55,7 +55,7 @@ The requested work is recorded here.
 
 Strict sections: Guildhall parses these sections of `spec.md` itself, and `guildhall result submit` and intake refuse a result that breaks one with the error shown, so copy the valid shape exactly.
 
-**`## Summary`.** Write its parts as list items, Goal, Size, Slices, Changed since the grill and Open questions, in at most 4 KiB. Never write them as `##` headings: the next `##` heading ends the block, so a block that starts with one is empty and refused.
+**`## Summary`.** Write its parts as list items, Goal, Size, Touches, Slices, Changed since the grill and Open questions, in at most 4 KiB. Never write them as `##` headings: the next `##` heading ends the block, so a block that starts with one is empty and refused. Write Size as `- **Size:** about <N> non-test lines in <M> files.`, after `<k> slices, ` when there are slices, and Touches as `- **Touches:** none.` or the ones of secrets, managed settings and trust the change touches; a Size or Touches item in another form is not refused, but the plan is then never accepted by the Director.
 
 Valid:
 
@@ -63,7 +63,8 @@ Valid:
 ## Summary
 
 - **Goal:** An Artisan fixes a rejected result in the same attempt.
-- **Size:** 2 slices, about 1,100 lines in 25 files.
+- **Size:** 2 slices, about 1,100 non-test lines in 25 files.
+- **Touches:** none.
 - **Slices:** (1) Result check command; (2) Prompts submit.
 - **Changed since the grill:** Nothing; the plan follows the grill's agreed change.
 - **Open questions:** None.
