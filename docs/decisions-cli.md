@@ -63,6 +63,7 @@ records `pick` as the choice and `H1, H3` as the note, and creates no task: the 
 The answer is recorded with mutation id `decision-answer:<repo>:<task>:<decision>`, or `decision-answer:sha256:<hex>` of that text when it is longer than 128 bytes.
 Repeating the same answer prints the original receipt; a different answer to an answered decision is refused, so a decision is answered once.
 Answering records the answer only: it never advances, resumes or launches a task.
+In a Steward store, an answer to a decision of one of the Steward's reserved tasks (`rollouts`, `setup`, `secrets`, `incidents` and `lessons`) also sends the Steward a `decision-answered` message naming the decision, never the answer, and wakes its session ([inbox](steward.md#inbox)); a failure to send or wake is reported on standard error, and the receipt is still printed with exit 0. An answer in a Director store sends no message and wakes nothing.
 On an open task the answer is also recorded, in the same transaction, on the task page's [conversation](web.md#the-conversation) as the Guildmaster's words in chat under the decision, so the page holds what was said in chat too.
 
 ## decide open

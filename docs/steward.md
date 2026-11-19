@@ -91,6 +91,7 @@ A wake line ending `; handoff due (<reason>)` is answered by the `guildhall-stew
 The Steward's inbox is the `steward` recipient of its store, and it takes messages from two senders ([senders](messaging.md#senders)):
 
 - the Guildmaster: `guildhall messages send steward <envelope>` run outside any Guildhall session or attempt, whose envelope names the reserved task `steward/guildmaster`;
+- the Guildmaster too: the `decision-answered` message `guildhall decide answer` sends when it records an answer to a decision of a reserved task, `steward/rollouts`, `steward/setup`, `steward/secrets`, `steward/incidents` or `steward/lessons`. It names the decision, never the answer, which the Steward reads with `decide show`, and its id `decide-answered.<digest of the decision>` makes a repeated answer send and wake nothing new. A failure to send or wake is reported on standard error and does not undo the answer;
 - `director`: the `triage-opened` report of the Steward's own [scheduled collection](#scheduled-collection), naming `steward/incidents` or `steward/lessons`, and its `lock-busy` report, naming `steward/rollouts`, sent by its supervisor and never by `messages send`.
 
 `messages send` to it from a Director, another Director, an Artisan or the Steward's own session is refused, and so is a `director` message to a Steward store or a `steward` message to any other store.
@@ -121,6 +122,7 @@ guildhall decide answer --copy <dir> --repo steward --task rollouts --decision r
 
 `steward approval request` opens, once, the approval decision `rollout-<first 12 hex digits of the digest>` of the reserved task `steward/rollouts`, bound to the plan digest, with the options `approve` and `decline`, and prints it with the command the Guildmaster answers it with.
 Only the Guildmaster answers it, outside any session: `decide answer` refuses it from inside one.
+Their answer sends the Steward's [inbox](#inbox) a `decision-answered` message naming the decision, which wakes the session, so the Steward continues without anyone typing in its tab.
 An answer of `approve` lets the session apply that one plan with `--approve`; `decline`, or a plan with another digest, does not.
 A [takeover](#takeover) plan is approved the same way: `steward approval request --plan <dir>` sees it is a setup plan and opens `setup-<first 12 hex digits>` on the reserved task `steward/setup` instead, which `decide answer` likewise refuses from inside a session, and every takeover needs it.
 A [secrets](#secrets) plan opens `secrets-<first 12 hex digits>` on the reserved task `steward/secrets` the same way, and every secrets push needs it.
@@ -380,6 +382,7 @@ The command prints the round as JSON, `{commit, copies, answers, opened}`, each 
 Collection opens one decision per collected item on two reserved tasks of the Steward store: `steward/incidents`, with the options `accept`, `defer` and `decline`, and `steward/lessons`, with `adopt` and `decline`.
 Each is an approval bound to the item's content digest, with the id `<kind>-<first 16 hex digits of the sha256 of the item's path>`, so an item has one decision however many rounds see it.
 Only the Guildmaster answers it, outside any session, with `guildhall decide answer --copy <dir> --repo steward --task incidents|lessons --decision <id> --answer-file -`; `decide answer` refuses it from inside one.
+The answer wakes the Steward session with a `decision-answered` message to its [inbox](#inbox), as an approval's does.
 The next round writes the answer into the item's file as `triage`, `triage_decision`, `triage_outcome` and `triage_note`.
 Triage authorises no work: an accepted incident is recorded as the Guildmaster's to create a task, and the Steward does nothing to a Director for it; an adopted lesson is drafted by the Steward as an ordinary private-config change, which a later approved rollout ships (R1.32).
 The Director's own record stays `collected`.

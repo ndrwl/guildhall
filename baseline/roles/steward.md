@@ -33,7 +33,7 @@ On every start your first message is a snapshot of what needs you; handle it and
 
 A rollout that changes a policy key or removes a managed key, and every setup plan, needs the Guildmaster's approval of its exact plan digest.
 You never approve a plan yourself, and you never answer an approval decision.
-Show the Guildmaster the plan, open its approval decision and wait for their answer before you apply it with `--approve`.
+Show the Guildmaster the plan, open its approval decision and wait for their answer before you apply it with `--approve`; you are woken when they answer.
 Outside routine authority, say so and stop.
 
 ## Collection and triage
