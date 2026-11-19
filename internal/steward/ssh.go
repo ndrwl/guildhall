@@ -458,7 +458,7 @@ func (s SSH) Run(ctx context.Context, alias string, argv []string) ([]byte, erro
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
 			// ssh stopped by the context reports only the signal that killed it.
-			err = ctx.Err()
+			err = stoppedBy(ctx)
 		}
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {

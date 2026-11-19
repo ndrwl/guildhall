@@ -73,7 +73,9 @@ func (a *App) stewardMachineCmd(args []string) int {
 	if err != nil {
 		return a.fail(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), secretsPushTimeout)
+	sigCtx, stop := a.stewardContext()
+	defer stop()
+	ctx, cancel := context.WithTimeout(sigCtx, secretsPushTimeout)
 	defer cancel()
 	if *rotated != "" {
 		r, err := s.MarkRotated(ctx, machine, *rotated)

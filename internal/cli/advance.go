@@ -9,7 +9,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -567,13 +566,8 @@ func (a *App) advance(f advanceFlags, ev interp.Event) (interp.Next, error) {
 		ws = a.Workspaces
 	}
 	// An interrupt ends the advance and releases the task lock; the next advance replays it.
-	notify := a.AdvanceContext
-	if notify == nil {
-		notify = signal.NotifyContext
-	}
-	ctx, stop := notify(context.Background(), os.Interrupt)
+	ctx, stop := a.interruptContext(context.Background(), os.Interrupt)
 	defer stop()
-	context.AfterFunc(ctx, stop)
 	// Each advance pass refreshes the repository's policies, which this pass's prompts read.
 	a.refreshPolicies(ctx, r)
 	e := &interp.Engine{

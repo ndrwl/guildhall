@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -79,6 +80,10 @@ func TestTransportTimeoutWithChild(t *testing.T) {
 			case err := <-done:
 				if !errors.Is(err, context.Canceled) {
 					t.Fatalf("expected cancellation, got %v", err)
+				}
+				// A cancelled run was interrupted, not timed out, and says so in the receipt or step log it reaches.
+				if !errors.Is(err, ErrInterrupted) || !strings.Contains(err.Error(), ": interrupted: context canceled") {
+					t.Errorf("cancelled run error %q, want it interrupted", err)
 				}
 			case <-time.After(testenv.Ceiling(10 * time.Second)):
 				t.Fatal("transport did not return after cancellation with child holding output pipes")

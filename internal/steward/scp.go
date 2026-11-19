@@ -2,6 +2,7 @@ package steward
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os/exec"
@@ -20,6 +21,20 @@ type Transport struct {
 }
 
 var _ Copier = Transport{}
+
+// ErrInterrupted is the error of an scp or ssh run stopped because its command was interrupted, its context
+// cancelled rather than timed out; such an error also matches context.Canceled.
+var ErrInterrupted = errors.New("interrupted")
+
+// stoppedBy is the error of an scp or ssh run that ctx stopped: ErrInterrupted with context.Canceled when it was
+// cancelled, and otherwise the context's own error, such as context.DeadlineExceeded.
+func stoppedBy(ctx context.Context) error {
+	err := ctx.Err()
+	if errors.Is(err, context.Canceled) {
+		return fmt.Errorf("%w: %w", ErrInterrupted, err)
+	}
+	return err
+}
 
 func scpCommand(src, dst string) []string {
 	return []string{"scp", "-q", "-B", "-o", "BatchMode=yes", "--", src, dst}
@@ -58,7 +73,7 @@ func (t Transport) run(ctx context.Context, argv []string) error {
 	if err != nil {
 		if ctx.Err() != nil {
 			// scp stopped by the context reports only the signal that killed it.
-			err = ctx.Err()
+			err = stoppedBy(ctx)
 		}
 		if msg := strings.TrimSpace(string(out)); msg != "" {
 			return fmt.Errorf("scp: %w: %s", err, msg)

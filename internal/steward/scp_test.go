@@ -39,6 +39,9 @@ func TestTransportTimeoutBoundsEachCopy(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) || !strings.HasPrefix(err.Error(), "scp: ") {
 		t.Errorf("Fetch error = %v, want an scp error wrapping context.DeadlineExceeded", err)
 	}
+	if errors.Is(err, steward.ErrInterrupted) || strings.Contains(err.Error(), "interrupted") {
+		t.Errorf("Fetch error = %v; a timeout is not an interrupt", err)
+	}
 	if elapsed := time.Since(start); elapsed > 30*time.Second {
 		t.Errorf("Fetch returned after %v", elapsed)
 	}

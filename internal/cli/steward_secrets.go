@@ -90,7 +90,9 @@ func (a *App) stewardSecretsCmd(args []string) int {
 	if err != nil {
 		return a.fail(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), secretsPushTimeout)
+	sigCtx, stop := a.stewardContext()
+	defer stop()
+	ctx, cancel := context.WithTimeout(sigCtx, secretsPushTimeout)
 	defer cancel()
 	switch sub {
 	case "set":
@@ -162,7 +164,7 @@ func (a *App) stewardSecretsSet(ctx context.Context, s *steward.Secrets, machine
 	if _, ok := s.Roster.Machine(machine); !ok {
 		return a.fail(fmt.Errorf("steward secrets set: machine %q is not in the roster", machine))
 	}
-	value, err := a.readSecretValue(machine, name)
+	value, err := a.readSecretValue(ctx, machine, name)
 	if err != nil {
 		return a.fail(fmt.Errorf("steward secrets set: %w", err))
 	}
@@ -188,8 +190,9 @@ func (a *App) stewardSecretsSet(ctx context.Context, s *steward.Secrets, machine
 }
 
 // readSecretValue reads one value from standard input: typed at a terminal after a prompt on standard error, with
-// echo off, up to the end of the line, or else piped, all of it but one final line ending.
-func (a *App) readSecretValue(machine, name string) (string, error) {
+// echo off, up to the end of the line, or else piped, all of it but one final line ending. An interrupt while it
+// waits for a typed value ends the wait with an interrupted error once echo is restored.
+func (a *App) readSecretValue(ctx context.Context, machine, name string) (string, error) {
 	in := a.Stdin
 	if in == nil {
 		return "", errors.New("no standard input to read the value from")
@@ -200,14 +203,7 @@ func (a *App) readSecretValue(machine, name string) (string, error) {
 			return "", err
 		}
 		if terminal {
-			defer restore()
-			_, _ = fmt.Fprintf(a.Stderr, "value of %s for %s (not shown): ", name, machine)
-			line, err := bufio.NewReader(io.LimitReader(f, maxSecretValue+1)).ReadString('\n')
-			_, _ = fmt.Fprintln(a.Stderr)
-			if err != nil && !errors.Is(err, io.EOF) {
-				return "", err
-			}
-			return checkedValue(strings.TrimRight(line, "\r\n"))
+			return a.readTypedValue(ctx, f, restore, machine, name)
 		}
 	}
 	data, err := io.ReadAll(io.LimitReader(in, maxSecretValue+1))
@@ -222,6 +218,37 @@ func (a *App) readSecretValue(machine, name string) (string, error) {
 		s = strings.TrimSuffix(t, "\r")
 	}
 	return checkedValue(s)
+}
+
+// readTypedValue reads one line typed on in, a terminal whose echo is off until restore turns it back on, after a
+// prompt on standard error. When ctx ends first it restores echo and returns: an interrupted error when ctx was
+// cancelled, its own error otherwise. The read it leaves blocked is abandoned, as the command is about to exit.
+func (a *App) readTypedValue(ctx context.Context, in io.Reader, restore func(), machine, name string) (string, error) {
+	defer restore()
+	_, _ = fmt.Fprintf(a.Stderr, "value of %s for %s (not shown): ", name, machine)
+	type typed struct {
+		line string
+		err  error
+	}
+	read := make(chan typed, 1)
+	go func() {
+		line, err := bufio.NewReader(io.LimitReader(in, maxSecretValue+1)).ReadString('\n')
+		read <- typed{line, err}
+	}()
+	select {
+	case r := <-read:
+		_, _ = fmt.Fprintln(a.Stderr)
+		if r.err != nil && !errors.Is(r.err, io.EOF) {
+			return "", r.err
+		}
+		return checkedValue(strings.TrimRight(r.line, "\r\n"))
+	case <-ctx.Done():
+		_, _ = fmt.Fprintln(a.Stderr)
+		if err := ctx.Err(); errors.Is(err, context.Canceled) {
+			return "", fmt.Errorf("%w: %w", steward.ErrInterrupted, err)
+		}
+		return "", ctx.Err()
+	}
 }
 
 func checkedValue(s string) (string, error) {

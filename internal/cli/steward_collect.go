@@ -263,7 +263,9 @@ func (a *App) stewardCollectCmd(args []string) int {
 	if err != nil {
 		return a.fail(fmt.Errorf("%s: %w", name, err))
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), collectTimeout)
+	sigCtx, stop := a.stewardContext()
+	defer stop()
+	ctx, cancel := context.WithTimeout(sigCtx, collectTimeout)
 	defer cancel()
 	round, err := a.runCollect(ctx, c, storePath, machines)
 	if round != nil {

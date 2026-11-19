@@ -39,6 +39,9 @@ func TestSSHTimeoutBoundsEachRun(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) || !strings.HasPrefix(err.Error(), "ssh: ") {
 		t.Errorf("Run error = %v, want an ssh error wrapping context.DeadlineExceeded", err)
 	}
+	if errors.Is(err, steward.ErrInterrupted) || strings.Contains(err.Error(), "interrupted") {
+		t.Errorf("Run error = %v; a timeout is not an interrupt", err)
+	}
 	if elapsed := time.Since(start); elapsed > 30*time.Second {
 		t.Errorf("Run returned after %v", elapsed)
 	}
