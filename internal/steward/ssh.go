@@ -398,7 +398,7 @@ func validFile(path string) bool {
 //
 // Run refuses an alias and argv that CheckRun refuses, with an error wrapping ErrNotAllowed, and runs nothing. Otherwise it runs argv as one fixed command on the machine
 // with alias and returns what the command printed on standard output. It fails, with an error carrying the
-// command's diagnostic, when the machine refuses or cannot be reached or the command exits non-zero, as an older
+// command's diagnostic (its stderr and then its stdout, each trimmed and capped at 4 KiB), when the machine refuses or cannot be reached or the command exits non-zero, as an older
 // guildhall that does not know the command does; it stops when ctx ends, with an error that wraps ctx.Err().
 // A Runner adds no credentials of its own and runs no shell of its own.
 type Runner interface {
@@ -437,7 +437,9 @@ func CheckRun(alias string, argv []string) error {
 	return CheckCommand(argv)
 }
 
-// Run runs argv on the machine with alias through ssh.
+// Run runs argv on the machine with alias through ssh. A failure's error carries the command's stderr and then its
+// stdout, each trimmed and capped at diagnosticCap, so a diagnostic on stdout, such as certutil's
+// ERROR_FILE_NOT_FOUND, survives a line ssh itself printed on stderr.
 func (s SSH) Run(ctx context.Context, alias string, argv []string) ([]byte, error) {
 	if err := CheckRun(alias, argv); err != nil {
 		return nil, err
@@ -460,14 +462,32 @@ func (s SSH) Run(ctx context.Context, alias string, argv []string) ([]byte, erro
 			// ssh stopped by the context reports only the signal that killed it.
 			err = ctx.Err()
 		}
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = strings.TrimSpace(stdout.String())
+		var parts []string
+		for _, stream := range []string{stderr.String(), stdout.String()} {
+			if part := capDiagnostic(strings.TrimSpace(stream)); part != "" {
+				parts = append(parts, part)
+			}
 		}
-		if msg != "" {
+		if msg := strings.Join(parts, "\n"); msg != "" {
 			return nil, fmt.Errorf("ssh: %w: %s", err, msg)
 		}
 		return nil, fmt.Errorf("ssh: %w", err)
 	}
 	return stdout.Bytes(), nil
+}
+
+// diagnosticCap bounds each output stream a failed ssh run's error carries.
+const diagnosticCap = 4 << 10
+
+// capDiagnostic is s, every line of it, cut to its first diagnosticCap bytes on a UTF-8 rune boundary and marked
+// with "…" when text was cut.
+func capDiagnostic(s string) string {
+	if len(s) <= diagnosticCap {
+		return s
+	}
+	n := diagnosticCap
+	for n > 0 && s[n]&0xc0 == 0x80 {
+		n--
+	}
+	return s[:n] + "…"
 }
