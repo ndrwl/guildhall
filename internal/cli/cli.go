@@ -151,8 +151,9 @@ Commands:
                  close a task's current slice, or a one-PR task, that an earlier slice or a merged pull request already delivered, or that needs no change
   decide list|show|answer --store <path> ...
                  list open decisions, show one and record the Guildmaster's answer
-  decide open --store <path> --repo <id> --task <id> (--question <text> | --question-file <path|->) [--option <text>]... [--recommend <option>]
-                 open the Director's own question to the Guildmaster on a task, as a question decision
+  decide open --store <path> --repo <id> --task <id> (--question <text> | --question-file <path|->) [--option <text>]... [--recommend <option>] [--config <director.toml> --grant-option <option> --grant-step <id|all> --grant-tool <rule>... [--grant-until attempt|done] --grant-reason <text>]
+                 open the Director's own question to the Guildmaster on a task, as a question decision, one option
+                 optionally proposing an exact task grant that choosing it approves
   grill round open|show|answer --store <path> --repo <id> --task <id> --attempt <step-n> ...
                  put a grill round on the task page, asked as one form the Guildmaster sends, print a sent round's answers,
                  and record their chat answers as the round's

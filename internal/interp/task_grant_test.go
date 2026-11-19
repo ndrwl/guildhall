@@ -115,6 +115,42 @@ func TestTaskGrantBindsOneAttempt(t *testing.T) {
 	}
 }
 
+// questionGranter is the write both backends' records have that opens a question proposing a grant.
+type questionGranter interface {
+	OpenQuestionGranting(mutationID string, d store.Decision, g store.TaskGrant, steps []string, say *store.Saying, rec *store.Recommendation) (store.Receipt, error)
+}
+
+// TestQuestionGrantBindsOnlyAfterItsOptionIsChosen: a grant a Director question proposes binds no attempt bound
+// while the question is open, and the first attempt of its step bound after the Guildmaster chooses its option
+// takes it.
+func TestQuestionGrantBindsOnlyAfterItsOptionIsChosen(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			plan2 := planExpectation(t, interptest.Fail("no plan again"))
+			plan2.Attempt = 2
+			e := newEnvTasks(t, b, straight(t), func(*store.Task) {}, planExpectation(t, interptest.Fail("no plan")), plan2)
+			q := store.Decision{Repository: "app", TaskID: "t7", ID: "q1", Kind: store.DecisionQuestion, Options: []string{"fetch", "skip"}, Question: "May the planner fetch the spec?"}
+			g := store.TaskGrant{Repository: "app", TaskID: "t7", ID: "g1", Step: "plan", Rules: []string{"Bash(curl:*)"}, Reason: "The spec is online.", Until: store.GrantUntilAttempt, ApprovingOption: "fetch"}
+			if _, err := e.h.Records.(questionGranter).OpenQuestionGranting("question:t7:q1", q, g, []string{"plan", "build", "review"}, nil, nil); err != nil {
+				t.Fatal(err)
+			}
+
+			e.advance(t, interp.Event{Kind: interp.TaskCreated})
+			if got := e.boundGrant(t, "plan", 1); got != nil {
+				t.Fatalf("plan-1, bound before the answer, took the grant: %+v", got)
+			}
+			if _, err := e.h.AnswerDecision("answer:t7:q1", "app", "t7", "q1", "fetch"); err != nil {
+				t.Fatal(err)
+			}
+			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1}), interp.Next{Wait: interp.WaitDirector, Step: "plan", Attempt: 1})
+			e.advance(t, retried("plan", 1, "Try again."))
+			if got := e.boundGrant(t, "plan", 2); got == nil || got.ID != "g1" || !slices.Equal(got.Rules, []string{"Bash(curl:*)"}) {
+				t.Fatalf("plan-2, bound after the answer, grant = %+v", got)
+			}
+		})
+	}
+}
+
 // TestTaskGrantUntilDoneBindsEveryAttempt: a grant until done, here for every step, binds each attempt bound while it
 // is active; a pending, rejected or revoked one binds none.
 func TestTaskGrantUntilDoneBindsEveryAttempt(t *testing.T) {

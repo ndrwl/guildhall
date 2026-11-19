@@ -12,7 +12,7 @@ guildhall decide show --store <path> --repo <id> --task <id> --decision <id>
 guildhall decide answer --store <path> --repo <id> --task <id> --decision <id> --answer-file <path|->
 guildhall decide defer --store <path> --repo <id> --task <id> --decision <id> --until-merged <repo>/<task>... --reason <text>
 guildhall decide undefer --store <path> --repo <id> --task <id> --decision <id>
-guildhall decide open --store <path> --repo <id> --task <id> (--question <text> | --question-file <path|->) [--option <text>]... [--recommend <option>]
+guildhall decide open --store <path> --repo <id> --task <id> (--question <text> | --question-file <path|->) [--option <text>]... [--recommend <option>] [--config <director.toml> --grant-option <option> --grant-step <id|all> --grant-tool <rule>... [--grant-until attempt|done] --grant-reason <text>]
 guildhall decide explain <repo>/<task> <decision> --store <path> --subject-digest <digest> (--text <md> | --file <path|->) [--recommend <option>]
 ```
 
@@ -76,9 +76,27 @@ The Guildmaster's reply is recorded with `decide answer` like any other, and fre
 
 - The task must be open: a `done` or `cancelled` task is refused with exit 1, naming the task and its state, and nothing is written.
 - The decision id is chosen for you: `q<n>`, one more than the highest `q<n>` on the task, starting at `q1`. An id with no `-` is never read as a step round or loop exit, and does not clash with the engine's own decisions.
-- An open question decision on the task with the same question, options and recommended option, its recommendation record's or its old `recommended`, is printed instead, and nothing is written, so a retry opens no second question; otherwise the decision is opened with mutation id `decision-open:<repo>:<task>:<id>`.
+- An open question decision on the task with the same question, options, recommended option, its recommendation record's or its old `recommended`, and proposed grant, with the same option, step, rules in order, until and reason, or none, is printed instead, and nothing is written, so a retry opens no second question; the same question with a different grant is a new question. Otherwise the decision is opened with mutation id `decision-open:<repo>:<task>:<id>`.
 - It prints the decision as one JSON document, as `show` does, and sends no `decision` message: the Director asked the question.
 - The question is also recorded, in the same transaction, as the Director's words under the decision on the task page's [conversation](web.md#the-conversation), where the Guildmaster can answer it.
+
+### A question that proposes a grant
+
+One option of a question may propose an exact [task grant](tasks.md#task-grants), so the Guildmaster's answer choosing it also approves that grant, with no `grant-<id>` decision to answer afterwards ([decision](decisions/task-grants.md)).
+`--grant-option <option>`, one of the `--option` values, `--grant-step <id|all>`, `--grant-tool <rule>`, repeated for more, and `--grant-reason <text>` are given together, with `--grant-until attempt|done` (default `attempt`) as `task grant create`'s `--until`; at most one grant per question.
+With them the command needs `--config`, or a copy's `config.toml`, to resolve the task's bound workflow as `task grant create` does; without them it needs only `--store`, and `--config` alone is a usage error. Missing grant flags, an option not among `--option`, a bad `--grant-until` and `--grant-step all` without `--grant-until done` are usage errors (exit 2).
+
+- The grant is recorded pending as the task's next `g<n>`, in the same transaction as the question, with `decision` set to the question's `q<n>` and `approving_option` to the grant option, so `task grant list` and `director status` show both.
+- Every check of `task grant create` applies (the step, the rule refusals, `all` needing `until done`, one pending or active grant per step) and any refusal refuses the whole open, exit 1, writing neither the question nor the grant.
+- The store appends one sentence to the question naming the grant exactly, ``Choosing `<option>` also approves grant g<n>: step `<step>`, these extra allowed tools: …, until …. Reason: …``, so chat, Clerk, `decide list` and `show` and the task page all show it, and the question's `subject_digest` covers it; `--recommend` is made against that text. The task page's tile for the option says "also approves grant g<n>".
+- The Guildmaster's answer choosing the grant option approves the grant, `approved_at` being that answer's commit time; another option or free text rejects it, and a void question leaves it never active. The approval is the Guildmaster's own answer: the Director never answers the question for them.
+- A question proposing a grant holds its task no more than any question: the step may run before the answer, and the grant binds the first attempt of its step bound after approval.
+
+```sh
+guildhall decide open --repo guildhall --task d222 --question "May the builder fetch the upstream spec?" \
+  --option fetch --option skip --recommend fetch \
+  --grant-option fetch --grant-step build --grant-tool 'Bash(curl:*)' --grant-reason "The spec is only online."
+```
 
 A question decision appears wherever open decisions do: `decide list`, Clerk's `/decisions`, `director status` `needs_me` (where `decide defer` can hold it) and `task show`.
 It never blocks or advances its task: the merge requirement `nothing_open` does not count it, a dependent task's dependency state does not report it as waiting for the Guildmaster, and a merge-queue front task is not `waiting_on` it.

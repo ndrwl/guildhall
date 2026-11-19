@@ -460,7 +460,11 @@ type statusGrant struct {
 	Reason     string           `json:"reason"`
 	Until      store.GrantUntil `json:"until"`
 	Bound      []store.GrantUse `json:"bound"`
-	ApprovedAt *time.Time       `json:"approved_at,omitempty"`
+	// Decision is the decision that approved the grant, grant-<id> or the question that proposed it, and
+	// ApprovingOption that question's option, "" for grant-<id> (approve).
+	Decision        string     `json:"decision"`
+	ApprovingOption string     `json:"approving_option,omitempty"`
+	ApprovedAt      *time.Time `json:"approved_at,omitempty"`
 }
 
 // statusRunning is an attempt with no store outcome yet, other than a Director stage, with the classification
@@ -776,7 +780,7 @@ func readDirectorStatusRecords(ctx context.Context, p storeRecords, stateDir, cf
 	}
 	for _, g := range v.Grants {
 		out.Grants = append(out.Grants, statusGrant{Repository: g.Repository, TaskID: g.TaskID, Grant: g.ID, Step: g.Step, Rules: g.Rules,
-			Reason: g.Reason, Until: g.Until, Bound: append([]store.GrantUse{}, g.Bound...), ApprovedAt: g.ApprovedAt})
+			Reason: g.Reason, Until: g.Until, Bound: append([]store.GrantUse{}, g.Bound...), Decision: g.Decision, ApprovingOption: g.ApprovingOption, ApprovedAt: g.ApprovedAt})
 	}
 
 	usage := statusGuardRails{RunningAttempts: v.Usage.Running, AttemptsToday: v.Usage.Today, Day: v.Usage.Day.Format(time.DateOnly), SpendToday: v.Usage.Spend}

@@ -571,6 +571,12 @@ func (b webBuilder) asks(docs []web.Document) []web.Ask {
 		a := web.Ask{ID: dec.ID, Kind: string(dec.Kind), Question: dec.Question, Options: dec.Options, OpenedAt: dec.OpenedAt, Deferred: dec.Deferred,
 			Stage: webTagStage(dec.ID)}
 		a.Recommendation = b.recommendation(dec)
+		// A question that proposes a grant says so on the option whose choice approves it.
+		for _, g := range b.h.Grants {
+			if g.Decision == dec.ID && g.ApprovingOption != "" {
+				a.GrantOption, a.Grant = g.ApprovingOption, g.ID
+			}
+		}
 		a.Headline, a.Phrase = b.askHeadline(a), b.askPhrase(a)
 		if e := dec.Explanation; e != nil {
 			a.Explanation = &web.Explanation{Text: e.Text, Recommend: e.Recommend, At: e.At, Stale: !e.Current}

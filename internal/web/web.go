@@ -395,6 +395,9 @@ type Ask struct {
 	Headline, Phrase string
 	// Explanation is the Director's explanation of the ask (decide explain), nil when it has none.
 	Explanation *Explanation
+	// GrantOption is the option of a Director question that proposes a task grant, whose choice also approves
+	// grant Grant, such as g2 (docs/decisions/task-grants.md); both "" when the ask proposes none.
+	GrantOption, Grant string
 }
 
 // Explanation is the Director's plain-English explanation of an ask: Markdown Text, rendered only through
