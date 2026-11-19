@@ -61,12 +61,16 @@ const (
 // The Summary block of a spec a Guildmaster approves (CheckSummary).
 const (
 	// SummaryRule is the shape CheckSummary accepts and the shape it refuses most often.
-	SummaryRule = "Write its parts as list items, Goal, Size, Slices, Changed since the grill and Open questions, in at most 4 KiB. " +
-		"Never write them as `##` headings: the next `##` heading ends the block, so a block that starts with one is empty and refused."
+	SummaryRule = "Write its parts as list items, Goal, Size, Touches, Slices, Changed since the grill and Open questions, in at most 4 KiB. " +
+		"Never write them as `##` headings: the next `##` heading ends the block, so a block that starts with one is empty and refused. " +
+		"Write Size as `- **Size:** about <N> non-test lines in <M> files.`, after `<k> slices, ` when there are slices, " +
+		"and Touches as `- **Touches:** none.` or the ones of secrets, managed settings and trust the change touches; " +
+		"a Size or Touches item in another form is not refused, but the plan is then never accepted by the Director."
 	// SummaryValid is a well-formed Summary block.
 	SummaryValid = "## Summary\n\n" +
 		"- **Goal:** An Artisan fixes a rejected result in the same attempt.\n" +
-		"- **Size:** 2 slices, about 1,100 lines in 25 files.\n" +
+		"- **Size:** 2 slices, about 1,100 non-test lines in 25 files.\n" +
+		"- **Touches:** none.\n" +
 		"- **Slices:** (1) Result check command; (2) Prompts submit.\n" +
 		"- **Changed since the grill:** Nothing; the plan follows the grill's agreed change.\n" +
 		"- **Open questions:** None."

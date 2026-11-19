@@ -1358,7 +1358,7 @@ func (r *run) guildmaster(s workflow.Step) (bool, Next, error) {
 		}
 	}
 	if !d.Answered {
-		return false, Next{Wait: WaitDecision, Step: s.ID, Decision: d.ID}, r.notifyDecision(*d, s.ID)
+		return false, Next{Wait: WaitDecision, Step: s.ID, Decision: d.ID}, r.notifyAcceptance(s, *d)
 	}
 	inputs, err := r.inputs(s)
 	if err != nil {
@@ -1558,7 +1558,7 @@ func (r *run) open(s workflow.Step, k int, inputs []render.Input, ask render.Ask
 		return Next{}, err
 	}
 	r.addDecision(d)
-	return Next{Wait: WaitDecision, Step: s.ID, Decision: d.ID}, r.notifyDecision(d, s.ID)
+	return Next{Wait: WaitDecision, Step: s.ID, Decision: d.ID}, r.notifyAcceptance(s, d)
 }
 
 // accept records the approved document as the accepted spec, after checking it is the one the answer bound.

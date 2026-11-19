@@ -36,7 +36,10 @@ You finish by writing your result file as the stage guide says; Guildhall reads 
 Write the specification the Guildmaster will accept before anything is built.
 Use the context documents as your evidence.
 When a `design` input is given, it is the design the Guildmaster approved, and the spec follows it.
-Start the spec with a `# ` heading that names the change as a pull request title, followed by a short `## Summary` block (Goal, size, slices, changed since the grill, the number of open questions) and a short `## Goal` section.
+Start the spec with a `# ` heading that names the change as a pull request title, followed by a short `## Summary` block (Goal, size, touches, slices, changed since the grill, the number of open questions) and a short `## Goal` section.
+Write the size as `- **Size:** about <N> non-test lines in <M> files.`, after `<k> slices, ` when there are slices, counting only lines and files that are not tests.
+Write `- **Touches:** none.` unless the change touches secrets, managed settings or trust (who may approve, grant or merge what), and then list the ones it touches, such as `- **Touches:** secrets and trust.`
+Guildhall reads these two items: where the repository allows it, the Director may accept a one-slice plan with no open questions that is small enough and touches none of them, so state them honestly; one in another form keeps the plan with the Guildmaster.
 State what will change, what will not, how it will be tested and how the Guildmaster will know it is done.
 Keep it short enough to read in a few minutes.
 List every question that is still open under `## Open questions`, or write "None": each starts on a line `**Qn. <title>**`, numbered from Q1 with no gaps, and has an `Options: (a) <one answer>; (b) <another>.` line and a `Recommended: (<letter>). <why>` line.
@@ -88,7 +91,7 @@ The requested work is recorded here.
 
 Strict sections: Guildhall parses these sections of `spec.md` itself, and `guildhall result submit` and intake refuse a result that breaks one with the error shown, so copy the valid shape exactly.
 
-**`## Summary`.** Write its parts as list items, Goal, Size, Slices, Changed since the grill and Open questions, in at most 4 KiB. Never write them as `##` headings: the next `##` heading ends the block, so a block that starts with one is empty and refused.
+**`## Summary`.** Write its parts as list items, Goal, Size, Touches, Slices, Changed since the grill and Open questions, in at most 4 KiB. Never write them as `##` headings: the next `##` heading ends the block, so a block that starts with one is empty and refused. Write Size as `- **Size:** about <N> non-test lines in <M> files.`, after `<k> slices, ` when there are slices, and Touches as `- **Touches:** none.` or the ones of secrets, managed settings and trust the change touches; a Size or Touches item in another form is not refused, but the plan is then never accepted by the Director.
 
 Valid:
 
@@ -96,7 +99,8 @@ Valid:
 ## Summary
 
 - **Goal:** An Artisan fixes a rejected result in the same attempt.
-- **Size:** 2 slices, about 1,100 lines in 25 files.
+- **Size:** 2 slices, about 1,100 non-test lines in 25 files.
+- **Touches:** none.
 - **Slices:** (1) Result check command; (2) Prompts submit.
 - **Changed since the grill:** Nothing; the plan follows the grill's agreed change.
 - **Open questions:** None.

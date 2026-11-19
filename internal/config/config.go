@@ -656,6 +656,13 @@ type Repository struct {
 	// reopen closes and reopens the pull request once per head. Read it through CIRetriggerPolicy. It is omitted
 	// from JSON when unset, so the config digest of a config without it is unchanged.
 	CIRetrigger CIRetrigger `toml:"ci_retrigger" json:",omitempty"`
+	// DirectorAcceptLines and DirectorAcceptFiles are the size, in non-test lines and files, at or under which the
+	// Director may accept a small feature's plan and tell the Guildmaster rather than ask them
+	// (docs/configuration.md#repositories). Both default to 0, off, and both must be non-zero to turn it on; each is
+	// capped by the repository's own size budget. Read them through Config.DirectorAccept. They are omitted from JSON
+	// when unset, so the config digest of a config without them is unchanged.
+	DirectorAcceptLines int `toml:"director_accept_lines" json:",omitempty"`
+	DirectorAcceptFiles int `toml:"director_accept_files" json:",omitempty"`
 	// Profiles are this repository's grants, keyed by a declared claude profile's name: each adds its rules to that
 	// profile's effective grant for this repository's tasks only (docs/adapters.md#artisan-permissions).
 	// It is omitted from JSON when unset, so the config digest of a config without it is unchanged.
@@ -1060,6 +1067,12 @@ func (c *Config) validate() []string {
 		}
 		if !r.CIRetrigger.Valid() {
 			add("%s: ci_retrigger %q must be off or reopen", name, r.CIRetrigger)
+		}
+		if r.DirectorAcceptLines < 0 {
+			add("%s: director_accept_lines %d must be a whole number, or 0 to turn it off", name, r.DirectorAcceptLines)
+		}
+		if r.DirectorAcceptFiles < 0 {
+			add("%s: director_accept_files %d must be a whole number, or 0 to turn it off", name, r.DirectorAcceptFiles)
 		}
 		m := r.Merge
 		switch k := m.ReapproveAfterRebase; {
