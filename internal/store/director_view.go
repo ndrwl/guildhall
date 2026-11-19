@@ -125,12 +125,12 @@ func (s *Store) DirectorView() (DirectorView, error) {
 			}
 		}
 		if len(v.Grants) > 0 {
-			approved, err := grantApprovals(tx)
+			approved, err := grantApprovals(tx, v.Grants)
 			if err != nil {
 				return err
 			}
 			for i, g := range v.Grants {
-				if at, ok := approved[g.Repository+"/"+g.TaskID+"/"+g.Decision]; ok {
+				if at, ok := approved[grantApprovalKey(g.Repository, g.TaskID, g.Decision)]; ok {
 					v.Grants[i].ApprovedAt = &at
 				}
 			}

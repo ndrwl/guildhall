@@ -53,9 +53,11 @@ const (
 )
 
 // TaskGrant is the Guildmaster's temporary grant of extra allowed_tools rules to one task's Artisans, for one step
-// of its workflow or all of them (docs/decisions/task-grants.md). It is recorded with its decision,
-// grant-<id>, and takes effect only once that decision is answered approve. It holds rules and nothing else: no
-// forge rights, merge powers, deny-rule removal or settings.
+// of its workflow or all of them (docs/decisions/task-grants.md). It is recorded with its decision and takes effect
+// only once that decision's answer chooses its approving option: grant-<id> answered approve for a grant made by
+// CreateTaskGrant, or the Director's question answered with the option that proposed it for a grant opened with
+// OpenQuestionGranting. It holds rules and nothing else: no forge rights, merge powers, deny-rule removal or
+// settings.
 type TaskGrant struct {
 	Repository string `json:"repository"`
 	TaskID     string `json:"task_id"`
@@ -66,8 +68,12 @@ type TaskGrant struct {
 	Rules  []string   `json:"rules"`
 	Reason string     `json:"reason"`
 	Until  GrantUntil `json:"until"`
-	// Decision is the id of the decision that approves the grant, grant-<id>; the store sets it.
+	// Decision is the id of the decision that approves the grant, grant-<id> or the question that proposed it; the
+	// store sets it.
 	Decision string `json:"decision"`
+	// ApprovingOption is the option of Decision whose choice approves the grant: the question's option that proposed
+	// it, or empty for GrantApprove, so grants recorded before questions could propose one keep their meaning.
+	ApprovingOption string `json:"approving_option,omitempty"`
 	// Revoked is set once, by RevokeTaskGrant.
 	Revoked *GrantRevoke `json:"revoked,omitempty"`
 	// Bound are the attempts whose binding recorded the grant, in the order they were bound (BindTaskGrant).
@@ -199,8 +205,18 @@ func (g TaskGrant) Covers(step string) bool {
 	return k >= 2 && base == g.Step
 }
 
+// approvingOption is the option of the grant's decision that approves it: ApprovingOption, or GrantApprove.
+func (g TaskGrant) approvingOption() string {
+	if g.ApprovingOption == "" {
+		return GrantApprove
+	}
+	return g.ApprovingOption
+}
+
 // State derives the grant's state from its decision, nil when it cannot be found, its task and the task's attempts:
-// revoked once revoked, pending until its decision is answered, rejected when the answer is not approve, expired
+// revoked once revoked, pending until its decision is answered (a deferred decision is unanswered, and a void one
+// leaves it pending, never active), rejected when the answer does not choose its approving option (another option,
+// or a question's free text), expired
 // once its task is closed or, for GrantUntilAttempt, once its bound attempt has an outcome, and otherwise active.
 func (g TaskGrant) State(d *Decision, t Task, attempts []StageAttempt) GrantState {
 	switch {
@@ -208,7 +224,7 @@ func (g TaskGrant) State(d *Decision, t Task, attempts []StageAttempt) GrantStat
 		return GrantRevoked
 	case d == nil || !d.Answered:
 		return GrantPending
-	case d.Choice != GrantApprove:
+	case d.Choice != g.approvingOption():
 		return GrantRejected
 	case t.State != TaskOpen:
 		return GrantExpired
@@ -226,16 +242,35 @@ func (g TaskGrant) State(d *Decision, t Task, attempts []StageAttempt) GrantStat
 // open reports whether a grant in state counts against another for the same step: pending or active.
 func (s GrantState) open() bool { return s == GrantPending || s == GrantActive }
 
-// grantQuestion is the question of grant g's decision.
-func grantQuestion(g TaskGrant) string {
-	step := "step " + g.Step
+// grantTerms are the words naming grant g's step and how long it lasts, shared by grantQuestion and
+// QuestionWithGrant.
+func grantTerms(g TaskGrant) (step, until string) {
+	step = "step " + g.Step
 	if g.Step == GrantAllSteps {
 		step = "every claude step"
 	}
-	until := "the first attempt of the step bound after approval has an outcome"
+	until = "the first attempt of the step bound after approval has an outcome"
 	if g.Until == GrantUntilDone {
 		until = "the task is merged or closed"
 	}
+	return step, until
+}
+
+// QuestionWithGrant is the question text OpenQuestionGranting records: question, a blank line, and a fixed sentence
+// naming grant g exactly in grantQuestion's words, so every surface that shows the question shows the grant and
+// SubjectDigestOf covers it. A caller computing a recommendation's digest or a conversation entry uses it too.
+func QuestionWithGrant(question string, g TaskGrant) string {
+	step, until := grantTerms(g)
+	if g.Step != GrantAllSteps {
+		step = "step `" + g.Step + "`"
+	}
+	return fmt.Sprintf("%s\n\nChoosing `%s` also approves grant %s: %s, these extra allowed tools: %s, until %s. Reason: %s",
+		question, g.ApprovingOption, g.ID, step, strings.Join(g.Rules, ", "), until, g.Reason)
+}
+
+// grantQuestion is the question of grant g's decision.
+func grantQuestion(g TaskGrant) string {
+	step, until := grantTerms(g)
 	return fmt.Sprintf("Grant task %s/%s, %s, these extra allowed tools: %s, until %s? Reason: %s\nAnswer approve or reject.",
 		g.Repository, g.TaskID, step, strings.Join(g.Rules, ", "), until, g.Reason)
 }
@@ -276,42 +311,16 @@ func validateTaskGrant(g TaskGrant) error {
 // outside steps, a grant for every step that does not last until done, and with ErrExists a grant id already used
 // or a pending or active grant of the task for an overlapping step, which it names.
 func (s *Store) CreateTaskGrant(mutationID string, g TaskGrant, steps []string) (Receipt, error) {
-	if err := validateTaskGrant(g); err != nil {
+	if err := checkNewTaskGrant(g, steps); err != nil {
 		return Receipt{}, err
 	}
-	switch {
-	case g.Step == GrantAllSteps && len(steps) == 0:
-		return Receipt{}, invalid("task %s/%s has no step whose profile runs the claude adapter", g.Repository, g.TaskID)
-	case g.Step != GrantAllSteps && !slices.Contains(steps, g.Step):
-		if base, k := workflow.ParseSliceStep(g.Step); k >= 2 && slices.Contains(steps, base) {
-			return Receipt{}, invalid("step %q is slice %d of step %q; a grant on %q covers every slice of it", g.Step, k, base, base)
-		}
-		return Receipt{}, invalid("step %q is not a step of the task's workflow whose profile runs the claude adapter; those are %q", g.Step, steps)
+	if g.ApprovingOption != "" {
+		return Receipt{}, invalid("a grant with its own decision is approved by %q; only a question's option proposes another approving option", GrantApprove)
 	}
 	g.Decision = GrantDecision(g.ID)
 	return s.mutate(mutationID, "create-task-grant", g, func(tx *bolt.Tx, rc *Receipt) error {
 		rc.Repository, rc.TaskID, rc.Record = g.Repository, g.TaskID, taskGrantRecord(g.ID)
-		t, err := openTask(tx, g.Repository, g.TaskID)
-		if err != nil {
-			return err
-		}
-		statuses, err := taskGrantStatuses(tx, t)
-		if err != nil {
-			return err
-		}
-		for _, other := range statuses {
-			switch {
-			case other.ID == g.ID:
-				return fmt.Errorf("%w: grant %s of %s/%s", ErrExists, g.ID, g.Repository, g.TaskID)
-			case other.State.open() && (other.Covers(g.Step) || g.Covers(other.Step)):
-				return fmt.Errorf("%w: grant %s of %s/%s for step %s is %s; revoke it first", ErrExists, other.ID, g.Repository, g.TaskID, other.Step, other.State)
-			}
-		}
-		grants, err := createRepoBucket(tx, g.Repository, bucketTaskGrants)
-		if err != nil {
-			return err
-		}
-		if err := putJSON(grants, grantKey(g.TaskID, g.ID), g); err != nil {
+		if err := putNewTaskGrant(tx, g); err != nil {
 			return err
 		}
 		d := Decision{Repository: g.Repository, TaskID: g.TaskID, ID: g.Decision, Kind: DecisionGrant, Options: []string{GrantApprove, GrantReject}, Question: grantQuestion(g)}
@@ -328,6 +337,75 @@ func (s *Store) CreateTaskGrant(mutationID string, g TaskGrant, steps []string) 
 		}
 		return putJSON(decisions, key, d)
 	})
+}
+
+// OpenQuestionGranting opens question d, as OpenDecisionSaying does with say and rec, and records grant g, the exact
+// grant d's option g.ApprovingOption proposes, in the same transaction under one mutation: the Guildmaster's answer
+// choosing that option approves g, and any other answer rejects it (TaskGrant.State). It runs every check
+// CreateTaskGrant runs, steps as there, sets g.Decision to d's id itself, and opens no grant-<id> decision. d must be
+// a question offering g.ApprovingOption, and g must be on d's task. The recorded question is
+// QuestionWithGrant(d.Question, g), so rec's digest is taken over that text. Any refusal refuses the whole open:
+// neither the question nor the grant is written. The request is OpenDecisionSaying's with the grant beside it, so a
+// retry with another grant under the same mutation id is ErrMutationConflict.
+func (s *Store) OpenQuestionGranting(mutationID string, d Decision, g TaskGrant, steps []string, say *Saying, rec *Recommendation) (Receipt, error) {
+	switch {
+	case d.Kind != DecisionQuestion:
+		return Receipt{}, invalid("only a question proposes a grant; decision %q is of kind %q", d.ID, d.Kind)
+	case g.ApprovingOption == "":
+		return Receipt{}, invalid("a grant proposed by a question needs the option that approves it")
+	case !slices.Contains(d.Options, g.ApprovingOption):
+		return Receipt{}, invalid("grant option %q must be one of the question's options %q", g.ApprovingOption, d.Options)
+	case g.Repository != d.Repository || g.TaskID != d.TaskID:
+		return Receipt{}, invalid("grant of %s/%s cannot be proposed by a question of %s/%s", g.Repository, g.TaskID, d.Repository, d.TaskID)
+	}
+	if err := checkNewTaskGrant(g, steps); err != nil {
+		return Receipt{}, err
+	}
+	return s.openDecision(mutationID, d, say, rec, &g)
+}
+
+// checkNewTaskGrant runs the checks of a new grant that need no transaction: validateTaskGrant, and a step that is
+// one of steps, the claude steps of the task's workflow, or GrantAllSteps when there is one, and never a slice id.
+func checkNewTaskGrant(g TaskGrant, steps []string) error {
+	if err := validateTaskGrant(g); err != nil {
+		return err
+	}
+	switch {
+	case g.Step == GrantAllSteps && len(steps) == 0:
+		return invalid("task %s/%s has no step whose profile runs the claude adapter", g.Repository, g.TaskID)
+	case g.Step != GrantAllSteps && !slices.Contains(steps, g.Step):
+		if base, k := workflow.ParseSliceStep(g.Step); k >= 2 && slices.Contains(steps, base) {
+			return invalid("step %q is slice %d of step %q; a grant on %q covers every slice of it", g.Step, k, base, base)
+		}
+		return invalid("step %q is not a step of the task's workflow whose profile runs the claude adapter; those are %q", g.Step, steps)
+	}
+	return nil
+}
+
+// putNewTaskGrant writes new grant g, its Decision set, on its open task, refusing with ErrExists a grant id already
+// used or a pending or active grant of the task for an overlapping step, which it names.
+func putNewTaskGrant(tx *bolt.Tx, g TaskGrant) error {
+	t, err := openTask(tx, g.Repository, g.TaskID)
+	if err != nil {
+		return err
+	}
+	statuses, err := taskGrantStatuses(tx, t)
+	if err != nil {
+		return err
+	}
+	for _, other := range statuses {
+		switch {
+		case other.ID == g.ID:
+			return fmt.Errorf("%w: grant %s of %s/%s", ErrExists, g.ID, g.Repository, g.TaskID)
+		case other.State.open() && (other.Covers(g.Step) || g.Covers(other.Step)):
+			return fmt.Errorf("%w: grant %s of %s/%s for step %s is %s; revoke it first", ErrExists, other.ID, g.Repository, g.TaskID, other.Step, other.State)
+		}
+	}
+	grants, err := createRepoBucket(tx, g.Repository, bucketTaskGrants)
+	if err != nil {
+		return err
+	}
+	return putJSON(grants, grantKey(g.TaskID, g.ID), g)
 }
 
 // RevokeTaskGrant records the revoke of grant id, pending or active, with the Director's reason and the store's
@@ -456,13 +534,13 @@ func (s *Store) TaskGrantStatuses(repository, taskID string) ([]TaskGrantStatus,
 		if len(all) == 0 {
 			return nil
 		}
-		approved, err := grantApprovals(tx)
+		approved, err := grantApprovals(tx, all)
 		if err != nil {
 			return err
 		}
 		for i := range all {
 			if all[i].State != GrantPending && all[i].State != GrantRejected {
-				if at, ok := approved[all[i].Repository+"/"+all[i].TaskID+"/"+all[i].Decision]; ok {
+				if at, ok := approved[grantApprovalKey(all[i].Repository, all[i].TaskID, all[i].Decision)]; ok {
 					all[i].ApprovedAt = &at
 				}
 			}
@@ -511,16 +589,27 @@ func taskGrantStatus(tx *bolt.Tx, t Task, g TaskGrant) (TaskGrantStatus, error) 
 	return TaskGrantStatus{TaskGrant: g, State: g.State(dp, t, attempts)}, nil
 }
 
-// grantApprovals maps <repository>/<task>/<decision> to the commit time of each grant decision's answer.
-func grantApprovals(tx *bolt.Tx) (map[string]time.Time, error) {
+// grantApprovalKey is the key of grantApprovals' map: <repository>/<task>/<decision>.
+func grantApprovalKey(repository, taskID, decision string) string {
+	return repository + "/" + taskID + "/" + decision
+}
+
+// grantApprovals maps each of grants' own decisions, by grantApprovalKey, to the commit time of its answer receipt,
+// whether that decision is grant-<id> or the question that proposed the grant.
+func grantApprovals(tx *bolt.Tx, grants []TaskGrantStatus) (map[string]time.Time, error) {
+	wanted := map[string]bool{}
+	for _, g := range grants {
+		wanted[grantApprovalKey(g.Repository, g.TaskID, g.Decision)] = true
+	}
 	out := map[string]time.Time{}
 	err := tx.Bucket(bucketReceipts).ForEach(func(k, raw []byte) error {
 		var r Receipt
 		if err := json.Unmarshal(raw, &r); err != nil {
 			return fmt.Errorf("receipt %q: %w", k, err)
 		}
-		if r.Operation == "answer-decision" && strings.HasPrefix(r.Record, "decision/grant-") {
-			out[r.Repository+"/"+r.TaskID+"/"+strings.TrimPrefix(r.Record, "decision/")] = r.CommittedAt
+		id, ok := strings.CutPrefix(r.Record, "decision/")
+		if key := grantApprovalKey(r.Repository, r.TaskID, id); ok && r.Operation == "answer-decision" && wanted[key] {
+			out[key] = r.CommittedAt
 		}
 		return nil
 	})
