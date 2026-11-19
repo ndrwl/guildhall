@@ -121,6 +121,8 @@ func stubHang(root string) int {
 type stubAnswer struct {
 	Output  string `json:"output"`
 	Failure string `json:"failure"`
+	// Exit, when not zero, is the exit status of a command that fails, with or without a Failure on standard error.
+	Exit int `json:"exit,omitempty"`
 }
 
 // stubSSH plays ssh: it checks the fixed options, records the remote command the machine received, one JSON
@@ -174,9 +176,11 @@ func stubSSH(root string, args []string) int {
 	}
 	if a.Failure != "" {
 		fmt.Fprintln(os.Stderr, a.Failure)
-		return 2
+		if a.Exit == 0 {
+			return 2
+		}
 	}
-	return 0
+	return a.Exit
 }
 
 // stubPath maps alias:path operands into the fake remote tree and leaves local paths alone.
@@ -240,7 +244,14 @@ func (s *stub) runner() SSH {
 // failure as its diagnostic when failure is not empty.
 func (s *stub) answer(alias, output, failure string) {
 	s.t.Helper()
-	data, err := json.Marshal(stubAnswer{Output: output, Failure: failure})
+	s.answerExit(alias, output, failure, 0)
+}
+
+// answerExit makes every later remote command on the machine with alias print output on standard output and
+// failure, when not empty, on standard error, and exit with code, or with 2 when code is 0 and failure is not empty.
+func (s *stub) answerExit(alias, output, failure string, code int) {
+	s.t.Helper()
+	data, err := json.Marshal(stubAnswer{Output: output, Failure: failure, Exit: code})
 	if err == nil {
 		err = os.MkdirAll(filepath.Join(s.root, "ssh"), 0o700)
 	}

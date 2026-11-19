@@ -87,6 +87,11 @@ type pushSetup struct {
 	fleet                                     *stewardtest.Fleet
 	// copier, when set, is the Copier in the Fleet's place.
 	copier steward.Copier
+	// sshWarning, when set, is what ssh itself writes on standard error, such as a host-key warning, before a command
+	// that exits non-zero.
+	sshWarning string
+	// dropInstall makes secrets install fail with no output, as a dropped connection does, without running it.
+	dropInstall bool
 }
 
 func newPushSetup(t *testing.T) *pushSetup {
@@ -144,6 +149,9 @@ func newPushSetup(t *testing.T) *pushSetup {
 			writeFile(t, file, string(data))
 		}
 		install := argv[2] == "install"
+		if install && ps.dropInstall {
+			return nil, true, &steward.ExitError{Err: errors.New("exit status 255"), Diagnostic: "Connection to guild-ws closed by remote host."}
+		}
 		if install {
 			sum := argv[4]
 			if data, ok := ps.fleet.Read(steward.Remote{Alias: "guild-ws", Path: secrets.NewFile(steward.RemoteSecretsFile, sum)}); ok {
@@ -160,12 +168,13 @@ func newPushSetup(t *testing.T) *pushSetup {
 			}
 		}
 		if code != 0 {
-			// As ssh reports a command that exits non-zero: its standard error, or else its standard output.
-			msg := stderr.Bytes()
-			if len(msg) == 0 {
-				msg = stdout.Bytes()
+			// As SSH.Run reports a command that exits non-zero: its standard output, and as its diagnostic its
+			// standard error, with ssh's own warning first, or else its standard output.
+			msg := strings.TrimSpace(ps.sshWarning + stderr.String())
+			if msg == "" {
+				msg = strings.TrimSpace(stdout.String())
 			}
-			return nil, true, fmt.Errorf("ssh: exit status %d: %s", code, bytes.TrimSpace(msg))
+			return nil, true, &steward.ExitError{Err: fmt.Errorf("exit status %d", code), Stdout: stdout.Bytes(), Diagnostic: msg}
 		}
 		return stdout.Bytes(), true, nil
 	})
@@ -403,7 +412,22 @@ func TestStewardSecretsPushCutShortKeepsTheMachineFile(t *testing.T) {
 // refused by secrets install before it is renamed, so the machine's secrets file is byte-identical, the dropped file
 // is gone, and the receipt names the install step.
 func TestStewardSecretsPushThatDoesNotDecryptKeepsTheMachineFile(t *testing.T) {
+	testRefusedInstall(t, "")
+}
+
+// TestStewardSecretsPushRefusalReportPastSSHWarnings: when ssh writes a warning on standard error, as it does for a
+// newly added host key, a refused install's report still reaches the receipt step's output from the command's
+// standard output, and its error names the step that refused (d259).
+func TestStewardSecretsPushRefusalReportPastSSHWarnings(t *testing.T) {
+	testRefusedInstall(t, "Warning: Permanently added 'guild-ws' (ED25519) to the list of known hosts.\n")
+}
+
+// testRefusedInstall pushes a file the machine's key does not decrypt, with ssh writing sshWarning on standard error,
+// and checks that the machine's file is kept and that the receipt holds the refusal's report and its step.
+func testRefusedInstall(t *testing.T, sshWarning string) {
+	t.Helper()
 	ps := newPushSetup(t)
+	ps.sshWarning = sshWarning
 	if _, code, out := ps.pushed(t, "API_KEY", pushedSecret, filepath.Join(ps.steward, "rollouts", "first")); code != 0 {
 		t.Fatalf("first push: exit %d:\n%s", code, out)
 	}
@@ -430,7 +454,31 @@ func TestStewardSecretsPushThatDoesNotDecryptKeepsTheMachineFile(t *testing.T) {
 	}
 	m := receiptOf(t, planDir).Machines[0]
 	if m.Status != steward.StatusInstallFailed || len(m.Steps) != 3 || !slices.Contains(m.Steps[2].Command, "install") ||
-		!strings.Contains(m.Steps[2].Error, `"step":"decrypt"`) || !strings.Contains(m.Error, "does not decrypt") {
+		!strings.Contains(m.Steps[2].Output, `"step":"decrypt"`) || !strings.Contains(m.Steps[2].Output, `"installed":false`) ||
+		!strings.HasPrefix(m.Steps[2].Error, "secrets install refused at decrypt: ") ||
+		!strings.HasPrefix(m.Error, "secrets install refused at decrypt: ") || !strings.Contains(m.Error, "does not decrypt") {
+		t.Fatalf("receipt %+v", m)
+	}
+	noValueIn(t, planDir)
+}
+
+// TestStewardSecretsPushInstallWithNoReport: an install that fails printing nothing, as over a dropped connection, is
+// install_failed with an error saying its outcome is unknown, since the machine's file may hold either ciphertext.
+func TestStewardSecretsPushInstallWithNoReport(t *testing.T) {
+	ps := newPushSetup(t)
+	if _, code, out := ps.pushed(t, "API_KEY", pushedSecret, filepath.Join(ps.steward, "rollouts", "first")); code != 0 {
+		t.Fatalf("first push: exit %d:\n%s", code, out)
+	}
+	ps.dropInstall = true
+	planDir := filepath.Join(ps.steward, "rollouts", "dropped")
+	_, code, out := ps.pushed(t, "DB_PASS", pushedPassword, planDir)
+	if code != 1 || !strings.Contains(out, "workstation: "+steward.StatusInstallFailed) {
+		t.Fatalf("dropped install: exit %d, want 1 naming install_failed:\n%s", code, out)
+	}
+	m := receiptOf(t, planDir).Machines[0]
+	if m.Status != steward.StatusInstallFailed || len(m.Steps) != 3 || m.Steps[2].Output != "" ||
+		!strings.Contains(m.Steps[2].Error, "Connection to guild-ws closed") ||
+		!strings.Contains(m.Error, "its outcome is unknown: plan again to read the machine's secrets file") {
 		t.Fatalf("receipt %+v", m)
 	}
 	noValueIn(t, planDir)

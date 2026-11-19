@@ -31,8 +31,10 @@ const (
 // decrypt it to the planned names with the machine's own key.
 const StatusCheckFailed = "check_failed"
 
-// StatusInstallFailed is a machine whose new ciphertext was put beside its secrets file and read back but which
-// secrets install refused to swap in, so its secrets file is unchanged; the step's output names what refused.
+// StatusInstallFailed is a machine whose new ciphertext was put beside its secrets file and read back but whose
+// secrets install did not succeed: either it refused, its report in the step's output naming the step and the
+// problem, and its secrets file is unchanged; or its outcome could not be read, as after a timeout, a dropped
+// connection or a missing report, and its secrets file may hold the old or the new ciphertext until a plan reads it.
 const StatusInstallFailed = "install_failed"
 
 // SopsConfigFile is the sops configuration generated from the roster at the root of the private config: one creation
@@ -594,23 +596,34 @@ func (s *Secrets) applyMachine(ctx context.Context, ms MachineSecrets, stageDir 
 	if mr.VerifiedSHA256 != ms.AfterSHA256 {
 		return fail(StatusVerifyFailed, errors.New("the secrets file read back does not match the pushed ciphertext"))
 	}
-	// Install's report holds names and digests only, never a value; a refusal's report is in the error, as the runner
-	// reports a command that exits non-zero.
+	// Install's report holds names and digests only, never a value. It is on standard output whether install succeeds
+	// or refuses, exiting 1; a refusal's is in the runner's *ExitError, whatever ssh wrote on standard error. A report
+	// that refused means the secrets file is unchanged; with no report, or one that installed but a failure all the
+	// same, the outcome is unknown, so the file may hold the old or the new ciphertext.
 	install := Step{Command: sshCommand(ms.SSHAlias, ms.install)}
 	out, err := s.Runner.Run(ctx, ms.SSHAlias, ms.install)
-	install.Output = strings.TrimSpace(string(out))
-	if err == nil {
-		var r secrets.InstallReport
-		if jerr := json.Unmarshal(out, &r); jerr != nil {
-			err = fmt.Errorf("secrets install printed no report: %w", jerr)
-		} else if !r.Installed {
-			err = fmt.Errorf("secrets install refused at %s: %s", r.Step, r.Problem)
+	if err != nil {
+		out = nil
+		if exit := (*ExitError)(nil); errors.As(err, &exit) {
+			out = exit.Stdout
 		}
+	}
+	install.Output = strings.TrimSpace(string(out))
+	var r secrets.InstallReport
+	jerr := json.Unmarshal(out, &r)
+	switch {
+	case jerr == nil && !r.Installed:
+		refused := fmt.Errorf("secrets install refused at %s: %s", r.Step, r.Problem)
+		install.Error = refused.Error()
+		mr.Steps = append(mr.Steps, install)
+		return fail(StatusInstallFailed, refused)
+	case err == nil && jerr != nil:
+		err = fmt.Errorf("secrets install printed no report: %w", jerr)
 	}
 	if err != nil {
 		install.Error = err.Error()
 		mr.Steps = append(mr.Steps, install)
-		return fail(StatusInstallFailed, fmt.Errorf("secrets install: %w", err))
+		return fail(StatusInstallFailed, fmt.Errorf("secrets install: %w; its outcome is unknown: plan again to read the machine's secrets file", err))
 	}
 	mr.Steps = append(mr.Steps, install)
 	step := Step{Command: sshCommand(ms.SSHAlias, ms.check)}

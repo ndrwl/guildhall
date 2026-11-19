@@ -33,8 +33,9 @@ type Fleet struct {
 
 // Handler answers one remote command on a machine, argv as the Runner was given it: it returns what the command
 // prints, or an error as its diagnostic when it exits non-zero, with handled true, or handled false to leave the
-// command to the machine's Answer. It is called without the Fleet's lock held, so it may read and write the
-// Fleet's files.
+// command to the machine's Answer. It may return a *steward.ExitError, as SSH does, carrying what a command that
+// exits non-zero printed on standard output. It is called without the Fleet's lock held, so it may read and write
+// the Fleet's files.
 type Handler func(argv []string) (output []byte, handled bool, err error)
 
 // answer is how a machine answers every remote command.
