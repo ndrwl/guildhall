@@ -2,7 +2,7 @@
 
 The Steward looks after the guild's Director copies across its machines: it owns the roster and rolls out managed settings to enrolled Director copies over SSH (R1.7, R1.8, R1.31).
 It runs as the **Steward session**, a long-running agent session the Guildhall binary starts and supervises the same way it supervises a Director, and only the Guildmaster talks to it: no Director reaches its inbox.
-This page describes the Steward session, what `guildhall steward rollout`, `guildhall steward collect`, `guildhall steward takeover` and `guildhall steward secrets` do today and what is planned.
+This page describes the Steward session, what `guildhall steward rollout`, `guildhall steward collect`, `guildhall steward takeover`, `guildhall steward provision`, `guildhall steward secrets` and `guildhall steward machine retire` do today and what is planned.
 
 No Director feature requires a Steward.
 A standalone copy, one with no `managed.toml` and no enrolment, starts and behaves exactly as it does without one ([standalone and managed Directors](director-modes.md)).
@@ -189,6 +189,19 @@ repositories = ["cli", "docs-site"]
 
 Each machine has one SSH alias for its one non-administrator Guildhall account, and that account may host several Directors, each with its own copy directory.
 
+Copy, setup and clone directories may not contain a space or `~`, so a profile directory such as `C:/Users/First Last/…` or an 8.3 short name such as `RUNNER~1` cannot be enrolled; use a path such as `C:/guild/…` instead.
+
+### Reaching a WSL host
+
+A Director copy inside WSL on a Windows laptop is reached as a Linux machine with an alias of its own:
+
+- Run `sshd` inside WSL on its own port, such as 2222, not on Windows' port 22.
+- Add a `Host <alias>` block for it to the Steward user's `~/.ssh/config` with `HostName`, `Port`, `User`, `IdentityFile` and `IdentitiesOnly yes`, so that ssh does not first offer a peer's forced-command key from the agent.
+- Name that plain alias as the machine's `ssh_alias`; a user, port or option there is refused.
+- Set the machine's `guildhall_path`, because a non-interactive ssh command does not read `~/.profile`, so `~/.local/bin` and `~/go/bin` are not on its `PATH`. A [takeover](#takeover) cannot set it yet, so add the machine to `roster.toml` by hand, with `guildhall_path`, before the takeover's dry run.
+
+Guildhall itself still adds no ssh option beyond `BatchMode=yes`; everything else comes from the alias.
+
 ### `managed.toml`
 
 ```toml
@@ -322,7 +335,8 @@ The allow-list is exactly ([decision](decisions/steward-fixed-remote-commands.md
 A value other than the copy directory is held to the same rule: `--out`, `--setup-dir` and a clone's path take an absolute path in the restricted character set, `--steward` a lowercase id, `--digest` a lowercase hex sha256, `--only` comma-separated step ids, `--steps` a built-in step file's name or an absolute path, `--set` a lowercase name and a value of letters, digits, `.`, `_`, `~`, `+`, `:`, `/` and `-`, and a remote an `https://` URL or `git@host:path` of letters, digits, `.`, `_`, `~`, `-` and `/` with no `.` or `..` segment.
 A step file's contents never travel on a command line; only its path and digest do.
 Any other command, flag or argument is refused before `ssh` runs, and so is an alias that is not a plain roster alias.
-`ssh` joins the arguments with spaces for the remote side, which then parses them again, through `cmd.exe` or PowerShell on a Windows OpenSSH server and a POSIX shell elsewhere; every value is restricted to letters, digits, `.`, `_`, `-`, `/` and a drive's `:`, which all of them read the same way, so nothing is quoted.
+`ssh` joins the arguments with spaces for the remote side, which then parses them again, through `cmd.exe` or PowerShell on a Windows OpenSSH server and a POSIX shell elsewhere; every value is restricted to letters, digits, `.`, `_`, `-`, `/` and a drive's `:`, except that a `--set` value may also hold `~`, `+`, `:` and its one `=`, and a remote `@` and `:` as in `git@host:path`; all of them read these characters the same way, so nothing is quoted.
+The wider set is only for `--set` values and remotes: a copy, setup or clone directory, `--out` and `guildhall_path` never hold `~`, `+` or `@`.
 On a Windows machine every path, the program's, the copy's, the setup directory's and each clone's, is in its forward-slash form, `C:/Users/guild/...`, which Windows programs read as they are; the one value PowerShell would read otherwise, a comma-separated `--only`, is a single step id in every plan step.
 Each `ssh` run is bounded by a two-minute timeout, or fifteen minutes for a command that may take minutes (`setup doctor --fix`, `release adopt`, `release install`, `director start --tab` and `git clone`), and is cancelled as `scp` is, killing its process group on Unix and its process elsewhere.
 A command that exits non-zero, a refusing machine and a timeout are each reported with their diagnostic.
@@ -367,7 +381,7 @@ With `[steward] collect_every` set, the Steward session runs a round at its star
 Rounds run one at a time, a round that finds the lock busy is skipped, and failures are reported in the copy's [`<state>/supervisor.log`](running.md#pruning), not on the terminal the session draws.
 The third busy round in a row sends the Steward's inbox one `lock-busy` message, with the [`director` sender tag](#inbox), naming the lock's owner and since when it has held the lock, which wakes the session; any round that is not busy starts the count again.
 Its id is a digest of the owner record, so a reload, which also starts the count again, sends no second message for the same owner.
-Its owner is a live process, since the OS releases a crashed one's [lock](#publication-and-writer-containment): possibly a takeover apply, which can hold the lock for 30 minutes, or a hung command; stopping that process is the way to recover, and nothing removes the file.
+Its owner is a live process, since the OS releases a crashed one's [lock](#publication-and-writer-containment): possibly a takeover or secrets apply (up to 30 minutes), a provisioning apply (up to 90 minutes) or a hung command; stopping that process is the way to recover, and nothing removes the file.
 A round that opens triage decisions sends the Steward's inbox one `triage-opened` message per kind, with the [`director` sender tag](#inbox), which wakes the session; a round with nothing new sends nothing and wakes nothing.
 Unset, the default, nothing is collected on a schedule, and nothing polls or spends model tokens because an item is queued (R1.7).
 Each scheduled run then sends its [Steward messages](#steward-messages), even when the round found the lock busy.
@@ -577,7 +591,7 @@ bootstrap_from = "/home/guild/go/bin/windows_amd64"
 
 The Steward reads each file's Go build information without running it, and refuses one that is not that program, is built from modified source, is not for the machine's OS or not for the same architecture as the other, or whose binary reports no release version; the pin, when set, must be that version, and `release install` on the machine checks it is a release of that version, as for a Linux machine.
 The same `bootstrap_from` serves a Linux machine from a Steward on another OS.
-When the bootstrap is done, the Steward makes the dry run again with the same request; it now finds Guildhall at `guildhall_path` and plans the copy from the doctor's gaps, approved on its own.
+When the bootstrap is done, the Steward makes the dry run again with the same request in a new plan directory, since a plan directory whose apply has started is refused; it now finds Guildhall at `guildhall_path` and plans the copy from the doctor's gaps, approved on its own.
 That plan's `director` step file includes `guildhall-on-path`, a wizard step while SSH commands' `PATH` does not find `guildhall_path` as `guildhall`, which `release adopt` needs; its `herdr`, `go` and `git-and-claude` steps install Herdr and Go into the user's directories from the pins and walk the Guildmaster through Git, the GitHub CLI and Claude Code.
 
 ## Managing a Director copy
@@ -609,7 +623,7 @@ A revision naming a `release` moves the copy's pin at its reload, and active tas
 
 - The rest of R1.31, the release pin and side-by-side release installs designed in [release upgrades](releases.md): the Guildhall home, `guildhall release install` and `status`, the pin, `guildhall release use` and `adopt`, the PATH launcher, tasks recording and running on their release, a standalone copy's `guildhall release rollback` and `release prune`, and the managed pin, `release` and `release_sha256` in `managed.toml` applied by `config reload`, are [built](releases.md#built-so-far). A rollout of a new `release` changes the pin once the release is installed or its binary is in the machine's `releases/.incoming/<version>/`; the rollout copying that binary itself and the remote `director reload` are not built yet.
 - `rollback`, which will restore a preserved revision for new tasks.
-- Tool installs (`guildhall steward install`, R1.7, R1.50) and audits (R1.32); learnings are [collected and triaged](#collection), and an adopted lesson ships by an ordinary rollout.
+- The standalone `guildhall steward install` command (R1.7) and audits (R1.32); a provisioned machine's tool installs (R1.50) are already built as [provisioning](#provisioning); learnings are [collected and triaged](#collection), and an adopted lesson ships by an ordinary rollout.
 - The standalone `guildhall setup` wizard for the Guildmaster's own machine (R1.43).
 - Takeover and provisioning's live acceptance on native Windows, which the Guildmaster runs once on the laptop's Windows side: CI runs them only on a stand-in fleet, and the built-ins' Windows forms on Windows runners.
 - The [bootstrap](#bootstrapping-a-bare-machine)'s live acceptance, which the Guildmaster runs once on the Linux VDS: CI runs it only on a stand-in fleet.
