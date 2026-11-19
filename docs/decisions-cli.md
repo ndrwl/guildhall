@@ -14,6 +14,7 @@ guildhall decide defer --store <path> --repo <id> --task <id> --decision <id> --
 guildhall decide undefer --store <path> --repo <id> --task <id> --decision <id>
 guildhall decide open --store <path> --repo <id> --task <id> (--question <text> | --question-file <path|->) [--option <text>]... [--recommend <option>] [--config <director.toml> --grant-option <option> --grant-step <id|all> --grant-tool <rule>... [--grant-until attempt|done] --grant-reason <text>]
 guildhall decide explain <repo>/<task> <decision> --store <path> --subject-digest <digest> (--text <md> | --file <path|->) [--recommend <option>]
+guildhall decide accept <repo>/<task> <decision> --director --reason <text> (--copy <dir> | --store <path> --config <path> --state <dir>)
 ```
 
 Every command needs an existing store and never creates one; `list` and `show` open it read-only.
@@ -22,13 +23,14 @@ Each prints one JSON document on standard output and exits 0, exits 1 when the a
 - `list` prints a JSON array of the unanswered decisions, of one repository with `--repo` or of every repository, ordered by repository, task and decision id.
   Each entry is a [decision record](store.md#records); optional fields are omitted when absent, including a question's subject and any empty options.
   An empty inbox prints `[]`.
-- `show` prints one decision, answered or not, including the answer, choice and note when non-empty, and, for an answer given on the [task page](web.md#answering), `answered_via` (`page`) and `answered_by` (the Tailscale login).
+- `show` prints one decision, answered or not, including the answer, choice and note when non-empty, and, for an answer given on the [task page](web.md#answering), `answered_via` (`page`) and `answered_by` (the Tailscale login), or, for a plan the Director [accepted](#decide-accept), `answered_via` (`director`) alone.
   It also prints `subject_digest`, the digest an [explanation](#decide-explain) of the decision must be written against (`SubjectDigestOf`: its subject's digest, or, for a decision with no subject, `sha256:` and the hex sha256 of its question text); copy it rather than computing it.
   When the Director has explained it, an `explanation` object follows: the [explanation record](#decide-explain); a decision with none has no `explanation` field.
 - `answer` records the Guildmaster's words and prints the store receipt; it records no `answered_via` or `answered_by`. The task page answers through the same function under the same mutation id, so a decision is answered once whichever way.
 - `defer` and `undefer` are the Director's: see [deferring a decision](#deferring-a-decision).
 - `open` is the Director's: it opens a question decision on a task and prints it as `show` does; see [decide open](#decide-open).
 - `explain` is the Director's: it records its plain-English explanation of an open decision for the task page; see [decide explain](#decide-explain).
+- `accept --director` is the Director's: it accepts a small feature's plan itself, where the repository opts in, and tells the Guildmaster; see [decide accept](#decide-accept).
 
 ## Answers
 
@@ -127,6 +129,26 @@ Explaining again replaces the record and makes its revision one higher; the muta
 guildhall decide explain guildhall/d150 accept--s2-1 --subject-digest sha256:3f9c… --recommend approved --file - <<'TEXT'
 The plan builds the task list at `/`. **Approve** takes both recommendations.
 TEXT
+```
+
+## decide accept
+
+`decide accept --director` is the Director's acceptance of a small feature's plan on the Guildmaster's behalf, where the repository sets [`director_accept_lines` and `director_accept_files`](configuration.md#repositories) ([decision](decisions/director-plan-acceptance.md)).
+The decision is named by `<repo>/<task>` and its id; the flags may come before or after them, and `--copy`, or the copy found from the current directory, stands in for `--store`, `--config` and `--state`.
+`--director` and a non-blank `--reason` are required; the Guildmaster's own answer goes through `decide answer`.
+
+Under the task lock it judges the decision again, as the advance that opened it did: the decision must be the latest round `accept-<k>` of a `guildmaster-approval` step whose spec comes from a plan step, still open and bound to that step's current spec digest, on a feature task of a repository with both keys set, and the [verdict](configuration.md#repositories) on that spec, with the task's overrides, must be yes.
+Anything else is refused with exit 1, naming the reasons, and nothing is written: an ineligible plan, a superseded or stale round, a loop exit `accept-x<k>`, a review, merge or question decision, and a decision on a repository without the keys.
+
+It then records the answer `approved` with the reason as its note, `answered_via` `director` and no `answered_by`, and a `director` entry on the task's [conversation](web.md#the-conversation) tagged with the decision and carrying the reason, in one transaction, and prints the store receipt.
+The mutation id is `decide answer`'s and `answered_via` is part of the request digest, so a retry of the same acceptance replays its receipt without judging again, while `decide answer` or the page answering the decision afterwards is refused, as is the Director's acceptance of a decision the Guildmaster already answered.
+Like `decide answer`, it never advances the task: the Director then runs `task start --decision <id>`, and the spec gate takes the answer as it takes any `approved`.
+
+The decision leaves Needs you, and the task page, its stepper and Clerk say "accepted by the Director" with the reason, as does the task's `director_accepted` in [`director status`](director.md#status) while it is open, so a Director after a handoff still sees it; the Director names it once under What I did in its next reply.
+The Guildmaster takes it back with [`step send-back`](step-send-back.md) to plan, which opens a new round that is judged again.
+
+```sh
+guildhall decide accept guildhall/d270 accept-1 --director --reason "One slice, about 120 lines in 4 files, touches none, no open questions."
 ```
 
 ## Deferring a decision

@@ -218,8 +218,10 @@ type Decision struct {
 	Void       bool   `json:"void,omitempty"`
 	VoidReason string `json:"void_reason,omitempty"`
 	// AnsweredVia is where an answer was given when Guildhall knows it: AnsweredViaPage for the task page
-	// (docs/web.md#answering), empty for an answer recorded with decide answer, through the Director or before it
-	// was recorded. AnsweredBy is the Tailscale login that answered on the page, set only with AnsweredVia.
+	// (docs/web.md#answering), AnsweredViaDirector for a plan the Director accepted itself with decide accept
+	// --director (docs/decisions-cli.md#decide-accept), and empty for an answer recorded with decide answer, through
+	// the Director or before it was recorded. AnsweredBy is the Tailscale login that answered on the page, set only
+	// with AnsweredViaPage.
 	AnsweredVia string `json:"answered_via,omitempty"`
 	AnsweredBy  string `json:"answered_by,omitempty"`
 	// Recommended is the option the Director recommended on a question it opened before recommendations had their
@@ -230,6 +232,10 @@ type Decision struct {
 
 // AnsweredViaPage is Decision.AnsweredVia for an answer given on the task page.
 const AnsweredViaPage = "page"
+
+// AnsweredViaDirector is Decision.AnsweredVia for a small feature's plan the Director accepted on its own, telling the
+// Guildmaster rather than asking them (docs/decisions/director-plan-acceptance.md). It records no login.
+const AnsweredViaDirector = "director"
 
 // MaxAnsweredByBytes bounds Decision.AnsweredBy.
 const MaxAnsweredByBytes = 256
@@ -665,8 +671,8 @@ func (s *Store) AnswerDecision(mutationID, repository, taskID, id, answer string
 }
 
 // AnswerDecisionVia is AnswerDecision recording where the answer was given and who gave it: via is "" or
-// AnsweredViaPage, and by, the Tailscale login, is set exactly when via is: printable text with no spaces, at most
-// MaxAnsweredByBytes. Both are part of the request, so a retry under the same mutation id with the same answer,
+// AnsweredViaPage or AnsweredViaDirector, and by, the Tailscale login, is set exactly when via is AnsweredViaPage:
+// printable text with no spaces, at most MaxAnsweredByBytes. Both are part of the request, so a retry under the same mutation id with the same answer,
 // place and login replays its receipt, and any other is ErrMutationConflict. With via "" it is AnswerDecision, with
 // the same request digest.
 func (s *Store) AnswerDecisionVia(mutationID, repository, taskID, id, answer, via, by string) (Receipt, error) {
@@ -937,8 +943,8 @@ func validateIDs(ids ...string) error {
 	return nil
 }
 
-// validateAnsweredBy checks an answer's place and login: neither, or the page with a login of printable characters
-// and no spaces, at most MaxAnsweredByBytes.
+// validateAnsweredBy checks an answer's place and login: neither, the Director with no login, or the page with a
+// login of printable characters and no spaces, at most MaxAnsweredByBytes.
 func validateAnsweredBy(via, by string) error {
 	switch via {
 	case "":
@@ -946,9 +952,14 @@ func validateAnsweredBy(via, by string) error {
 			return invalid("an answer's login is recorded only with where it was given")
 		}
 		return nil
+	case AnsweredViaDirector:
+		if by != "" {
+			return invalid("an answer the Director gave records no login")
+		}
+		return nil
 	case AnsweredViaPage:
 	default:
-		return invalid("an answer is given via %q or with no place recorded, not %q", AnsweredViaPage, via)
+		return invalid("an answer is given via %q or %q, or with no place recorded, not %q", AnsweredViaPage, AnsweredViaDirector, via)
 	}
 	if by == "" || len(by) > MaxAnsweredByBytes || !utf8.ValidString(by) {
 		return invalid("an answer given on the page needs the login that gave it, at most %d bytes of UTF-8", MaxAnsweredByBytes)

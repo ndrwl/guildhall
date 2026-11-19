@@ -777,6 +777,9 @@ func (b webBuilder) steps() []web.Step {
 			case dec.Choice != "":
 				// No positive or negative option has a _, so this keeps their words raw as before.
 				word := strings.ReplaceAll(dec.Choice, "_", " ")
+				if dec.AnsweredVia == store.AnsweredViaDirector {
+					word = directorAcceptedWord
+				}
 				st.State, st.Note, st.Raw = web.DecisionState(string(dec.Kind), dec.Choice), b.decisionNoun(dec.Decision)+" "+word, dec.ID+" "+word
 			case dec.Answered:
 				st.State, st.Note, st.Raw = web.StateDone, b.decisionNoun(dec.Decision)+" answered", dec.ID+" answered"
@@ -888,6 +891,8 @@ func (b webBuilder) story(docs []web.Document) []web.Node {
 			n.State, n.Word, n.Ask = web.StateYou, "deferred · still yours", dec.ID
 		case dec.Open():
 			n.State, n.Word, n.Ask = web.StateYou, "waiting on you", dec.ID
+		case dec.Choice != "" && dec.AnsweredVia == store.AnsweredViaDirector:
+			n.State, n.Word = web.DecisionState(string(dec.Kind), dec.Choice), web.OptionWord(directorAcceptedWord)
 		case dec.Choice != "":
 			n.State, n.Word = web.DecisionState(string(dec.Kind), dec.Choice), web.OptionWord(dec.Choice)
 		default:
@@ -949,11 +954,18 @@ func (b webBuilder) story(docs []web.Document) []web.Node {
 // webAnswerWhere says where a decision was answered: on the task page by its login, or otherwise in chat, through
 // the Director, or with decide answer, which record no place.
 func webAnswerWhere(d store.Decision) string {
-	if d.AnsweredVia == store.AnsweredViaPage {
+	switch d.AnsweredVia {
+	case store.AnsweredViaPage:
 		return "answered on the task page by " + d.AnsweredBy
+	case store.AnsweredViaDirector:
+		return directorAcceptedWord + "; send it back to plan to take it back"
 	}
 	return "answered via the Director or decide answer"
 }
+
+// directorAcceptedWord is how the task page, Clerk and status name a plan the Director accepted on its own, telling the
+// Guildmaster rather than asking them (docs/decisions/director-plan-acceptance.md).
+const directorAcceptedWord = "accepted by the Director"
 
 // webNodeTime is when a node began, the zero time when it is not known, so such nodes sort first.
 func webNodeTime(n web.Node) time.Time {
@@ -1098,8 +1110,11 @@ func decisionEvents(dec timedDecision) []web.Event {
 		if dec.Choice != "" {
 			text += " " + dec.Choice
 		}
-		if dec.AnsweredVia == store.AnsweredViaPage {
+		switch dec.AnsweredVia {
+		case store.AnsweredViaPage:
 			text += " · on the task page by " + dec.AnsweredBy
+		case store.AnsweredViaDirector:
+			text += " · " + directorAcceptedWord
 		}
 		out = append(out, web.Event{At: dec.AnsweredAt, Text: text})
 	}

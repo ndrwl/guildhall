@@ -1,9 +1,12 @@
 package interp_test
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/ndrwl/guildhall/internal/adapter"
 	"github.com/ndrwl/guildhall/internal/config"
 	"github.com/ndrwl/guildhall/internal/interp"
 	"github.com/ndrwl/guildhall/internal/interp/interptest"
@@ -78,15 +81,15 @@ func TestDirectorAcceptable(t *testing.T) {
 }
 
 // acceptEnv is the director-grill workflow run unattended up to accept-1 with spec as the plan's, in a repository
-// whose Director acceptance keys are lines and files.
-func acceptEnv(t *testing.T, b backend, spec string, lines, files int) *env {
+// whose Director acceptance keys are lines and files; later are the mock agent's expectations after the plan.
+func acceptEnv(t *testing.T, b backend, spec string, lines, files int, later ...interptest.Expectation) *env {
 	t.Helper()
 	def := loadWorkflow(t, "director-grill")
 	notes := []byte("# Grill notes\n\n## Questions\n\nNone.\n")
 	plan := planExpectation(t, interptest.Succeed("planned", interptest.File{Path: "spec.md", Data: []byte(spec)}))
 	plan.Inputs = map[string]string{"context": interptest.AnyDigest}
-	e := newEnvDefinition(t, b, def, unattendedGrill(1, interptest.Succeed("grilled", interptest.File{Path: "notes.md", Data: notes})),
-		researchExpectation([]byte("notes\n")), plan)
+	e := newEnvDefinition(t, b, def, append([]interptest.Expectation{unattendedGrill(1, interptest.Succeed("grilled", interptest.File{Path: "notes.md", Data: notes})),
+		researchExpectation([]byte("notes\n")), plan}, later...)...)
 	e.eng.Config.Repositories[0].DirectorAcceptLines, e.eng.Config.Repositories[0].DirectorAcceptFiles = lines, files
 	e.setGrill(t, workflow.GrillUnattended, store.GrillModeByDirector)
 	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitAttempt, Step: "grill", Attempt: 1})
@@ -94,6 +97,56 @@ func acceptEnv(t *testing.T, b backend, spec string, lines, files int) *env {
 	want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "research", Attempt: 1}), interp.Next{Wait: interp.WaitAttempt, Step: "plan", Attempt: 1})
 	want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1}), interp.Next{Wait: interp.WaitDecision, Step: "accept", Decision: "accept-1"})
 	return e
+}
+
+// TestDirectorAcceptanceCommand: Engine.DirectorAcceptance judges an open accept-1 as its message did; an answer the
+// Director records passes the spec gate and build runs, after which the answered decision is
+// no longer one it may judge. An unknown decision is not found.
+func TestDirectorAcceptanceCommand(t *testing.T) {
+	ctx := context.Background()
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			build := interptest.Expectation{Step: "build", Attempt: 1, Profile: "builder", Inputs: map[string]string{"spec": "sha256:" + sum([]byte(smallPlan))},
+				Standards: []string{"standards/go.md"}, Skills: []string{"go-tdd", "guildhall-contributing"},
+				Respond: interptest.Succeed("built", interptest.File{Path: "head", Data: []byte(head + "\n")})}
+			e := acceptEnv(t, b, smallPlan, 200, 8, build)
+			v, err := e.eng.DirectorAcceptance(ctx, "app", "t7", "accept-1")
+			if err != nil || !v.OK {
+				t.Fatalf("DirectorAcceptance = %+v, %v; want yes", v, err)
+			}
+			if _, err := e.eng.DirectorAcceptance(ctx, "app", "t7", "accept-9"); !errors.Is(err, store.ErrNotFound) {
+				t.Errorf("unknown decision: err = %v, want ErrNotFound", err)
+			}
+			// The engine reads the answer, not where it was given; the store test pins AnsweredViaDirector.
+			e.answer(t, "accept-1", "approved\nSmall and safe.")
+			want(t, e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "accept-1"}), interp.Next{Wait: interp.WaitAttempt, Step: "build", Attempt: 1})
+			if _, ok := e.documents(t)["accept-1-spec"]; !ok {
+				t.Error("the Director's acceptance recorded no accepted spec")
+			}
+			if _, err := e.eng.DirectorAcceptance(ctx, "app", "t7", "accept-1"); !errors.Is(err, interp.ErrNotPlanAcceptance) {
+				t.Errorf("answered decision: err = %v, want ErrNotPlanAcceptance", err)
+			}
+		})
+	}
+}
+
+// TestDirectorAcceptanceRefused: with the setting off accept-1 is no decision the Director may judge, and with it on
+// a plan over the threshold is judged no, with its reason.
+func TestDirectorAcceptanceRefused(t *testing.T) {
+	ctx := context.Background()
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			off := acceptEnv(t, b, smallPlan, 0, 0)
+			if _, err := off.eng.DirectorAcceptance(ctx, "app", "t7", "accept-1"); !errors.Is(err, interp.ErrNotPlanAcceptance) {
+				t.Errorf("setting off: err = %v, want ErrNotPlanAcceptance", err)
+			}
+			large := acceptEnv(t, b, smallPlan, 100, 8)
+			v, err := large.eng.DirectorAcceptance(ctx, "app", "t7", "accept-1")
+			if err != nil || v.OK || !strings.Contains(v.String(), "over director_accept_lines = 100") {
+				t.Errorf("too large: verdict = %+v, %v; want no, over the lines", v, err)
+			}
+		})
+	}
 }
 
 // TestDirectorAcceptanceMessage: with the setting on, accept-1's decision message carries the verdict and its
@@ -185,4 +238,71 @@ func acceptEnvOverrides(t *testing.T, b backend, overrides map[string]string, ke
 	want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "research", Attempt: 1}), interp.Next{Wait: interp.WaitAttempt, Step: "plan", Attempt: 1})
 	want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1}), interp.Next{Wait: interp.WaitDecision, Step: "accept", Decision: "accept-1"})
 	return e
+}
+
+// TestDirectorAcceptanceSuperseded: a round whose spec changed is refused once it is voided as superseded by
+// accept-2, which is judged again on the new spec; a design review is never the Director's.
+func TestDirectorAcceptanceSuperseded(t *testing.T) {
+	ctx := context.Background()
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			plan2 := strings.Replace(smallPlan, "by priority", "by priority, then id", 1)
+			// A design round follows a live grill, as TestDesignRoundWhileAcceptanceOpen runs it, so each round is judged
+			// no for that; judged, not refused.
+			e := newEnvDefinition(t, b, loadWorkflow(t, "director-grill"), researchExpectation(researchSort), gplanExpectation(1, nil, []byte(smallPlan)),
+				designerExpectation("designer", 1, designBrief, designOne), gplanExpectation(2, designOne, []byte(plan2)))
+			e.eng.Config.Repositories[0].DirectorAcceptLines, e.eng.Config.Repositories[0].DirectorAcceptFiles = 200, 8
+			e.advance(t, interp.Event{Kind: interp.TaskCreated})
+			finishStage(t, e, "grill", 1, adapter.StatusSucceeded, interptest.File{Path: "notes.md", Data: grillNotes})
+			e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "grill", Attempt: 1})
+			e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "research", Attempt: 1})
+			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1}), interp.Next{Wait: interp.WaitDecision, Step: "accept", Decision: "accept-1"})
+			if v, err := e.eng.DirectorAcceptance(ctx, "app", "t7", "accept-1"); err != nil || v.OK {
+				t.Errorf("accept-1 = %+v, %v; want it judged, no, as the grill is live", v, err)
+			}
+			want(t, e.advance(t, designRequested(designBrief)), interp.Next{Wait: interp.WaitAttempt, Step: "designer", Attempt: 1})
+			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "designer", Attempt: 1}), interp.Next{Wait: interp.WaitDecision, Step: "design", Decision: "design-1"})
+			if _, err := e.eng.DirectorAcceptance(ctx, "app", "t7", "design-1"); !errors.Is(err, interp.ErrNotPlanAcceptance) {
+				t.Errorf("design review: err = %v, want ErrNotPlanAcceptance", err)
+			}
+			e.answer(t, "design-1", "approved")
+			want(t, e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "design-1"}), interp.Next{Wait: interp.WaitAttempt, Step: "plan", Attempt: 2})
+			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 2}), interp.Next{Wait: interp.WaitDecision, Step: "accept", Decision: "accept-2"})
+			if _, err := e.eng.DirectorAcceptance(ctx, "app", "t7", "accept-1"); !errors.Is(err, interp.ErrNotPlanAcceptance) {
+				t.Errorf("superseded accept-1: err = %v, want ErrNotPlanAcceptance", err)
+			}
+			if v, err := e.eng.DirectorAcceptance(ctx, "app", "t7", "accept-2"); err != nil || v.OK || !strings.Contains(v.String(), "the grill is live") {
+				t.Errorf("accept-2 = %+v, %v; want it judged again, no, as the grill is live", v, err)
+			}
+		})
+	}
+}
+
+// TestDirectorAcceptanceLoopExit: with the setting on, accept-1 of the loop workflow is judged, and its loop exit
+// accept-x2, opened after two changes_requested rounds, is refused as no plan acceptance.
+func TestDirectorAcceptanceLoopExit(t *testing.T) {
+	ctx := context.Background()
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			plan := planExpectation(t, interptest.Succeed("planned", interptest.File{Path: "spec.md", Data: []byte(smallPlan)}))
+			plan2 := plan
+			plan2.Attempt = 2
+			plan2.Inputs = map[string]string{"feedback": "sha256:" + sum([]byte("changes_requested"))}
+			e := newEnvDefinition(t, b, loadWorkflow(t, "loop"), plan, plan2)
+			e.eng.Config.Repositories[0].DirectorAcceptLines, e.eng.Config.Repositories[0].DirectorAcceptFiles = 200, 8
+			e.advance(t, interp.Event{Kind: interp.TaskCreated})
+			e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1})
+			if _, err := e.eng.DirectorAcceptance(ctx, "app", "t7", "accept-1"); err != nil {
+				t.Errorf("accept-1: err = %v, want it judged", err)
+			}
+			e.answer(t, "accept-1", "changes_requested")
+			e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "accept-1"})
+			e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 2})
+			e.answer(t, "accept-2", "changes_requested")
+			want(t, e.advance(t, interp.Event{Kind: interp.DecisionAnswered, Decision: "accept-2"}), interp.Next{Wait: interp.WaitDecision, Step: "accept", Decision: "accept-x2"})
+			if _, err := e.eng.DirectorAcceptance(ctx, "app", "t7", "accept-x2"); !errors.Is(err, interp.ErrNotPlanAcceptance) {
+				t.Errorf("loop exit: err = %v, want ErrNotPlanAcceptance", err)
+			}
+		})
+	}
 }

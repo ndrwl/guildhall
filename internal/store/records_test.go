@@ -636,6 +636,37 @@ func TestAnswerDecisionVia(t *testing.T) {
 	}
 }
 
+// TestAnswerDecisionViaDirector: the Director's own acceptance records AnsweredViaDirector and no login; a login
+// beside it is refused; a retry replays, and the same words from decide answer, or from the page, conflict, since the
+// place is part of the request digest.
+func TestAnswerDecisionViaDirector(t *testing.T) {
+	s, _ := newStore(t)
+	mustCreate(t, s, "m-1", sampleTask("app", "t-1"))
+	if _, err := s.OpenDecision("m-2", sampleDecision("approve-plan")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AnswerDecisionVia("m-dir", "app", "t-1", "approve-plan", "approve", AnsweredViaDirector, "gm"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("director with a login: err = %v, want ErrInvalid", err)
+	}
+	first, err := s.AnswerDecisionVia("m-dir", "app", "t-1", "approve-plan", "approve\nSmall and safe.", AnsweredViaDirector, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Decisions("app", "t-1")
+	if err != nil || got[0].AnsweredVia != AnsweredViaDirector || got[0].AnsweredBy != "" || got[0].Choice != "approve" || got[0].Note != "Small and safe." {
+		t.Fatalf("Decisions = %+v, %v", got, err)
+	}
+	if replay, err := s.AnswerDecisionVia("m-dir", "app", "t-1", "approve-plan", "approve\nSmall and safe.", AnsweredViaDirector, ""); err != nil || replay != first {
+		t.Fatalf("replay = %+v, %v", replay, err)
+	}
+	if _, err := s.AnswerDecision("m-dir", "app", "t-1", "approve-plan", "approve\nSmall and safe."); !errors.Is(err, ErrMutationConflict) {
+		t.Fatalf("the same words from decide answer: err = %v, want ErrMutationConflict", err)
+	}
+	if _, err := s.AnswerDecisionVia("m-dir", "app", "t-1", "approve-plan", "approve\nSmall and safe.", AnsweredViaPage, "gm"); !errors.Is(err, ErrMutationConflict) {
+		t.Fatalf("the same words from the page: err = %v, want ErrMutationConflict", err)
+	}
+}
+
 // TestDecisionHolds: an open decision holds its task unless it is a question; an answered or void one never holds.
 func TestDecisionHolds(t *testing.T) {
 	kinds := []DecisionKind{"", DecisionApproval, DecisionReview, DecisionLoopExit, DecisionMerge, DecisionQuestion, DecisionAudit, DecisionGrant, DecisionFollowUps}

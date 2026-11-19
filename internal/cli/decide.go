@@ -24,6 +24,7 @@ const decideUsage = `usage:
   guildhall decide list --store <path> [--repo <id>]
   guildhall decide show --store <path> --repo <id> --task <id> --decision <id>
   guildhall decide answer --store <path> --repo <id> --task <id> --decision <id> --answer-file <path|->
+  guildhall decide accept <repo>/<task> <decision> --director --reason <text> (--store <path> --config <path> --state <dir>)
   guildhall decide defer --store <path> --repo <id> --task <id> --decision <id> --until-merged <repo>/<task>... --reason <text>
   guildhall decide undefer --store <path> --repo <id> --task <id> --decision <id>
   guildhall decide open --store <path> --repo <id> --task <id> (--question <text> | --question-file <path|->) [--option <text>]... [--recommend <option>] [--config <director.toml> --grant-option <option> --grant-step <id|all> --grant-tool <rule>... [--grant-until attempt|done] --grant-reason <text>]
@@ -52,6 +53,9 @@ func (a *App) decide(args []string) int {
 	}
 	if sub == "explain" {
 		return a.decideExplain(args[1:])
+	}
+	if sub == "accept" {
+		return a.decideAccept(args[1:])
 	}
 	flags := flag.NewFlagSet("decide "+sub, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)

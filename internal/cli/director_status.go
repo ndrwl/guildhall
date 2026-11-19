@@ -337,6 +337,49 @@ type statusTask struct {
 	// DeliveredBy, for a done one-PR task closed as already delivered, by the Director or a close decision, is the
 	// merged pull request's URL that shipped its change, or "no change needed" for one closed as needing none (docs/tasks.md#a-slice-already-delivered); omitted for any other task.
 	DeliveredBy string `json:"delivered_by,omitempty"`
+	// DirectorAccepted, for an open task, is the plan acceptance the Director last recorded itself with decide accept
+	// --director, telling the Guildmaster rather than asking them (docs/decisions/director-plan-acceptance.md), so
+	// that a Director after a handoff can still name it under What I did; omitted when it has none.
+	DirectorAccepted *statusDirectorAccepted `json:"director_accepted,omitempty"`
+}
+
+// statusDirectorAccepted is a plan the Director accepted on the Guildmaster's behalf: the decision, "accepted by the
+// Director" and the reason it gave.
+type statusDirectorAccepted struct {
+	Decision string `json:"decision"`
+	Text     string `json:"text"`
+	Reason   string `json:"reason"`
+}
+
+// readDirectorAccepted is each open task's latest plan acceptance answered with store.AnsweredViaDirector, keyed by
+// <repo>/<task>; the latest is the one whose answer receipt is newest.
+func readDirectorAccepted(s *store.Store, v store.DirectorView) (map[string]*statusDirectorAccepted, error) {
+	answered := map[string]uint64{}
+	for _, r := range v.Receipts {
+		if r.Operation == "answer-decision" {
+			answered[r.Repository+"/"+r.TaskID+"/"+r.Record] = r.Sequence
+		}
+	}
+	out := map[string]*statusDirectorAccepted{}
+	for _, t := range v.Tasks {
+		if t.State != store.TaskOpen {
+			continue
+		}
+		ds, err := s.Decisions(t.Repository, t.ID)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return nil, err
+		}
+		key, newest := t.Repository+"/"+t.ID, uint64(0)
+		for _, d := range ds {
+			if !d.Answered || d.AnsweredVia != store.AnsweredViaDirector {
+				continue
+			}
+			if seq := answered[key+"/decision/"+d.ID]; out[key] == nil || seq > newest {
+				out[key], newest = &statusDirectorAccepted{Decision: d.ID, Text: "accepted by the Director", Reason: d.Note}, seq
+			}
+		}
+	}
+	return out, nil
 }
 
 // statusSlices is where a multi-PR task stands: the slice being delivered, the total and each slice.
@@ -729,6 +772,7 @@ func readDirectorStatusRecords(ctx context.Context, p storeRecords, stateDir, cf
 	var hallmarks map[string]repoHallmarks
 	var taskSlices map[string]*statusSlices
 	var taskDelivered map[string]string
+	var accepted map[string]*statusDirectorAccepted
 	var managed store.ManagedView
 	var alerts []store.Decision
 	v, err := withRecords(p, true, now, func(s *store.Store) (store.DirectorView, error) {
@@ -751,6 +795,9 @@ func readDirectorStatusRecords(ctx context.Context, p storeRecords, stateDir, cf
 			return v, err
 		}
 		taskSlices, taskDelivered = readTaskSlices(s, v, filepath.Join(stateDir, "documents"), workflows)
+		if accepted, err = readDirectorAccepted(s, v); err != nil {
+			return v, err
+		}
 		var repos []string
 		for _, t := range v.Tasks {
 			if !slices.Contains(repos, t.Repository) {
@@ -867,7 +914,8 @@ func readDirectorStatusRecords(ctx context.Context, p storeRecords, stateDir, cf
 	var advance, retry, resume, wait, held, checks, deps, queued []needsMeItem
 	for _, t := range v.Tasks {
 		st := statusTask{Repository: t.Repository, ID: t.ID, Title: t.Title, State: t.State, Workflow: t.Workflow, Steps: []statusStep{}, Spend: store.NoSpend,
-			Slices: taskSlices[t.Repository+"/"+t.ID], DeliveredBy: taskDelivered[t.Repository+"/"+t.ID]}
+			Slices: taskSlices[t.Repository+"/"+t.ID], DeliveredBy: taskDelivered[t.Repository+"/"+t.ID],
+			DirectorAccepted: accepted[t.Repository+"/"+t.ID]}
 		if total, ok := spend[t.Repository+"/"+t.ID]; ok {
 			st.Spend = total
 		}

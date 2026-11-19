@@ -208,8 +208,11 @@ func webAnswered(d store.Decision) string {
 		what, _, _ = strings.Cut(strings.TrimSpace(d.Answer), "\n")
 		what = webCut(what, 80)
 	}
-	if d.AnsweredVia == store.AnsweredViaPage {
+	switch d.AnsweredVia {
+	case store.AnsweredViaPage:
 		return what + " (on the page, by " + d.AnsweredBy + ")"
+	case store.AnsweredViaDirector:
+		return what + " (" + directorAcceptedWord + ")"
 	}
 	return what + " (in chat or with decide answer)"
 }

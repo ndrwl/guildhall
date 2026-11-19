@@ -163,6 +163,8 @@ Commands:
                  hold an open decision out of needs_me until the named tasks merge, or lift that hold
   decide explain <repo>/<task> <decision> --store <path> --subject-digest <digest> (--text <md> | --file <path|->) [--recommend <option>]
                  record the Director's plain-English explanation of an open decision, shown on its task page
+  decide accept <repo>/<task> <decision> --director --reason <text> --copy <dir>
+                 accept a small feature's plan as the Director, telling the Guildmaster, where the repository opts in
   director status --json --store <path> --state <dir>
                  print the Director's status feed and what needs the Director or Guildmaster
   director start [runtime] [--tab] [--check] --copy <dir>

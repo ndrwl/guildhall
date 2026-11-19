@@ -917,6 +917,11 @@ func (d clerkData) inspect(c clerkPaths, ref store.TaskRef) (string, error) {
 				state = "void"
 			case dec.Answered && dec.AnsweredVia == store.AnsweredViaPage:
 				state = "answered on the page by " + dec.AnsweredBy
+			case dec.Answered && dec.AnsweredVia == store.AnsweredViaDirector:
+				state = directorAcceptedWord
+				if dec.Note != "" {
+					state += ": " + oneLine(dec.Note)
+				}
 			case dec.Answered:
 				state = "answered"
 			}
