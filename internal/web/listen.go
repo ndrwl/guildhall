@@ -33,7 +33,7 @@ func InTailnet(ip netip.Addr) bool {
 // Lookup resolves a host to its addresses, as net.Resolver.LookupNetIP does.
 type Lookup func(ctx context.Context, host string) ([]netip.Addr, error)
 
-// BindAddress resolves address, a host and port such as "andrew-lap-wsl.tail5da40a.ts.net:4388", with lookup, and
+// BindAddress resolves address, a host and port such as "host.tail.ts.net:4388", with lookup, and
 // returns the address to bind: its first resolved address with the port. It fails closed: an address with no host,
 // no port or a host that does not resolve is refused, and so is a host any of whose resolved addresses lies outside
 // Tailscale's ranges, with ErrNotTailnet naming it.

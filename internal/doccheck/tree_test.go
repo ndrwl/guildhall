@@ -2,8 +2,10 @@ package doccheck
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -92,4 +94,55 @@ func TestNoReversedClaims(t *testing.T) {
 		}
 	}
 	fail(t, "reversed claims", problems)
+}
+
+// privateScope is where no private host name or home-directory path may appear: the web package's tests and code,
+// whose fixtures use the neutral host.tail.ts.net, and the evidence files whose commands name the Claude Code program.
+// The same names elsewhere (workbench goldens, lanterns fixtures, config tests, docs and raw recorded evidence) are
+// left for a follow-up task.
+var privateScope = []string{
+	"internal/web",
+	"docs/evidence/claude-stop-hook-nudge-2026-11-05.txt",
+	"docs/evidence/claude-disallowed-tools-2026-11-04.txt",
+}
+
+var (
+	// tailnetName matches a Tailscale MagicDNS name; only the neutral fixture host is allowed, in any case.
+	tailnetName = regexp.MustCompile(`[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.ts\.net`)
+	// homePath matches a path into a user's home directory.
+	homePath = regexp.MustCompile(`/home/[^/\s"']+/`)
+)
+
+// neutralHost is the fixture tailnet name the tests use instead of a real machine's.
+const neutralHost = "host.tail.ts.net"
+
+// TestNoPrivateFixtures checks that the files in privateScope name no real tailnet machine and no home directory.
+func TestNoPrivateFixtures(t *testing.T) {
+	var problems []string
+	for _, p := range privateScope {
+		err := filepath.WalkDir(filepath.Join(repoRoot, filepath.FromSlash(p)), func(path string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			for i, line := range strings.Split(string(data), "\n") {
+				for _, name := range tailnetName.FindAllString(line, -1) {
+					if !strings.EqualFold(name, neutralHost) {
+						problems = append(problems, fmt.Sprintf("%s:%d: tailnet name %s, want %s", path, i+1, name, neutralHost))
+					}
+				}
+				if homePath.MatchString(line) {
+					problems = append(problems, fmt.Sprintf("%s:%d: home-directory path", path, i+1))
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	fail(t, "private fixtures", problems)
 }

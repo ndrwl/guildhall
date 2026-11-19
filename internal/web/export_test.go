@@ -20,7 +20,7 @@ import (
 const FixtureToken = "fixture-token"
 
 // FixtureAddress is AnsweringFixture's configured [web] address.
-const FixtureAddress = "andrew-lap-wsl.tail5da40a.ts.net:4388"
+const FixtureAddress = "host.tail.ts.net:4388"
 
 // AnsweringFixture is the fixture's server at FixtureAddress answering for the login guildmaster, told by id,
 // through a.

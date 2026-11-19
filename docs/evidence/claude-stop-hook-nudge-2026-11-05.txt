@@ -7,14 +7,14 @@ acceptEdits --settings <attempt>/claude-settings.json ...`, in a test copy whose
 which grants the Guildhall rules (guildhall ci log, result submit, result check, messages). The test binary is
 `guildhall` on PATH, so the settings' hooks, `guildhall messages hook` (PostToolUse) and `guildhall result hook`
 (Stop), run Guildhall's own code against the test copy's store. The Claude Code was the machine's
-/home/andrew/.local/bin/claude, which passed the wrapper's version probe (2.1.310 or later).
+`claude` on PATH (`command -v claude`), which passed the wrapper's version probe (2.1.310 or later).
 The prompt tells the model to run nothing, reply "stopping" and end its turn, and only after a steering message
 from Guildhall to acknowledge it and submit a succeeded result listing the pre-written spec.md.
 Pass criterion: the settings register the Stop hook; the store holds the one nudge from guildhall; the session goes
 on after "stopping", acknowledges the nudge and submits; the wrapper publishes a succeeded result.
 Run on 2026-11-05 by the d168 build--s2 attempt:
 
-$ go test ./internal/cli -run TestLiveClaudeNudged -v -count=1 -timeout 15m -claude-live -claude-program /home/andrew/.local/bin/claude
+$ go test ./internal/cli -run TestLiveClaudeNudged -v -count=1 -timeout 15m -claude-live -claude-program "$(command -v claude)"
 === RUN   TestLiveClaudeNudged
     result_hook_live_test.go:85: wrapper output:
         tool: Read /tmp/TestLiveClaudeNudged2393222971/001/director config/state/app/t1/plan-1/model/prompt.md

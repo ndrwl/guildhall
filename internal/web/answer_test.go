@@ -85,13 +85,13 @@ func request(h http.Handler, method, target, remote string, form url.Values, hea
 		body = strings.NewReader("")
 	}
 	r := httptest.NewRequest(method, target, body)
-	r.Host = "andrew-lap-wsl.tail5da40a.ts.net:4388"
+	r.Host = web.FixtureAddress
 	r.RemoteAddr = remote
 	if form != nil {
 		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
 	if headers == nil {
-		headers = map[string]string{"Origin": "http://andrew-lap-wsl.tail5da40a.ts.net:4388", "Sec-Fetch-Site": "same-origin"}
+		headers = map[string]string{"Origin": "http://" + web.FixtureAddress, "Sec-Fetch-Site": "same-origin"}
 	}
 	for k, v := range headers {
 		r.Header.Set(k, v)
@@ -221,7 +221,7 @@ func TestAnswerRecordsAndRedirects(t *testing.T) {
 // TestAnswerRefusals: each refusal writes nothing and shows the page again with its status, the reason on the ask
 // and the words kept in the box.
 func TestAnswerRefusals(t *testing.T) {
-	sameOrigin := map[string]string{"Origin": "http://andrew-lap-wsl.tail5da40a.ts.net:4388"}
+	sameOrigin := map[string]string{"Origin": "http://" + web.FixtureAddress}
 	for name, c := range map[string]struct {
 		remote  string
 		form    url.Values
@@ -234,7 +234,7 @@ func TestAnswerRefusals(t *testing.T) {
 		"no identity":        {remote: "192.0.2.1:1234", status: 403, reason: "only the Guildmaster&#39;s Tailscale login can answer"},
 		"bad token":          {form: url.Values{"token": {"stale"}}, status: 403, reason: "the page is out of date"},
 		"cross-origin":       {headers: map[string]string{"Origin": "http://evil.example", "Sec-Fetch-Site": "cross-site"}, status: 403, reason: "the answer did not come from this page"},
-		"other port":         {headers: map[string]string{"Origin": "http://andrew-lap-wsl.tail5da40a.ts.net:4387"}, status: 403, reason: "the answer did not come from this page"},
+		"other port":         {headers: map[string]string{"Origin": "http://host.tail.ts.net:4387"}, status: 403, reason: "the answer did not come from this page"},
 		"no origin headers":  {headers: map[string]string{}, status: 403, reason: "the answer did not come from this page"},
 		"null origin":        {headers: map[string]string{"Origin": "null"}, status: 403, reason: "the answer did not come from this page"},
 		"cross-site fetch":   {headers: map[string]string{"Sec-Fetch-Site": "same-site"}, status: 403, reason: "the answer did not come from this page"},
@@ -324,7 +324,7 @@ func TestForeignHostRefused(t *testing.T) {
 	for name, c := range map[string]struct{ host, origin string }{
 		"foreign host, foreign origin": {evil, "http://" + evil},
 		"foreign host, our origin":     {evil, "http://" + web.FixtureAddress},
-		"our name, other port":         {"andrew-lap-wsl.tail5da40a.ts.net:4387", "http://andrew-lap-wsl.tail5da40a.ts.net:4387"},
+		"our name, other port":         {"host.tail.ts.net:4387", "http://host.tail.ts.net:4387"},
 		"bare tailnet ip":              {"100.101.102.103:4388", "http://100.101.102.103:4388"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -474,6 +474,12 @@ func TestPickCards(t *testing.T) {
 	}
 	if !strings.Contains(plan, `<ul class="ol pk"><li class="rec"><label for="p-accept--s2-1-1-a">`) || !strings.Contains(plan, `name="act" value="accept-1"`) {
 		t.Errorf("the plan approval's card is not a pick beside its controls:\n%s", plan)
+	}
+	if !strings.Contains(plan, `<input type="radio" id="p-accept--s2-1-1-a" name="pick-1" value="" checked>`) {
+		t.Errorf("the plan approval's recommended pick is not checked:\n%s", plan)
+	}
+	if n := strings.Count(plan, " checked>"); n != 1 {
+		t.Errorf("%d checked picks on the plan card, want one", n)
 	}
 	ro := request(h, http.MethodGet, "/guildhall/d122", otherAddr, nil, nil).Body.String()
 	if strings.Contains(ro, "<input") || strings.Contains(ro, `class="ol pk"`) || !strings.Contains(ro, `<ul class="ol"><li class="rec"><span class="lt">(a)</span>`) {

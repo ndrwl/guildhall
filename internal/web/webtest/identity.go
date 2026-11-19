@@ -52,7 +52,7 @@ func RunIdentifier(t *testing.T, id web.Identifier, known map[string]string, unk
 		"private LAN":   "192.168.1.20:51000",
 		"public IPv6":   "[2001:db8::1]:443",
 		"no port":       "100.101.102.103",
-		"not an addr":   "andrew-lap-wsl:4388",
+		"not an addr":   "host:4388",
 		"empty":         "",
 		"option-shaped": "--json",
 	} {
