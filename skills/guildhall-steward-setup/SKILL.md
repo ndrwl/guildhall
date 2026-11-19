@@ -8,6 +8,7 @@ description: Use as the Steward when the Guildmaster asks to take over an existi
 A takeover adopts a running standalone Director copy into the roster as managed by you, keeping its store, tasks and local settings.
 It is one setup plan, approved by its exact digest: pause the session, wait for running attempts, back up the store, publish a first `managed.toml` with no managed key, enrol, reload, resume, and commit the roster entry.
 Keep every plan under your copy's `rollouts/` directory, one new directory per takeover, such as `rollouts/takeover-<director>`.
+Run every Steward command, such as `guildhall steward takeover`, with a 10-minute Bash timeout (600000 ms): each unreachable machine can take 2 minutes.
 
 ## Steps
 

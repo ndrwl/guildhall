@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,7 +12,9 @@ import (
 	"time"
 
 	"github.com/ndrwl/guildhall/internal/config"
+	"github.com/ndrwl/guildhall/internal/messaging"
 	"github.com/ndrwl/guildhall/internal/steward"
+	"github.com/ndrwl/guildhall/internal/steward/stewardtest"
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
@@ -211,5 +214,115 @@ func TestScheduledStewardMessages(t *testing.T) {
 	w.round()
 	if n := len(directorExternal(t, cs.director)); n != len(ms)+1 {
 		t.Errorf("a busy run sent no report: %d messages, want %d; stderr %s", n, len(ms)+1, stderr)
+	}
+}
+
+// outboxSetup is a two-machine roster, a and b, each with the copy alpha, reached through a Fleet in which a receives
+// every message and b refuses every connection, and a Steward store holding two pending entries to b/alpha and one
+// to a/alpha.
+type outboxSetup struct {
+	roster    *steward.Roster
+	fleet     *stewardtest.Fleet
+	storePath string
+	toA       string
+	toB       []string
+}
+
+func newOutboxSetup(t *testing.T) *outboxSetup {
+	t.Helper()
+	roster, err := steward.ParseRoster([]byte("schema_version = 1\n\n" +
+		"[[machine]]\nlabel = \"a\"\nssh_alias = \"guild-a\"\nos = \"linux\"\nroles = [\"director\"]\n\n" +
+		"[[machine.director]]\nname = \"alpha\"\ncopy_dir = \"/home/u/alpha\"\nrepositories = [\"app\"]\n\n" +
+		"[[machine]]\nlabel = \"b\"\nssh_alias = \"guild-b\"\nos = \"linux\"\nroles = [\"director\"]\n\n" +
+		"[[machine.director]]\nname = \"alpha\"\ncopy_dir = \"/home/u/alpha\"\nrepositories = [\"app\"]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &outboxSetup{roster: roster, fleet: stewardtest.NewFleet(), storePath: filepath.Join(t.TempDir(), stewardStoreFile)}
+	st, err := store.Open(s.storePath, store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s.fleet.Handle("guild-a", func(argv []string) ([]byte, bool, error) {
+		if argv[1] != "messages" || argv[2] != "receive" {
+			return nil, false, nil
+		}
+		out, err := json.Marshal(messaging.ReceiveResult{Schema: messaging.ReceiveSchema, Status: messaging.ReceiveDelivered,
+			Receipt: &store.Receipt{MutationID: "m-1", Operation: "receive-message"}})
+		return out, true, err
+	})
+	s.fleet.Refuse("guild-b")
+	queue := func(machine, key string) string {
+		r := steward.Report{Machine: machine, Director: "alpha", Kind: store.ReportRolloutFailed, Key: key,
+			Subject: "Rollout " + key + " failed", Text: "It failed."}
+		if problems := queueReports(s.storePath, []steward.Report{r}); len(problems) != 0 {
+			t.Fatal(problems)
+		}
+		return steward.ReportID(r)
+	}
+	s.toB = []string{queue("b", "one"), queue("b", "two")}
+	s.toA = queue("a", "three")
+	return s
+}
+
+// entries is the Steward store's outbox by id.
+func (s *outboxSetup) entries(t *testing.T) map[string]store.OutboxEntry {
+	t.Helper()
+	es, err := withStore(s.storePath, true, func(st *store.Store) ([]store.OutboxEntry, error) { return st.Outbox(true) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]store.OutboxEntry{}
+	for _, e := range es {
+		out[e.ID] = e
+	}
+	return out
+}
+
+// TestDeliverOutboxSkipsUnreachable: delivery skips the pending entries of a copy the round found unreachable, with
+// no copy or command to its machine and no attempt counted, logs one line for the copy, and still delivers to the
+// copy the round reached.
+func TestDeliverOutboxSkipsUnreachable(t *testing.T) {
+	s := newOutboxSetup(t)
+	round := &collectRound{CollectResult: steward.CollectResult{Copies: []steward.CopyCollection{
+		{Machine: "a", Director: "alpha"},
+		{Machine: "b", Director: "alpha", Error: "reading lesson list: fleet: guild-b: connection refused"},
+	}}}
+	problems := deliverOutbox(context.Background(), s.roster, s.fleet, s.fleet, s.storePath, t.TempDir(), round)
+	for _, c := range s.fleet.Calls() {
+		if strings.HasPrefix(c, "put guild-b:") || strings.HasPrefix(c, "run guild-b ") {
+			t.Errorf("delivery reached the unreachable machine: %s", c)
+		}
+	}
+	es := s.entries(t)
+	for _, id := range s.toB {
+		if e := es[id]; e.State != store.OutboxPending || e.Attempts != 0 || e.LastError != "" {
+			t.Errorf("entry to the unreachable copy %+v; want pending with no attempt", e)
+		}
+	}
+	if e := es[s.toA]; e.State != store.OutboxDelivered {
+		t.Errorf("entry to the reached copy %+v; want delivered", e)
+	}
+	if len(problems) != 1 || !strings.HasPrefix(problems[0], "b/alpha: 2 pending message(s) kept for the next round") {
+		t.Errorf("problems %q; want one line for b/alpha with 2 pending", problems)
+	}
+}
+
+// TestDeliverOutboxBusyRound: a run whose round found the lock busy has no reach to go by, so every pending entry is
+// attempted as before.
+func TestDeliverOutboxBusyRound(t *testing.T) {
+	s := newOutboxSetup(t)
+	deliverOutbox(context.Background(), s.roster, s.fleet, s.fleet, s.storePath, t.TempDir(), nil)
+	es := s.entries(t)
+	for _, id := range s.toB {
+		if e := es[id]; e.State != store.OutboxPending || e.Attempts != 1 || e.LastError == "" {
+			t.Errorf("entry to b %+v; want one failed attempt", e)
+		}
+	}
+	if e := es[s.toA]; e.State != store.OutboxDelivered {
+		t.Errorf("entry to the reached copy %+v; want delivered", e)
 	}
 }

@@ -415,10 +415,13 @@ The supervisor's scheduled run sends them as deterministic code, never the Stewa
 
 1. finds the reports: `rollout-failed` for each enrolled copy whose newest rollout receipt under `rollouts/` is `failed`, `verify_failed` or `reload_failed`, `unreachable-recovered` for each copy the round reached after it had been unreachable, by the round's own reads, for at least `[steward] report_unreachable_after` (one hour by default, at least a minute), and the [Director health](#director-health) reports `director-stuck`, `director-unhealthy` and `release-behind`;
 2. records each report in the Steward store's outbox, `pending`, under its id `<kind>.<first 16 hex digits of the sha256 of its copy and issue>`, so one issue on one copy is one message however often a run finds it;
-3. delivers every pending entry, one at a time: it copies the envelope with `scp` to `state/steward/message.json` in the copy, then runs the fixed [remote command](#remote-commands) `messages receive --copy <copy_dir>`, and records the copy's answer, `delivered` with its receipt or `refused` with its reason.
+3. delivers every pending entry, one at a time, except those to a copy the round's own reads found unreachable: it copies the envelope with `scp` to `state/steward/message.json` in the copy, then runs the fixed [remote command](#remote-commands) `messages receive --copy <copy_dir>`, and records the copy's answer, `delivered` with its receipt or `refused` with its reason.
 
 A refusal, such as an inbox the Director closed to the Steward or a full mailbox, is final and never retried.
 A delivery that fails, such as an unreachable or sleeping machine or a `guildhall` too old to know the command, stays `pending` with its error, and the next run retries it, so nothing is lost while a machine sleeps.
+The pending entries of a copy the round found unreachable are not attempted, so a sleeping machine costs a run one timeout, not one more per message: they stay `pending` with their attempt count and last error unchanged, the next run that reaches the copy delivers them, and the run logs one line per such copy.
+Unreachable means the same here as for [Director health](#director-health): any error in the round's reads or marks of the copy.
+A run whose round found the lock busy has no reach to go by and attempts every pending entry.
 `guildhall messages outbox [--all] --copy <steward copy>` lists the entries not delivered, or every one.
 `state/steward/` is made by the copy's `director enrol`, `config reload` and pending lists, since `scp` makes no directory.
 A copy that is not in the roster, standalone or removed, gets no Steward message.

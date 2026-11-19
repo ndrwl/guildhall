@@ -99,15 +99,23 @@ func queueReports(storePath string, reports []steward.Report) []string {
 
 // deliverOutbox delivers every pending outbox entry of the Steward store at storePath, one at a time, with t and run
 // to the copies of roster: each attempt is recorded, delivered with the copy's receipt, refused with its reason, which
-// is never retried, or kept pending with the error, which the next run retries.
-func deliverOutbox(ctx context.Context, roster *steward.Roster, t steward.Copier, run steward.Runner, storePath, tmpDir string) []string {
+// is never retried, or kept pending with the error, which the next run retries. An entry to a copy round found
+// unreachable is not attempted: it stays pending with its attempts and last error unchanged, and one line per such
+// copy says how many were kept.
+func deliverOutbox(ctx context.Context, roster *steward.Roster, t steward.Copier, run steward.Runner, storePath, tmpDir string, round *collectRound) []string {
 	entries, err := withStore(storePath, true, func(s *store.Store) ([]store.OutboxEntry, error) { return s.Outbox(false) })
 	if err != nil {
 		return []string{fmt.Sprintf("outbox: %v", err)}
 	}
+	unreachable := unreachableCopies(round)
+	kept := map[string]int{}
 	var problems []string
 	for _, e := range entries {
 		if e.State != store.OutboxPending {
+			continue
+		}
+		if unreachable[e.To] {
+			kept[e.To]++
 			continue
 		}
 		var receipt []byte
@@ -133,6 +141,9 @@ func deliverOutbox(ctx context.Context, roster *steward.Roster, t steward.Copier
 		if ctx.Err() != nil {
 			break
 		}
+	}
+	for _, to := range slices.Sorted(maps.Keys(kept)) {
+		problems = append(problems, fmt.Sprintf("%s: %d pending message(s) kept for the next round: this round could not reach the copy", to, kept[to]))
 	}
 	return problems
 }
@@ -167,5 +178,5 @@ func (a *App) runStewardMessages(ctx context.Context, c *steward.Collector, cfg 
 		return append(problems, err.Error())
 	}
 	defer func() { _ = os.RemoveAll(tmp) }()
-	return append(problems, deliverOutbox(ctx, c.Roster, c.Transport, c.Runner, storePath, tmp)...)
+	return append(problems, deliverOutbox(ctx, c.Roster, c.Transport, c.Runner, storePath, tmp, round)...)
 }

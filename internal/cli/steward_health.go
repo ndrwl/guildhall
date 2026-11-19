@@ -12,18 +12,27 @@ import (
 	"github.com/ndrwl/guildhall/internal/store"
 )
 
+// unreachableCopies is the copies the scheduled run's round could not reach, by "<machine>/<director>": every copy
+// with any error in the round's reads or marks of it. A nil round, one a busy lock skipped, found none. Director
+// health and outbox delivery both skip these copies.
+func unreachableCopies(round *collectRound) map[string]bool {
+	out := map[string]bool{}
+	if round == nil {
+		return out
+	}
+	for _, cc := range round.Copies {
+		if cc.Error != "" {
+			out[steward.Destination(cc.Machine, cc.Director)] = true
+		}
+	}
+	return out
+}
+
 // readDirectorHealth reads, with run, the status feed of each copy in roster the scheduled run's round did not
 // find unreachable, and returns each copy's DirectorHealth by "<machine>/<director>" with what went wrong reading
 // the others. A copy whose read fails keeps its conditions as they were (docs/steward.md#director-health).
 func readDirectorHealth(ctx context.Context, roster *steward.Roster, run steward.Runner, round *collectRound) (map[string]steward.DirectorHealth, []string) {
-	unreachable := map[string]bool{}
-	if round != nil {
-		for _, cc := range round.Copies {
-			if cc.Error != "" {
-				unreachable[steward.Destination(cc.Machine, cc.Director)] = true
-			}
-		}
-	}
+	unreachable := unreachableCopies(round)
 	out := map[string]steward.DirectorHealth{}
 	var problems []string
 	for _, m := range roster.Machines {
