@@ -354,3 +354,216 @@ func TestCreateTaskGrantRefusesASliceStep(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+// proposedGrant is question q1 of task offering yes and no, and grant g1 on build that its option yes proposes.
+func proposedGrant(task string) (Decision, TaskGrant) {
+	d := Decision{Repository: "app", TaskID: task, ID: "q1", Kind: DecisionQuestion, Options: []string{"yes", "no"}, Question: "Let the build fetch modules?"}
+	g := buildGrant(task, "Bash(go:*)", "WebFetch")
+	g.ApprovingOption = "yes"
+	return d, g
+}
+
+// TestOpenQuestionGranting: the question and its grant are written together, the grant pending with the question as
+// its decision and no grant-<id> decision, the question text names the exact grant, a retry replays and another
+// grant under the same mutation id conflicts.
+func TestOpenQuestionGranting(t *testing.T) {
+	s := parkFixture(t)
+	d, g := proposedGrant("t-1")
+	rc, err := s.OpenQuestionGranting("decision-open:app:t-1:q1", d, g, grantSteps, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rc.Record != "decision/q1" || rc.TaskID != "t-1" {
+		t.Errorf("receipt = %+v", rc)
+	}
+	if again, err := s.OpenQuestionGranting("decision-open:app:t-1:q1", d, g, grantSteps, nil, nil); err != nil || again != rc {
+		t.Errorf("replay = %+v, %v; want %+v", again, err, rc)
+	}
+	other := g
+	other.Until = GrantUntilDone
+	if _, err := s.OpenQuestionGranting("decision-open:app:t-1:q1", d, other, grantSteps, nil, nil); !errors.Is(err, ErrMutationConflict) {
+		t.Errorf("another grant under the same id: err = %v", err)
+	}
+	if _, err := s.OpenDecision("decision-open:app:t-1:q1", d); !errors.Is(err, ErrMutationConflict) {
+		t.Errorf("the question without its grant under the same id: err = %v", err)
+	}
+	decisions, err := s.Decisions("app", "t-1")
+	if err != nil || len(decisions) != 1 {
+		t.Fatalf("decisions = %+v, %v", decisions, err)
+	}
+	const sentence = "Let the build fetch modules?\n\nChoosing `yes` also approves grant g1: step `build`, these extra allowed tools: Bash(go:*), WebFetch, " +
+		"until the first attempt of the step bound after approval has an outcome. Reason: The probe needs go."
+	if q := decisions[0]; q.ID != "q1" || q.Kind != DecisionQuestion || q.Question != sentence || q.Question != QuestionWithGrant(d.Question, g) {
+		t.Errorf("question = %+v", q)
+	}
+	st := grantStatus(t, s, "t-1", "g1")
+	if st.State != GrantPending || st.Decision != "q1" || st.ApprovingOption != "yes" || st.ApprovedAt != nil || !slices.Equal(st.Rules, g.Rules) {
+		t.Errorf("status = %+v", st)
+	}
+	// The proposal is an open grant on build: an ordinary create for an overlapping step is refused, naming it.
+	differing := buildGrant("t-1", "Bash(go:*)")
+	differing.ID = "g2"
+	if _, err := s.CreateTaskGrant("task-grant:app:t-1:g2", differing, grantSteps); !errors.Is(err, ErrExists) || !strings.Contains(err.Error(), "g1") {
+		t.Errorf("create over the pending proposal: err = %v", err)
+	}
+	// A grant made with its own decision is approved by approve, never by another option.
+	differing.Step, differing.ApprovingOption = "plan", "yes"
+	if _, err := s.CreateTaskGrant("task-grant:app:t-1:g2", differing, grantSteps); !errors.Is(err, ErrInvalid) {
+		t.Errorf("create with an approving option: err = %v", err)
+	}
+	g.ID, g.Step, g.Until = "g9", GrantAllSteps, GrantUntilDone
+	if q := QuestionWithGrant("Q?", g); !strings.Contains(q, "also approves grant g9: every claude step,") || !strings.Contains(q, "until the task is merged or closed") {
+		t.Errorf("all-steps sentence = %q", q)
+	}
+}
+
+// TestOpenQuestionGrantingRefusals: every refusal, of the question or of the grant, writes neither.
+func TestOpenQuestionGrantingRefusals(t *testing.T) {
+	s := parkFixture(t)
+	planGrant := TaskGrant{Repository: "app", TaskID: "t-1", ID: "g1", Step: "plan", Rules: []string{"Bash(go:*)"}, Reason: "Plan probes.", Until: GrantUntilAttempt}
+	if _, err := s.CreateTaskGrant("task-grant:app:t-1:g1", planGrant, grantSteps); err != nil {
+		t.Fatal(err)
+	}
+	for name, tc := range map[string]struct {
+		edit  func(*Decision, *TaskGrant)
+		steps []string
+		want  error
+	}{
+		"not a question":       {func(d *Decision, g *TaskGrant) { d.Kind = DecisionGrant }, grantSteps, ErrInvalid},
+		"no grant option":      {func(d *Decision, g *TaskGrant) { g.ApprovingOption = "" }, grantSteps, ErrInvalid},
+		"unknown grant option": {func(d *Decision, g *TaskGrant) { g.ApprovingOption = "maybe" }, grantSteps, ErrInvalid},
+		"other task":           {func(d *Decision, g *TaskGrant) { g.TaskID = "t-3" }, grantSteps, ErrInvalid},
+		"refused rule":         {func(d *Decision, g *TaskGrant) { g.Rules = []string{"Bash(gh:*)"} }, grantSteps, ErrInvalid},
+		"repeated rule":        {func(d *Decision, g *TaskGrant) { g.Rules = []string{"WebFetch", "WebFetch"} }, grantSteps, ErrInvalid},
+		"blank reason":         {func(d *Decision, g *TaskGrant) { g.Reason = " " }, grantSteps, ErrInvalid},
+		"all until attempt":    {func(d *Decision, g *TaskGrant) { g.Step = GrantAllSteps }, grantSteps, ErrInvalid},
+		"all without steps":    {func(d *Decision, g *TaskGrant) { g.Step, g.Until = GrantAllSteps, GrantUntilDone }, nil, ErrInvalid},
+		"step not claude":      {func(d *Decision, g *TaskGrant) { g.Step = "deliver" }, grantSteps, ErrInvalid},
+		"slice step":           {func(d *Decision, g *TaskGrant) { g.Step = "build--s2" }, grantSteps, ErrInvalid},
+		"decision given":       {func(d *Decision, g *TaskGrant) { g.Decision = "q1" }, grantSteps, ErrInvalid},
+		"invalid question":     {func(d *Decision, g *TaskGrant) { d.Question = " " }, grantSteps, ErrInvalid},
+		"grant id used":        {func(d *Decision, g *TaskGrant) { g.ID = "g1" }, grantSteps, ErrExists},
+		"overlapping step":     {func(d *Decision, g *TaskGrant) { g.Step = "plan" }, grantSteps, ErrExists},
+		"overlapping all":      {func(d *Decision, g *TaskGrant) { g.Step, g.Until = GrantAllSteps, GrantUntilDone }, grantSteps, ErrExists},
+		"closed task":          {func(d *Decision, g *TaskGrant) { d.TaskID, g.TaskID = "t-2", "t-2" }, grantSteps, ErrInvalid},
+		"too long with grant":  {func(d *Decision, g *TaskGrant) { d.Question = strings.Repeat("x", MaxTextBytes-20) }, grantSteps, ErrInvalid},
+	} {
+		d, g := proposedGrant("t-1")
+		g.ID = "g2"
+		tc.edit(&d, &g)
+		if _, err := s.OpenQuestionGranting("bad-"+strings.ReplaceAll(name, " ", "-"), d, g, tc.steps, nil, nil); !errors.Is(err, tc.want) {
+			t.Errorf("%s: err = %v, want %v", name, err, tc.want)
+		}
+	}
+	// The question id taken by another decision refuses the grant too.
+	d, g := proposedGrant("t-1")
+	d.ID, g.ID, g.Step = "grant-g1", "g2", "review"
+	if _, err := s.OpenQuestionGranting("bad-question-id", d, g, grantSteps, nil, nil); !errors.Is(err, ErrExists) {
+		t.Errorf("question id used: err = %v", err)
+	}
+	if grants, err := s.TaskGrants("app", ""); err != nil || len(grants) != 1 {
+		t.Errorf("grants after refusals = %+v, %v", grants, err)
+	}
+	if d, err := s.AllDecisions("app"); err != nil || len(d) != 1 || d[0].ID != "grant-g1" {
+		t.Errorf("decisions after refusals = %+v, %v", d, err)
+	}
+}
+
+// TestQuestionGrantStates: a proposed grant is pending while its question is unanswered or deferred, active with its
+// approval time once the answer chooses the grant option, rejected by another option or free text, never active
+// once the question is void, and revoked when revoked before the answer.
+func TestQuestionGrantStates(t *testing.T) {
+	s, _ := newStore(t)
+	for _, id := range []string{"t-1", "t-2", "t-3", "t-4", "t-5"} {
+		mustCreate(t, s, "task-"+id, sampleTask("app", id))
+		d, g := proposedGrant(id)
+		if _, err := s.OpenQuestionGranting("open-"+id, d, g, grantSteps, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	do := func(m string, f func(string) (Receipt, error)) {
+		t.Helper()
+		if _, err := f(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	state := func(task string) TaskGrantStatus { t.Helper(); return grantStatus(t, s, task, "g1") }
+
+	// t-1: deferred is still pending; then the grant option approves it, at the answer's commit time.
+	do("defer-1", func(m string) (Receipt, error) {
+		return s.DeferDecision(m, "app", "t-1", "q1", "Later.", []TaskRef{{Repository: "app", ID: "t-2"}}, 0)
+	})
+	if st := state("t-1"); st.State != GrantPending {
+		t.Errorf("deferred: %+v", st)
+	}
+	rc, err := s.AnswerDecisionVia("answer-1", "app", "t-1", "q1", "yes\nGo ahead.", AnsweredViaPage, "gm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st := state("t-1"); st.State != GrantActive || st.ApprovedAt == nil || !st.ApprovedAt.Equal(rc.CommittedAt) {
+		t.Errorf("grant option chosen: %+v, answer committed %v", st, rc.CommittedAt)
+	}
+	if v, err := s.DirectorView(); err != nil || len(v.Grants) != 1 || v.Grants[0].TaskID != "t-1" || v.Grants[0].ApprovedAt == nil {
+		t.Errorf("view grants = %+v, %v", v.Grants, err)
+	}
+	do("bind-1", func(m string) (Receipt, error) { return s.BindTaskGrant(m, "app", "t-1", "g1", "build", 1) })
+
+	// t-2: another option rejects it, and frees the step for a new grant.
+	do("answer-2", func(m string) (Receipt, error) { return s.AnswerDecision(m, "app", "t-2", "q1", "no") })
+	if st := state("t-2"); st.State != GrantRejected || st.ApprovedAt != nil {
+		t.Errorf("other option: %+v", st)
+	}
+	next := buildGrant("t-2", "Bash(go:*)")
+	next.ID = "g2"
+	do("grant-2", func(m string) (Receipt, error) { return s.CreateTaskGrant(m, next, grantSteps) })
+
+	// t-3: a free-text answer rejects it.
+	do("answer-3", func(m string) (Receipt, error) {
+		return s.AnswerDecision(m, "app", "t-3", "q1", "Not sure yet, ask me tomorrow.")
+	})
+	if st := state("t-3"); st.State != GrantRejected {
+		t.Errorf("free text: %+v", st)
+	}
+
+	// t-4: a void question leaves it never active.
+	do("void-4", func(m string) (Receipt, error) { return s.VoidDecision(m, "app", "t-4", "q1", "Superseded.") })
+	if st := state("t-4"); st.State == GrantActive {
+		t.Errorf("void question: %+v", st)
+	}
+	if _, err := s.BindTaskGrant("bind-4", "app", "t-4", "g1", "build", 1); !errors.Is(err, ErrInvalid) {
+		t.Errorf("bind after a void question: err = %v", err)
+	}
+
+	// t-5: revoked before the answer, choosing the grant option activates nothing.
+	do("revoke-5", func(m string) (Receipt, error) { return s.RevokeTaskGrant(m, "app", "t-5", "g1", "Not needed.") })
+	do("answer-5", func(m string) (Receipt, error) { return s.AnswerDecision(m, "app", "t-5", "q1", "yes") })
+	if st := state("t-5"); st.State != GrantRevoked {
+		t.Errorf("revoked then chosen: %+v", st)
+	}
+}
+
+// TestGrantApprovingOptionState: a grant with no approving option, as every grant recorded before questions could
+// propose one, still needs approve; with one, only that option approves it.
+func TestGrantApprovingOptionState(t *testing.T) {
+	open := Task{State: TaskOpen}
+	answered := func(choice string) *Decision { return &Decision{Answered: true, Choice: choice} }
+	old := TaskGrant{Until: GrantUntilDone}
+	if got := old.State(answered(GrantApprove), open, nil); got != GrantActive {
+		t.Errorf("old grant, approve: %s", got)
+	}
+	if got := old.State(answered("yes"), open, nil); got != GrantRejected {
+		t.Errorf("old grant, yes: %s", got)
+	}
+	proposed := TaskGrant{Until: GrantUntilDone, ApprovingOption: "yes"}
+	if got := proposed.State(answered("yes"), open, nil); got != GrantActive {
+		t.Errorf("proposed grant, yes: %s", got)
+	}
+	for _, choice := range []string{GrantApprove, "no", ""} {
+		if got := proposed.State(answered(choice), open, nil); got != GrantRejected {
+			t.Errorf("proposed grant, %q: %s", choice, got)
+		}
+	}
+	if got := proposed.State(&Decision{Void: true}, open, nil); got != GrantPending {
+		t.Errorf("proposed grant, void question: %s", got)
+	}
+}

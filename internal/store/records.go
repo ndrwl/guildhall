@@ -578,11 +578,26 @@ func (s *Store) OpenDecision(mutationID string, d Decision) (Receipt, error) {
 // part of the request digest: it is derived from the decision, so a retry replays as OpenDecision's would; rec's
 // option and digest are.
 func (s *Store) OpenDecisionSaying(mutationID string, d Decision, say *Saying, rec *Recommendation) (Receipt, error) {
+	return s.openDecision(mutationID, d, say, rec, nil)
+}
+
+// openDecision is OpenDecisionSaying that, when grant is not nil, also records it as the grant d proposes
+// (OpenQuestionGranting, which checks it first): d's question gains QuestionWithGrant's sentence, the grant's
+// Decision is d's id, and the request carries the grant beside the decision, so without one the request digest is
+// OpenDecisionSaying's as before.
+func (s *Store) openDecision(mutationID string, d Decision, say *Saying, rec *Recommendation, grant *TaskGrant) (Receipt, error) {
 	if err := validateIDs(d.Repository, d.TaskID, d.ID); err != nil {
 		return Receipt{}, err
 	}
 	if err := validateDecision(d); err != nil {
 		return Receipt{}, err
+	}
+	stored := d
+	if grant != nil {
+		stored.Question = QuestionWithGrant(d.Question, *grant)
+		if err := validateText("question with its grant", stored.Question, MaxTextBytes); err != nil {
+			return Receipt{}, err
+		}
 	}
 	if say != nil {
 		if err := validateSaying(*say); err != nil {
@@ -598,7 +613,8 @@ func (s *Store) OpenDecisionSaying(mutationID string, d Decision, say *Saying, r
 	req := struct {
 		Decision
 		Recommendation *recommending `json:"recommendation,omitempty"`
-	}{Decision: d}
+		Grant          *TaskGrant    `json:"grant,omitempty"`
+	}{Decision: d, Grant: grant}
 	if rec != nil {
 		r := *rec
 		r.Repository, r.TaskID, r.Decision = repository, taskID, id
@@ -620,8 +636,15 @@ func (s *Store) OpenDecisionSaying(mutationID string, d Decision, say *Saying, r
 		if decisions.Get(key) != nil {
 			return fmt.Errorf("%w: decision %q of %s/%s", ErrExists, id, repository, taskID)
 		}
-		if err := putJSON(decisions, key, d); err != nil {
+		if err := putJSON(decisions, key, stored); err != nil {
 			return err
+		}
+		if grant != nil {
+			g := *grant
+			g.Decision = id
+			if err := putNewTaskGrant(tx, g); err != nil {
+				return err
+			}
 		}
 		if err := s.mirrorConversation(tx, r, repository, taskID, say); err != nil {
 			return err
