@@ -16,7 +16,7 @@ func TestApprovalLoopExitAcceptedSpec(t *testing.T) {
 			plan := planExpectation(t, interptest.Succeed("planned", interptest.File{Path: "spec.md", Data: specV1(t)}))
 			plan2 := plan
 			plan2.Attempt = 2
-			plan2.Inputs = map[string]string{"feedback": "sha256:" + sum([]byte("changes_requested"))}
+			plan2.Inputs = map[string]string{"feedback": "sha256:" + sum([]byte("changes_requested")), "previous": "sha256:" + sum(specV1(t))}
 			e := newEnvDefinition(t, b, loadWorkflow(t, "loop"), plan, plan2, buildExp(t, 1, head, ""))
 			e.advance(t, interp.Event{Kind: interp.TaskCreated})
 			e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1})

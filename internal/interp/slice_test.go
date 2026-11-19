@@ -530,9 +530,10 @@ func (o failingAfterFront) Send(to store.Recipient, m messaging.Envelope) (store
 	return failingOutbox{}.Send(to, m)
 }
 
-// planAgain is plan's attempt 2 after a send-back, writing spec.
-func planAgain(spec string) interptest.Expectation {
-	return interptest.Expectation{Step: "plan", Attempt: 2, Profile: "planner", Inputs: map[string]string{interp.FeedbackPort: interptest.AnyDigest},
+// planAgain is plan's attempt 2 after a send-back, given the previous spec on previous and writing spec.
+func planAgain(previous, spec string) interptest.Expectation {
+	return interptest.Expectation{Step: "plan", Attempt: 2, Profile: "planner",
+		Inputs:    map[string]string{interp.FeedbackPort: interptest.AnyDigest, interp.PreviousPort: "sha256:" + sum([]byte(previous))},
 		Standards: []string{"standards/go.md"}, Respond: interptest.Succeed("planned again", interptest.File{Path: "spec.md", Data: []byte(spec)})}
 }
 
@@ -567,7 +568,8 @@ func TestMultiSliceSpecRefusedWithoutARange(t *testing.T) {
 }
 
 // TestReplanFromASlice: sent back to plan from slice 2, a revised spec that changes slice 1's merged entry is refused,
-// and one that rewrites slices 2 and 3 is accepted once more, after which slice 2's build runs again under it.
+// and one that rewrites slices 2 and 3 is accepted once more, after which slice 2's build runs again under it. The new
+// plan attempt is given the accepted spec on previous, so it can keep the merged slices' entries byte for byte.
 func TestReplanFromASlice(t *testing.T) {
 	changedFirst := strings.Replace(threeSlices, "the parser; about 100", "a bigger parser; about 150", 1)
 	rewritten := strings.Replace(strings.Replace(threeSlices, "the engine; about 200", "a smaller engine; about 150", 1), "the views; about 100", "the views and docs; about 150", 1)
@@ -576,7 +578,7 @@ func TestReplanFromASlice(t *testing.T) {
 		refused    bool
 	}{{"changes a merged slice", changedFirst, true}, {"rewrites the unmerged slices", rewritten, false}} {
 		t.Run(c.name, func(t *testing.T) {
-			exps := append(sliceScript(t, threeSlices, 1, 2), planAgain(c.spec))
+			exps := append(sliceScript(t, threeSlices, 1, 2), planAgain(threeSlices, c.spec))
 			if !c.refused {
 				d := "sha256:" + sum([]byte(c.spec))
 				exps = append(exps, interptest.Expectation{Step: "build--s2", Attempt: 2, Profile: "builder", Inputs: map[string]string{"spec": d}, Standards: []string{"standards/go.md"},

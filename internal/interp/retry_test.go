@@ -232,10 +232,10 @@ func TestRetryIsRefusedUnlessTheLatestAttemptFailedOrStopped(t *testing.T) {
 }
 
 // TestRetryCarriesPendingFeedback: a looped attempt that failed did not serve the feedback it was given,
-// so the retried attempt is given it again.
+// so the retried attempt is given it again, with the same previous spec.
 func TestRetryCarriesPendingFeedback(t *testing.T) {
 	words := "changes_requested\nTighten the scope."
-	feedback := map[string]string{"feedback": "sha256:" + sum([]byte(words))}
+	feedback := map[string]string{"feedback": "sha256:" + sum([]byte(words)), "previous": "sha256:" + sum(specV1(t))}
 	v2, err := os.ReadFile(filepath.Join(interptest.Testdata(), "docs", "spec-v2.md"))
 	if err != nil {
 		t.Fatal(err)
@@ -252,4 +252,35 @@ func TestRetryCarriesPendingFeedback(t *testing.T) {
 	want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 2}), interp.Next{Wait: interp.WaitDirector, Step: "plan", Attempt: 2})
 	want(t, e.advance(t, retried("plan", 2, "")), interp.Next{Wait: interp.WaitAttempt, Step: "plan", Attempt: 3})
 	want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 3}), interp.Next{Wait: interp.WaitDecision, Step: "accept", Decision: "accept-2"})
+}
+
+// TestPendingFeedbackWithoutASpecGivesNoPrevious: a plan attempt with pending feedback is given plan's latest
+// recorded spec on previous only when there is one. Here plan-1 failed without recording a spec and send-back
+// feedback for it is on record, so plan-2 is given the feedback and no previous, and the missing spec is no error.
+func TestPendingFeedbackWithoutASpecGivesNoPrevious(t *testing.T) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			words := []byte("Plan it again from scratch.")
+			plan2 := interptest.Expectation{Step: "plan", Attempt: 2, Profile: "planner", Inputs: map[string]string{interp.FeedbackPort: "sha256:" + sum(words)},
+				Standards: []string{"standards/go.md"}, Respond: interptest.Fail("no plan")}
+			e := newEnv(t, b, planExpectation(t, interptest.Fail("no plan")), plan2)
+			e.advance(t, interp.Event{Kind: interp.TaskCreated})
+			want(t, e.advance(t, interp.Event{Kind: interp.AttemptResult, Step: "plan", Attempt: 1}), interp.Next{Wait: interp.WaitDirector, Step: "plan", Attempt: 1})
+			// The engine records send-back feedback only for a succeeded attempt, which always has a spec; record it
+			// directly so the plan's next attempt has pending feedback and no spec to give as previous.
+			name := interp.SendBackName("plan", 1)
+			doc := store.DocumentRef{Repository: "app", TaskID: "t7", Name: name, Path: "tasks/app/t7/" + name + ".md", SHA256: sum(words)}
+			file := filepath.Join(e.eng.DocumentDir, filepath.FromSlash(doc.Path))
+			if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(file, words, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := e.h.Records.PutDocument("document:"+name, doc); err != nil {
+				t.Fatal(err)
+			}
+			want(t, e.advance(t, retried("plan", 1, "")), interp.Next{Wait: interp.WaitAttempt, Step: "plan", Attempt: 2})
+		})
+	}
 }

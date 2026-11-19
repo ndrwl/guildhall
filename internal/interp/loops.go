@@ -22,7 +22,8 @@ const (
 	// FeedbackPort carries each blocking outcome, or Guildmaster answer, that sent the task back to this step.
 	FeedbackPort = "feedback"
 	// PreviousPort carries a review step's own previous outcome, whose findings the new outcome dispositions, and to a
-	// hallmark step the report of the repository's previous done hallmark (previousReport).
+	// hallmark step the report of the repository's previous done hallmark (previousReport), to a Director stage a loop
+	// went back to its own latest outputs, and to a plan step a loop or send-back went back to its latest recorded spec.
 	PreviousPort = "previous"
 	// RulingsPort carries the Director's rulings on findings of the previous outcome, as a JSON array of
 	// store.Ruling; a finding the new outcome keeps open (unresolved or disputed) contests its ruling.
@@ -140,8 +141,9 @@ func (r *run) boundInputs(b binding) []render.Input {
 // hallmark report, when there is one, and the task's baseline; for a review step its previous outcome and
 // the rulings on it, recorded first as document <step>-<n>-rulings, then every loop it has not yet served; for a
 // Director stage a loop went back to, its own latest outputs as previous and the document each loop's blocking result
-// was bound to as reviewed, so the stage resumes from them rather than starting over; then the task's context, when it
-// has any, and its linked documents, when it has any.
+// was bound to as reviewed, so the stage resumes from them rather than starting over; for a plan step a loop or
+// send-back went back to, its latest recorded spec as previous, so the planner revises it and keeps merged slices'
+// entries; then the task's context, when it has any, and its linked documents, when it has any.
 func (r *run) extras(s workflow.Step, n int) ([]render.Input, error) {
 	var out []render.Input
 	if p, err := r.previousReport(s, n); err != nil {
@@ -187,6 +189,11 @@ func (r *run) extras(s workflow.Step, n int) ([]render.Input, error) {
 			}
 		}
 		out = append(out, reviewed...)
+	}
+	if s.Type == "plan" && len(pending) > 0 {
+		if doc, _, err := r.output(s.ID, "spec"); err == nil {
+			out = append(out, render.Input{Port: PreviousPort, Name: doc.Path, SHA256: doc.SHA256, Path: filepath.Join(r.e.DocumentDir, filepath.FromSlash(doc.Path))})
+		}
 	}
 	c, err := r.contextInput()
 	if err != nil {

@@ -247,7 +247,7 @@ func TestDirectorStageRetryPromptSaysWhy(t *testing.T) {
 // has no retry section.
 func TestRerunWithoutRetryHasNoRetrySection(t *testing.T) {
 	words := "changes_requested\nTighten the scope."
-	feedback := map[string]string{"feedback": "sha256:" + sum([]byte(words))}
+	feedback := map[string]string{"feedback": "sha256:" + sum([]byte(words)), "previous": "sha256:" + sum(specV1(t))}
 	plan2 := interptest.Expectation{Step: "plan", Attempt: 2, Profile: "planner", Inputs: feedback,
 		Standards: []string{"standards/go.md"}, Respond: interptest.Fail("no plan")}
 	e := newEnvDefinition(t, backends[0], loadWorkflow(t, "loop"), planExpectation(t, interptest.Succeed("planned", interptest.File{Path: "spec.md", Data: specV1(t)})), plan2)
