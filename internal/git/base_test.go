@@ -2,6 +2,7 @@ package git_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -66,6 +67,47 @@ func TestBaseProgram(t *testing.T) {
 		w.Remote = filepath.Join(t.TempDir(), "missing.git")
 		if got := base(t, w); got != moved {
 			t.Errorf("Base without the remote = %s, want %s", got, moved)
+		}
+	})
+	t.Run("a head rebased past a policy change changes the file from its recorded base but not from the tip it was rebased onto", func(t *testing.T) {
+		p := git.Program{}
+		w, start := arrangeWorkspace(t, repositories)
+		ensure(t, w)
+		original := repo{t, w.Dir, global}.commit("feature", map[string]string{"feature.txt": "feature\n"})
+		// Another task's policy change lands on the remote's default branch, and a reused workspace fetches it.
+		clone := repo{t, t.TempDir(), global}
+		clone.run("clone", "-q", w.Remote, ".")
+		if err := os.MkdirAll(filepath.Join(clone.dir, ".guildhall"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		onto := clone.commit("policies", map[string]string{".guildhall/policies.md": "- a rule\n"})
+		clone.run("push", "-q", "origin", "HEAD:trunk")
+		ensure(t, w)
+		rb, err := p.Rebase(ctx, git.Replay{Repository: w.Repository, Base: onto, Head: original})
+		if err != nil || rb.Commit == "" {
+			t.Fatalf("Rebase = %+v, %v", rb, err)
+		}
+		if err := p.Adopt(ctx, w, original, rb.Commit); err != nil {
+			t.Fatalf("Adopt = %v", err)
+		}
+		const path = ".guildhall/policies.md"
+		changes := func(t *testing.T, base, head string) bool {
+			t.Helper()
+			got, err := p.Changes(ctx, w.Repository, base, head, path)
+			if err != nil {
+				t.Fatalf("Changes(%s, %s) = %v", base, head, err)
+			}
+			return got
+		}
+		if changes(t, onto, rb.Commit) {
+			t.Error("the rebased head changes the policy file from the tip it was rebased onto")
+		}
+		if changes(t, start, original) {
+			t.Error("the original head changes the policy file from its base")
+		}
+		// The diff from the task's old base counts the default branch's own change: why the guard reads the link's onto.
+		if !changes(t, start, rb.Commit) {
+			t.Error("the rebased head does not change the policy file from the old base")
 		}
 	})
 	t.Run("a reused workspace whose remote is unreachable is still reused", func(t *testing.T) {

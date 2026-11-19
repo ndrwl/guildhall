@@ -180,3 +180,81 @@ func TestRebuiltPolicyChangeCarriesOnlyTheGuildmaster(t *testing.T) {
 		}
 	})
 }
+
+// TestQueueRebasedHeadJudgedFromOnto: a head Guildhall authorized by itself, rebased no_conflicts at the queue front
+// onto a base tip that gained a policy-file change, carries its authorization over and merges: the rebased head
+// changes .guildhall/policies.md from the task's old base, but not from the base tip it was rebased onto, so the
+// change is main's and not the head's own.
+func TestQueueRebasedHeadJudgedFromOnto(t *testing.T) {
+	e, f, ws := policyEnv(t, backends[0])
+	e.eng.Config.Repositories[0].Merge.ReapproveAfterRebase = config.RebaseNoConflicts
+	onto := baseN(1)
+	clean(ws, onto, head, head2)
+	ws.SetChangesFrom(baseHead, head2, policies.Path)
+	ws.SetChangesFrom(onto, head2)
+	f.SetMergeability(forge.Mergeability{Head: head, Base: onto, State: "behind", Behind: 1})
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), deliverWait)
+	f.SetChecks(repoRemote, head2, ciPassed...)
+	f.SetMergeability(forge.Mergeability{})
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), done)
+	if ids := e.decisionIDs(t); slices.Contains(ids, "deliver-1") || slices.Contains(ids, "deliver-2") {
+		t.Errorf("decisions = %q, want no merge decision", ids)
+	}
+	if a := e.pullRequestDoc(t, "deliver-2-authorized"); a["carried_from"] != "deliver-1" || a["head"] != head2 {
+		t.Fatalf("carried authorization = %v", a)
+	}
+	if got := mergedHead(f); got != head2 {
+		t.Fatalf("merged head = %q, want %s", got, head2)
+	}
+}
+
+// TestQueueRebasedPolicyResolutionStillGuarded: a rebased head whose own change from the base tip it was rebased onto
+// edits the policy file, as a resolution in it would, is still guarded: Guildhall's own authorization does not carry
+// over and a merge decision opens.
+func TestQueueRebasedPolicyResolutionStillGuarded(t *testing.T) {
+	e, f, ws := policyEnv(t, backends[0])
+	e.eng.Config.Repositories[0].Merge.ReapproveAfterRebase = config.RebaseNever
+	onto := baseN(1)
+	clean(ws, onto, head, head2)
+	ws.SetChangesFrom(baseHead, head2)
+	ws.SetChangesFrom(onto, head2, policies.Path)
+	f.SetMergeability(forge.Mergeability{Head: head, Base: onto, State: "behind", Behind: 1})
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), deliverWait)
+	f.SetChecks(repoRemote, head2, ciPassed...)
+	f.SetMergeability(forge.Mergeability{})
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), interp.Next{Wait: interp.WaitDecision, Step: "deliver", Decision: "deliver-2"})
+	d := e.decision(t, "deliver-2")
+	if !strings.Contains(d.Question, "the head changes .guildhall/policies.md, and Guildhall authorized deliver-1 by itself") {
+		t.Errorf("merge question lacks the self-authorization refusal:\n%s", d.Question)
+	}
+	if got := e.authorizations(t); !slices.Equal(got, []string{"deliver-1-authorized"}) {
+		t.Fatalf("authorizations = %q, want none carried", got)
+	}
+}
+
+// TestValidateRebasedHeadJudgedFromOnto: a head validate rebased onto a base tip that gained a policy-file change is
+// judged at deliver by its own change from that tip: guildmaster_approval is not forced and no merge decision opens.
+func TestValidateRebasedHeadJudgedFromOnto(t *testing.T) {
+	e, f, ws := validateRebaseEnv(t, backends[0])
+	e.requires(unattended)
+	onto := baseN(1)
+	clean(ws, onto, head, head2)
+	ws.SetChangesFrom(baseHead, head2, policies.Path)
+	ws.SetChangesFrom(onto, head2)
+	want(t, e.advance(t, reviewed), waitChecks)
+	f.SetChecks(repoRemote, head2, ciPassed...)
+	f.SetMergeability(forge.Mergeability{})
+	want(t, e.advance(t, interp.Event{Kind: interp.TaskCreated}), done)
+	if ids := e.decisionIDs(t); slices.Contains(ids, "deliver-1") {
+		t.Errorf("decisions = %q, want no merge decision", ids)
+	}
+	a := e.pullRequestDoc(t, "deliver-1-authorized")
+	for _, c := range a["conditions"].([]any) {
+		if c := c.(map[string]any); c["requirement"] == "guildmaster_approval" && (c["required"] != false || c["required_by"] != nil) {
+			t.Errorf("guildmaster_approval = %v, want not required", c)
+		}
+	}
+	if got := mergedHead(f); got != head2 {
+		t.Fatalf("merged head = %q, want %s", got, head2)
+	}
+}

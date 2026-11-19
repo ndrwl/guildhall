@@ -20,6 +20,9 @@ type rebases struct {
 	replays []git.Replay
 	// changes holds the paths each head changes, for Changes.
 	changes map[string][]string
+	// changesFrom holds the paths the change from a base to a head changes, for Changes; it takes precedence over
+	// changes.
+	changesFrom map[[2]string][]string
 }
 
 func (f *Workspaces) rebases() *rebases {
@@ -133,7 +136,20 @@ func (f *Workspaces) SetChanges(head string, paths ...string) {
 	rb.changes[head] = slices.Clone(paths)
 }
 
-// Changes implements git.Program.Changes with the scripted paths: without a script a head changes nothing.
+// SetChangesFrom scripts Changes for one pair: the change from base to head changes each of paths. It takes
+// precedence over SetChanges for that pair, so paths may be empty to script a pair that changes nothing.
+func (f *Workspaces) SetChangesFrom(base, head string, paths ...string) {
+	rb := f.rebases()
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	if rb.changesFrom == nil {
+		rb.changesFrom = map[[2]string][]string{}
+	}
+	rb.changesFrom[[2]string{base, head}] = slices.Clone(paths)
+}
+
+// Changes implements git.Program.Changes with the scripted paths: a script for the pair (SetChangesFrom) first, then
+// one for head from any base (SetChanges); without either a head changes nothing.
 func (f *Workspaces) Changes(ctx context.Context, repository, base, head, path string) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -141,6 +157,9 @@ func (f *Workspaces) Changes(ctx context.Context, repository, base, head, path s
 	rb := f.rebases()
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
+	if paths, ok := rb.changesFrom[[2]string{base, head}]; ok {
+		return slices.Contains(paths, path), nil
+	}
 	return slices.Contains(rb.changes[head], path), nil
 }
 
