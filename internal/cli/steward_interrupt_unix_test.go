@@ -320,3 +320,170 @@ func TestInterruptContextFallsBackToNotify(t *testing.T) {
 		t.Fatal("the signal did not cancel the context")
 	}
 }
+
+// assertInterruptedBeforeActing checks what an apply interrupted while it planned again leaves: exit 1, an
+// interrupted error rather than a stale or changed plan's, the stub's group gone and, when private is set, the
+// private config lock free.
+func assertInterruptedBeforeActing(t *testing.T, code, pgid int, stderr, private string) {
+	t.Helper()
+	if code != 1 {
+		t.Errorf("interrupted apply exit %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "interrupted") {
+		t.Errorf("stderr %q does not say interrupted", stderr)
+	}
+	for _, wrong := range []error{steward.ErrPlanStale, steward.ErrNotApplicable, steward.ErrPlanChanged} {
+		if strings.Contains(stderr, wrong.Error()) {
+			t.Errorf("stderr %q reports %q for an interrupt", stderr, wrong)
+		}
+	}
+	assertGroupGone(t, pgid)
+	if private == "" {
+		return
+	}
+	release, err := steward.TakePrivateLock(private, steward.LockOwner{PID: os.Getpid(), Command: "test"})
+	if err != nil {
+		t.Fatalf("the private config lock is still held: %v", err)
+	}
+	release()
+}
+
+// TestStewardRolloutInterruptWhileReplanning: an interrupt while steward rollout --apply plans again, before it
+// acts, writes no receipt and reports interrupted, not a stale plan.
+func TestStewardRolloutInterruptWhileReplanning(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skipf("git is needed for the private config checkout: %v", err)
+	}
+	bin := t.TempDir()
+	for _, name := range []string{"scp", "ssh"} {
+		copyFile(t, self, filepath.Join(bin, name))
+	}
+	cfg, private := writeStewardConfig(t, "schema_version = 1\n[managed.standards_revision]\nvalue = \"standards-2\"\n")
+	if out, err := exec.Command(git, "init", "-q", private).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	serve := t.TempDir()
+	managed, err := config.EncodeManaged(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(serve, "config.toml"), cliCopy)
+	writeFile(t, filepath.Join(serve, "managed.toml"), string(managed))
+	pidFile := filepath.Join(t.TempDir(), "stub.pid")
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+filepath.Dir(git))
+	t.Setenv(hangStubEnv, pidFile)
+	t.Setenv(serveStubEnv, serve)
+
+	plan := filepath.Join(t.TempDir(), "plan")
+	args := []string{"steward", "rollout", "--config", cfg, "--machine", "workstation", "--plan", plan}
+	r := &recordingInterrupt{}
+	app := New()
+	var stdout, stderr bytes.Buffer
+	app.Stdout, app.Stderr = &stdout, &stderr
+	app.AdvanceContext = r.notify
+	if code := app.Run(append(args, "--dry-run")); code != 0 {
+		t.Fatalf("dry run exit %d; stderr: %s\n%s", code, &stderr, &stdout)
+	}
+
+	// With nothing served, the replan's first fetch hangs.
+	t.Setenv(serveStubEnv, "")
+	stdout.Reset()
+	stderr.Reset()
+	code, pgid := interruptWhenHung(t, pidFile, r, func() int { return app.Run(append(args, "--apply")) })
+	assertInterruptedBeforeActing(t, code, pgid, stderr.String(), private)
+	if receipts, _ := filepath.Glob(filepath.Join(plan, "receipt-*.json")); len(receipts) != 0 {
+		t.Errorf("receipts %q, want none", receipts)
+	}
+}
+
+// TestStewardSecretsInterruptWhileReplanning: an interrupt while steward secrets apply plans again, before it acts,
+// writes no receipt and reports interrupted, not a stale plan.
+func TestStewardSecretsInterruptWhileReplanning(t *testing.T) {
+	ps := newPushSetup(t)
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ssh := filepath.Join(t.TempDir(), "ssh")
+	copyFile(t, self, ssh)
+	if code, out := ps.run(t, pushedSecret+"\n", "steward", "secrets", "set", "--config", ps.cfg, "workstation", "API_KEY"); code != 0 {
+		t.Fatalf("set: exit %d:\n%s", code, out)
+	}
+	planDir := filepath.Join(ps.steward, "rollouts", "secrets-1")
+	if code, out := ps.run(t, "", "steward", "secrets", "plan", "--config", ps.cfg, "--machine", "workstation", "--plan", planDir); code != 0 {
+		t.Fatalf("plan: exit %d:\n%s", code, out)
+	}
+	plan, err := steward.ReadSecretsPlan(planDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pidFile := filepath.Join(t.TempDir(), "stub.pid")
+	t.Setenv(hangStubEnv, pidFile)
+	r := &recordingInterrupt{}
+	app, _, stderr := newTestApp(nil, nil)
+	// The replan's secrets check runs on the hanging ssh.
+	app.Copier, app.Runner = ps.fleet, steward.SSH{Path: ssh, Timeout: time.Hour}
+	app.LookPath = exec.LookPath
+	app.Output = func(ctx context.Context, path string, args ...string) ([]byte, error) {
+		return exec.CommandContext(ctx, path, args...).Output()
+	}
+	app.Stdin = strings.NewReader("")
+	app.AdvanceContext = r.notify
+	code, pgid := interruptWhenHung(t, pidFile, r, func() int {
+		return app.Run([]string{"steward", "secrets", "apply", "--config", ps.cfg, "--machine", "workstation", "--plan", planDir, "--approve", plan.Digest})
+	})
+	assertInterruptedBeforeActing(t, code, pgid, stderr.String(), ps.private)
+	if receipts, _ := filepath.Glob(filepath.Join(planDir, "receipt-*.json")); len(receipts) != 0 {
+		t.Errorf("receipts %q, want none", receipts)
+	}
+}
+
+// TestStewardTakeoverInterruptWhileReplanning: an interrupt while a first steward takeover --apply plans again,
+// before any step runs, marks no step failed and reports interrupted, not a changed plan.
+func TestStewardTakeoverInterruptWhileReplanning(t *testing.T) {
+	ts := newTakeoverSetup(t)
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ssh := filepath.Join(t.TempDir(), "ssh")
+	copyFile(t, self, ssh)
+	pidFile := filepath.Join(t.TempDir(), "stub.pid")
+	t.Setenv(hangStubEnv, pidFile)
+	cfgPath := filepath.Join(ts.steward, "config.toml")
+	planDir := filepath.Join(ts.steward, "rollouts", "takeover-alpha")
+	code, out, stderr := ts.run(t, false, "", "steward", "takeover", "--config", cfgPath, "--machine", "workstation", "--director", "alpha", "--copy", ts.director, "--plan", planDir, "--dry-run")
+	m := regexp.MustCompile(`^takeover plan (sha256:[0-9a-f]{64})\n`).FindStringSubmatch(out)
+	if code != 0 || m == nil {
+		t.Fatalf("dry run: exit %d, %s%s", code, out, stderr)
+	}
+
+	r := &recordingInterrupt{}
+	app, _, errOut := newTestApp(nil, nil)
+	app.Copier = localCopier{}
+	// Every remote command, the replan's first among them, runs on the hanging ssh.
+	app.Runner = steward.SSH{Path: ssh, Timeout: time.Hour}
+	app.LookPath = exec.LookPath
+	app.Output = func(ctx context.Context, path string, args ...string) ([]byte, error) {
+		return exec.CommandContext(ctx, path, args...).Output()
+	}
+	app.Stdin = strings.NewReader("")
+	app.AdvanceContext = r.notify
+	code, pgid := interruptWhenHung(t, pidFile, r, func() int {
+		return app.Run([]string{"steward", "takeover", "--config", cfgPath, "--plan", planDir, "--apply", "--approve", m[1]})
+	})
+	assertInterruptedBeforeActing(t, code, pgid, errOut.String(), "")
+	if log, err := steward.ReadStepLog(planDir); err == nil {
+		for _, rec := range log.Steps {
+			if rec.State == steward.StepFailed {
+				t.Errorf("step %+v recorded failed for an interrupt before any step ran", rec)
+			}
+		}
+	}
+}

@@ -198,6 +198,9 @@ func (s *Setup) ApplySetup(ctx context.Context, planDir, approve string) (*Outco
 		} else {
 			again, err = s.PlanTakeover(ctx, p.input)
 		}
+		if err := interrupted(ctx); err != nil {
+			return nil, err
+		}
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrPlanChanged, err)
 		}
@@ -206,6 +209,9 @@ func (s *Setup) ApplySetup(ctx context.Context, planDir, approve string) (*Outco
 		}
 	} else if p.Kind == SetupKindTakeover {
 		local, err := s.fetch(ctx, Remote{p.SSHAlias, p.CopyDir + "/config.toml"})
+		if err := interrupted(ctx); err != nil {
+			return nil, err
+		}
 		if err != nil {
 			return nil, fmt.Errorf("reading the copy's config.toml: %w", err)
 		}
@@ -219,6 +225,10 @@ func (s *Setup) ApplySetup(ctx context.Context, planDir, approve string) (*Outco
 		rec := log.record(st.ID)
 		if rec.State == StepDone {
 			if diag := s.recheck(ctx, p, st); diag != "" {
+				// An interrupted re-check leaves the step done, for the next resume to check again.
+				if err := interrupted(ctx); err != nil {
+					return out, err
+				}
 				out.State, out.Step, out.Diagnosis = OutcomeFailed, st.ID, diag
 				return out, &ErrStepFailed{Step: st.ID, Diagnosis: diag}
 			}

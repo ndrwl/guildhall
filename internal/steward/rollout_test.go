@@ -157,6 +157,39 @@ func TestRolloutPreservesConcurrentLocalEditAndRevisions(t *testing.T) {
 	}
 }
 
+// cancellingCopier cancels the apply's context at its first fetch, as an interrupt during the replan would, and then
+// fetches as its Copier does.
+type cancellingCopier struct {
+	Copier
+	cancel context.CancelFunc
+}
+
+func (c cancellingCopier) Fetch(ctx context.Context, src Remote, dst string) error {
+	c.cancel()
+	return c.Copier.Fetch(ctx, src, dst)
+}
+
+// TestRolloutApplyInterruptedWhileReplanning: an apply whose replan sees its context cancelled reports
+// ErrInterrupted, not a stale plan, writes no receipt and changes no copy.
+func TestRolloutApplyInterruptedWhileReplanning(t *testing.T) {
+	s, r := fleet(t)
+	p := dryRun(t, r, "workstation", "laptop")
+	before := s.get("guild-ws", managedPath(toolsPath))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r.Transport = cancellingCopier{r.Transport, cancel}
+	receipt, err := r.Apply(ctx, p.StageDir, p.Digest, p.Machines...)
+	if !errors.Is(err, ErrInterrupted) || !errors.Is(err, context.Canceled) || errors.Is(err, ErrPlanStale) || receipt != nil {
+		t.Fatalf("apply: %v, receipt %+v; want ErrInterrupted and no receipt", err, receipt)
+	}
+	if receipts, _ := filepath.Glob(filepath.Join(p.StageDir, "receipt-*.json")); len(receipts) != 0 {
+		t.Errorf("receipts %q, want none", receipts)
+	}
+	if got := s.get("guild-ws", managedPath(toolsPath)); got != before {
+		t.Error("an interrupted apply changed the copy")
+	}
+}
+
 // editingCopier runs edit before each fetch, as a concurrent editor would.
 type editingCopier struct {
 	Copier
