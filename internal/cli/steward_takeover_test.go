@@ -246,4 +246,45 @@ func TestStewardTakeoverUsage(t *testing.T) {
 			t.Errorf("%q: exit %d, %s; want a usage error", args, code, stderr)
 		}
 	}
+	for want, args := range map[string][]string{
+		"belong to --dry-run": {"--config", "c.toml", "--plan", "p", "--apply", "--guildhall-path", "/home/u/.local/bin/guildhall"},
+		"with --ssh-alias":    {"--config", "c.toml", "--plan", "p", "--dry-run", "--machine", "m", "--director", "d", "--copy", "/c", "--guildhall-path", "/home/u/.local/bin/guildhall"},
+	} {
+		app, _, stderr := newTestApp(nil, nil)
+		if code := app.Run(append([]string{"steward", "takeover"}, args...)); code != 2 || !strings.Contains(stderr.String(), "--guildhall-path") || !strings.Contains(stderr.String(), want) {
+			t.Errorf("%q: exit %d, %s; want a usage error saying %q", args, code, stderr, want)
+		}
+	}
+}
+
+// TestStewardTakeoverGuildhallPath: the dry run for a machine new to the roster, with --guildhall-path, runs that
+// program for its probes and every step, and proposes it as the machine's guildhall_path.
+func TestStewardTakeoverGuildhallPath(t *testing.T) {
+	const program = "/home/u/.local/bin/guildhall"
+	ts := newTakeoverSetup(t)
+	writeFile(t, filepath.Join(ts.private, "roster.toml"), "schema_version = 1\n\n[[machine]]\nlabel = \"host\"\nssh_alias = \"guild-host\"\nos = \"linux\"\nroles = [\"steward\"]\n")
+	collectGit(t, ts.private, "commit", "-q", "-am", "the workstation leaves the roster")
+	cfgPath := filepath.Join(ts.steward, "config.toml")
+	planDir := filepath.Join(ts.steward, "rollouts", "takeover-alpha")
+	code, out, stderr := ts.run(t, false, "", "steward", "takeover", "--config", cfgPath, "--machine", "workstation", "--director", "alpha", "--copy", ts.director,
+		"--ssh-alias", "guild-ws", "--guildhall-path", program, "--plan", planDir, "--dry-run")
+	if code != 0 {
+		t.Fatalf("dry run: exit %d, %s", code, stderr)
+	}
+	if !strings.Contains(out, `+guildhall_path = "`+program+`"`) || !strings.Contains(out, program+" director enrol --steward steward --copy "+ts.director) {
+		t.Errorf("dry run printed:\n%s", out)
+	}
+	ran := ts.fleet.Ran("guild-ws")
+	if len(ran) == 0 {
+		t.Error("the dry run probed nothing")
+	}
+	for _, argv := range ran {
+		if argv[0] != program {
+			t.Errorf("the dry run ran %q", argv)
+		}
+	}
+	p, err := steward.ReadSetupPlan(planDir)
+	if err != nil || p.Guildhall != program || p.Roster.GuildhallPath != program {
+		t.Fatalf("plan read back: %+v, %v", p, err)
+	}
 }

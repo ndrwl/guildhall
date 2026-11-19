@@ -107,8 +107,11 @@ type TakeoverInput struct {
 	CopyDir  string
 	SSHAlias string
 	// OS is a new machine's operating system, linux or windows; empty means linux. A roster machine has its own.
-	OS      OS
-	PlanDir string
+	OS OS
+	// GuildhallPath is the absolute path of the guildhall program on a new machine, written to its roster entry as
+	// guildhall_path; empty means guildhall on the PATH. A roster machine has its own.
+	GuildhallPath string
+	PlanDir       string
 }
 
 // SetupPlan is a dry-run setup plan, approved by its digest before it runs.
@@ -155,13 +158,15 @@ type SetupPlan struct {
 // RosterEntry is the roster entry a takeover adds: the Director under its machine, and the machine itself when
 // NewMachine is set.
 type RosterEntry struct {
-	Machine      string   `json:"machine"`
-	NewMachine   bool     `json:"new_machine"`
-	SSHAlias     string   `json:"ssh_alias"`
-	OS           OS       `json:"os"`
-	Director     string   `json:"director"`
-	CopyDir      string   `json:"copy_dir"`
-	Repositories []string `json:"repositories"`
+	Machine    string `json:"machine"`
+	NewMachine bool   `json:"new_machine"`
+	SSHAlias   string `json:"ssh_alias"`
+	OS         OS     `json:"os"`
+	// GuildhallPath is a new machine's guildhall_path; omitted when empty, so plans without one keep their digests.
+	GuildhallPath string   `json:"guildhall_path,omitempty"`
+	Director      string   `json:"director"`
+	CopyDir       string   `json:"copy_dir"`
+	Repositories  []string `json:"repositories"`
 }
 
 // CopyProbe is what the dry run read on the copy, which the apply probes again.
@@ -278,6 +283,9 @@ func (s *Setup) PlanTakeover(ctx context.Context, in TakeoverInput) (*SetupPlan,
 		if in.OS != "" && in.OS != m.OS {
 			return nil, fmt.Errorf("%w: machine %q is in the roster as %s, not %s", ErrRosterConflict, m.Label, m.OS, in.OS)
 		}
+		if in.GuildhallPath != "" && in.GuildhallPath != m.GuildhallPath {
+			return nil, fmt.Errorf("%w: machine %q is in the roster with guildhall_path %q, not %q; change it in roster.toml instead", ErrRosterConflict, m.Label, m.GuildhallPath, in.GuildhallPath)
+		}
 		if !slices.Contains(m.Roles, RoleDirector) {
 			return nil, fmt.Errorf("%w: machine %q lacks the director role; add it in roster.toml first", ErrRosterConflict, m.Label)
 		}
@@ -309,6 +317,11 @@ func (s *Setup) PlanTakeover(ctx context.Context, in TakeoverInput) (*SetupPlan,
 		return nil, fmt.Errorf("machine %q is %s: takeover is built for Linux and Windows machines", in.Machine, entry.OS)
 	case !validPath(entry.OS, in.CopyDir):
 		return nil, fmt.Errorf("copy directory %q must be an absolute %s on a %s machine", in.CopyDir, pathForm(entry.OS), entry.OS)
+	case entry.NewMachine && in.GuildhallPath != "" && !validPath(entry.OS, in.GuildhallPath):
+		return nil, fmt.Errorf("guildhall path %q must be an absolute %s on a %s machine", in.GuildhallPath, pathForm(entry.OS), entry.OS)
+	}
+	if entry.NewMachine && in.GuildhallPath != "" {
+		entry.GuildhallPath, guildhall = in.GuildhallPath, in.GuildhallPath
 	}
 
 	p := &SetupPlan{Schema: SetupPlanSchema, Kind: SetupKindTakeover, Machine: in.Machine, Director: in.Director, CopyDir: in.CopyDir,
@@ -522,7 +535,7 @@ func ReadSetupPlan(planDir string) (*SetupPlan, error) {
 	}
 	p.input = TakeoverInput{Machine: p.Machine, Director: p.Director, CopyDir: p.CopyDir, PlanDir: p.PlanDir}
 	if p.Roster.NewMachine {
-		p.input.SSHAlias = p.SSHAlias
+		p.input.SSHAlias, p.input.GuildhallPath = p.SSHAlias, p.Roster.GuildhallPath
 		if p.Roster.OS != OSLinux {
 			p.input.OS = p.Roster.OS
 		}
@@ -561,8 +574,12 @@ func proposeRoster(data []byte, r *Roster, e RosterEntry) ([]byte, error) {
 		text += "\n"
 	}
 	if e.NewMachine {
-		want.Machines = append(want.Machines, Machine{Label: e.Machine, SSHAlias: e.SSHAlias, OS: e.OS, Roles: []Role{RoleDirector}, Directors: []Director{d}})
-		text += fmt.Sprintf("\n[[machine]]\nlabel = %q\nssh_alias = %q\nos = %q\nroles = [%q]\n\n", e.Machine, e.SSHAlias, e.OS, RoleDirector) + block
+		want.Machines = append(want.Machines, Machine{Label: e.Machine, SSHAlias: e.SSHAlias, OS: e.OS, GuildhallPath: e.GuildhallPath, Roles: []Role{RoleDirector}, Directors: []Director{d}})
+		program := ""
+		if e.GuildhallPath != "" {
+			program = fmt.Sprintf("guildhall_path = %q\n", e.GuildhallPath)
+		}
+		text += fmt.Sprintf("\n[[machine]]\nlabel = %q\nssh_alias = %q\nos = %q\n%sroles = [%q]\n\n", e.Machine, e.SSHAlias, e.OS, program, RoleDirector) + block
 	} else {
 		k := slices.IndexFunc(r.Machines, func(m Machine) bool { return m.Label == e.Machine })
 		if k < 0 {
@@ -601,7 +618,7 @@ func proposeRoster(data []byte, r *Roster, e RosterEntry) ([]byte, error) {
 // hasEntry reports whether r holds e exactly: its machine, as planned when new, and its Director.
 func hasEntry(r *Roster, e RosterEntry) bool {
 	m, ok := r.Machine(e.Machine)
-	if !ok || m.SSHAlias != e.SSHAlias || m.OS != e.OS {
+	if !ok || m.SSHAlias != e.SSHAlias || m.OS != e.OS || (e.NewMachine && m.GuildhallPath != e.GuildhallPath) {
 		return false
 	}
 	for _, d := range m.Directors {

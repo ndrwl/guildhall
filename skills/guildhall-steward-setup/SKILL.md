@@ -18,7 +18,7 @@ Keep every plan under your copy's `rollouts/` directory, one new directory per t
    guildhall steward takeover --config <your copy>/config.toml --machine <label> --director <name> --copy <copy dir> --plan <your copy>/rollouts/takeover-<name> --dry-run
    ```
 
-   Add `--ssh-alias <alias>` only for a machine not in the roster, with `--os windows` when it is a native Windows machine.
+   Add `--ssh-alias <alias>` only for a machine not in the roster, with `--os windows` when it is a native Windows machine, and `--guildhall-path <abs>`, such as `/home/<user>/.local/bin/guildhall`, when `guildhall` is not on the `PATH` of its SSH commands (as on Ubuntu or WSL, where they do not read `~/.profile`).
    On Windows the copy directory is a Windows path with forward slashes, such as `C:/Users/<user>/directors/<name>`.
    A refusal changes nothing: tell the Guildmaster why in plain English, such as a repository whose `owner_machine` names another machine, a copy that already has a `managed.toml`, or a roster that already lists the Director, and stop.
 3. Show the Guildmaster the plan: the copy and its session, the roster diff, every step and the plan digest.

@@ -450,7 +450,7 @@ The `director-stuck` check compares the copy's times with the Steward's clock, s
 ## Takeover
 
 ```sh
-guildhall steward takeover --config <steward.toml> --machine <label> --director <name> --copy <dir> [--ssh-alias <alias> [--os linux|windows]] --plan <dir> --dry-run
+guildhall steward takeover --config <steward.toml> --machine <label> --director <name> --copy <dir> [--ssh-alias <alias> [--os linux|windows] [--guildhall-path <abs>]] --plan <dir> --dry-run
 guildhall steward approval request --plan <dir> [--copy <steward copy>]
 guildhall steward takeover --config <steward.toml> --plan <dir> --apply --approve <plan digest>
 guildhall steward takeover --config <steward.toml> --plan <dir> --abandon
@@ -463,6 +463,8 @@ Each of its modes admits the Steward config as [rollout](#dry-run) and collect d
 **Dry run.** The dry run reads the copy with `scp` and the read-only [remote commands](#remote-commands): its `config.toml`, its mode, which must be `standalone` with no `managed.toml`, and its session.
 It refuses, changing nothing, a copy that is not a director copy named `--director`, has inline `[managed]` settings or a repository whose `owner_machine` is not `--machine`, and a Director or copy directory the roster already lists.
 `--machine` is a roster label; a machine not yet in the roster needs `--ssh-alias`, and is proposed as a new machine with the `director` role, `linux` unless `--os windows` says otherwise. The copy directory must be of the machine's path form.
+A new machine may also name `--guildhall-path <abs>`, the absolute path of its `guildhall` program in the machine's path form, such as `/home/<user>/.local/bin/guildhall`: it goes into the machine's roster entry as `guildhall_path`, the dry run's probes and every step run it, and the plan's digest covers it. Name it when `guildhall` is not on the `PATH` of the machine's SSH commands, as on Ubuntu or WSL, whose non-interactive SSH commands do not read `~/.profile`.
+A machine already in the roster keeps its own `guildhall_path`: `--guildhall-path` with another value is refused, so change `roster.toml` instead.
 It writes `plan.json`, a `guildhall.setup-plan/1` document, and `files/managed.toml` into the plan directory, and prints the copy, the roster diff and each step with its command.
 The first `managed.toml` has no managed key, so the copy's effective settings do not change; later rollouts bring the Steward's settings.
 The digest binds the copy's `config.toml`, its mode, the roster at the private config's `HEAD`, the planned file and every step, but not the session's state, which moves on its own; a dry run again into the same plan directory gives the same digest when nothing changed, and one whose apply has started is refused.
@@ -610,7 +612,7 @@ A Director copy is standalone until it is enrolled; a rollout reaches only its `
 A [takeover](#takeover) brings a running copy under this Steward in one approved plan.
 To do it by hand instead:
 
-1. Add the machine and the copy to `roster.toml`, with `guildhall_path` if `guildhall` is not on the account's `PATH`.
+1. Add the machine and the copy to `roster.toml`, with `guildhall_path` if `guildhall` is not on the account's `PATH` (a takeover names it with `--guildhall-path`).
 2. On the Director's machine, copy [`examples/managed.toml`](../examples/managed.toml) beside the copy's `config.toml`, as its first `managed.toml`.
 3. There, run `guildhall director enrol --steward <label>` on the Guildmaster's word.
    Enrolment never authorizes that first digest, so the copy refuses every command that needs its settings until it is authorized.
