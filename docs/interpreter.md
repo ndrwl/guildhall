@@ -492,6 +492,7 @@ Otherwise the chain's kind, the hardest of its links, is compared with the repos
   The escalation records that spec as `spec_digest`: the `-authorized` document's, or, for a merge decision, the one the approved head's review outcomes were bound to; otherwise the merge decision for the rebuilt head says why it does not carry over.
 
 The threshold matters only where `guildmaster_approval` is required; without it, deliver authorizes h′ by itself whenever the requirements hold.
+The [policy-file guard](configuration.md#merge-requirements), which requires `guildmaster_approval` for a head that changes `.guildhall/policies.md`, judges a head by its own change: against the task's base before any rebase, and against the base tip the last link replayed it onto after one, so a policy change the default branch gained since the task's base does not count as h′'s, while a resolution in the policy file does.
 `task timeline` shows a carried-over merge as merged by the carried-over approval of the original decision after a rebase of its kind.
 
 ## Validate

@@ -345,7 +345,7 @@ func (r *run) deliver(s workflow.Step) (bool, Next, error) {
 	if id == "" {
 		// Only a head not yet authorized is checked, so a replay after the merge retired the branch needs no base, and
 		// a gate a task override added after the head was authorized does not retract its authorization.
-		if repo, dl.policies, err = r.guardPolicies(repo, d); err != nil {
+		if repo, dl.policies, err = r.guardPolicies(repo, dl); err != nil {
 			return false, Next{}, err
 		}
 		conditions, err := r.conditions(s, repo.Merge.Requires, outcomes, dl, nil)
@@ -381,16 +381,32 @@ type deliverHead struct {
 // policyGuard is why guildmaster_approval is required for a head that changes the repository's policy file.
 const policyGuard = "the head changes " + policies.Path
 
-// guardPolicies reports whether head changes the repository's policy file against the task's base, and returns repo
+// guardPolicies reports whether x's head changes the repository's policy file by its own change, and returns repo
 // with guildmaster_approval required when it does, whatever merge_requires says, so an Artisan cannot change its own
-// rules (docs/configuration.md#repository-policies). Without Workspaces nothing is checked.
-func (r *run) guardPolicies(repo config.Repository, head string) (config.Repository, bool, error) {
+// rules (docs/configuration.md#repository-policies). A head no rebase produced is judged against the task's base; a
+// rebased head against the base tip the link that produced it replayed it onto, since the task's recorded base is not
+// refreshed and the diff from it would count every commit the default branch gained as the head's. A rebased head is
+// that tip plus the task's change and any resolution, so a resolution in the policy file is still guarded. Without
+// Workspaces nothing is checked.
+func (r *run) guardPolicies(repo config.Repository, x deliverHead) (config.Repository, bool, error) {
 	if r.e.Workspaces == nil {
 		return repo, false, nil
 	}
-	base, err := r.e.Workspaces.Base(r.ctx, repo.Path, r.branch())
-	if err != nil {
-		return repo, false, fmt.Errorf("base of %s: %w", r.branch(), err)
+	head := x.head
+	base := ""
+	for i := len(x.links) - 1; i >= 0; i-- {
+		if l := x.links[i]; l.head != "" {
+			if l.head == head {
+				base = l.doc.Onto
+			}
+			break
+		}
+	}
+	if base == "" {
+		var err error
+		if base, err = r.e.Workspaces.Base(r.ctx, repo.Path, r.branch()); err != nil {
+			return repo, false, fmt.Errorf("base of %s: %w", r.branch(), err)
+		}
 	}
 	changed, err := r.e.Workspaces.Changes(r.ctx, repo.Path, base, head, policies.Path)
 	if err != nil {
@@ -872,7 +888,7 @@ func (r *run) reauthorize(s workflow.Step, repo config.Repository, from string, 
 		return r.merge(s, id, repo, x.head, x.pr)
 	}
 	// A rebased head that changes the policy file follows reapprove_after_rebase as guildmaster_approval requires.
-	repo, changed, err := r.guardPolicies(repo, x.head)
+	repo, changed, err := r.guardPolicies(repo, x)
 	if err != nil {
 		return false, Next{}, err
 	}
