@@ -26,24 +26,30 @@ func (r *tempRecorder) runCleanups() {
 	r.cleanups = nil
 }
 
-// noSpaceOrTilde stands in for the Steward roster's Windows copy_dir rule.
+// badName is the part of a badDir path that noSpaceOrTilde refuses.
+const badName = "First Last/RUNNER~1"
+
+// noSpaceOrTilde stands in for the Steward roster's Windows copy_dir rule,
+// which refuses a space or a ~. It refuses only badDir's space and ~, so the
+// tests do not depend on the host's own temporary directory, which on a
+// Windows runner is itself C:/Users/RUNNER~1/... and holds a ~.
 func noSpaceOrTilde(slashDir string) error {
-	if strings.ContainsAny(slashDir, " ~") {
+	if strings.Contains(slashDir, "/"+badName) {
 		return errors.New("has a space or a ~")
 	}
 	return nil
 }
 
-// unsetRunnerTemp unsets RUNNER_TEMP for the test, restoring it afterwards.
+// unsetRunnerTemp empties RUNNER_TEMP for the test, restoring it afterwards;
+// ShortTempDir treats an empty RUNNER_TEMP as unset.
 func unsetRunnerTemp(t *testing.T) {
 	t.Setenv("RUNNER_TEMP", "")
-	os.Unsetenv("RUNNER_TEMP")
 }
 
 // badDir makes a directory whose path has a space and a ~, as a Windows
 // profile's temp directory such as C:/Users/RUNNER~1/... has.
 func badDir(t *testing.T) string {
-	dir := filepath.Join(t.TempDir(), "First Last", "RUNNER~1")
+	dir := filepath.Join(t.TempDir(), filepath.FromSlash(badName))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -105,6 +111,25 @@ func TestShortTempDirUsesTempDirWithoutRunnerTemp(t *testing.T) {
 	}
 	if dir != clean {
 		t.Fatalf("got %s, want the test's temp dir %s", dir, clean)
+	}
+}
+
+// TestShortTempDirTestsRunUnderARunnerTempDir pins that these tests' fits
+// refuses only badDir: on windows-latest the host's own temp directory is
+// C:/Users/RUNNER~1/..., and a fits that refused that ~ failed every test there.
+func TestShortTempDirTestsRunUnderARunnerTempDir(t *testing.T) {
+	unsetRunnerTemp(t)
+	host := filepath.Join(t.TempDir(), "RUNNER~1", "AppData", "Local", "Temp")
+	if err := os.MkdirAll(host, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rec := &tempRecorder{dir: host}
+	dir, err := ShortTempDir(rec, noSpaceOrTilde)
+	if err != nil {
+		t.Fatalf("ShortTempDir: %v", err)
+	}
+	if dir != host {
+		t.Fatalf("got %s, want the host-like temp dir %s", dir, host)
 	}
 }
 
