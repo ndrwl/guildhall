@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/ndrwl/guildhall/internal/atomicfile"
+	"github.com/ndrwl/guildhall/internal/digest"
 )
 
 // NewInfix and PrevSuffix name the files beside a machine's secrets file that a Steward push uses
@@ -22,11 +22,11 @@ const (
 	PrevSuffix = ".prev"
 )
 
-// sha256Hex is a lowercase hex sha256, the only --expect secrets install takes.
-var sha256Hex = regexp.MustCompile(`^[0-9a-f]{64}$`)
-
-// ValidSHA256 reports whether s is a lowercase hex sha256.
-func ValidSHA256(s string) bool { return sha256Hex.MatchString(s) }
+// ValidSHA256 reports whether s is a lowercase hex sha256, the only --expect secrets install takes.
+func ValidSHA256(s string) bool {
+	_, err := digest.ParseHex(s)
+	return err == nil
+}
 
 // NewFile is where a push of ciphertext with sha256 hex sum is dropped beside file.
 func NewFile(file, sum string) string { return file + NewInfix + sum }

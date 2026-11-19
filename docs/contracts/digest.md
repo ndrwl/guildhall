@@ -13,7 +13,7 @@ The prefixed spelling is used by workflow, configuration, request, decision subj
 Both are checked through this package, so a bare value and a prefixed one are converted by `ParseHex` and `Hex` rather than by adding or cutting the prefix by hand.
 Mutation ids that embed a digest, such as `<kind>:sha256:<hex>`, are unchanged.
 
-Callers: `store`, `workflow`, `render`, `interp`, `steward`, `config` and `cli`.
+Callers: `store`, `workflow`, `render`, `interp`, `steward`, `config`, `secrets`, `release` and `cli`.
 
 ## Tests
 

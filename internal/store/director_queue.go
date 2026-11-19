@@ -199,10 +199,7 @@ type IncidentObservation struct {
 	Time     time.Time         `json:"time"`
 }
 
-var (
-	lessonTitleLine = regexp.MustCompile(`^# (\S.*)$`)
-	sha256Hex       = regexp.MustCompile(`^[0-9a-f]{64}$`)
-)
+var lessonTitleLine = regexp.MustCompile(`^# (\S.*)$`)
 
 // LessonTitle is the "# " title of lesson body, its first line that is not blank, after checking that the body has
 // "## Evidence" and "## Limits" sections, outside fenced code blocks; a body without them is ErrInvalid.
@@ -302,8 +299,7 @@ func validateEvidence(evidence []Evidence) error {
 		if err := validateLine(fmt.Sprintf("evidence %d ref", i+1), e.Ref, 1024); err != nil {
 			return err
 		}
-		d, err := digest.Parse(e.Digest)
-		if err != nil || !sha256Hex.MatchString(d.Hex()) {
+		if _, err := digest.Parse(e.Digest); err != nil {
 			return invalid("evidence %d digest %q must be sha256:<64 lowercase hex>", i+1, e.Digest)
 		}
 	}
