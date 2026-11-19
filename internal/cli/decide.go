@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -33,6 +35,8 @@ const decideUsage = `usage:
 // task and decision id; show prints one decision; answer records the Guildmaster's words with the mutation
 // "decision-answer:<repo>:<task>:<decision>" (or "decision-answer:sha256:<hex digest>" of that string if
 // over 128 bytes), so a retry of the same words prints the original receipt. Answering never advances a task.
+// Answering a decision of one of the Steward's reserved tasks in a steward.store (stewardReservedTask) also tells the
+// Steward, with a decision-answered message to its inbox, and wakes its session (docs/steward.md#inbox).
 // It exits 0 on success, 1 when the answer or the store refuses or fails and 2 on a usage error.
 func (a *App) decide(args []string) int {
 	if len(args) == 0 {
@@ -110,7 +114,7 @@ func (a *App) decide(args []string) int {
 	if sub == "answer" {
 		// A rollout approval and a triage decision are the Guildmaster's own: an agent in a session, the Steward's among
 		// them, cannot record them for them (docs/steward.md#approval-in-a-steward-session, docs/steward.md#triage).
-		if *repo == stewardRepository && filepath.Base(*path) == stewardStoreFile && a.inSession() {
+		if *repo == stewardRepository && filepath.Base(*path) == stewardStoreFile && stewardReservedTask(*task) && a.inSession() {
 			switch *task {
 			case stewardRolloutsTask:
 				return fail(fmt.Errorf("decision %s/%s/%s approves a rollout, and only the Guildmaster answers it, outside any Guildhall session", *repo, *task, *id))
@@ -165,10 +169,48 @@ func (a *App) decide(args []string) int {
 	if err != nil {
 		return fail(err)
 	}
+	if sub == "answer" && *repo == stewardRepository && filepath.Base(*path) == stewardStoreFile && stewardReservedTask(*task) {
+		// The answer is recorded: a failure to tell the Steward is reported and does not undo it.
+		if err := a.wakeStewardAnswered(*path, *task, *id); err != nil {
+			_, _ = fmt.Fprintf(a.Stderr, "guildhall: decide answer: wake: %v\n", err)
+		}
+	}
 	if err := json.NewEncoder(a.Stdout).Encode(out); err != nil {
 		return 1
 	}
 	return 0
+}
+
+// stewardReservedTask reports whether task is one of the Steward store's reserved tasks whose decisions only the
+// Guildmaster answers: the rollout, setup and secrets approvals and the incident and lesson triage.
+func stewardReservedTask(task string) bool {
+	switch task {
+	case stewardRolloutsTask, stewardSetupTask, stewardSecretsTask, stewardIncidentsTask, stewardLessonsTask:
+		return true
+	}
+	return false
+}
+
+// stewardAnsweredID is the id of the decision-answered message decide answer sends the Steward for one decision: a
+// digest of the decision built as web.AnsweredID's, under its own prefix so it never meets a page answer's message.
+func stewardAnsweredID(repo, task, decision string) string {
+	sum := sha256.Sum256([]byte(repo + "\x00" + task + "\x00" + decision))
+	return "decide-answered." + hex.EncodeToString(sum[:8])
+}
+
+// wakeStewardAnswered tells the Steward of the store at path that the Guildmaster answered decision id of its
+// reserved task, with a decision-answered message naming the decision but never the answer, and wakes its session
+// for it. The message id is the decision's, so a retried answer replays the send and the recorded wake; with no
+// session running the wake is recorded queued and the message waits unread.
+func (a *App) wakeStewardAnswered(path, task, id string) error {
+	m := store.Message{ID: stewardAnsweredID(stewardRepository, task, id), Recipient: store.RecipientSteward,
+		Repository: stewardRepository, TaskID: task, Type: store.MessageDecisionAnswered, Sender: store.SenderGuildmaster,
+		Text: fmt.Sprintf("Decision %s of %s/%s was answered by the Guildmaster; read the answer with guildhall decide show, then continue.", id, stewardRepository, task)}
+	if _, err := withStore(path, false, func(s *store.Store) (store.Receipt, error) { return s.SendMessage(m) }); err != nil {
+		return err
+	}
+	_, err := a.wake(path, m.ID, store.SenderGuildmaster)
+	return err
 }
 
 // openDecisions lists unanswered decisions of one repository, or of every repository when repo is empty.

@@ -615,7 +615,9 @@ const (
 	// follow-up whose named tasks merged or one of which was cancelled (docs/decisions/hold-until-merged.md).
 	MessageHoldReleased = "hold-released"
 	// MessageDecisionAnswered tells the Director the Guildmaster answered a decision on the task page
-	// (docs/web.md#answering); it names the decision, never their words, which the Director reads with decide show.
+	// (docs/web.md#answering), and tells the Steward the Guildmaster answered a decision of one of its reserved tasks
+	// with decide answer (docs/steward.md#inbox); it names the decision, never their words, which the recipient reads
+	// with decide show.
 	MessageDecisionAnswered = "decision-answered"
 	// MessageGrillAnswered tells the Director the Guildmaster sent a grill round's answers from the task page
 	// (docs/web.md#grill-rounds); it names the round, never their words, which the Director reads with grill round
@@ -649,7 +651,7 @@ var MessageTypes = map[string]string{
 	MessageHerdrLeftOpen: "supervisor", MessagePruneKept: "supervisor", MessageHoldReleased: "supervisor",
 	MessageTriageOpened: "supervisor", MessageLockBusy: "supervisor",
 	MessageDependencyCancelled: "cancel",
-	MessageDecisionAnswered:    "page",
+	MessageDecisionAnswered:    "page and decide answer",
 	MessageGrillAnswered:       "page",
 	MessageStewardReport:       "steward",
 	MessageHandoffOffer:        "director",

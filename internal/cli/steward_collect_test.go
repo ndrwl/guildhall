@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -211,6 +212,9 @@ func TestStewardCollect(t *testing.T) {
 	inSession.Stdin = strings.NewReader("adopt\n")
 	if code := inSession.Run([]string{"decide", "answer", "--copy", cs.steward, "--repo", stewardRepository, "--task", stewardLessonsTask, "--decision", lessonID, "--answer-file", "-"}); code != 1 || !strings.Contains(errOut.String(), "Guildmaster's triage") {
 		t.Errorf("answer in a session: exit %d, %s; want it refused", code, errOut)
+	}
+	if ms, _ := stewardInbox(t, filepath.Join(cs.steward, stewardStoreFile)); slices.ContainsFunc(ms, func(m store.Message) bool { return m.Type == store.MessageDecisionAnswered }) {
+		t.Errorf("a refused answer told the Steward: %+v", ms)
 	}
 	if code, _, stderr := queueCmd(t, "adopt\nWorth it.\n", "decide", "answer", "--copy", cs.steward, "--repo", stewardRepository, "--task", stewardLessonsTask, "--decision", lessonID, "--answer-file", "-"); code != 0 {
 		t.Fatalf("answer: %s", stderr)

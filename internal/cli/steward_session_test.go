@@ -469,6 +469,9 @@ func TestStewardSessionApproveNeedsTheGuildmaster(t *testing.T) {
 	if code := app.Run(answer); code != 1 {
 		t.Fatalf("a session answered the approval: exit %d", code)
 	}
+	if ms, _ := stewardInbox(t, filepath.Join(copyDir, stewardStoreFile)); slices.ContainsFunc(ms, func(m store.Message) bool { return m.Type == store.MessageDecisionAnswered }) {
+		t.Fatalf("a refused answer told the Steward: %+v", ms)
+	}
 	if code, _, stderr := run(inSession, "", "rollout", "--apply", "--approve", digest); code != 1 || !strings.Contains(stderr, "needs the Guildmaster's answer") {
 		t.Fatalf("approve before the answer: exit %d, stderr %s", code, stderr)
 	}
