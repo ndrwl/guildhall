@@ -130,11 +130,11 @@ func (w *sliceWorkspaces) Ensure(_ context.Context, ws git.Workspace) error {
 
 func (w *sliceWorkspaces) FastForward(context.Context, git.Workspace) (string, error) { return "", nil }
 
-func (w *sliceWorkspaces) Retire(_ context.Context, r git.Retirement) ([]string, error) {
+func (w *sliceWorkspaces) Retire(_ context.Context, r git.Retirement) ([]string, []string, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.retired = append(w.retired, r)
-	return nil, os.RemoveAll(r.Dir)
+	return nil, nil, os.RemoveAll(r.Dir)
 }
 
 func (w *sliceWorkspaces) Retired() []git.Retirement {

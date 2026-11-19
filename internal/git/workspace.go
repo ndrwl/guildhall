@@ -308,10 +308,18 @@ type Retirement struct {
 	// to it, with the sha256 in lowercase hex of every copy recorded at that path: an untracked file that is a copy
 	// of any of them is not work.
 	Outputs map[string][]string
+	// DiscardUntracked makes untracked files no reason to keep the worktree when they are the only one: Retire
+	// removes the worktree with them and returns their paths. Any other reason still keeps the worktree, its
+	// untracked files included, and names them as when it is not set.
+	DiscardUntracked bool
 }
 
 // Retire removes a merged task's worktree, w.Dir, and its local branch, w.Branch, when nothing in them would be
 // lost, and otherwise removes nothing and returns why it kept them.
+//
+// With r.DiscardUntracked set, untracked files that are all that would be lost do not keep the worktree: it is
+// removed with them, and discarded lists their slash-separated paths relative to w.Dir. Without it, discarded is
+// always empty.
 //
 // Something would be lost when a tracked file is changed or staged; when an untracked file has none of the
 // bytes r.Outputs records at its path; when the worktree's HEAD is not r.Head or one of its ancestors; or when the
@@ -324,25 +332,25 @@ type Retirement struct {
 // w.Dir that exists and is not a worktree of w.Repository (ErrNotWorkspace), removing nothing. A head the
 // repository does not have, as when the forge made it, is fetched from w.Remote by its commit id once, writing no
 // ref; a git failure, including a head that fetch cannot get, is an error, and ctx ending is an error.
-func (p Program) Retire(ctx context.Context, r Retirement) (kept []string, err error) {
+func (p Program) Retire(ctx context.Context, r Retirement) (kept, discarded []string, err error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !digest.ValidHead(r.Head) {
-		return nil, fmt.Errorf("%w: head %q is not a full commit id", ErrInvalidWorkspace, r.Head)
+		return nil, nil, fmt.Errorf("%w: head %q is not a full commit id", ErrInvalidWorkspace, r.Head)
 	}
 	if err := p.validate(ctx, r.Workspace); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	ok, err := p.isWorktree(ctx, r.Workspace)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !ok {
 		if _, err := os.Lstat(r.Dir); err == nil {
-			return nil, fmt.Errorf("%w: %s is not a worktree of %s", ErrNotWorkspace, r.Dir, r.Repository)
+			return nil, nil, fmt.Errorf("%w: %s is not a worktree of %s", ErrNotWorkspace, r.Dir, r.Repository)
 		} else if !errors.Is(err, fs.ErrNotExist) {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	ref := "refs/heads/" + r.Branch
@@ -350,46 +358,54 @@ func (p Program) Retire(ctx context.Context, r Retirement) (kept []string, err e
 	if out, err := p.git(ctx, r.Repository, "show-ref", "--verify", "--hash", ref); err == nil {
 		tip = strings.TrimSpace(string(out))
 	} else if ctx.Err() != nil {
-		return nil, ctx.Err()
+		return nil, nil, ctx.Err()
 	}
 	if !ok && tip == "" {
 		_, err := p.git(ctx, r.Repository, "update-ref", "-d", DefaultRef(r.Branch))
-		return nil, err
+		return nil, nil, err
 	}
 	if err := p.fetchHead(ctx, r); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if tip != "" {
 		if merged, err := p.merged(ctx, r.Repository, tip, r.Head); err != nil {
-			return nil, err
+			return nil, nil, err
 		} else if !merged {
 			kept = append(kept, fmt.Sprintf("branch %s is at %s, which is not the merged head %s or behind it", r.Branch, tip, r.Head))
 		}
 	}
+	var untracked []string
 	if ok {
-		more, err := p.unmerged(ctx, r)
+		more, files, err := p.unmerged(ctx, r)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		kept = append(kept, more...)
+		kept, untracked = append(kept, more...), files
+	}
+	if r.DiscardUntracked && len(kept) == len(untracked) {
+		// Every reason to keep the worktree is an untracked file, so they go with it.
+		kept, discarded = nil, untracked
 	}
 	if len(kept) > 0 {
-		return kept, nil
+		return kept, nil, nil
 	}
 	if ok {
-		// Untracked outputs and ignored files remain, which only --force removes; unmerged work was ruled out above.
+		// Untracked outputs, discarded untracked files and ignored files remain, which only --force removes;
+		// unmerged work was ruled out above.
 		if _, err := p.git(ctx, r.Repository, "worktree", "remove", "--force", r.Dir); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	if tip != "" {
 		// Deleted only while still at the tip that was checked.
 		if _, err := p.git(ctx, r.Repository, "update-ref", "-d", ref, tip); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
-	_, err = p.git(ctx, r.Repository, "update-ref", "-d", DefaultRef(r.Branch))
-	return nil, err
+	if _, err := p.git(ctx, r.Repository, "update-ref", "-d", DefaultRef(r.Branch)); err != nil {
+		return nil, nil, err
+	}
+	return nil, discarded, nil
 }
 
 // fetchHead ensures the repository has the commit r.Head, fetching it from r.Remote by its id when it is missing,
@@ -410,22 +426,22 @@ func (p Program) fetchHead(ctx context.Context, r Retirement) error {
 }
 
 // unmerged lists what in the worktree r.Dir would be lost: a HEAD that is not r.Head or behind it, a changed or
-// staged tracked file, and an untracked file with none of the bytes r.Outputs records at its path.
-func (p Program) unmerged(ctx context.Context, r Retirement) ([]string, error) {
-	var kept []string
+// staged tracked file, and an untracked file with none of the bytes r.Outputs records at its path. untracked are the
+// paths of those untracked files, each also in kept as "untracked <path>".
+func (p Program) unmerged(ctx context.Context, r Retirement) (kept, untracked []string, err error) {
 	out, err := p.git(ctx, r.Dir, "rev-parse", "--verify", "HEAD^{commit}")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	head := strings.TrimSpace(string(out))
 	if merged, err := p.merged(ctx, r.Repository, head, r.Head); err != nil {
-		return nil, err
+		return nil, nil, err
 	} else if !merged {
 		kept = append(kept, fmt.Sprintf("HEAD is at %s, which is not the merged head %s or behind it", head, r.Head))
 	}
 	status, err := p.git(ctx, r.Dir, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	fields := strings.Split(strings.TrimSuffix(string(status), "\x00"), "\x00")
 	for i := 0; i < len(fields); i++ {
@@ -444,10 +460,10 @@ func (p Program) unmerged(ctx context.Context, r Retirement) ([]string, error) {
 		want := r.Outputs[name]
 		data, err := os.ReadFile(filepath.Join(r.Dir, filepath.FromSlash(name)))
 		if len(want) == 0 || err != nil || !slices.Contains(want, digest.Of(data).Hex()) {
-			kept = append(kept, "untracked "+name)
+			kept, untracked = append(kept, "untracked "+name), append(untracked, name)
 		}
 	}
-	return kept, nil
+	return kept, untracked, nil
 }
 
 // merged reports whether commit is head or one of its ancestors in the repository.

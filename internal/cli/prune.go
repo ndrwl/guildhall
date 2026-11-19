@@ -110,8 +110,16 @@ type pruneResult struct {
 	Bytes int64
 	// Worktree is a store.Worktree* outcome, and Kept the reason for a kept one or one that is not a worktree.
 	Worktree, Kept string
+	// Discarded are the untracked files removed with a worktree under the repository's prune_untracked, by
+	// slash-separated path relative to the task's directory, such as work/ci.log.
+	Discarded []string
 	// Failed lists what could not be removed, and Panes the attempts whose pane files were kept.
 	Failed, Panes []string
+}
+
+// discarded is r.Discarded as the prune record and report name it: comma-separated and bounded like a kept reason.
+func (r pruneResult) discarded() string {
+	return boundKept(strings.Join(r.Discarded, ", "))
 }
 
 // complete reports whether nothing prunable was left.
@@ -461,9 +469,12 @@ func (p *pruner) retire(ctx context.Context, r *pruneResult, h store.TaskHistory
 	r.Worktree = store.WorktreeRemoved
 	var kept []string
 	for _, k := range sortedSlices(dirs) {
-		worktree, why, err := p.retireSlice(ctx, r, h, k, heads[k])
+		worktree, why, discarded, err := p.retireSlice(ctx, r, h, k, heads[k])
 		if err != nil {
 			return err
+		}
+		for _, name := range discarded {
+			r.Discarded = append(r.Discarded, interp.SliceWorkDir(k)+"/"+name)
 		}
 		if worktree == store.WorktreeRemoved {
 			continue
@@ -481,19 +492,23 @@ func (p *pruner) retire(ctx context.Context, r *pruneResult, h store.TaskHistory
 }
 
 // retireSlice retires slice k's worktree at head, the head its merge record names; for slice 1 with none, the head
-// interp.SafeHead names. It returns the store.Worktree* outcome, with the reason for one not removed.
-func (p *pruner) retireSlice(ctx context.Context, r *pruneResult, h store.TaskHistory, k int, head string) (string, string, error) {
+// interp.SafeHead names. It returns the store.Worktree* outcome, with the reason for one not removed, and the
+// untracked files removed with it, by path relative to the worktree.
+//
+// Untracked files are discarded only when the repository's prune_untracked is on and the task is done: a cancelled
+// task's worktree, even one whose change merged, keeps them for the Director, as does every other keep reason.
+func (p *pruner) retireSlice(ctx context.Context, r *pruneResult, h store.TaskHistory, k int, head string) (string, string, []string, error) {
 	repo := p.repositories[r.Task.Repository]
 	work := filepath.Join(p.taskDir(r.Task), interp.SliceWorkDir(k))
 	_, statErr := os.Lstat(work)
 	if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
-		return "", "", statErr
+		return "", "", nil, statErr
 	}
 	exists := statErr == nil
 	if head == "" && k == 1 {
 		var err error
 		if head, err = interp.SafeHead(h.Documents, p.readDocument); err != nil {
-			return "", "", err
+			return "", "", nil, err
 		}
 		if heads, _ := interp.SliceHeads(h.Documents, p.readDocument); len(heads) > 0 {
 			// A guard: slices merge in order, so slice 1 has no merge head while another slice has one only if the
@@ -505,33 +520,35 @@ func (p *pruner) retireSlice(ctx context.Context, r *pruneResult, h store.TaskHi
 	if head == "" {
 		switch {
 		case exists && h.Task.State == store.TaskCancelled:
-			return store.WorktreeKept, "the task was cancelled unmerged, so no merge record names a head its work is safe at", nil
+			return store.WorktreeKept, "the task was cancelled unmerged, so no merge record names a head its work is safe at", nil, nil
 		case exists:
-			return store.WorktreeKept, "no merge record names the head the task merged at", nil
+			return store.WorktreeKept, "no merge record names the head the task merged at", nil, nil
 		}
-		return store.WorktreeRemoved, "", nil
+		return store.WorktreeRemoved, "", nil, nil
 	}
 	size := int64(0)
 	if exists {
 		size = treeSize(work)
 	}
 	w := git.Workspace{Repository: repo.Path, Remote: repo.Remote, Branch: interp.SliceBranch(r.Task.ID, k), Dir: work}
-	kept, err := p.workspaces.Retire(ctx, git.Retirement{Workspace: w, Head: head, Outputs: interp.RetirementOutputs(r.Task.Repository, r.Task.ID, h.Documents)})
+	ret := git.Retirement{Workspace: w, Head: head, Outputs: interp.RetirementOutputs(r.Task.Repository, r.Task.ID, h.Documents)}
+	ret.DiscardUntracked = repo.PruneUntracked && h.Task.State == store.TaskDone
+	kept, discarded, err := p.workspaces.Retire(ctx, ret)
 	switch {
 	case errors.Is(err, git.ErrNotWorkspace):
-		return store.WorktreeNotWorkspace, work + " is not a worktree of " + repo.Path, nil
+		return store.WorktreeNotWorkspace, work + " is not a worktree of " + repo.Path, nil, nil
 	case err != nil && ctx.Err() != nil:
-		return "", "", ctx.Err()
+		return "", "", nil, ctx.Err()
 	case err != nil:
-		kept = []string{"it could not be removed: " + err.Error()}
+		kept, discarded = []string{"it could not be removed: " + err.Error()}, nil
 	}
 	if len(kept) > 0 {
-		return store.WorktreeKept, strings.Join(kept, "; "), nil
+		return store.WorktreeKept, strings.Join(kept, "; "), nil, nil
 	}
 	if _, err := os.Lstat(work); errors.Is(err, fs.ErrNotExist) {
 		r.Bytes += size
 	}
-	return store.WorktreeRemoved, "", nil
+	return store.WorktreeRemoved, "", discarded, nil
 }
 
 // sliceWorkDirs returns the slices whose working directory, work or work.s<k>, is in t's directory, always slice 1.
@@ -654,10 +671,11 @@ func treeSize(path string) int64 {
 // first prune, one that freed something and one whose outcome changed are recorded, and a rerun that found nothing
 // new writes nothing.
 func (p *pruner) record(r pruneResult, prior *store.TaskPrune) error {
-	rec := store.TaskPrune{Repository: r.Task.Repository, TaskID: r.Task.ID, BytesFreed: r.Bytes, Worktree: r.Worktree, Kept: boundKept(r.Kept), Complete: r.complete()}
+	rec := store.TaskPrune{Repository: r.Task.Repository, TaskID: r.Task.ID, BytesFreed: r.Bytes, Worktree: r.Worktree, Kept: boundKept(r.Kept),
+		Discarded: r.discarded(), Complete: r.complete()}
 	id := mutationID("prune", r.Task.Repository, r.Task.ID)
 	if prior != nil {
-		if r.Bytes == 0 && prior.Worktree == rec.Worktree && prior.Kept == rec.Kept && prior.Complete == rec.Complete {
+		if r.Bytes == 0 && prior.Worktree == rec.Worktree && prior.Kept == rec.Kept && prior.Discarded == rec.Discarded && prior.Complete == rec.Complete {
 			return nil
 		}
 		rec.Runs = prior.Runs
@@ -742,6 +760,9 @@ func writePruneReport(w io.Writer, results []pruneResult, dry bool) error {
 			notes = append(notes, "worktree kept: "+r.Kept)
 		case store.WorktreeNotWorkspace:
 			notes = append(notes, "not a worktree: "+r.Kept)
+		}
+		if len(r.Discarded) > 0 {
+			notes = append(notes, "untracked files discarded under prune_untracked: "+r.discarded())
 		}
 		if len(r.Panes) > 0 {
 			notes = append(notes, "pane files kept for "+strings.Join(r.Panes, ", ")+", whose Herdr workspace is not closed yet")

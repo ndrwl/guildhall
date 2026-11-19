@@ -42,6 +42,9 @@ type TaskPrune struct {
 	// Worktree is WorktreeRemoved, WorktreeKept or WorktreeNotWorkspace, and Kept the reason for the last two.
 	Worktree string `json:"worktree"`
 	Kept     string `json:"kept,omitempty"`
+	// Discarded names the untracked files the prune removed with a worktree under the repository's prune_untracked,
+	// empty when it removed none.
+	Discarded string `json:"discarded,omitempty"`
 	// Complete is set when nothing prunable was left: the worktree and the CI log cache are removed and every attempt
 	// directory holds only the files a prune keeps.
 	Complete bool `json:"complete"`
@@ -70,6 +73,11 @@ func (s *Store) PruneTask(mutationID string, p TaskPrune) (Receipt, error) {
 	}
 	if p.Kept != "" {
 		if err := validateText("kept", p.Kept, MaxTextBytes); err != nil {
+			return Receipt{}, err
+		}
+	}
+	if p.Discarded != "" {
+		if err := validateText("discarded", p.Discarded, MaxTextBytes); err != nil {
 			return Receipt{}, err
 		}
 	}

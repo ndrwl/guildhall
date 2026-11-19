@@ -24,7 +24,7 @@ import (
 type Workspaces interface {
 	Ensure(ctx context.Context, w git.Workspace) error
 	FastForward(ctx context.Context, w git.Workspace) (kept string, err error)
-	Retire(ctx context.Context, r git.Retirement) ([]string, error)
+	Retire(ctx context.Context, r git.Retirement) (kept, discarded []string, err error)
 	Tip(ctx context.Context, repository, branch string) (string, error)
 	IsAncestor(ctx context.Context, repository, commit, head string) (bool, error)
 	Behind(ctx context.Context, repository, rev, ref string) (int, []string, error)
@@ -140,7 +140,9 @@ func (r *run) retire(id string, repo config.Repository, head string, k int) erro
 		return nil
 	}
 	w := git.Workspace{Repository: repo.Path, Remote: repo.Remote, Branch: SliceBranch(r.task.ID, k), Dir: r.slicePath(k)}
-	kept, err := r.e.Workspaces.Retire(r.ctx, git.Retirement{Workspace: w, Head: head, Outputs: r.outputs()})
+	// DiscardUntracked is left unset: the engine's retirement keeps untracked files for the Director, and only
+	// the prune discards them, under the repository's prune_untracked.
+	kept, _, err := r.e.Workspaces.Retire(r.ctx, git.Retirement{Workspace: w, Head: head, Outputs: r.outputs()})
 	if err != nil {
 		if r.ctx.Err() != nil {
 			return r.ctx.Err()

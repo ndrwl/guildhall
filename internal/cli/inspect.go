@@ -345,6 +345,9 @@ func files(h store.TaskHistory) taskFiles {
 		case store.WorktreeNotWorkspace:
 			summary += "; not a worktree: " + p.Kept
 		}
+		if p.Discarded != "" {
+			summary += "; untracked files discarded under prune_untracked: " + p.Discarded
+		}
 		if !p.Complete && p.Worktree == store.WorktreeRemoved {
 			summary += "; partial: some attempt files remain"
 		}

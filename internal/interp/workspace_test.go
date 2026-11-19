@@ -106,8 +106,8 @@ func TestWithoutWorkspacesTheWorkDirectoryIsPlain(t *testing.T) {
 // failingRetire is the workspace double with a Retire that always fails.
 type failingRetire struct{ *gittest.Workspaces }
 
-func (failingRetire) Retire(context.Context, git.Retirement) ([]string, error) {
-	return nil, errors.New("git worktree remove: permission denied")
+func (failingRetire) Retire(context.Context, git.Retirement) ([]string, []string, error) {
+	return nil, nil, errors.New("git worktree remove: permission denied")
 }
 
 // newRetireEnv is the publish path with the workspace double over a repository whose remote's default branch is
@@ -243,9 +243,9 @@ type interruptedRetire struct {
 	cancel context.CancelFunc
 }
 
-func (i interruptedRetire) Retire(ctx context.Context, _ git.Retirement) ([]string, error) {
+func (i interruptedRetire) Retire(ctx context.Context, _ git.Retirement) ([]string, []string, error) {
 	i.cancel()
-	return nil, ctx.Err()
+	return nil, nil, ctx.Err()
 }
 
 // TestInterruptedRetirementKeepsTheTaskOpen: an interrupt during retirement fails the advance before the task

@@ -64,7 +64,9 @@ func (w *queueWorkspaces) fastForwards() int {
 	defer w.mu.Unlock()
 	return w.forwards
 }
-func (w *queueWorkspaces) Retire(context.Context, git.Retirement) ([]string, error) { return nil, nil }
+func (w *queueWorkspaces) Retire(context.Context, git.Retirement) ([]string, []string, error) {
+	return nil, nil, nil
+}
 func (w *queueWorkspaces) Tip(context.Context, string, string) (string, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()

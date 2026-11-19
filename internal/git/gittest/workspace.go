@@ -22,7 +22,7 @@ import (
 // WorkspaceHarness is one implementation of git.Program.Ensure, FastForward and Retire under the workspace contract suite.
 type WorkspaceHarness struct {
 	Ensure func(ctx context.Context, w git.Workspace) error
-	Retire func(ctx context.Context, r git.Retirement) ([]string, error)
+	Retire func(ctx context.Context, r git.Retirement) (kept, discarded []string, err error)
 	// FastForward is git.Program.FastForward.
 	FastForward func(ctx context.Context, w git.Workspace) (string, error)
 	// AdvanceDefault adds a commit adding the file name to the default branch of w's remote, as a dependency's
@@ -342,8 +342,8 @@ func RunWorkspaceContract(t *testing.T, newHarness func(t *testing.T) WorkspaceH
 	})
 	retired := func(t *testing.T, h WorkspaceHarness, r git.Retirement) {
 		t.Helper()
-		if kept, err := h.Retire(ctx, r); err != nil || len(kept) > 0 {
-			t.Fatalf("Retire = %q, %v; want the workspace removed", kept, err)
+		if kept, discarded, err := h.Retire(ctx, r); err != nil || len(kept) > 0 || len(discarded) > 0 {
+			t.Fatalf("Retire = %q, %q, %v; want the workspace removed with nothing discarded", kept, discarded, err)
 		}
 		if _, err := os.Stat(r.Dir); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("retired working directory is still there: %v", err)
@@ -360,9 +360,9 @@ func RunWorkspaceContract(t *testing.T, newHarness func(t *testing.T) WorkspaceH
 	}
 	kept := func(t *testing.T, h WorkspaceHarness, r git.Retirement) {
 		t.Helper()
-		k, err := h.Retire(ctx, r)
-		if err != nil || len(k) == 0 {
-			t.Fatalf("Retire = %q, %v; want the workspace kept with a reason", k, err)
+		k, discarded, err := h.Retire(ctx, r)
+		if err != nil || len(k) == 0 || len(discarded) > 0 {
+			t.Fatalf("Retire = %q, %q, %v; want the workspace kept with a reason", k, discarded, err)
 		}
 		t.Logf("kept: %q", k)
 		if _, err := os.Stat(filepath.Join(r.Dir, "change.txt")); err != nil {
@@ -385,6 +385,30 @@ func RunWorkspaceContract(t *testing.T, newHarness func(t *testing.T) WorkspaceH
 		r := arrangeMerged(t, h)
 		writeFile(t, filepath.Join(r.Dir, "notes.txt"), "mine\n")
 		kept(t, h, r)
+	})
+	t.Run("discards untracked files that are the only reason to keep it", func(t *testing.T) {
+		h := newHarness(t)
+		r := arrangeMerged(t, h)
+		r.DiscardUntracked = true
+		writeFile(t, filepath.Join(r.Dir, "logs", "ci.log"), "log\n")
+		k, discarded, err := h.Retire(ctx, r)
+		if err != nil || len(k) > 0 || !slices.Equal(discarded, []string{"logs/ci.log"}) {
+			t.Fatalf("Retire = %q, %q, %v; want removed with logs/ci.log discarded", k, discarded, err)
+		}
+		if _, err := os.Stat(r.Dir); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("retired working directory is still there: %v", err)
+		}
+	})
+	t.Run("keeps untracked files with commits after the merged head even when discarding", func(t *testing.T) {
+		h := newHarness(t)
+		r := arrangeMerged(t, h)
+		r.DiscardUntracked = true
+		writeFile(t, filepath.Join(r.Dir, "logs", "ci.log"), "log\n")
+		h.Commit(t, r.Dir, "later.txt")
+		kept(t, h, r)
+		if _, err := os.Stat(filepath.Join(r.Dir, "logs", "ci.log")); err != nil {
+			t.Errorf("a kept workspace lost its untracked file: %v", err)
+		}
 	})
 	t.Run("keeps an output with other bytes", func(t *testing.T) {
 		h := newHarness(t)
@@ -461,12 +485,12 @@ func RunWorkspaceContract(t *testing.T, newHarness func(t *testing.T) WorkspaceH
 			"invalid head": {Workspace: w, Head: "main"},
 			"relative dir": {Workspace: git.Workspace{Repository: w.Repository, Remote: w.Remote, Branch: w.Branch, Dir: "work"}, Head: base},
 		} {
-			if _, err := h.Retire(ctx, r); !errors.Is(err, git.ErrInvalidWorkspace) {
+			if _, _, err := h.Retire(ctx, r); !errors.Is(err, git.ErrInvalidWorkspace) {
 				t.Errorf("%s: Retire = %v, want ErrInvalidWorkspace", name, err)
 			}
 		}
 		writeFile(t, filepath.Join(w.Dir, "plan.md"), "plan\n")
-		if _, err := h.Retire(ctx, git.Retirement{Workspace: w, Head: base}); !errors.Is(err, git.ErrNotWorkspace) {
+		if _, _, err := h.Retire(ctx, git.Retirement{Workspace: w, Head: base}); !errors.Is(err, git.ErrNotWorkspace) {
 			t.Errorf("Retire over a plain directory = %v, want ErrNotWorkspace", err)
 		}
 		if _, err := os.Stat(filepath.Join(w.Dir, "plan.md")); err != nil {
@@ -885,19 +909,19 @@ func Repositories(t *testing.T) func(*testing.T) (repository, remote, base strin
 	}
 }
 
-// Retire implements the contract over the double's directories, where every file is untracked.
-func (f *Workspaces) Retire(ctx context.Context, r git.Retirement) ([]string, error) {
+// Retire implements the contract over the double's directories, where every file is untracked: one the double did
+// not commit is untracked, and one it committed with other bytes is changed.
+func (f *Workspaces) Retire(ctx context.Context, r git.Retirement) (kept, discarded []string, err error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !filepath.IsAbs(r.Repository) || !filepath.IsAbs(r.Dir) || r.Branch == "" || !digest.ValidHead(r.Head) {
-		return nil, fmt.Errorf("%w: %+v", git.ErrInvalidWorkspace, r)
+		return nil, nil, fmt.Errorf("%w: %+v", git.ErrInvalidWorkspace, r)
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	dir := filepath.Clean(r.Dir)
 	branch := [2]string{r.Repository, r.Branch}
-	var kept []string
 	if tip, ok := f.branches[branch]; ok && !f.merged(tip, r.Head) {
 		kept = append(kept, "branch "+r.Branch+" is at "+tip+", which was not merged")
 	}
@@ -905,10 +929,11 @@ func (f *Workspaces) Retire(ctx context.Context, r git.Retirement) ([]string, er
 	if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
 		ours = false
 	} else if err != nil {
-		return nil, err
+		return nil, nil, err
 	} else if !ours {
-		return nil, fmt.Errorf("%w: %s", git.ErrNotWorkspace, dir)
+		return nil, nil, fmt.Errorf("%w: %s", git.ErrNotWorkspace, dir)
 	}
+	var untracked []string
 	if ours {
 		if !f.merged(tr.head, r.Head) {
 			kept = append(kept, "HEAD is at "+tr.head+", which was not merged")
@@ -917,24 +942,30 @@ func (f *Workspaces) Retire(ctx context.Context, r git.Retirement) ([]string, er
 			sum := digest.Of(data).Hex()
 			if tr.committed[rel] != sum && !slices.Contains(r.Outputs[rel], sum) {
 				kept = append(kept, "changed or untracked "+rel)
+				if _, ok := tr.committed[rel]; !ok {
+					untracked = append(untracked, rel)
+				}
 			}
 		})
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
+	if r.DiscardUntracked && len(kept) == len(untracked) {
+		kept, discarded = nil, untracked
+	}
 	if len(kept) > 0 {
-		return kept, nil
+		return kept, nil, nil
 	}
 	if ours {
 		if err := os.RemoveAll(dir); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		delete(f.trees, dir)
 	}
 	delete(f.branches, branch)
 	delete(f.recorded, branch)
-	return nil, nil
+	return nil, discarded, nil
 }
 
 // merged reports whether commit is head or one of its ancestors.

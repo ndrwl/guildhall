@@ -84,7 +84,7 @@ func TestBaseProgram(t *testing.T) {
 		}
 		ensure(t, w)
 		head := repo{t, w.Dir, global}.run("rev-parse", "HEAD")
-		if kept, err := (git.Program{}).Retire(ctx, git.Retirement{Workspace: w, Head: head}); err != nil || len(kept) > 0 {
+		if kept, _, err := (git.Program{}).Retire(ctx, git.Retirement{Workspace: w, Head: head}); err != nil || len(kept) > 0 {
 			t.Fatalf("Retire = %v, %v", kept, err)
 		}
 		if got, err := (git.Program{}).Base(ctx, w.Repository, w.Branch); err == nil {

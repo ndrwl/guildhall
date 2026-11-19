@@ -32,11 +32,11 @@ func failedOneBuild(by string) interptest.Expectation {
 // kept.
 type keepingWorkspaces struct{ *sliceWorkspaces }
 
-func (w keepingWorkspaces) Retire(ctx context.Context, r git.Retirement) ([]string, error) {
-	if _, err := w.sliceWorkspaces.Retire(ctx, r); err != nil {
-		return nil, err
+func (w keepingWorkspaces) Retire(ctx context.Context, r git.Retirement) ([]string, []string, error) {
+	if _, _, err := w.sliceWorkspaces.Retire(ctx, r); err != nil {
+		return nil, nil, err
 	}
-	return []string{"it has commits past its base"}, nil
+	return []string{"it has commits past its base"}, nil, nil
 }
 
 // toFailedOnePR is app/t7 on the sliced workflow, or its copy with no range, accepted with a spec of one pull request,

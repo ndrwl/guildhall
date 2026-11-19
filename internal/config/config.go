@@ -663,6 +663,12 @@ type Repository struct {
 	// when unset, so the config digest of a config without them is unchanged.
 	DirectorAcceptLines int `toml:"director_accept_lines" json:",omitempty"`
 	DirectorAcceptFiles int `toml:"director_accept_files" json:",omitempty"`
+	// PruneUntracked lets a prune remove a done task's worktree when untracked files, such as CI logs, are all that
+	// would keep it, discarding them and naming them in the prune report and record (docs/configuration.md#repositories).
+	// A cancelled task's worktree, and one kept for any other reason, is kept as before. It is a repository key that
+	// no task overrides, false by default, and omitted from JSON when unset, so the config digest of a config
+	// without it is unchanged.
+	PruneUntracked bool `toml:"prune_untracked" json:",omitempty"`
 	// Profiles are this repository's grants, keyed by a declared claude profile's name: each adds its rules to that
 	// profile's effective grant for this repository's tasks only (docs/adapters.md#artisan-permissions).
 	// It is omitted from JSON when unset, so the config digest of a config without it is unchanged.
