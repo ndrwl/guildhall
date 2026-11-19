@@ -4,7 +4,7 @@ runs in an empty directory, the second with claude.DisallowedToolsArgs(). Pass c
 (input + cache_creation + cache_read) at least 3,000 tokens smaller, every dropped tool absent from the init tools and
 every kept tool still present. Run on 2026-11-04 by the d190 build attempt:
 
-$ go test ./internal/adapter/claude -run TestLiveClaudeTools -v -count=1 -claude-live -claude-program /home/andrew/.local/bin/claude
+$ go test ./internal/adapter/claude -run TestLiveClaudeTools -v -count=1 -claude-live -claude-program "$(command -v claude)"
 === RUN   TestLiveClaudeTools
     claude_test.go:867: claude --version: 2.1.318 (Claude Code)
     claude_test.go:868: --disallowedTools Workflow,ScheduleWakeup,ReportFindings,ListAgents,SendMessage,CronCreate,CronDelete,CronList,RemoteTrigger,PushNotification,DesignSync,EnterWorktree,ExitWorktree

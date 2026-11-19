@@ -100,11 +100,11 @@ func TestSummaryRefusals(t *testing.T) {
 func TestSummaryWrongHost(t *testing.T) {
 	f := &fakeAnswerer{}
 	h := answering(t, f)
-	for _, host := range []string{"evil.example:4388", "andrew-lap-wsl.tail5da40a.ts.net:4389", ""} {
+	for _, host := range []string{"evil.example:4388", "host.tail.ts.net:4389", ""} {
 		r := httptest.NewRequest(http.MethodPost, "/guildhall/d122/summary", strings.NewReader(summaryForm("confirm", "").Encode()))
 		r.Host, r.RemoteAddr = host, gmAddr
 		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		r.Header.Set("Origin", "http://andrew-lap-wsl.tail5da40a.ts.net:4388")
+		r.Header.Set("Origin", "http://"+web.FixtureAddress)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)
 		if w.Code != http.StatusMisdirectedRequest {
