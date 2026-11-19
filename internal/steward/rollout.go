@@ -431,6 +431,9 @@ func (r *Rollout) Apply(ctx context.Context, stageDir, approve string, machines 
 		return nil, fmt.Errorf("%w: the plan was written for %s", ErrPlanStale, saved.StageDir)
 	}
 	p, err := r.Plan(ctx, saved.Machines, saved.StageDir)
+	if err := interrupted(ctx); err != nil {
+		return nil, err
+	}
 	if err != nil {
 		return nil, err
 	}

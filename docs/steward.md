@@ -343,10 +343,13 @@ A command that exits non-zero, a refusing machine and a timeout are each reporte
 
 ### Interrupting a Steward command
 
-Ctrl-C or `SIGTERM` during `steward rollout`, `takeover`, `provision`, `secrets`, `machine retire` or a manual `steward collect` cancels the command, in every form: dry run or plan, apply, abandon, `set`, `--rotated` and `--status`.
+Ctrl-C or `SIGTERM` during `steward rollout`, `takeover`, `provision`, `secrets`, `machine retire` or a manual `steward collect` cancels the command, in every form: dry run or plan, apply, abandon, `set`, whether its value is typed or piped, `--rotated` and `--status`.
 Each `scp` and `ssh` it is running is stopped as a timeout stops it, its process group killed on Unix and its process elsewhere, and reported as `interrupted: context canceled` rather than as a timeout.
-The rollout or secrets receipt then records the copy or machine as `failed` with that error, and a takeover's or provisioning's step log records the running step `failed` with it; neither format changes.
-`.rollout.lock` is released only after those children are gone, and the command exits 1; `steward secrets set` interrupted at its prompt turns echo back on before it exits.
+Whether a record of the interrupt is written depends on when it comes.
+An interrupt during a copy's or machine's transfers and commands records it `failed` with that error in the rollout or secrets receipt, and one during a running takeover or provisioning step records that step `failed` with it in the step log; neither format changes.
+An apply interrupted before it acts writes no receipt and marks no step failed, and reports `interrupted` rather than a stale or changed plan: a rollout or secrets apply while it plans again, and a takeover or provisioning while its first apply plans again or, on a resume, while it reads the copy's config.toml again or checks a step already done, which stays `done`.
+A rollout or secrets dry run interrupted while it reads the machines writes its plan with the interrupted copies or machines refused; a takeover or provisioning dry run interrupted before it has read the machine writes no plan.
+`.rollout.lock` is released only after those children are gone, and the command exits 1 in every case; `steward secrets set` interrupted at its prompt turns echo back on before it exits.
 A second Ctrl-C while the command is stopping ends it at once, without that cleanup.
 Interrupting stops only the local `scp` or `ssh`: a remote command that had already started, such as `director pause` or `config reload`, may still finish on the machine, and nothing is rolled back.
 The next rollout or secrets apply plans again from what the machines hold, and resuming a takeover or provisioning checks the interrupted step again before it acts.

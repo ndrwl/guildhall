@@ -191,7 +191,7 @@ func (a *App) stewardSecretsSet(ctx context.Context, s *steward.Secrets, machine
 
 // readSecretValue reads one value from standard input: typed at a terminal after a prompt on standard error, with
 // echo off, up to the end of the line, or else piped, all of it but one final line ending. An interrupt while it
-// waits for a typed value ends the wait with an interrupted error once echo is restored.
+// waits for a typed or piped value ends the wait with an interrupted error, once echo is restored for a typed one.
 func (a *App) readSecretValue(ctx context.Context, machine, name string) (string, error) {
 	in := a.Stdin
 	if in == nil {
@@ -206,9 +206,29 @@ func (a *App) readSecretValue(ctx context.Context, machine, name string) (string
 			return a.readTypedValue(ctx, f, restore, machine, name)
 		}
 	}
-	data, err := io.ReadAll(io.LimitReader(in, maxSecretValue+1))
-	if err != nil {
-		return "", err
+	// The read runs beside the wait for ctx, so an interrupt ends a pipe or FIFO that never reaches its end; the read
+	// it leaves blocked is abandoned, as the command is about to exit.
+	type piped struct {
+		data []byte
+		err  error
+	}
+	read := make(chan piped, 1)
+	go func() {
+		data, err := io.ReadAll(io.LimitReader(in, maxSecretValue+1))
+		read <- piped{data, err}
+	}()
+	var data []byte
+	select {
+	case r := <-read:
+		if r.err != nil {
+			return "", r.err
+		}
+		data = r.data
+	case <-ctx.Done():
+		if err := ctx.Err(); errors.Is(err, context.Canceled) {
+			return "", fmt.Errorf("%w: %w", steward.ErrInterrupted, err)
+		}
+		return "", ctx.Err()
 	}
 	if len(data) > maxSecretValue {
 		return "", fmt.Errorf("the value is longer than %d bytes", maxSecretValue)

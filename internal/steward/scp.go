@@ -36,6 +36,15 @@ func stoppedBy(ctx context.Context) error {
 	return err
 }
 
+// interrupted is stoppedBy's interrupted error when ctx was cancelled, and nil otherwise, so an apply that plans again
+// or checks again before it acts reports an interrupt as one rather than as the plan having changed.
+func interrupted(ctx context.Context) error {
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return stoppedBy(ctx)
+	}
+	return nil
+}
+
 func scpCommand(src, dst string) []string {
 	return []string{"scp", "-q", "-B", "-o", "BatchMode=yes", "--", src, dst}
 }
