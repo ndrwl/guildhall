@@ -8,6 +8,7 @@ description: Use as the Steward when the Guildmaster asks to roll out shared set
 The roster and the shared managed settings live in the private config checkout your config names in `[private_config] location`: `roster.toml` and `managed.toml`.
 A rollout copies the managed settings to the Director copies on the machines you name, over SSH, then runs the fixed `guildhall config reload` on each copy it wrote; it never writes a copy's `config.toml` or creates a copy.
 Keep every plan under your copy's `rollouts/` directory, one new directory per dry run, so `guildhall steward status` finds its receipts.
+Run every Steward command, such as `guildhall steward rollout`, with a 10-minute Bash timeout (600000 ms): each unreachable machine can take 2 minutes.
 
 ## The roster
 

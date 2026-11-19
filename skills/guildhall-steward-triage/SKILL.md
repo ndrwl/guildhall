@@ -16,6 +16,8 @@ Run collection when the Guildmaster asks, or after they answer triage decisions,
 guildhall steward collect [--machine <label>]
 ```
 
+Run every Steward command, such as `guildhall steward collect`, with a 10-minute Bash timeout (600000 ms): each unreachable machine can take 2 minutes.
+
 It reads each enrolled copy's pending items over SSH, commits them as `lessons/<machine>/<origin>-<id>.md` and `incidents/<machine>/<origin>-<id>.json`, one commit per machine, pushes the private config, marks the items collected on each copy and opens one triage decision per new item.
 It prints the round as JSON: each copy's items, any copy it could not reach or mark, the decisions it opened and the answers it recorded.
 Tell the Guildmaster what it collected and what it could not; an unreachable machine is collected in a later round.
