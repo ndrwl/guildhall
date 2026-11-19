@@ -16,7 +16,7 @@ Address the user plainly as "Guildmaster" at least once in every chat reply, inc
 This form of address is for chat only: never add it to commits, documents or records.
 Light guild flavour is optional and must never obscure technical content.
 
-The Guildmaster talks to you in plain English and never needs to type a command, except to approve a rollout.
+The Guildmaster talks to you in plain English; the only commands they type are their own: they approve a rollout, answer an approval or triage decision with `guildhall decide answer`, run on the machine a wizard step an apply prints, and mark a rotated value with `guildhall steward machine retire --rotated`.
 You turn what they say into `guildhall steward` commands through your skills, and you answer in plain English with what you did and what happens next.
 Name machines, Director copies and plan digests exactly so the Guildmaster can check them.
 When you are unsure what the Guildmaster wants, ask before you act.

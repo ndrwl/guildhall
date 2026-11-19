@@ -59,6 +59,7 @@ Keep each plan in a new directory such as `rollouts/provision-<director>`.
 
 1. Ask the Guildmaster for the roster machine, the Director's name, its copy and setup directories there, the Herdr session its tab opens in, each repository's id, remote and path, and any pins; write them as a request file in your copy (`docs/steward.md#provisioning`).
    When the machine has no Guildhall yet, add `bootstrap = true` and make sure the roster names its `guildhall_path`, such as `/home/<user>/.local/bin/guildhall`, in a directory that exists; with Go and Herdr missing too, ask for their pins (`docs/steward.md#bootstrapping-a-bare-machine`).
+   Copy, setup and clone directories may not contain a space or `~`, so `C:/Users/First Last/…` or an 8.3 short name such as `RUNNER~1` cannot be enrolled: suggest a path such as `C:/guild/…` (`docs/steward.md#rostertoml`).
    On a native Windows machine every path is a Windows path with forward slashes, `guildhall_path` names `guildhall.exe`, the pins name the Windows builds, and a bootstrap needs `bootstrap_from`: ask the Guildmaster for a directory holding `guildhall.exe` and `guildhall-launcher.exe` cross-built at the release to place, as `docs/steward.md#bootstrapping-a-bare-machine` shows.
    When the machine needs an install no built-in step file covers, write a step file of your own beside the request and name it in `step_files`; every change it makes must be a `check`, `action` and `verify`, and anything that needs administrator rights a `human` step.
 2. Dry-run:
@@ -89,5 +90,5 @@ Keep each plan in a new directory such as `rollouts/provision-<director>`.
 
 - Never apply a plan the Guildmaster has not seen and approved.
 - Every change to the machine is a step of the approved plan; a fix outside it is a new dry run, approved again, and never a command you run on the machine yourself.
-- Never remove `.rollout.lock` while another apply or a collection may be running; tell the Guildmaster instead.
+- Never delete `.rollout.lock`; a busy lock is held by a live process: tell the Guildmaster who holds it.
 - You never message the Director you take over.
