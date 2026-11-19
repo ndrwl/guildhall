@@ -146,13 +146,16 @@ and the scratch directory stayed empty. The agent_message, verbatim:
 
 Compared with d108 run r4 (docs/evidence/codex-hooks-2026-11-03.txt, H2),
 which had no switches: the ~90 mcp__codex_apps__* tools, web__run and
-request_plugin_install are gone.
+request_plugin_install are not among the visible names.
 
-No apps, web or MCP tools: there is no mcp__codex_apps__* tool, no web__run
-and no mcp__<server>__* tool. list_mcp_resource_templates,
-list_mcp_resources and read_mcp_resource are Codex's built-in readers of MCP
-server resources; d108 r4 listed them too, and with no MCP servers
-configured and `mcp_servers={}` passed, they have no server to read from.
+No visible app, web search or MCP server tool: the visible list has no
+mcp__codex_apps__* tool, no web__run and no mcp__<server>__* tool. It does
+have three MCP resource tools, list_mcp_resource_templates,
+list_mcp_resources and read_mcp_resource, Codex's built-in readers of MCP
+server resources (d108 r4 listed them too); with no MCP servers configured
+and `mcp_servers={}` passed, they have no server to read from. The probe
+listed visible names only: it called no tool, so deferred tools reachable
+through functions.exec were not inspected, and their absence is not shown.
 
 
 5. The judge's work/ directory and the wrapper's files
@@ -227,8 +230,9 @@ VERDICT: PASS
 -------------
 
 The judge ran live on codex-cli 0.163.0 with the read-only command line in
-item 3, its tool set had no apps, web or MCP tools, its workdir holds only
-the judgement.json the wrapper wrote, the repository was unchanged, and the
-judgement was recorded. The one deviation is how the command line was
-captured (/proc instead of the argv shim, item 3); the argv is still the real
-one.
+item 3, its visible tool set had no app, web search or MCP server tool
+(only Codex's MCP resource readers, with no server to read; deferred tools
+were not inspected), its workdir holds only the judgement.json the wrapper
+wrote, the repository was unchanged, and the judgement was recorded. The one
+deviation is how the command line was captured (/proc instead of the argv
+shim, item 3); the argv is still the real one.

@@ -93,3 +93,24 @@ func TestNoReversedClaims(t *testing.T) {
 	}
 	fail(t, "reversed claims", problems)
 }
+
+// TestCodexJudgeClaimsMatchProbe checks that the d179 Codex judge evidence and the adapters page that cites it
+// claim only what the evidence's tool probe showed: the probe listed visible tool names only, saw Codex's MCP resource
+// readers, and did not inspect deferred tools (docs/evidence/codex-judge-2026-11-13.txt, item 4).
+func TestCodexJudgeClaimsMatchProbe(t *testing.T) {
+	var problems []string
+	for _, name := range []string{"docs/evidence/codex-judge-2026-11-13.txt", "docs/adapters.md"} {
+		data, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(name)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := strings.Join(strings.Fields(string(data)), " ")
+		if strings.Contains(strings.ToLower(text), "no apps, web or mcp tools") {
+			problems = append(problems, name+": says there were no apps, web or MCP tools at all")
+		}
+		if !strings.Contains(text, "deferred tools not inspected") && !strings.Contains(text, "deferred tools were not inspected") {
+			problems = append(problems, name+": does not say deferred tools were not inspected")
+		}
+	}
+	fail(t, "Codex judge tool claims", problems)
+}
