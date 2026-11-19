@@ -20,6 +20,7 @@ Missing or whitespace-only feedback, invalid identifiers or attempt numbers, ext
 Other refusals and operational errors exit 1 on standard error; success prints the normal advance JSON on standard output, exit 0.
 
 The engine first records the instructions as immutable document `send-back-<step>-<attempt>` and then starts the next attempt with that document on its `feedback` port.
+A `plan` step's next attempt is also given the plan's latest recorded spec on `previous`, so the revision can keep merged slices' entries byte for byte.
 The request runs under the same task lock, admission holds and attempt caps as every advance.
 A hold may leave the feedback pending with `wait: paused`; a subsequent `task start` consumes it once the hold lifts.
 Over the running cap the next attempt is [queued](director.md#the-start-queue) with the feedback recorded, printing `wait: queued` and its place, and the session supervisor starts it when a slot frees; repeating the same send-back while it is queued prints the same entry, and one with other feedback is refused, as below.

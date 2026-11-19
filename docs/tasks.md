@@ -280,7 +280,7 @@ The task stays `open`, and only the last slice's merge records it `done`.
 A crash between a slice's merge record and the next slice's first attempt resumes at the next slice, finishing the merged slice's close first.
 Each slice merge sends a `merged` message, so it counts toward `hallmark_after_merges`; `handoff_after_tasks`, `--depends-on` and `--until-merged` count or release only when the task closes.
 
-A spec that turns out wrong part-way goes back to plan with `step send-back`; the revised spec keeps every merged slice's entry byte for byte and may rewrite, add or drop slices still to come, but not all of them: a revision that leaves nothing after the merged slices is refused, as it leaves nothing to deliver. The Guildmaster accepts it, and the current slice's steps, bound to the old spec, run again under the new one.
+A spec that turns out wrong part-way goes back to plan with `step send-back`; the new plan attempt is given the previous spec on `previous`, and the revised spec keeps every merged slice's entry byte for byte and may rewrite, add or drop slices still to come, but not all of them: a revision that leaves nothing after the merged slices is refused, as it leaves nothing to deliver. The Guildmaster accepts it, and the current slice's steps, bound to the old spec, run again under the new one.
 When the slices left have nothing to deliver because earlier work already shipped them, close them with [`slice delivered`](#a-slice-already-delivered) instead.
 
 ### A slice already delivered

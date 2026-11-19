@@ -232,10 +232,10 @@ func TestRetryIsRefusedUnlessTheLatestAttemptFailedOrStopped(t *testing.T) {
 }
 
 // TestRetryCarriesPendingFeedback: a looped attempt that failed did not serve the feedback it was given,
-// so the retried attempt is given it again.
+// so the retried attempt is given it again, with the same previous spec.
 func TestRetryCarriesPendingFeedback(t *testing.T) {
 	words := "changes_requested\nTighten the scope."
-	feedback := map[string]string{"feedback": "sha256:" + sum([]byte(words))}
+	feedback := map[string]string{"feedback": "sha256:" + sum([]byte(words)), "previous": "sha256:" + sum(specV1(t))}
 	v2, err := os.ReadFile(filepath.Join(interptest.Testdata(), "docs", "spec-v2.md"))
 	if err != nil {
 		t.Fatal(err)

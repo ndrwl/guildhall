@@ -416,7 +416,7 @@ func TestMaxOpensLoopExit(t *testing.T) {
 }
 
 // TestGuildmasterChangesLoopToPlan: the Guildmaster's changes_requested answer sends the plan back with
-// the answer as feedback, and the approval is asked again for the new spec.
+// the answer as feedback and the spec it asked changes to as previous, and the approval is asked again for the new spec.
 func TestGuildmasterChangesLoopToPlan(t *testing.T) {
 	for _, b := range backends {
 		t.Run(b.name, func(t *testing.T) {
@@ -425,7 +425,7 @@ func TestGuildmasterChangesLoopToPlan(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			plan2 := interptest.Expectation{Step: "plan", Attempt: 2, Profile: "planner", Inputs: map[string]string{"feedback": "sha256:" + sum([]byte(words))},
+			plan2 := interptest.Expectation{Step: "plan", Attempt: 2, Profile: "planner", Inputs: map[string]string{"feedback": "sha256:" + sum([]byte(words)), "previous": "sha256:" + sum(specV1(t))},
 				Standards: []string{"standards/go.md"}, Respond: interptest.Succeed("replanned", interptest.File{Path: "spec.md", Data: v2})}
 			e := newEnvDefinition(t, b, loadWorkflow(t, "loop"), planExpectation(t, interptest.Succeed("planned", interptest.File{Path: "spec.md", Data: specV1(t)})), plan2)
 			e.advance(t, interp.Event{Kind: interp.TaskCreated})

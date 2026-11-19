@@ -148,7 +148,7 @@ func TestNoAcceptanceSendBackToPlan(t *testing.T) {
 			review2.Revisions.SpecDigest = spec2
 			e.script.Expect(
 				interptest.Expectation{Step: "plan", Attempt: 2, Profile: "planner", Standards: []string{"standards/go.md"},
-					Inputs:  map[string]string{"context": "sha256:" + sum(researchNotes), "feedback": "sha256:" + sum([]byte(feedback))},
+					Inputs:  map[string]string{"context": "sha256:" + sum(researchNotes), "feedback": "sha256:" + sum([]byte(feedback)), "previous": "sha256:" + sum(specV1(t))},
 					Respond: interptest.Succeed("replanned", interptest.File{Path: "spec.md", Data: v2})},
 				interptest.Expectation{Step: "build", Attempt: 2, Profile: "builder", Inputs: map[string]string{"spec": spec2},
 					Standards: []string{"standards/go.md"}, Skills: []string{"go-tdd", "guildhall-contributing"},

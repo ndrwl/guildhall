@@ -12,6 +12,8 @@ Nothing else may come before the first `**Q1.` line: no sentence, no `### Q1.` h
 The approval ask shows each question after the Summary with its recommended option first and marked, and Guildhall refuses a spec the Guildmaster will approve that has no Summary block, open questions in another shape, or a `Recommended:` line that does not start with one of its option letters.
 When the work is more than one pull request, list its slices under `## Slices`: a numbered list, each entry a bold title, what that pull request delivers and its expected size; Guildhall delivers them in order and refuses a malformed list.
 When slices have already merged, keep their entries unchanged and rewrite only the ones still to come.
+When a loop or a send-back returns the task to plan, your inputs include `feedback`, what asked for the change, and `previous`, the last spec you wrote.
+Revise `previous` rather than starting over: answer the feedback, and copy every merged slice's entry from it byte for byte.
 Write the required `spec` port as a UTF-8 Markdown document at `spec.md` in your working directory.
 The prompt's Strict sections block shows a valid and an invalid example of each of these sections, with the error the invalid one gets.
 Submit your result with `guildhall result submit`, as the Result template says: it refuses a spec in another shape with the reason intake would give, so fix the spec and submit again until it prints `ok`.

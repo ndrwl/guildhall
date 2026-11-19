@@ -604,6 +604,9 @@ Besides its wired inputs, an attempt may be given:
 - For a [Director stage](#director-stages) a loop sent back, besides that `feedback`: `previous`, the stage's own latest document on each output port, and `reviewed`, each document a blocking result among the feedback was bound to (a Guildmaster decision's or a document review outcome's subject), once each; a result bound to a head has none.
   The grill resumes from them rather than starting over (`baseline/stages/grill.md`).
   A [design round](#design-rounds)'s `changes_requested` answer is such feedback for the grill too, with the design as `reviewed`.
+- For a `plan` step given `feedback` by a loop or [send-back](step-send-back.md): `previous`, the plan's own latest recorded `spec`, when it has one, added after the feedback and before `context` and `linked`.
+  The planner revises it rather than starting over and copies merged slices' entries from it byte for byte (`baseline/stages/plan.md`); a plan that never recorded a spec is given none.
+  A retry of a failed plan attempt whose feedback is still pending is given it again.
 - `design`: for a `plan` step, the design of the task's latest [design round](#design-rounds) the Guildmaster approved, `<decision>-<n>-design`, when there is one.
 
 `previous`, `rulings`, `reviewed`, `resolution`, `feedback`, `linked` and the engine's `context` document play no part in staleness: only the wired inputs do, and plan's `design`, so a newly approved design makes a finished plan stale.
