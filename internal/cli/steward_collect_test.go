@@ -393,6 +393,148 @@ func TestScheduledCollectLockBusy(t *testing.T) {
 	}
 }
 
+// scheduledFailing is a scheduled collection over cs, a reader of the Steward inbox's collect-failed messages and a
+// reader of the supervisor.log every schedule writes to.
+func scheduledFailing(t *testing.T, cs *collectSetup) (schedule func() func(), collectFailed func() []store.Message, storePath string, log func() string) {
+	t.Helper()
+	app, _, terminal := cs.app()
+	t.Cleanup(func() {
+		if terminal.Len() != 0 {
+			t.Errorf("the scheduled collect wrote %q to the terminal", terminal)
+		}
+	})
+	cfg, err := config.LoadUnadmitted(filepath.Join(cs.steward, "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Steward.CollectEvery = "1h"
+	storePath = filepath.Join(cs.steward, stewardStoreFile)
+	state := t.TempDir()
+	log = func() string {
+		data, err := os.ReadFile(filepath.Join(state, supervisorLogFile))
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	schedule = func() func() {
+		w, err := app.stewardCollection(cfg, storePath, supervisorLog(state))
+		if err != nil || w == nil {
+			t.Fatalf("collect_every 1h: %v, %v", w, err)
+		}
+		return w.round
+	}
+	collectFailed = func() []store.Message {
+		ms, err := withStore(storePath, true, func(s *store.Store) ([]store.Message, error) {
+			ms, _, err := s.Inbox(store.Recipient{Role: store.RecipientSteward}, 0, store.MaxInboxLimit)
+			return ms, err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var failed []store.Message
+		for _, m := range ms {
+			if m.Type == "collect-failed" {
+				failed = append(failed, m)
+			}
+		}
+		return failed
+	}
+	return schedule, collectFailed, storePath, log
+}
+
+// TestScheduledCollectFailed (red-first): a private config whose push is refused fails every scheduled round, and
+// the third failed round in a row sends the Steward's inbox one collect-failed message, tagged director, and wakes
+// the session; neither a fourth failed round nor a reload's new schedule sends a second one for the same failure.
+func TestScheduledCollectFailed(t *testing.T) {
+	cs := newCollectSetup(t)
+	schedule, collectFailed, storePath, log := scheduledFailing(t, cs)
+	if code, _, stderr := queueCmd(t, cliIncident("i-one", "boom"), "incident", "file", "-", "--copy", cs.director); code != 0 {
+		t.Fatal(stderr)
+	}
+	collectGit(t, cs.private, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "missing"))
+
+	round := schedule()
+	round()
+	round()
+	if ms := collectFailed(); len(ms) != 0 {
+		t.Fatalf("two failed rounds sent %+v", ms)
+	}
+	round()
+	ms := collectFailed()
+	if len(ms) != 1 || ms[0].Sender != store.SenderDirector || ms[0].Recipient != store.RecipientSteward ||
+		!strings.HasPrefix(ms[0].Text, "Scheduled collection failed 3 rounds in a row: ") {
+		t.Fatalf("three failed rounds sent %+v, want one collect-failed from director", ms)
+	}
+	if ms[0].Type != store.MessageCollectFailed || ms[0].TaskID != stewardRolloutsTask || ms[0].Repository != stewardRepository {
+		t.Errorf("collect-failed message is type %q, task %q, repository %q", ms[0].Type, ms[0].TaskID, ms[0].Repository)
+	}
+	if _, err := withStore(storePath, true, func(s *store.Store) (store.Wake, error) { return s.WakeFor(ms[0].ID) }); err != nil {
+		t.Errorf("the collect-failed message woke nothing: %v", err)
+	}
+	round()
+	reloaded := schedule()
+	reloaded()
+	reloaded()
+	reloaded()
+	if ms := collectFailed(); len(ms) != 1 {
+		t.Errorf("a fourth failed round and a reload sent more: %+v", ms)
+	}
+	// A failed round still names, in supervisor.log, a copy it could not reach, beside the round's own error.
+	cs.collectFails = "connection refused"
+	before := log()
+	reloaded()
+	if got := strings.TrimPrefix(log(), before); !strings.Contains(got, "connection refused") {
+		t.Errorf("a failed round with an unreachable copy logged %q, want the copy's error", got)
+	}
+}
+
+// TestScheduledCollectFailedReset: two failed rounds, a clean one and two more failed rounds send nothing.
+func TestScheduledCollectFailedReset(t *testing.T) {
+	cs := newCollectSetup(t)
+	schedule, collectFailed, _, _ := scheduledFailing(t, cs)
+	if code, _, stderr := queueCmd(t, cliIncident("i-one", "boom"), "incident", "file", "-", "--copy", cs.director); code != 0 {
+		t.Fatal(stderr)
+	}
+	missing := filepath.Join(t.TempDir(), "missing")
+	collectGit(t, cs.private, "remote", "set-url", "origin", missing)
+	round := schedule()
+	round()
+	round()
+	collectGit(t, cs.private, "remote", "set-url", "origin", cs.remote)
+	start := collectGit(t, cs.remote, "rev-parse", "main")
+	round()
+	if collectGit(t, cs.remote, "rev-parse", "main") == start {
+		t.Fatal("the round after the remote was restored pushed nothing")
+	}
+	if code, _, stderr := queueCmd(t, cliIncident("i-two", "bang"), "incident", "file", "-", "--copy", cs.director); code != 0 {
+		t.Fatal(stderr)
+	}
+	collectGit(t, cs.private, "remote", "set-url", "origin", missing)
+	round()
+	round()
+	if ms := collectFailed(); len(ms) != 0 {
+		t.Errorf("two failed rounds, a clean one and two failed ones sent %+v", ms)
+	}
+}
+
+// TestCollectFailedMessage: two errors that differ only after the first line give one id, and the text fits a
+// message however long the error is.
+func TestCollectFailedMessage(t *testing.T) {
+	a := collectFailedMessage(fmt.Errorf("push refused\nremote: one"))
+	b := collectFailedMessage(fmt.Errorf("push refused \nremote: two"))
+	if a.ID != b.ID || !strings.HasPrefix(a.ID, "collect-failed.") || a.Type != store.MessageCollectFailed {
+		t.Errorf("ids %q and %q, type %q; want one collect-failed id", a.ID, b.ID, a.Type)
+	}
+	if c := collectFailedMessage(fmt.Errorf("fetch refused")); c.ID == a.ID {
+		t.Errorf("a different first line gave the same id %q", c.ID)
+	}
+	long := collectFailedMessage(fmt.Errorf("%s", strings.Repeat("é", store.MaxMessageTextBytes)))
+	if len(long.Text) > store.MaxMessageTextBytes {
+		t.Errorf("text is %d bytes, over %d", len(long.Text), store.MaxMessageTextBytes)
+	}
+}
+
 // TestDirectorCollected: director collected marks the receipt's items whose origin and digest are the copy's,
 // reports the others and leaves them pending, deletes the receipt, and reports a repeated item as already collected.
 func TestDirectorCollected(t *testing.T) {

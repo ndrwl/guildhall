@@ -277,7 +277,7 @@ func (p Program) status(ctx context.Context, dir string, stdin []byte, env []str
 		path = "git"
 	}
 	cmd := exec.CommandContext(runCtx, path, append([]string{"-C", dir}, args...)...)
-	cmd.Env = append(append(os.Environ(), "GIT_TERMINAL_PROMPT=0"), env...)
+	cmd.Env = commandEnv(os.Environ(), p.BatchSSH, env...)
 	cmd.WaitDelay = 5 * time.Second
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)

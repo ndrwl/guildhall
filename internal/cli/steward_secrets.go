@@ -263,7 +263,7 @@ func (a *App) loadSecrets(cfgPath string) (*steward.Secrets, error) {
 		}
 		runner = steward.SSH{Path: ssh, Timeout: sshTimeout}
 	}
-	s, err := steward.LoadSecrets(git.WorkTree{Program: git.Program{Path: gitPath, Timeout: scpTimeout}, Dir: private}, copier, runner)
+	s, err := steward.LoadSecrets(git.WorkTree{Program: git.Program{Path: gitPath, Timeout: scpTimeout, BatchSSH: true}, Dir: private}, copier, runner)
 	if err != nil {
 		return nil, err
 	}

@@ -91,7 +91,7 @@ A wake line ending `; handoff due (<reason>)` is answered by the `guildhall-stew
 The Steward's inbox is the `steward` recipient of its store, and it takes messages from two senders ([senders](messaging.md#senders)):
 
 - the Guildmaster: `guildhall messages send steward <envelope>` run outside any Guildhall session or attempt, whose envelope names the reserved task `steward/guildmaster`;
-- `director`: the `triage-opened` report of the Steward's own [scheduled collection](#scheduled-collection), naming `steward/incidents` or `steward/lessons`, and its `lock-busy` report, naming `steward/rollouts`, sent by its supervisor and never by `messages send`.
+- `director`: the `triage-opened` report of the Steward's own [scheduled collection](#scheduled-collection), naming `steward/incidents` or `steward/lessons`, and its `lock-busy` and `collect-failed` reports, naming `steward/rollouts`, sent by its supervisor and never by `messages send`.
 
 `messages send` to it from a Director, another Director, an Artisan or the Steward's own session is refused, and so is a `director` message to a Steward store or a `steward` message to any other store.
 No Director reaches the inbox: the `director` tag says the report is about items Directors filed, which the Steward read itself.
@@ -382,6 +382,10 @@ Rounds run one at a time, a round that finds the lock busy is skipped, and failu
 The third busy round in a row sends the Steward's inbox one `lock-busy` message, with the [`director` sender tag](#inbox), naming the lock's owner and since when it has held the lock, which wakes the session; any round that is not busy starts the count again.
 Its id is a digest of the owner record, so a reload, which also starts the count again, sends no second message for the same owner.
 Its owner is a live process, since the OS releases a crashed one's [lock](#publication-and-writer-containment): possibly a takeover or secrets apply (up to 30 minutes), a provisioning apply (up to 90 minutes) or a hung command; stopping that process is the way to recover, and nothing removes the file.
+A round that fails otherwise, for example because the private config's push is refused, is written to `supervisor.log`, and the third failed round in a row sends the Steward's inbox one `collect-failed` message, with the [`director` sender tag](#inbox), naming the error, which wakes the session; until a round succeeds, copies' items stay pending and no triage opens.
+A busy round, or a clean one, starts that count again; a clean round's per-copy errors do not count.
+Its id is a digest of the error's first line, so a reload sends no second message for the same failure; the same failure coming back later, after a fix, is not reported again either.
+The Steward's git runs with `GIT_SSH_COMMAND="ssh -o BatchMode=yes"` unless the environment sets `GIT_SSH_COMMAND` or `GIT_SSH`, so a key passphrase or an unknown host key fails the command rather than prompting on the supervisor tab; it overrides a `core.sshCommand` git config.
 A round that opens triage decisions sends the Steward's inbox one `triage-opened` message per kind, with the [`director` sender tag](#inbox), which wakes the session; a round with nothing new sends nothing and wakes nothing.
 Unset, the default, nothing is collected on a schedule, and nothing polls or spends model tokens because an item is queued (R1.7).
 Each scheduled run then sends its [Steward messages](#steward-messages), even when the round found the lock busy.
