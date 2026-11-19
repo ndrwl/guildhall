@@ -21,6 +21,7 @@ import (
 	"github.com/ndrwl/guildhall/internal/steward"
 	"github.com/ndrwl/guildhall/internal/steward/stewardtest"
 	"github.com/ndrwl/guildhall/internal/store"
+	"github.com/ndrwl/guildhall/internal/testenv"
 )
 
 // collectGit runs git in dir with a fixed identity, failing the test on an error.
@@ -47,6 +48,17 @@ type collectSetup struct {
 	status stewardtest.Handler
 }
 
+// skipCollectSetup skips t when newCollectSetup cannot build its copy. On Windows the skip goes through
+// testenv.SkipUnlessRequired, so the windows-latest leg, which requires windows, fails instead of skipping silently.
+func skipCollectSetup(t *testing.T, format string, args ...any) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		testenv.SkipUnlessRequired(t, "windows", format, args...)
+		return
+	}
+	t.Skipf(format, args...)
+}
+
 func newCollectSetup(t *testing.T) *collectSetup {
 	t.Helper()
 	global := filepath.Join(t.TempDir(), "gitconfig")
@@ -54,19 +66,31 @@ func newCollectSetup(t *testing.T) *collectSetup {
 	t.Setenv("GIT_CONFIG_GLOBAL", global)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	cs := &collectSetup{steward: t.TempDir(), remote: t.TempDir()}
-	// The roster's copy_dir admits no space, which newCopy's directory has, so the copy is reached through a link.
-	cs.director = filepath.Join(t.TempDir(), "alpha")
-	if err := os.Symlink(newCopy(t), cs.director); err != nil {
-		t.Skipf("no symbolic link to the copy: %v", err)
-	}
-	copyDir := filepath.ToSlash(cs.director)
 	osName := "linux"
 	if runtime.GOOS == "windows" {
 		osName = "windows"
 	}
-	roster := fmt.Sprintf("schema_version = 1\n\n[[machine]]\nlabel = \"workstation\"\nssh_alias = \"guild-ws\"\nos = %q\nroles = [\"director\"]\n\n[[machine.director]]\nname = \"alpha\"\ncopy_dir = %q\nrepositories = [\"app\"]\n", osName, copyDir)
+	rosterFor := func(copyDir string) string {
+		return fmt.Sprintf("schema_version = 1\n\n[[machine]]\nlabel = \"workstation\"\nssh_alias = \"guild-ws\"\nos = %q\nroles = [\"director\"]\n\n[[machine.director]]\nname = \"alpha\"\ncopy_dir = %q\nrepositories = [\"app\"]\n", osName, copyDir)
+	}
+	// The roster's copy_dir admits no space, which newCopy's directory has, so the copy is reached through a link. On
+	// Windows it admits no ~ either, which t.TempDir's C:/Users/RUNNER~1/... has, so the link's root is one the roster
+	// accepts.
+	root, err := testenv.ShortTempDir(t, func(slashDir string) error {
+		_, err := steward.ParseRoster([]byte(rosterFor(slashDir + "/alpha")))
+		return err
+	})
+	if err != nil {
+		skipCollectSetup(t, "no temporary directory for the copy's link fits the roster: %v", err)
+	}
+	cs.director = filepath.Join(root, "alpha")
+	if err := os.Symlink(newCopy(t), cs.director); err != nil {
+		skipCollectSetup(t, "no symbolic link to the copy: %v", err)
+	}
+	copyDir := filepath.ToSlash(cs.director)
+	roster := rosterFor(copyDir)
 	if _, err := steward.ParseRoster([]byte(roster)); err != nil {
-		t.Skipf("the temporary copy %s is outside the roster's restricted path characters: %v", copyDir, err)
+		skipCollectSetup(t, "the temporary copy %s is outside the roster's restricted path characters: %v", copyDir, err)
 	}
 	cs.private = filepath.Join(cs.steward, "private")
 	collectGit(t, cs.remote, "init", "-q", "--bare", "-b", "main")

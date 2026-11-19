@@ -183,10 +183,10 @@ repositories = ["cli", "docs-site"]
 | `ssh_alias` | A `Host` entry in the Steward user's SSH config. The alias, not the roster, holds the address, user and key. Letters, digits, `.`, `_` and `-` only, so no user, option or shell syntax can be passed. |
 | `os` | `linux`, `windows` or `darwin`; it decides the path form. |
 | `roles` | `steward` and/or `director`. A machine that lists Directors needs `director`. |
-| `guildhall_path` | Optional. The absolute path of the `guildhall` program the [remote commands](#remote-commands) run on the machine, in its `os` path form with the same characters as `copy_dir`, such as `C:/Users/guild/bin/guildhall.exe`. Without it, `guildhall` on the `PATH` of the machine's Guildhall account is run. |
+| `guildhall_path` | Optional. The absolute path of the `guildhall` program the [remote commands](#remote-commands) run on the machine, in its `os` path form with the same characters as `copy_dir`, such as `C:/guild/bin/guildhall.exe`. On Windows that rules out a path under a profile with a space or a `~`, as `copy_dir` explains. Without it, `guildhall` on the `PATH` of the machine's Guildhall account is run. |
 | `age_recipient` | Optional. The public key `guildhall secrets init` printed on the machine, which its [secrets file](secrets.md#the-steward-pushes-them) is encrypted to; without it the machine gets no pushed secrets. Not a secret, and no two machines, nor the recovery key, share one. |
 | `[[machine.director]] name` | The Director's name, which its copy's config must match. |
-| `copy_dir` | Absolute path of the Director copy's directory, holding `config.toml` and the published `managed.toml`. Windows paths use a drive letter and forward slashes, such as `C:/Users/guild/directors/tools`. Only letters, digits, `.`, `_`, `-` and `/` are allowed, with no `.` or `..` segments. |
+| `copy_dir` | Absolute path of the Director copy's directory, holding `config.toml` and the published `managed.toml`. Windows paths use a drive letter and forward slashes, such as `C:/guild/directors/tools`. Only letters, digits, `.`, `_`, `-` and `/` are allowed, with no `.` or `..` segments. On Windows that refuses a path with a space or a `~`, which a user profile often has, such as `C:/Users/First Last/...` or a short name such as `C:/Users/RUNNER~1/...`, so put copies in a directory such as `C:/guild/directors/<name>` and the program at `C:/guild/bin/guildhall.exe`. |
 | `repositories` | The repository ids the copy must have. |
 
 Each machine has one SSH alias for its one non-administrator Guildhall account, and that account may host several Directors, each with its own copy directory.
@@ -339,7 +339,7 @@ A step file's contents never travel on a command line; only its path and digest 
 Any other command, flag or argument is refused before `ssh` runs, and so is an alias that is not a plain roster alias.
 `ssh` joins the arguments with spaces for the remote side, which then parses them again, through `cmd.exe` or PowerShell on a Windows OpenSSH server and a POSIX shell elsewhere; every value is restricted to letters, digits, `.`, `_`, `-`, `/` and a drive's `:`, except that a `--set` value may also hold `~`, `+`, `:` and its one `=`, and a remote `@` and `:` as in `git@host:path`; all of them read these characters the same way, so nothing is quoted.
 The wider set is only for `--set` values and remotes: a copy, setup or clone directory, `--out` and `guildhall_path` never hold `~`, `+` or `@`.
-On a Windows machine every path, the program's, the copy's, the setup directory's and each clone's, is in its forward-slash form, `C:/Users/guild/...`, which Windows programs read as they are; the one value PowerShell would read otherwise, a comma-separated `--only`, is a single step id in every plan step.
+On a Windows machine every path, the program's, the copy's, the setup directory's and each clone's, is in its forward-slash form, `C:/guild/...`, which Windows programs read as they are; the one value PowerShell would read otherwise, a comma-separated `--only`, is a single step id in every plan step.
 Each `ssh` run is bounded by a two-minute timeout, or fifteen minutes for a command that may take minutes (`setup doctor --fix`, `release adopt`, `release install`, `director start --tab` and `git clone`), and is cancelled as `scp` is, killing its process group on Unix and its process elsewhere.
 A command that exits non-zero, a refusing machine and a timeout are each reported with their diagnostic.
 
@@ -460,7 +460,7 @@ guildhall steward takeover --config <steward.toml> --plan <dir> --abandon
 ```
 
 A takeover adopts an existing standalone Director copy into the roster as managed by this Steward, keeping its store, tasks, decisions and local settings ([decision](decisions/steward-setup-plans.md)).
-It is built for Linux and native Windows machines; on Windows the copy directory is a Windows path such as `C:/Users/guild/directors/ops`, and the remote commands run the roster's `guildhall_path`, such as `C:/Users/guild/bin/guildhall.exe`, or `guildhall` on the account's `PATH`.
+It is built for Linux and native Windows machines; on Windows the copy directory is a Windows path such as `C:/guild/directors/ops`, and the remote commands run the roster's `guildhall_path`, such as `C:/guild/bin/guildhall.exe`, or `guildhall` on the account's `PATH`.
 Each of its modes admits the Steward config as [rollout](#dry-run) and collect do, with the session's refusals, and needs the private config location to be a Git work tree.
 
 **Dry run.** The dry run reads the copy with `scp` and the read-only [remote commands](#remote-commands): its `config.toml`, its mode, which must be `standalone` with no `managed.toml`, and its session.
@@ -511,7 +511,7 @@ guildhall steward provision --config <steward.toml> --plan <dir> --apply --appro
 
 Provisioning makes a new managed Director copy on a roster machine that already has Guildhall, end to end, in one setup plan approved by its digest ([decision](decisions/steward-setup-plans.md)).
 It is built for Linux and native Windows machines; a bare one is first [bootstrapped](#bootstrapping-a-bare-machine).
-On Windows the request's `copy_dir`, `setup_dir` and clone paths are Windows paths with forward slashes, such as `C:/Users/guild/directors/ops`, no two of the copy directory and clone paths equal but for letter case, and the pins name the Windows builds, such as `go1.27.2.windows-amd64.zip`; the doctor checks the [Windows forms](setup.md#built-in-step-files) of the built-ins, which have no `tailscale-ssh` step, since Tailscale does not serve SSH on Windows.
+On Windows the request's `copy_dir`, `setup_dir` and clone paths are Windows paths with forward slashes, such as `C:/guild/directors/ops`, no two of the copy directory and clone paths equal but for letter case, and the pins name the Windows builds, such as `go1.27.2.windows-amd64.zip`; the doctor checks the [Windows forms](setup.md#built-in-step-files) of the built-ins, which have no `tailscale-ssh` step, since Tailscale does not serve SSH on Windows.
 
 **Request.** The request is strict TOML:
 
@@ -591,7 +591,7 @@ The binary is the Steward's own: it must be an installed release (not `dev`, not
 A machine of another architecture fails the install with `exec format error`, and nothing else has run there.
 The launcher is the Steward's home's `bin/guildhall`, else `guildhall-launcher` beside the binary or on `PATH`.
 
-**A Windows machine.** On Windows `guildhall_path` names `guildhall.exe`, such as `C:/Users/<user>/.local/bin/guildhall.exe`, the launcher is copied beside it as `guildhall-launcher.exe`, and `certutil -hashfile <path> SHA256`, which every Windows machine has, takes the place of `sha256sum`: the dry run's check, and each check after a copy and before the install.
+**A Windows machine.** On Windows `guildhall_path` names `guildhall.exe`, such as `C:/guild/bin/guildhall.exe`, the launcher is copied beside it as `guildhall-launcher.exe`, and `certutil -hashfile <path> SHA256`, which every Windows machine has, takes the place of `sha256sum`: the dry run's check, and each check after a copy and before the install.
 A Steward on Linux has no binary of its own for Windows, so the request names a cross-built release with `bootstrap_from`, a directory relative to the request holding `guildhall.exe` and `guildhall-launcher.exe`:
 
 ```sh

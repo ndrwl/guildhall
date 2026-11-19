@@ -19,7 +19,7 @@ Keep every plan under your copy's `rollouts/` directory, one new directory per t
    ```
 
    Add `--ssh-alias <alias>` only for a machine not in the roster, with `--os windows` when it is a native Windows machine, and `--guildhall-path <abs>`, such as `/home/<user>/.local/bin/guildhall`, when `guildhall` is not on the `PATH` of its SSH commands (as on Ubuntu or WSL, where they do not read `~/.profile`).
-   On Windows the copy directory is a Windows path with forward slashes, such as `C:/Users/<user>/directors/<name>`.
+   On Windows the copy directory is a Windows path with forward slashes, such as `C:/guild/directors/<name>`; the roster refuses a space or a `~`, so not a path under a profile such as `C:/Users/First Last/...` or a short name such as `RUNNER~1`.
    A refusal changes nothing: tell the Guildmaster why in plain English, such as a repository whose `owner_machine` names another machine, a copy that already has a `managed.toml`, or a roster that already lists the Director, and stop.
 3. Show the Guildmaster the plan: the copy and its session, the roster diff, every step and the plan digest.
    Say that the session will be paused while running attempts finish, and that the copy's settings do not change.
@@ -60,7 +60,7 @@ Keep each plan in a new directory such as `rollouts/provision-<director>`.
 1. Ask the Guildmaster for the roster machine, the Director's name, its copy and setup directories there, the Herdr session its tab opens in, each repository's id, remote and path, and any pins; write them as a request file in your copy (`docs/steward.md#provisioning`).
    When the machine has no Guildhall yet, add `bootstrap = true` and make sure the roster names its `guildhall_path`, such as `/home/<user>/.local/bin/guildhall`, in a directory that exists; with Go and Herdr missing too, ask for their pins (`docs/steward.md#bootstrapping-a-bare-machine`).
    Copy, setup and clone directories may not contain a space or `~`, so `C:/Users/First Last/…` or an 8.3 short name such as `RUNNER~1` cannot be enrolled: suggest a path such as `C:/guild/…` (`docs/steward.md#rostertoml`).
-   On a native Windows machine every path is a Windows path with forward slashes, `guildhall_path` names `guildhall.exe`, the pins name the Windows builds, and a bootstrap needs `bootstrap_from`: ask the Guildmaster for a directory holding `guildhall.exe` and `guildhall-launcher.exe` cross-built at the release to place, as `docs/steward.md#bootstrapping-a-bare-machine` shows.
+   On a native Windows machine every path is a Windows path with forward slashes and no space or `~`, such as `C:/guild/directors/<name>`, `guildhall_path` names `guildhall.exe`, such as `C:/guild/bin/guildhall.exe`, the pins name the Windows builds, and a bootstrap needs `bootstrap_from`: ask the Guildmaster for a directory holding `guildhall.exe` and `guildhall-launcher.exe` cross-built at the release to place, as `docs/steward.md#bootstrapping-a-bare-machine` shows.
    When the machine needs an install no built-in step file covers, write a step file of your own beside the request and name it in `step_files`; every change it makes must be a `check`, `action` and `verify`, and anything that needs administrator rights a `human` step.
 2. Dry-run:
 
