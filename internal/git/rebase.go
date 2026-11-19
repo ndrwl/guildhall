@@ -172,7 +172,8 @@ func (p Program) Log(ctx context.Context, repository, a, b string, paths ...stri
 
 // Adopt moves the worktree w.Dir, on w.Branch at from, to commit to with git reset --keep, which keeps local and
 // untracked files and refuses rather than overwrite one, so no stage output is lost. A worktree already at to is
-// left as it is; one at neither commit, or on another branch, is refused unchanged.
+// left as it is; one at neither commit, or on another branch, is refused unchanged. Before moving it refreshes the
+// index's stat data, so a file whose stat is stale but whose content is unchanged is not a local change.
 func (p Program) Adopt(ctx context.Context, w Workspace, from, to string) error {
 	if err := p.validate(ctx, w); err != nil {
 		return err
@@ -191,6 +192,11 @@ func (p Program) Adopt(ctx context.Context, w Workspace, from, to string) error 
 	case from:
 	default:
 		return fmt.Errorf("git: branch %s is at %s, not %s", w.Branch, strings.TrimSpace(string(at)), from)
+	}
+	// reset --keep does not refresh the index, so stale stat data would make an unchanged file look modified. -q
+	// leaves a really changed file's entry as it is, for reset --keep to refuse.
+	if _, err := p.git(ctx, w.Dir, "update-index", "-q", "--refresh"); err != nil {
+		return err
 	}
 	_, err = p.git(ctx, w.Dir, "reset", "--keep", "--quiet", to)
 	return err
